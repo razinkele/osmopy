@@ -2,14 +2,19 @@
 
 In-app "Send feedback" (bug report / suggestion) plus a token-gated maintainer review page.
 This document is for whoever **runs** the deployment. Every claim below was checked against the
-code at the cited `file:line`; where something could not be checked from the source tree it says
-so explicitly.
+code, or measured, at the time of writing; where something could not be checked from the source
+tree it says so explicitly.
+
+Citations name a **file and a symbol**, not a line number. An earlier draft cited lines and about
+a dozen of them were stale within a day of the next change to the same files — a document that
+says "verified" while pointing at the wrong line is worse than one that never claimed it. Grep for
+the symbol.
 
 - Submission: `ui/components/feedback_modal.py` (a Shiny reactive effect — there is no HTTP POST)
 - Store + token check: `osmose/feedback.py`
 - Rate limiter: `osmose/feedback_limits.py`
 - Review page HTML: `osmose/feedback_review.py`
-- Routes: `app.py:709-741`
+- Routes: `app.py` (`_feedback_endpoint`, `_feedback_review`)
 
 ## 1. The two stores — one is PII
 
@@ -18,10 +23,10 @@ so explicitly.
 | Feedback records | `data/feedback/feedback.jsonl` | type, message, timestamp, app version, nav tab, id, `has_contact` **boolean** | See caveats below |
 | Contacts | `data/feedback/contacts.jsonl` | `{"id": ..., "email": ...}` — **reporter email addresses** | **No. Never.** |
 
-The split is structural, not conventional: `build_feedback_record` (`osmose/feedback.py:56-88`)
+The split is structural, not conventional: `build_feedback_record` (`osmose/feedback.py`)
 takes `contact` only to set the boolean `has_contact` flag and **never puts the address in the
 record**. Storing the address is a separate call to `save_contact`
-(`osmose/feedback.py:108-121`), which writes the side-store.
+(`osmose/feedback.py`), which writes the side-store.
 
 Both default paths are gitignored by the single rule `data/feedback/` at `.gitignore:14`
 (verified with `git check-ignore`). **That protection is tied to the default location** — if you
@@ -31,7 +36,7 @@ ignores it.
 Two caveats on "the feedback file is safe to paste":
 
 1. **It is `read_feedback()`'s *output* that is scrubbed, not the file.** `read_feedback`
-   (`osmose/feedback.py:165`) normalises a legacy v1 line that still carries a literal `contact`
+   (`osmose/feedback.py`) normalises a legacy v1 line that still carries a literal `contact`
    key: the address is dropped and folded into the `has_contact` boolean. Measured — feeding it a
    v1 line containing `secret@example.org` returns `{"has_contact": true, ...}` with no `contact`
    key and no address, while **the address is still sitting in the raw file on disk**. So export
@@ -51,52 +56,67 @@ All four are read at call time, so a `systemd` `Environment=` line takes effect 
 
 | Variable | Read at | Effect when unset |
 |---|---|---|
-| `OSMOSE_FEEDBACK_TOKEN` | `osmose/feedback.py:178` (`check_feedback_token`) | **Both read endpoints are disabled** — every request gets `403`. |
-| `OSMOSE_FEEDBACK_FILE` | `osmose/feedback.py:39` (`_resolve`) | Defaults to `<repo>/data/feedback/feedback.jsonl`. |
-| `OSMOSE_CONTACTS_FILE` | `osmose/feedback.py:47` (`_resolve_contacts`) | Defaults to `<repo>/data/feedback/contacts.jsonl`. |
-| `OSMOSE_TRUSTED_PROXY` | `ui/components/feedback_modal.py:173` (`_client_key`) | `X-Forwarded-For` is ignored — see §5. |
+| `OSMOSE_FEEDBACK_TOKEN` | `osmose/feedback.py` — `check_feedback_token` | **Both read endpoints are disabled** — every request gets `403`. |
+| `OSMOSE_FEEDBACK_FILE` | `osmose/feedback.py` — `_resolve` | Defaults to `<repo>/data/feedback/feedback.jsonl`. |
+| `OSMOSE_CONTACTS_FILE` | `osmose/feedback.py` — `_resolve_contacts` | Defaults to `<repo>/data/feedback/contacts.jsonl`. |
+| `OSMOSE_TRUSTED_PROXY` | `ui/components/feedback_modal.py` — `_client_key` | `X-Forwarded-For` is ignored — see §5. |
 
 `OSMOSE_TRUSTED_PROXY` is a **truthiness check on the value**, so `OSMOSE_TRUSTED_PROXY=0` counts
 as *set*. Use `1` and delete the line to disable, rather than setting it to a falsey-looking
 string and expecting that to turn it off.
 
-### Set the store paths on the production deployment
+### What production is actually missing: the token
 
-`DEPLOY.md:11` records that the production service runs as user `shiny` and that **the source tree
-is read-only to that user** — which is why calibration checkpoints already use
-`OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results`.
+**`OSMOSE_FEEDBACK_TOKEN` is not set on the deployed service.** Measured:
 
-The feedback store has exactly the same problem and no equivalent override configured. The
-defaults point inside the read-only source tree, and `append_feedback`
-(`osmose/feedback.py:96-105`) does `mkdir(parents=True)` then `open(p, "a")`. On a read-only tree
-that raises `PermissionError`, which is caught at `ui/components/feedback_modal.py:312`, logged as
-`feedback save failed`, and shown to the user as `Couldn't save feedback — try again.` — on
-**every** submission.
+```bash
+systemctl show osmose-shiny.service -p Environment
+# Environment=PYTHONUNBUFFERED=1 OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results
+```
 
-So set both, alongside the existing `OSMOSE_RESULTS_DIR`:
+`check_feedback_token` returns `False` whenever the variable is unset, so **both** `/feedback/review`
+and `/api/feedback` answer `403` to everyone, including the maintainer holding the right token.
+The form accepts submissions and writes them to disk; nothing can read them back through the app.
+Add it, with a value from a password generator, and restart:
 
 ```
+Environment=OSMOSE_FEEDBACK_TOKEN=<long random string>
+```
+
+### The store paths are fine on the default — an earlier draft of this file was wrong
+
+A previous version of this section predicted that the default store path would fail with
+`PermissionError` on every submission, reasoning from the systemd unit's own comment (copied into
+`DEPLOY.md`) that the source tree "lives under another user's home and is read-only to `shiny`".
+
+**That is stale and the prediction was wrong.** Measured: `/srv/shiny-server/osmose` is a symlink
+to `/srv/shiny-server/osmose-src`, owned `shiny:shiny`; `.../osmose/data` is `drwxr-xr-x shiny
+shiny`; and the unit sets neither `ProtectSystem=` nor `ReadOnlyPaths=`. The service user can
+create `data/feedback/` and write both stores. The comment was true when `OSMOSE_RESULTS_DIR` was
+introduced and has not been true since.
+
+Setting the two variables explicitly is still reasonable hygiene — it keeps the stores out of the
+source tree and survives a redeploy that replaces it:
+
+```
+StateDirectory=osmose/feedback
 Environment=OSMOSE_FEEDBACK_FILE=/var/lib/osmose/feedback/feedback.jsonl
 Environment=OSMOSE_CONTACTS_FILE=/var/lib/osmose/feedback/contacts.jsonl
 ```
 
-and make sure the directory exists and is owned by `shiny` (a `StateDirectory=` entry, as the unit
-already does for calibration results, is the tidiest way).
-
-> This one is inferred from `DEPLOY.md:11` plus the code path, not observed on the live service —
-> the deployment is not reachable from the source tree. **Verify it by submitting one piece of
-> feedback after a restart and confirming a record lands**, rather than assuming either way.
+— but it is a choice, not a fix for a breakage. `contacts.jsonl` holds reporter email addresses,
+so wherever you put it, keep it off any path that gets copied, backed up publicly, or served.
 
 ## 3. Reaching the review page
 
-Two routes, both registered ahead of Shiny's catch-all mount (`app.py:739,741`):
+Two routes, both registered ahead of Shiny's catch-all mount (`app.py`, the two `routes.insert(0, ...)` calls):
 
 | Path | Response | Handler |
 |---|---|---|
-| `/feedback/review` | HTML page, `Cache-Control: no-store` | `app.py:719-733` |
-| `/api/feedback` | JSON array of records | `app.py:709-715` |
+| `/feedback/review` | HTML page, `Cache-Control: no-store` | `app.py` — `_feedback_review` |
+| `/api/feedback` | JSON array of records | `app.py` — `_feedback_endpoint` |
 
-Both require the header **`x-feedback-token`** (`app.py:711,721`) matching
+Both require the header **`x-feedback-token`** (both handlers) matching
 `OSMOSE_FEEDBACK_TOKEN`. Starlette's header lookup is case-insensitive, so `X-Feedback-Token`
 works identically.
 
@@ -106,27 +126,29 @@ curl -sS -H "X-Feedback-Token: $OSMOSE_FEEDBACK_TOKEN" \
 ```
 
 **On the public URL, mind the prefix.** The routes are registered at `/feedback/review` and
-`/api/feedback`. `DEPLOY.md:6,9` shows the service running with `--root-path /osmose` behind nginx
+`/api/feedback`. `DEPLOY.md` shows the service running with `--root-path /osmose` behind nginx
 at `/osmose/`, so the externally reachable URL is very likely
 `https://<host>/osmose/feedback/review`. The nginx configuration is not in this repo and the exact
 path-stripping behaviour was not measured — **confirm with `curl` before relying on either form.**
 
 A `403` means "token missing, unset, or wrong" and **does not distinguish those cases**
-(`check_feedback_token`, `osmose/feedback.py:171-181`, returns `False` for all of them). If you
-get a `403` you did not expect, check that the variable is actually set in the service
-environment, not just in your shell.
+(`check_feedback_token`, `osmose/feedback.py`, returns `False` for all of them). If you get a `403`
+you did not expect, check that the variable is actually set **in the service environment** — as of
+this writing it is not (see §2), which makes `403` the expected answer on the deployed app rather
+than a sign you used the wrong token.
 
 The page renders **every** record with no pagination (`render_review_html`,
-`osmose/feedback_review.py:215-238`) and `read_feedback` loads the whole file into memory. That is
+`osmose/feedback_review.py`) and `read_feedback` loads the whole file into memory. That is
 the practical reason to rotate (§7) well before the 50 MiB cap.
 
 ## 4. What a user sees when a submission is refused
 
-Checks run in this order (`_classify_and_consume`, `ui/components/feedback_modal.py:235-282`); the
-order is security-relevant and documented as such in that function.
+Checks run in this order (`_classify_and_consume`, `ui/components/feedback_modal.py`); the order
+is security-relevant and documented as such in that function.
 
 | Message the user sees | Cause |
 |---|---|
+| `Choose a feedback type before sending.` | The submitted type is not one of `bug`/`suggestion`/`other`. Unreachable from the shipped radio buttons — a crafted client. No rate-limit slot consumed. |
 | `Enter a message before sending.` | Empty message. No rate-limit slot consumed. |
 | `That email address doesn't look right — correct it or leave it blank.` | Email fails the shape check. No slot consumed. |
 | `You've sent several already — please wait a little before sending more.` | Rate limited, and the limiter can prove it is this client's own cap. |
@@ -145,7 +167,7 @@ terminal message is telling you the server needs attention, not that they did an
 
 ### The vague one is deliberate
 
-`at_capacity` (`osmose/feedback_limits.py:44-65`) narrows the cause in **one direction only**:
+`at_capacity` (`osmose/feedback_limits.py`) narrows the cause in **one direction only**:
 
 - `at_capacity` **False** proves the refusal was this client's own per-client cap. The UI may
   therefore say "you've sent several already", and does.
@@ -162,22 +184,22 @@ has sent nothing that they "have already sent several" is the failure this wordi
 
 The honeypot hit (`DROP`) shows the **same** success notification, clears the same fields and
 dismisses the modal — a bot must not be able to detect it. Nothing is stored. The only trace is
-an INFO line, `feedback honeypot filled` (`ui/components/feedback_modal.py:410`). If a user insists
+an INFO line, `feedback honeypot filled` (`ui/components/feedback_modal.py`). If a user insists
 they submitted something that is not in the store, check for that line — a browser extension or
 autofill filling the offscreen "Website" field would do it.
 
 ## 5. Rate limiting and its degraded modes
 
-The production limiter is **5 submissions per client per hour**
-(`ui/components/feedback_modal.py:40`), in-memory, with a **10 000-key** table
-(`MAX_KEYS`, `osmose/feedback_limits.py:19`).
+The production limiter is **5 submissions per client per hour** (`_LIMITER`,
+`ui/components/feedback_modal.py`), in-memory, with a **10 000-key** table (`MAX_KEYS`,
+`osmose/feedback_limits.py`).
 
-It is per-process. `osmose/feedback_limits.py:1-13` states the target is a single-worker deploy; if
-you ever run multiple workers the cap becomes per-worker and must be divided accordingly.
+It is per-process. That module's docstring states the target is a single-worker deploy; if you
+ever run multiple workers the cap becomes per-worker and must be divided accordingly.
 
 ### How the client is identified
 
-`_client_key` (`ui/components/feedback_modal.py:144-211`), in order:
+`_client_key` (`ui/components/feedback_modal.py`), in order:
 
 1. **`X-Forwarded-For`, but only when `OSMOSE_TRUSTED_PROXY` is set** — and then the **rightmost**
    comma-separated entry. With one trusted proxy in front, that is the address the proxy itself
@@ -192,8 +214,12 @@ in front of nginx, the rightmost entry becomes that extra hop's view and the eff
 
 ### The four ways this degrades to one global bucket
 
-Three warn. **The fourth is silent** — this matters most on this deployment, which sits behind
-nginx.
+> **Case 1 is live on this deployment right now.** nginx *does* send `X-Forwarded-For`, and
+> `OSMOSE_TRUSTED_PROXY` is not set on the service (`systemctl show osmose-shiny.service -p
+> Environment`). So the header is ignored, `client.host` is nginx's own address, and **every user
+> of the feedback form shares one bucket of 5 submissions per hour**. Setting the variable fixes
+> it; the warning below is already in the log. An earlier draft guessed case 4 was the live one —
+> it is not, because nginx is forwarding the header.
 
 | # | Condition | Key used | Logged? |
 |---|---|---|---|
@@ -220,8 +246,8 @@ genuine direct connection from localhost, which the warning says in its own text
 `X-Forwarded-For` leaves you in case 4; sending the header without the variable is case 1. If any
 of these warnings appears, per-client rate limiting is not in effect.
 
-The three `_warned_*` flags (`ui/components/feedback_modal.py:55-57`) are **process-lifetime and
-never re-armed**. Each fires at most once per process. After a restart, look at the log around the
+The four `_warned_*` flags (`ui/components/feedback_modal.py`) are **process-lifetime and never
+re-armed**. Each fires at most once per process. After a restart, look at the log around the
 *first* submission; later ones say nothing regardless of how bad the configuration is.
 
 ### Table saturation — do NOT alert on the warning's rate
@@ -234,7 +260,7 @@ Rate limiter table at capacity (10000 keys); refusing new keys
 ```
 
 Eviction-by-oldest is deliberately not implemented (`_sweep_stale`,
-`osmose/feedback_limits.py:90-106`): it would let an attacker who has exhausted their own limit
+`osmose/feedback_limits.py`): it would let an attacker who has exhausted their own limit
 flood the table to evict their own record and reset it.
 
 The warning is one-shot, and it is **re-armed only inside a sweep** — and sweeps happen at most
@@ -256,23 +282,23 @@ reports of the ambiguous refusal message (§4), not at how many times it was log
 ## 6. Other failure modes worth knowing
 
 **A bad `repo_url` costs the whole review page, not one card.** `github_issue_url`
-(`osmose/feedback_review.py:150-155`) validates the scheme — only `http`/`https` — and raises
+(`osmose/feedback_review.py`) validates the scheme — only `http`/`https` — and raises
 `ValueError` otherwise, because `html.escape` cannot neutralise a `javascript:` or `data:` scheme
 in an `href`. That raise propagates through `render_review_html` and is caught by the route, so
 **every card is lost and the caller gets a bare `500 internal`**. `_REPO_URL` is an
-operator-controlled constant at `app.py:49` (`https://github.com/razinkele/osmopy`), so this is a
-deployment bug, not something a reporter can trigger. The server-side traceback
-(`app.py:733`) is the only way to see it.
+operator-controlled constant in `app.py` (`https://github.com/razinkele/osmopy`), so this is a
+deployment bug, not something a reporter can trigger. The server-side traceback logged by
+`_feedback_review` is the only way to see it.
 
 **The review route returns a bare `internal` on purpose — do not "improve" it.** Both routes
-answer unauthenticated callers, so neither may disclose why it failed. `app.py:702-706` records
-that a mutation which let exception text through was measured to put **the token itself** in the
-response. The detail goes to the log via `_log.exception`; the response body stays bare. A
+answer unauthenticated callers, so neither may disclose why it failed. The comment above those
+two handlers in `app.py` records that a mutation which let exception text through was measured to
+put **the token itself** in the response. The detail goes to the log via `_log.exception`; the response body stays bare. A
 well-meaning future change to return the error "to help debugging" reintroduces a token leak. If
 you need detail, read the log.
 
 **A lost contact address does not fail the submission.** `_store_submission`
-(`ui/components/feedback_modal.py:316-325`) guards `save_contact` separately: once
+(`ui/components/feedback_modal.py`) guards `save_contact` separately: once
 `append_feedback` returns, the feedback *is* stored, and reporting failure would make the user
 resubmit — producing a duplicate record plus an orphan `has_contact: true` with no contacts row.
 Instead it logs at ERROR. Grep for `contact address was LOST`; the line names the feedback id.
@@ -288,13 +314,13 @@ is already stored by then.
 
 **If every post-write step fails**, the user sees no confirmation at all and will probably
 resubmit. That case escalates to ERROR: `record written but EVERY post-write step failed`
-(`ui/components/feedback_modal.py:382`).
+(`_finish_success`, `ui/components/feedback_modal.py`).
 
 ## 7. Rotating the store at `MAX_STORE_BYTES`
 
-`MAX_STORE_BYTES` is **50 MiB** (`osmose/feedback.py:31`). `append_feedback`
-(`osmose/feedback.py:94-95`) checks the size **before** writing and raises `RuntimeError` once the
-file is at or over it:
+`MAX_STORE_BYTES` is **50 MiB** (`osmose/feedback.py`). `_append_json_line` — the write path
+shared by `append_feedback` and `save_contact` — checks the size **before** writing and raises
+`RuntimeError` once the file is at or over it:
 
 ```
 feedback store is full (<n> bytes) — rotate <path>
@@ -320,18 +346,26 @@ Then archive `feedback.jsonl.<date>` somewhere private — remember it is a stor
 self-disclosed PII in message bodies, and, if it is old enough to contain v1 lines, literal
 addresses (§1).
 
-**Do not rotate `contacts.jsonl` at the same time.** It is uncapped, small, and `lookup_contact`
-on any *older* feedback id needs it. Rotating it orphans every historical id.
+**Do not rotate `contacts.jsonl` on the same schedule.** `lookup_contact` on any *older* feedback
+id needs it, so rotating it orphans every historical id. It is one short line per reporter who left
+an address, so in practice it never approaches the cap.
+
+It *is* capped, though — since 2026-09-14 it shares `MAX_STORE_BYTES` with the feedback store — so
+"never rotate" is not a policy you can hold forever: a contacts store that somehow reached 50 MiB
+would stay permanently full, silently dropping every new address (logged as
+`contact address was LOST`, submissions still succeeding). If you ever see that line without an
+obvious cause, check the file's size before assuming a permissions problem, then rotate it and keep
+the archive — it is the only copy of those addresses.
 
 After rotation the review page shows only the records in the live file. Rotate at a size that keeps
 the page usable rather than waiting for the hard cap.
 
 ## 8. Looking up a reporter's email
 
-`lookup_contact` (`osmose/feedback.py:124-136`) maps a feedback id to the stored address.
+`lookup_contact` (`osmose/feedback.py`) maps a feedback id to the stored address.
 
 **It has no production call site** — verified: the only references in the tree are its own
-definition, a docstring mention in `osmose/feedback_review.py:10`, and tests. Nothing in `app.py`,
+definition, a docstring mention in `osmose/feedback_review.py`, and tests. Nothing in `app.py`,
 the modal, or the review page calls it. The review page renders the `has_contact` **flag** and
 never resolves it, which is what makes that page safe to screenshot.
 
@@ -357,7 +391,7 @@ matter and both fail quietly:
   will silently query **a different version of this code** — this exact mistake was made while
   writing this runbook, and it produced a confidently wrong answer. `cd` to the repo root first, or
   set `PYTHONPATH` to it.
-- *Interpreter.* `DEPLOY.md:7-8` records that the production service runs from
+- *Interpreter.* `DEPLOY.md` records that the production service runs from
   `/opt/micromamba/envs/shiny` and imports `osmose` from the working copy — it is **not**
   pip-installed there and there is **no `.venv`**. On that host substitute
   `/opt/micromamba/envs/shiny/bin/python`. The `.venv/bin/python` form above is the development one.
@@ -369,7 +403,7 @@ feedback record itself is going.
 ## 9. The GitHub promotion link — the privacy boundary
 
 Each card carries a "promote to a GitHub issue" link: a prefilled `issues/new` URL built by
-`github_issue_url` (`osmose/feedback_review.py:110-182`). It is a prefilled link rather than a REST
+`github_issue_url` (`osmose/feedback_review.py`). It is a prefilled link rather than a REST
 API call by design — no token, no bot account, nothing to rotate or leak — **and the maintainer
 reviews the issue before filing it.**
 
@@ -381,7 +415,7 @@ An address a reporter typed into the email field **never reaches the issue.**
 **What is not.** The body carries reporter-controlled free text in **two** fields, not one:
 
 - `message` — the obvious one.
-- **`nav_tab`** — less obvious. It comes from `_safe_nav` (`ui/components/feedback_modal.py:128`),
+- **`nav_tab`** — less obvious. It comes from `_safe_nav` (`ui/components/feedback_modal.py`),
   which reads `input.main_nav()`: a **client-settable Shiny input with no whitelist**. A crafted
   client can put arbitrary text in it, and that text lands in the public issue body. It is not
   machine-generated and it is not safe to paste unread.
@@ -413,13 +447,14 @@ Several messages contain em dashes, so these grep substrings deliberately stop b
 | WARNING | `No client address available` | Degraded mode 3 — throttling is global. |
 | WARNING | `No X-Forwarded-For header and the connecting address` | Degraded mode 4 — the proxy is not forwarding XFF; throttling is global. Heuristic, so a genuine localhost connection can trip it. |
 | WARNING | `Rate limiter table at capacity` | Saturation. **Alert on presence, never on rate** (§5). |
-| ERROR | `feedback save failed` | Store write failed — permissions, or the 50 MiB cap (§7). Traceback names which. |
+| ERROR | `feedback save failed` | Store write failed — the 50 MiB cap, permissions, or a full disk (§7). Traceback names which. |
 | ERROR | `contact address was LOST` | Record stored, address not. Names the feedback id. Includes the full-contacts-store case (`contacts store is full` in the traceback). |
 | ERROR | `EVERY post-write step failed` | User saw no confirmation; expect a duplicate submission. |
 | ERROR | `feedback review page failed` | Review page returned `500` — usually a bad `_REPO_URL` (§6). |
 | ERROR | `feedback API failed` | `/api/feedback` returned `500`. |
 | WARNING | `Skipping corrupt feedback line` | A malformed JSON line in the store; the read continues. |
 | WARNING | `Skipping non-object feedback line` | Valid JSON that is not an object; skipped so one bad line cannot hide every record. |
+| WARNING | `could not show the` | A notification could not be delivered (dead socket). The submission's own outcome is unaffected. |
 | INFO | `feedback honeypot filled` | A submission was silently dropped as automated (§4). |
 
 The degraded-mode warnings fire **once per process**. Their absence long after a restart proves

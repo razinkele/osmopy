@@ -23,6 +23,7 @@ from shiny.types import SilentException
 
 from osmose import __version__
 from osmose.feedback import (
+    VALID_TYPES,
     append_feedback,
     build_feedback_record,
     looks_like_email,
@@ -312,6 +313,7 @@ ACCEPT = "accept"  # store it, then look like success
 
 
 def _classify_and_consume(
+    feedback_type: str,
     msg: str,
     contact: str,
     honeypot: str,
@@ -336,9 +338,22 @@ def _classify_and_consume(
     The honeypot is checked LAST, after every other rejection. Checking it earlier turns the
     handler into a one-probe oracle: a bot submits the same malformed email twice, once with
     the hidden field filled and once without, and the two different answers name the trap
-    field. A honeypot a bot can identify is not a honeypot. So every rejection reachable
-    without the honeypot must be decided BEFORE the honeypot is consulted, and the honeypot's
-    own outcome must be indistinguishable from plain success.
+    field. A honeypot a bot can identify is not a honeypot.
+
+    The rule, stated generally because the narrow version of it let the oracle back in: **EVERY
+    validation capable of producing a distinguishable response must run BEFORE the honeypot
+    check** — not merely the rejections someone once enumerated. ``feedback_type`` is the case
+    that proved it. It was validated only inside ``build_feedback_record``, which runs in
+    ``_store_submission``, i.e. AFTER the DROP branch has already returned. So a crafted type
+    with an empty honeypot produced the save-failure copy with the modal still open, while the
+    same crafted type with the honeypot filled produced the success copy and dismissed the
+    modal — neither storing anything. That difference names the trap field just as precisely as
+    the email probe this ordering was introduced to close. Validating the type here, ahead of
+    the honeypot, is what actually closes it; ``build_feedback_record``'s own guard stays as
+    defence in depth.
+
+    When adding a field, ask what response an invalid value produces and where that decision is
+    made. If the answer is "after the honeypot", it is an oracle.
 
     It also sits after the rate limiter so bot traffic is metered like anyone else's. Putting
     it first left honeypot requests unbounded, and the "it protects the shared bucket"
@@ -349,6 +364,10 @@ def _classify_and_consume(
     it (that same exception also signals an empty message and an unknown type, so a broad
     catch would thank the user for a record that was never stored).
     """
+    if feedback_type not in VALID_TYPES:
+        # Unreachable from the shipped radio buttons, so this is a crafted client. It must
+        # still be decided HERE rather than in build_feedback_record — see the docstring.
+        return REJECT, "Choose a feedback type before sending."
     if not msg:
         return REJECT, "Enter a message before sending."
     if contact and not looks_like_email(contact):
@@ -469,12 +488,31 @@ async def _finish_success(session) -> None:
         )
 
 
+def _notify(message: str, *, type: str, duration: int) -> None:
+    """Show one notification, best-effort. Never raises.
+
+    ``_finish_success`` already guards its own ``notification_show`` because a transport
+    failure there must not crash the effect after a record has been written. The two refusal
+    notifications in ``_submit`` had no such guard, so a dead socket on THOSE paths raised
+    straight out of the reactive effect -- an inconsistency with no reason behind it. A user
+    who cannot be told why their submission was refused is no worse off for the log line, and
+    the session stays alive.
+    """
+    try:
+        ui.notification_show(message, type=type, duration=duration)
+    except Exception:  # noqa: BLE001 — a dead socket must not kill the submit effect
+        _log.warning("feedback: could not show the %r notification", type, exc_info=True)
+
+
 def feedback_server(input, output, session, state):
     """Wire the submit handler. `output`/`state` unused; kept for call-signature uniformity."""
 
     @reactive.effect
     @reactive.event(input.feedback_submit)
     async def _submit():
+        # Read the type HERE, not at the _store_submission call below: it is validated inside
+        # _classify_and_consume, which must decide it before the honeypot branch returns.
+        ftype = _safe_text(input, "feedback_type")
         msg = _safe_text(input, "feedback_message")
         contact = _safe_text(input, "feedback_contact")
         honeypot = _read_honeypot(input)
@@ -482,11 +520,11 @@ def feedback_server(input, output, session, state):
         # _LIMITER is read by global name at call time (a module-attribute read), so a test
         # can monkeypatch it without this closure having captured the old one.
         outcome, message = _classify_and_consume(
-            msg, contact, honeypot, _LIMITER, _client_key(session), time.time()
+            ftype, msg, contact, honeypot, _LIMITER, _client_key(session), time.time()
         )
 
         if outcome == REJECT:
-            ui.notification_show(message, type="warning", duration=6)
+            _notify(message, type="warning", duration=6)
             return
 
         if outcome == DROP:
@@ -495,7 +533,7 @@ def feedback_server(input, output, session, state):
             return
 
         error = _store_submission(
-            type=_safe_text(input, "feedback_type"),
+            type=ftype,
             msg=msg,
             contact=contact,
             honeypot=honeypot,
@@ -503,7 +541,7 @@ def feedback_server(input, output, session, state):
             nav_tab=_safe_nav(input),
         )
         if error is not None:
-            ui.notification_show(error, type="error", duration=8)
+            _notify(error, type="error", duration=8)
             return
 
         await _finish_success(session)

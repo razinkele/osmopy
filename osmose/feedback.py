@@ -25,7 +25,11 @@ CONTACTS_FILE = _PROJECT_ROOT / "data" / "feedback" / "contacts.jsonl"  # defaul
 _FILE_ENV = "OSMOSE_FEEDBACK_FILE"
 _CONTACTS_ENV = "OSMOSE_CONTACTS_FILE"
 _TOKEN_ENV = "OSMOSE_FEEDBACK_TOKEN"
-_VALID_TYPES = {"bug", "suggestion", "other"}
+VALID_TYPES = frozenset({"bug", "suggestion", "other"})
+"""The accepted feedback types. PUBLIC because two layers validate against it: this
+module's ``build_feedback_record`` and, earlier in the request, the submit handler's
+``_classify_and_consume`` -- which must reject an unknown type BEFORE its honeypot check
+or the differing responses name the trap field. One constant so the two cannot drift."""
 _MAX_MESSAGE = 5000
 MAX_CONTACT = 254  # RFC 5321 practical maximum for an address
 MAX_STORE_BYTES = 50 * 1024 * 1024
@@ -72,7 +76,7 @@ def build_feedback_record(
     """
     if (honeypot or "").strip():
         raise ValueError("honeypot field was filled — rejecting as automated submission")
-    if type not in _VALID_TYPES:
+    if type not in VALID_TYPES:
         raise ValueError(f"Unknown feedback type: {type!r}")
     msg = (message or "").strip()
     if not msg:

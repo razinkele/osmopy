@@ -72,12 +72,19 @@ def test_key_table_bounded_under_churn():
     assert len(rl._hits) <= MAX_KEYS
 
 
-def test_burst_same_timestamp_exceeds_limit():
-    """Attack: N distinct keys all at the same timestamp must not exceed MAX_KEYS."""
+def test_burst_same_timestamp_stays_within_max_keys():
+    """Attack: N distinct keys all at the same timestamp must not grow the table past MAX_KEYS.
+
+    The old name said "exceeds limit", which is the opposite of what is asserted -- the point
+    is that the table does NOT exceed it. The old comment also credited "proper eviction" for
+    the bound, which is the design this module explicitly rejects nine lines below in
+    ``test_attacker_self_reset_via_eviction``: evicting would let an attacker who has exhausted
+    their own limit flood the table to evict their own record and reset it. The bound comes
+    from REFUSING NEW KEYS once the table is full, never from eviction.
+    """
     rl = RateLimiter(max_per_window=1, window_s=60)
     for i in range(5 * MAX_KEYS):
         rl.allow(f"ip{i}", now=0.0)
-    # Without proper eviction, _hits grows unbounded; with it, capped at MAX_KEYS
     assert len(rl._hits) <= MAX_KEYS
 
 

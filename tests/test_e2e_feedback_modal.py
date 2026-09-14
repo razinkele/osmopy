@@ -27,74 +27,45 @@ Run explicitly:
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
-pytestmark = pytest.mark.e2e
-
-_REPO = Path(__file__).resolve().parent.parent
-# A DEDICATED store file (never the real feedback.jsonl), set at import time so the
-# create_app_fixture subprocess inherits it at launch.
-#
-# setdefault, NOT assignment: tests/test_e2e_feedback.py sets this same variable at ITS import
-# time, and pytest imports every collected module before running anything. A plain assignment
-# here would win and silently redirect that test's app to a store it never reads, failing it.
-# Verified the hard way. With setdefault the two modules share one store file when both are
-# collected, which is safe because each test unlinks it first -- safe SEQUENTIALLY; do not run
-# these two files concurrently across xdist workers.
-os.environ.setdefault(
-    "OSMOSE_FEEDBACK_FILE",
-    str(_REPO / "data" / "feedback" / "_e2e_feedback_modal.jsonl"),
+from tests._e2e_feedback_env import (
+    LOAD_TIMEOUT as _LOAD_TIMEOUT,
+)
+from tests._e2e_feedback_env import (
+    dismiss_modal as _dismiss_modal,
+)
+from tests._e2e_feedback_env import (
+    feedback_env_fixture,
+    store_fixture,
 )
 
-app = create_app_fixture("../app.py")
+pytestmark = pytest.mark.e2e
 
-_LOAD_TIMEOUT = 15_000
+# Dedicated stores for this module. The old import-time `os.environ.setdefault` dance existed
+# only because the sibling module assigned the same variable at ITS import time and collection
+# order decided the winner; a module-scoped fixture gives each module its own pair and removes
+# the race entirely. It also sets OSMOSE_CONTACTS_FILE, which neither module used to set --
+# the submissions below fill in an email address.
+feedback_env = feedback_env_fixture("e2e_feedback_modal")
+e2e_store = store_fixture()
+
+_app = create_app_fixture("../app.py")
 
 
-@pytest.fixture
-def e2e_store():
-    """The store the app subprocess actually writes to, resolved AFTER every module import.
+@pytest.fixture(scope="module")
+def app(feedback_env, _app):
+    """The app subprocess, launched only AFTER feedback_env has set the store variables.
 
-    Deliberately NOT a module-level constant. setdefault above runs at import time, but the
-    sibling module's plain assignment may run after it (collection order decides), and the app
-    subprocess launches later still with whatever env survived. A constant captured at import
-    could therefore name a file the app never writes -- and then the "nothing was stored"
-    assertion below would pass because the file does not exist, not because the honeypot
-    worked. Reading the env here, post-import, is the same value the app inherited.
+    Explicit dependency, not autouse ordering: the subprocess inherits the environment at
+    launch, so a fixture running afterwards would be useless and the failure -- records going
+    to the wrong file, or a "nothing was stored" assertion passing vacuously -- would be
+    silent.
     """
-    p = Path(os.environ["OSMOSE_FEEDBACK_FILE"])
-    p.unlink(missing_ok=True)
-    yield p
-    p.unlink(missing_ok=True)
-
-
-def _dismiss_modal(page: Page, selector: str) -> None:
-    """Close a Bootstrap modal, retrying through its fade-in.
-
-    Bootstrap ignores ``hide()`` while a show transition is still running, and
-    ``to_be_visible`` is satisfied the instant the element becomes visible — which is DURING
-    that transition. A dismiss click landing in that window is swallowed, the modal stays
-    open forever, and its backdrop then intercepts every later click. Measured at 2 failures
-    in 6 runs before this retry was added. A fixed sleep would paper over it; retrying until
-    the modal is actually gone does not.
-    """
-    modal = page.locator(selector)
-    for _ in range(10):
-        if not modal.is_visible():
-            return
-        modal.locator("[data-bs-dismiss='modal']").click()
-        try:
-            expect(modal).not_to_be_visible(timeout=1_500)
-            return
-        except AssertionError:
-            continue
-    expect(modal).not_to_be_visible(timeout=_LOAD_TIMEOUT)  # final attempt, real failure text
+    return _app
 
 
 def _open_feedback_modal(page: Page, app: ShinyAppProc) -> None:

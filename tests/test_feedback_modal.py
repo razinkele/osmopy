@@ -386,12 +386,18 @@ def _limiter(*, exhausted: bool) -> RateLimiter:
     return rl
 
 
-# label -> (message, contact, limiter already exhausted)
+# label -> (feedback type, message, contact, limiter already exhausted)
 _ORACLE_PROBES = {
-    "empty_message": ("", "", False),
-    "malformed_email": ("a real bug report", "not-an-email", False),
-    "rate_limited": ("a real bug report", "", True),
-    "everything_valid": ("a real bug report", "me@example.org", False),
+    "empty_message": ("bug", "", "", False),
+    "malformed_email": ("bug", "a real bug report", "not-an-email", False),
+    "rate_limited": ("bug", "a real bug report", "", True),
+    "everything_valid": ("bug", "a real bug report", "me@example.org", False),
+    # A crafted client can send any type. This one reopened the oracle once already: type
+    # was validated only inside build_feedback_record, which runs AFTER the DROP branch
+    # returns, so honeypot-empty gave the save-failure copy with the modal open while
+    # honeypot-filled gave success and dismissed it.
+    "unknown_type": ("bogus", "a real bug report", "", False),
+    "empty_type": ("", "a real bug report", "", False),
 }
 
 
@@ -410,10 +416,12 @@ def test_honeypot_is_not_a_one_probe_oracle(label):
     — so their indistinguishability cannot be judged here and is gated instead by
     ``test_accept_and_drop_are_indistinguishable_to_the_client``, which drives the real handler.
     """
-    msg, contact, exhausted = _ORACLE_PROBES[label]
-    clean = fm._classify_and_consume(msg, contact, "", _limiter(exhausted=exhausted), "ip1", 0.0)
+    ftype, msg, contact, exhausted = _ORACLE_PROBES[label]
+    clean = fm._classify_and_consume(
+        ftype, msg, contact, "", _limiter(exhausted=exhausted), "ip1", 0.0
+    )
     baited = fm._classify_and_consume(
-        msg, contact, "http://spam.example", _limiter(exhausted=exhausted), "ip1", 0.0
+        ftype, msg, contact, "http://spam.example", _limiter(exhausted=exhausted), "ip1", 0.0
     )
 
     assert clean[1] == baited[1], (
@@ -442,8 +450,8 @@ def test_honeypot_submissions_are_rate_limited_like_everyone_else():
     who simply leaves the hidden field empty to drain it anyway.
     """
     rl = RateLimiter(max_per_window=1, window_s=3600)
-    first = fm._classify_and_consume("bait", "", "http://spam.example", rl, "ip1", 0.0)
-    second = fm._classify_and_consume("bait", "", "http://spam.example", rl, "ip1", 0.0)
+    first = fm._classify_and_consume("bug", "bait", "", "http://spam.example", rl, "ip1", 0.0)
+    second = fm._classify_and_consume("bug", "bait", "", "http://spam.example", rl, "ip1", 0.0)
     assert first[0] == fm.DROP
     assert second[0] == fm.REJECT, "a second honeypot hit was not rate-limited"
 
@@ -663,7 +671,7 @@ def _capture_submit(monkeypatch, input_obj, session):
     return captured["fn"]
 
 
-def _observe_submission(monkeypatch, *, honeypot: str) -> dict:
+def _observe_submission(monkeypatch, *, honeypot: str, ftype: str = "bug") -> dict:
     """Run one real submission and return everything the client could observe."""
     notifications: list[tuple] = []
     clears: list[tuple] = []
@@ -683,7 +691,7 @@ def _observe_submission(monkeypatch, *, honeypot: str) -> dict:
         _FakeInput(
             feedback_message="a real bug report",
             feedback_contact="me@example.org",
-            feedback_type="bug",
+            feedback_type=ftype,
             feedback_website=honeypot,
         ),
         session,
@@ -729,6 +737,74 @@ def test_accept_and_drop_are_indistinguishable_to_the_client(monkeypatch):
     assert accept["custom_messages"] == [("hide-modal", {"id": fm.MODAL_ID})], (
         f"unexpected dismiss payload: {accept['custom_messages']!r}"
     )
+
+
+@pytest.mark.parametrize("ftype", ["bogus", "", "BUG"], ids=["unknown", "empty", "wrong-case"])
+def test_a_crafted_feedback_type_is_not_a_honeypot_oracle(monkeypatch, ftype):
+    """The oracle that came back through an unvalidated field.
+
+    ``feedback_type`` is client-settable and was validated only inside
+    ``build_feedback_record``, which runs in ``_store_submission`` -- AFTER the DROP branch has
+    returned. So with a crafted type, honeypot-EMPTY produced the save-failure notification
+    with the modal still open, while honeypot-FILLED produced the success notification and
+    dismissed the modal. Neither stored anything; the difference named the trap field exactly
+    as the email probe once did.
+
+    This must be asserted at the HANDLER, not on ``_classify_and_consume``: at that level an
+    unvalidated bad type returns ACCEPT/DROP, which the unit oracle test reads as correctly
+    indistinguishable. The divergence only becomes observable once the ACCEPT path reaches the
+    failing store call. A unit-level probe alone would pass with the bug present.
+    """
+    clean = _observe_submission(monkeypatch, honeypot="", ftype=ftype)
+    baited = _observe_submission(monkeypatch, honeypot="http://spam.example", ftype=ftype)
+
+    assert clean["notifications"] == baited["notifications"], (
+        f"type={ftype!r}: the honeypot is distinguishable by notification — "
+        f"clean={clean['notifications']!r} baited={baited['notifications']!r}"
+    )
+    assert clean["clears"] == baited["clears"], (
+        f"type={ftype!r}: the honeypot is distinguishable by which fields get cleared — "
+        f"clean={clean['clears']!r} baited={baited['clears']!r}"
+    )
+    assert clean["custom_messages"] == baited["custom_messages"], (
+        f"type={ftype!r}: the honeypot is distinguishable by modal dismissal — "
+        f"clean={clean['custom_messages']!r} baited={baited['custom_messages']!r}"
+    )
+    assert clean["stored"] == [] and baited["stored"] == [], (
+        f"type={ftype!r}: an invalid type was stored — clean={clean['stored']!r} "
+        f"baited={baited['stored']!r}"
+    )
+
+
+def test_a_refusal_notification_failure_does_not_kill_the_effect(monkeypatch):
+    """A dead socket on a REFUSAL path must not raise out of the reactive effect.
+
+    ``_finish_success`` has always guarded its own ``notification_show`` -- a transport failure
+    after a record is written must not crash the session. The two refusal notifications in
+    ``_submit`` had no such guard, for no reason anyone recorded: the same dead socket that is
+    survivable one branch later was fatal here. Both now go through ``_notify``.
+
+    Driven through the real handler with an empty message, so it is the shipped REJECT path that
+    is exercised and not ``_notify`` in isolation.
+    """
+    boom = []
+
+    def _dead_socket(message, **kw):
+        boom.append(message)
+        raise RuntimeError("websocket is closed")
+
+    monkeypatch.setattr(fm.ui, "notification_show", _dead_socket)
+    monkeypatch.setattr(fm, "_LIMITER", RateLimiter(max_per_window=5, window_s=3600))
+    session = _FakeSession()
+    submit = _capture_submit(
+        monkeypatch,
+        _FakeInput(feedback_message="", feedback_type="bug", feedback_website=""),
+        session,
+    )
+
+    asyncio.run(submit())  # must not raise
+
+    assert boom, "the refusal notification was never attempted — the test proved nothing"
 
 
 # ── _finish_success: steps must fail INDEPENDENTLY ───────────────────────────────
