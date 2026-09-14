@@ -37,3 +37,47 @@ def test_burst_same_timestamp_exceeds_limit():
         rl.allow(f"ip{i}", now=0.0)
     # Without proper eviction, _hits grows unbounded; with it, capped at MAX_KEYS
     assert len(rl._hits) <= 10_000
+
+
+def test_attacker_self_reset_via_eviction():
+    """Attack: attacker exhausts limit, floods table to evict their own key and reset it.
+
+    Eviction-based designs allow this: attacker hits 3/3 requests (refused on 4th),
+    then floods with ~10,005 throwaway keys at the same timestamp. The attacker's own
+    key becomes the oldest-by-hit (all throwaway keys are fresh), gets evicted first,
+    and the next attacker request succeeds. Eviction lets the attacker switch limits off.
+
+    Correct design: never evict. Only refuse new keys when table is full.
+    With refusal, the attacker's key remains refused and stays in the table until expired.
+    """
+    rl = RateLimiter(max_per_window=3, window_s=60)
+    # Attacker exhausts their limit
+    assert rl.allow("attacker", now=0.0) is True
+    assert rl.allow("attacker", now=0.0) is True
+    assert rl.allow("attacker", now=0.0) is True
+    # Fourth request from attacker is refused
+    assert rl.allow("attacker", now=0.0) is False
+    # Attacker floods with throwaway keys to fill the table
+    for i in range(12_000):
+        rl.allow(f"throwaway_{i}", now=0.0)
+    # With eviction, attacker's key would be evicted (oldest hit). With refusal only,
+    # the attacker key stays refused. Assert it is still refused.
+    assert rl.allow("attacker", now=0.0) is False
+
+
+def test_existing_key_works_when_table_full():
+    """Fail-closed: only refuse NEW keys, not existing ones.
+
+    An established requester who is still within the window should continue to work
+    even when the table is full and new first-time requesters are refused.
+    """
+    rl = RateLimiter(max_per_window=2, window_s=60)
+    # Existing user makes 1 request (stays within budget)
+    assert rl.allow("existing_user", now=0.0) is True
+    # Fill the table with other keys
+    for i in range(12_000):
+        rl.allow(f"new_ip_{i}", now=0.0)
+    # Existing user should still be able to make another request (second of 2)
+    assert rl.allow("existing_user", now=0.0) is True
+    # But a new key should be refused (table full)
+    assert rl.allow("brand_new_ip", now=0.0) is False
