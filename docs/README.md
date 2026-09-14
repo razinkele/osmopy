@@ -28,6 +28,7 @@ A map of what's in `docs/`. For installation and a feature overview, start at th
 | Doc | What it covers |
 |---|---|
 | [parity-roadmap.md](parity-roadmap.md) | Python-vs-Java port status (complete across all phases) |
+| [feedback-runbook.md](feedback-runbook.md) | Operating the in-app feedback system — env vars, the review page, rate-limit degraded modes, store rotation, PII handling |
 | [plans/](plans/) | Implementation plans (historical and active) |
 | [perf/](perf/) | Performance profiling notes |
 | [osmose-master-java-fixes.patch](osmose-master-java-fixes.patch) | Upstream Java-side fix patch |
