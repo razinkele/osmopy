@@ -81,3 +81,55 @@ def test_existing_key_works_when_table_full():
     assert rl.allow("existing_user", now=0.0) is True
     # But a new key should be refused (table full)
     assert rl.allow("brand_new_ip", now=0.0) is False
+
+
+def test_backward_clock_step_reenables_sweep():
+    """FIX 1: Backward wall-clock step must not stall the sweep permanently.
+
+    If now moves backward (NTP step, VM restore, manual clock change), the sweep
+    gate can stay false forever. This test verifies the clock re-anchors.
+    """
+    rl = RateLimiter(max_per_window=1, window_s=60)
+    for i in range(9_950):
+        rl.allow(f"ip{i}", now=0.0)
+    assert len(rl._hits) == 9_950
+    rl.allow("forward_ip", now=1_000_000.0)
+    for i in range(5_000):
+        rl.allow(f"backward_ip_{i}", now=999_000.0)
+    assert len(rl._hits) <= 10_000
+
+
+def test_at_capacity_property():
+    """FIX 2b: at_capacity property exposes table fullness for caller."""
+    rl = RateLimiter(max_per_window=1, window_s=60)
+    assert rl.at_capacity is False
+    for i in range(10_000):
+        rl.allow(f"ip{i}", now=0.0)
+    assert rl.at_capacity is True
+    assert len(rl._hits) == 10_000
+
+
+def test_saturation_warning_logged_once():
+    """FIX 2c: WARNING logged exactly once when table saturates."""
+    rl = RateLimiter(max_per_window=1, window_s=60)
+    for i in range(10_000):
+        rl.allow(f"ip{i}", now=0.0)
+    assert rl._logged_saturation is False
+    rl.allow("new_key_1", now=0.0)
+    assert rl._logged_saturation is True
+    for i in range(10):
+        rl.allow(f"new_key_retry_{i}", now=0.0)
+    assert rl._logged_saturation is True
+
+
+def test_sweep_reclaims_expired_keys():
+    """FIX 3: Sweep must actually reclaim expired keys, not be a no-op.
+
+    This test will fail if _sweep_stale is replaced with pass.
+    """
+    rl = RateLimiter(max_per_window=1, window_s=60)
+    for i in range(5_000):
+        rl.allow(f"ip{i}", now=0.0)
+    assert len(rl._hits) == 5_000
+    rl.allow("later", now=1_000.0)
+    assert len(rl._hits) == 1

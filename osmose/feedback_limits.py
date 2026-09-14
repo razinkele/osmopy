@@ -4,13 +4,21 @@ Deliberately in-memory: a single-worker Shiny deploy is the documented target, a
 persistent limiter would be a second consistency problem for no benefit. If the app is ever
 run multi-worker, this becomes per-worker and the cap must be divided accordingly — stated
 here so the limitation is visible rather than discovered.
+
+Thread safety: `allow()` is an unsynchronised read-modify-write. Concurrent calls can
+overshooting the cap; concurrent sweeps can raise KeyError. The target is a single-worker
+Shiny deploy whose event loop has no await inside allow() and cannot interleave.
 """
 
 from __future__ import annotations
 
+import logging
+
 from collections import defaultdict
 
 MAX_KEYS = 10_000
+
+_logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
@@ -20,14 +28,33 @@ class RateLimiter:
         self._hits: dict[str, list[float]] = defaultdict(list)
         self._last_sweep = float("-inf")
         self._sweep_interval = max(1.0, window_s / 10)
+        self._logged_saturation = False
+
+    @property
+    def at_capacity(self) -> bool:
+        """True if the key table is at MAX_KEYS capacity.
+
+        A caller can distinguish "you've hit your limit" from "the server is full"
+        and word an error message accordingly. Refusals at capacity are fail-closed:
+        new first-time keys are refused, but established users continue.
+        """
+        return len(self._hits) >= MAX_KEYS
 
     def allow(self, key: str, now: float) -> bool:
         cutoff = now - self.window_s
+        if now < self._last_sweep:
+            self._last_sweep = now
         if now - self._last_sweep >= self._sweep_interval:
             self._sweep_stale(cutoff)
             self._last_sweep = now
         hits = [t for t in self._hits.get(key, []) if t >= cutoff]
         if key not in self._hits and len(self._hits) >= MAX_KEYS:
+            if not self._logged_saturation:
+                _logger.warning(
+                    "Rate limiter table at capacity (%d keys); refusing new keys",
+                    MAX_KEYS,
+                )
+                self._logged_saturation = True
             return False
         if len(hits) >= self.max_per_window:
             self._hits[key] = hits
