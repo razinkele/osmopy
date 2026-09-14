@@ -131,8 +131,17 @@ order is security-relevant and documented as such in that function.
 | `That email address doesn't look right — correct it or leave it blank.` | Email fails the shape check. No slot consumed. |
 | `You've sent several already — please wait a little before sending more.` | Rate limited, and the limiter can prove it is this client's own cap. |
 | `We couldn't accept this right now — please try again shortly.` | Rate limited, cause **ambiguous** — see below. |
-| `Couldn't save feedback — try again.` | The store write failed. See §6. |
+| `Couldn't save feedback — try again.` | The store write failed in a way that **might** be transient. Retrying is reasonable. |
+| `The server can't store feedback right now — this has been logged.` | The store write failed **terminally** — full store, or an unwritable path. Retrying can never work; an operator must act. See §6 and §7. |
 | `Thanks — feedback saved.` | Success — **and also the honeypot path.** |
+
+The two save-failure messages are chosen by `_is_terminal_save_failure`
+(`ui/components/feedback_modal.py`): a `RuntimeError` (the store-full guard) or an `OSError` with
+`EACCES`/`EPERM`/`EROFS`/`ENOSPC`/`EDQUOT` is terminal; anything else keeps the retry invitation,
+because "try again" is the safer answer when the cause is genuinely unknown. **Neither message
+says which condition occurred** — both terminal causes share one string. That is the same rule that
+governs the HTTP routes (§6): detail goes to the log, never to the caller. A user quoting the
+terminal message is telling you the server needs attention, not that they did anything wrong.
 
 ### The vague one is deliberate
 
@@ -191,20 +200,25 @@ nginx.
 | 1 | `X-Forwarded-For` present, `OSMOSE_TRUSTED_PROXY` **unset** | proxy's address | warns once |
 | 2 | `OSMOSE_TRUSTED_PROXY` set, but XFF has no usable rightmost entry (trailing comma) | proxy's address | warns once |
 | 3 | No client address available at all | `_no-client-address_` | warns once |
-| 4 | **Proxy does not send `X-Forwarded-For` at all** | proxy's address | **nothing** |
+| 4 | **Proxy does not send `X-Forwarded-For` at all** | proxy's address | warns once (**new, 2026-09-14**) |
 
-Case 4 measured: with no XFF header and `client.host = 127.0.0.1`, `_client_key` returns
-`'127.0.0.1'` and logs **nothing**. The `if xff:` block is skipped entirely, so none of the three
-warnings can fire. The code cannot distinguish "a genuine direct connection from localhost" from
-"the proxy is on localhost and is not forwarding XFF", so it does not try.
+Case 4 was **completely silent until 2026-09-14**, and it is the one that matches a default nginx
+deployment. Measured before the fix: no XFF header, `client.host = 127.0.0.1`, `_client_key`
+returned `'127.0.0.1'` for every session and logged nothing at all — the whole `if xff:` block is
+skipped, so none of the other three warnings can fire.
 
-> **If rate limiting appears to be global and none of the three warnings are in the log, that is
-> case 4: check that nginx sets `X-Forwarded-For`, then set `OSMOSE_TRUSTED_PROXY`.** You need
-> both. Setting the variable without the header changes nothing; sending the header without the
-> variable produces warning 1.
+It now warns once, on a heuristic: no XFF **and** `client.host` is loopback or RFC1918. The key is
+deliberately unchanged — a shared bucket is the correct behaviour when no client address is
+available; the silence was the defect. Because it is a heuristic it can be a false positive on a
+genuine direct connection from localhost, which the warning says in its own text.
 
-The docstring at `ui/components/feedback_modal.py:157-158` says there are three such paths. There
-are four; the fourth is the one with no warning attached.
+> The heuristic is loopback + RFC1918 (`10/8`, `172.16/12`, `192.168/16`) only — **not**
+> `ipaddress.is_private`, which is also True for the RFC5737 documentation ranges
+> (`198.51.100.0/24`, `203.0.113.0/24`) and would warn about healthy direct deployments.
+
+**You need the header *and* the variable.** Setting `OSMOSE_TRUSTED_PROXY` without nginx sending
+`X-Forwarded-For` leaves you in case 4; sending the header without the variable is case 1. If any
+of these warnings appears, per-client rate limiting is not in effect.
 
 The three `_warned_*` flags (`ui/components/feedback_modal.py:55-57`) are **process-lifetime and
 never re-armed**. Each fires at most once per process. After a restart, look at the log around the
@@ -263,10 +277,14 @@ you need detail, read the log.
 resubmit — producing a duplicate record plus an orphan `has_contact: true` with no contacts row.
 Instead it logs at ERROR. Grep for `contact address was LOST`; the line names the feedback id.
 
-**`contacts.jsonl` has no size cap and no file lock.** `save_contact`
-(`osmose/feedback.py:108-121`) does neither — only `append_feedback` checks `MAX_STORE_BYTES` and
-takes a `flock`. In practice the file is tiny (one short JSON line per reporter who left an
-address), but do not assume the §7 rotation guard protects it.
+**Both stores share one write path.** `append_feedback` and `save_contact` both go through
+`_append_json_line` (`osmose/feedback.py`), so both carry the same `MAX_STORE_BYTES` cap and the
+same exclusive `flock`. Until 2026-09-14 those protections lived only in `append_feedback`, which
+meant the public file had them and `contacts.jsonl` — the one holding email addresses — had
+neither; the asymmetry ran backwards. A full contacts store raises
+`contacts store is full (<n> bytes) — rotate <path>`, which `_store_submission` catches and logs
+as `contact address was LOST` **without failing the submission**, since the feedback record itself
+is already stored by then.
 
 **If every post-write step fails**, the user sees no confirmation at all and will probably
 resubmit. That case escalates to ERROR: `record written but EVERY post-write step failed`
@@ -282,11 +300,12 @@ file is at or over it:
 feedback store is full (<n> bytes) — rotate <path>
 ```
 
-That exception is caught by `_store_submission`, so what the **user** sees is
-`Couldn't save feedback — try again.` — **advice that cannot work.** Retrying will fail forever
-until an operator rotates. The `feedback store is full` text appears only in the server-side
-traceback under the `feedback save failed` ERROR. Treat `feedback save failed` in the log as
-actionable; the user-facing text will not tell you this is what happened.
+That exception is caught by `_store_submission`, which classifies it as **terminal**, so the user
+is shown `The server can't store feedback right now — this has been logged.` and is **not** invited
+to retry — retrying would fail forever until an operator rotates. (Before 2026-09-14 this case
+showed `Couldn't save feedback — try again.`, advice that could not work.) The
+`feedback store is full` text itself appears only in the server-side traceback under the
+`feedback save failed` ERROR, so the log is still where you find out which failure it was.
 
 Rotate with a plain rename. `append_feedback` opens in append mode and creates parent directories,
 so it recreates the file on the next submission; no restart is needed and there is no window where
@@ -392,9 +411,10 @@ Several messages contain em dashes, so these grep substrings deliberately stop b
 | WARNING | `X-Forwarded-For present but` | Degraded mode 1 — set `OSMOSE_TRUSTED_PROXY`. |
 | WARNING | `has no usable rightmost entry` | Degraded mode 2 — malformed XFF; all clients share one bucket. |
 | WARNING | `No client address available` | Degraded mode 3 — throttling is global. |
+| WARNING | `No X-Forwarded-For header and the connecting address` | Degraded mode 4 — the proxy is not forwarding XFF; throttling is global. Heuristic, so a genuine localhost connection can trip it. |
 | WARNING | `Rate limiter table at capacity` | Saturation. **Alert on presence, never on rate** (§5). |
 | ERROR | `feedback save failed` | Store write failed — permissions, or the 50 MiB cap (§7). Traceback names which. |
-| ERROR | `contact address was LOST` | Record stored, address not. Names the feedback id. |
+| ERROR | `contact address was LOST` | Record stored, address not. Names the feedback id. Includes the full-contacts-store case (`contacts store is full` in the traceback). |
 | ERROR | `EVERY post-write step failed` | User saw no confirmation; expect a duplicate submission. |
 | ERROR | `feedback review page failed` | Review page returned `500` — usually a bad `_REPO_URL` (§6). |
 | ERROR | `feedback API failed` | `/api/feedback` returned `500`. |

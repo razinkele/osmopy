@@ -12,6 +12,8 @@ handled by the JS block in ``app.py`` (registered next to ``toggle-spatial-pill`
 
 from __future__ import annotations
 
+import errno
+import ipaddress
 import os
 import time
 from collections.abc import Callable
@@ -50,11 +52,64 @@ _SHARED_KEY = "_no-client-address_"
 _SUCCESS_MSG = "Thanks — feedback saved."
 # tests/test_e2e_feedback.py waits for the substring "saved" in the notification. Keep it.
 
-# Warn-once flags for the three degraded rate-limiting modes. Silent degradation becomes a
+# Two save-failure messages, because "try again" is a lie for half the failures. A full store
+# (RuntimeError from osmose.feedback._append_json_line) and an unwritable path both persist until
+# an OPERATOR acts, so inviting a retry just produces a user hammering a button that cannot work.
+_RETRY_SAVE_MSG = "Couldn't save feedback — try again."
+_TERMINAL_SAVE_MSG = "The server can't store feedback right now — this has been logged."
+# Both terminal causes share ONE message on purpose. Task 5 measured a variant that let error
+# detail reach the caller and found the TOKEN in the response; the rule that came out of it is
+# that detail goes to the log and never to the user. Saying "the disk is full" or "permission
+# denied" would also hand an anonymous submitter a probe into the server's state. The log line
+# (`feedback save failed`, with traceback) is where an operator finds out which it was.
+_TERMINAL_SAVE_ERRNOS = frozenset(
+    {errno.EACCES, errno.EPERM, errno.EROFS, errno.ENOSPC, errno.EDQUOT}
+)
+
+
+def _is_terminal_save_failure(exc: BaseException) -> bool:
+    """Whether retrying this save could never succeed.
+
+    ``RuntimeError`` is the store-full guard. The errnos are the filesystem states only an
+    operator can clear: no permission, a read-only mount, a full disk, an exceeded quota.
+    Anything else is treated as possibly transient — when we genuinely do not know, "try again"
+    is the safer of the two wrong answers, because it does not strand a user whose next attempt
+    would have worked.
+    """
+    if isinstance(exc, RuntimeError):
+        return True
+    return isinstance(exc, OSError) and exc.errno in _TERMINAL_SAVE_ERRNOS
+
+
+# Warn-once flags for the four degraded rate-limiting modes. Silent degradation becomes a
 # mystery ticket; one warning becomes a config fix.
 _warned_untrusted_proxy = False
 _warned_no_client = False
 _warned_empty_xff = False
+_warned_proxy_no_xff = False
+
+# Loopback + RFC1918 only. Deliberately NOT ``ipaddress.is_private``, which is also True for the
+# RFC5737 documentation ranges (198.51.100.0/24, 203.0.113.0/24) and for 0.0.0.0/8, 169.254/16 and
+# 240.0.0.0/4. Those are not evidence of a reverse proxy, and 198.51.100.7 is the address the
+# existing "direct connection, no degradation" test uses — keying the heuristic off `is_private`
+# would warn about a healthy direct deployment. Verified 2026-09-14.
+_PROXY_HINT_NETS = tuple(
+    ipaddress.ip_network(n)
+    for n in ("127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fc00::/7")
+)
+
+
+def _looks_like_a_proxy_hop(host: str) -> bool:
+    """Whether ``host`` is the kind of address a reverse proxy connects from.
+
+    A heuristic, and only ever used to decide whether to LOG — never to choose the key. A
+    hostname or a unix-socket path is unparseable and answers False rather than guessing.
+    """
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(ip in net for net in _PROXY_HINT_NETS)
 
 
 def _honeypot_field():
@@ -154,10 +209,21 @@ def _client_key(session) -> str:
        fails closed on new keys when full, locking out every first-time submitter for an
        hour. A constant degrades to a single shared bucket instead: visible and bounded.
 
-    Every path that ends up NOT keying per client warns once. There are three of them, and the
-    third (2 reached from a trusted proxy) is the easiest to miss.
+    Every path that ends up NOT keying per client warns once. There are **four** of them, not
+    three — an earlier version of this docstring undercounted, and the missing one is the mode
+    that matches a default nginx deployment:
+
+    - a. XFF present, ``OSMOSE_TRUSTED_PROXY`` unset — the header is ignored.
+    - b. XFF present and trusted, but no usable rightmost entry.
+    - c. No client address at all — the shared constant key.
+    - d. **No XFF header at all**, while ``client.host`` is loopback/RFC1918. Path 2 returns the
+      PROXY's own address, so every user shares one bucket. This one is invisible to the other
+      three checks because the whole ``if xff:`` block is skipped, and it cannot be told apart
+      from a genuine direct connection from localhost — hence a heuristic warning, and only a
+      warning. The key is deliberately unchanged: a constant bucket is the correct behaviour
+      here; the SILENCE was the defect.
     """
-    global _warned_untrusted_proxy, _warned_no_client, _warned_empty_xff
+    global _warned_untrusted_proxy, _warned_no_client, _warned_empty_xff, _warned_proxy_no_xff
 
     conn = getattr(session, "http_conn", None)
     headers = getattr(conn, "headers", None)
@@ -200,6 +266,19 @@ def _client_key(session) -> str:
     client = getattr(conn, "client", None)
     host = getattr(client, "host", None) if client is not None else None
     if host:
+        # Degraded mode (d). Only reachable with NO X-Forwarded-For at all — cases (a) and (b)
+        # already warned above, and re-warning here would double-report one misconfiguration.
+        if not xff and not _warned_proxy_no_xff and _looks_like_a_proxy_hop(str(host)):
+            _warned_proxy_no_xff = True
+            _log.warning(
+                "No X-Forwarded-For header and the connecting address (%s) is loopback or "
+                "RFC1918 — that is almost always a reverse proxy which is not forwarding the "
+                "header, in which case this address is the PROXY and every client shares one "
+                "rate-limit bucket. Configure the proxy to send X-Forwarded-For and set %s. "
+                "(If this really is a direct local connection, ignore it.)",
+                host,
+                _TRUSTED_PROXY_ENV,
+            )
         return str(host)
 
     if not _warned_no_client:
@@ -293,6 +372,10 @@ def _store_submission(
 ) -> str | None:
     """Persist one submission. Returns an error message for the user, or None on success.
 
+    The error is one of TWO messages, chosen by ``_is_terminal_save_failure``: a retryable
+    failure invites a retry, a terminal one (full store, unwritable path) does not, because
+    retrying it can never work. Neither discloses which condition occurred.
+
     The address is stored under a SEPARATE guard on purpose. Once ``append_feedback`` has
     returned, the feedback IS stored; telling the user otherwise because the contacts
     side-store failed makes them resubmit, which yields a duplicate record plus an orphan
@@ -309,9 +392,9 @@ def _store_submission(
             honeypot=honeypot,  # provably "" here; keeps the library guard live, not inert
         )
         append_feedback(rec)
-    except Exception:  # noqa: BLE001 — never crash the session on a save failure
+    except Exception as exc:  # noqa: BLE001 — never crash the session on a save failure
         _log.error("feedback save failed", exc_info=True)
-        return "Couldn't save feedback — try again."
+        return _TERMINAL_SAVE_MSG if _is_terminal_save_failure(exc) else _RETRY_SAVE_MSG
 
     if contact:
         try:

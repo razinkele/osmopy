@@ -10,6 +10,7 @@ must never assert a cause the limiter cannot prove).
 from __future__ import annotations
 
 import asyncio
+import errno
 import logging
 import re
 from html.parser import HTMLParser
@@ -131,6 +132,7 @@ def _reset_warn_flags(monkeypatch):
     monkeypatch.setattr(fm, "_warned_untrusted_proxy", False, raising=False)
     monkeypatch.setattr(fm, "_warned_no_client", False, raising=False)
     monkeypatch.setattr(fm, "_warned_empty_xff", False, raising=False)
+    monkeypatch.setattr(fm, "_warned_proxy_no_xff", False, raising=False)
 
 
 def test_client_key_takes_the_rightmost_xff_entry_when_a_proxy_is_trusted(monkeypatch):
@@ -208,6 +210,78 @@ def test_client_key_uses_client_host_when_present(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger=logger_name):
         assert key_fn(_fake_session(host="198.51.100.7")) == "198.51.100.7"
     assert [r for r in caplog.records if r.name == logger_name] == []  # no degradation
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "10.0.0.1", "172.16.0.5", "192.168.1.1", "::1"])
+def test_client_key_warns_once_when_a_proxy_sends_no_xff_at_all(monkeypatch, caplog, host):
+    """The FOURTH degraded path, and the only one that used to be completely silent.
+
+    A reverse proxy that forwards no ``X-Forwarded-For`` skips the whole ``if xff:`` block, so
+    none of the other three warnings can fire -- yet ``client.host`` is then the PROXY's own
+    address and every client shares one bucket. Measured live on this code 2026-09-14: the key
+    came back ``'127.0.0.1'`` for two different sessions and nothing at all was logged.
+
+    The key must NOT change -- a constant bucket is the correct behaviour once the address is
+    unavailable. It is the silence that is the defect.
+    """
+    _reset_warn_flags(monkeypatch)
+    monkeypatch.delenv("OSMOSE_TRUSTED_PROXY", raising=False)
+    sess = _fake_session(host=host)  # no headers at all -> no XFF
+    logger_name = fm._log.name
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        assert fm._client_key(sess) == host, "the warning must not change the key"
+        assert fm._client_key(_fake_session(host=host)) == host
+    warnings = [r for r in caplog.records if r.name == logger_name and r.levelno >= logging.WARNING]
+    assert len(warnings) == 1, (
+        f"expected exactly one warn-once record for a silent proxy hop from {host!r}, "
+        f"got {len(warnings)}: {[r.getMessage() for r in warnings]}"
+    )
+    text = warnings[0].getMessage()
+    assert "X-Forwarded-For" in text, f"warning does not name the missing header: {text!r}"
+    assert "OSMOSE_TRUSTED_PROXY" in text, f"warning does not name the fix: {text!r}"
+
+
+@pytest.mark.parametrize("host", ["198.51.100.7", "8.8.8.8", "not-an-ip-address"])
+def test_client_key_stays_silent_for_a_genuine_direct_connection(monkeypatch, caplog, host):
+    """Positive control for the warning above: it must NOT fire on a real direct deployment.
+
+    ``198.51.100.7`` is the address the existing direct-connection test uses and, critically,
+    ``ipaddress.ip_address('198.51.100.7').is_private`` is **True** -- Python counts the RFC5737
+    documentation ranges as private. Keying the heuristic off ``is_private`` would therefore
+    warn about a perfectly healthy direct deployment (and redden that test). This asserts the
+    narrower loopback+RFC1918 rule that avoids it. An unparseable host must also stay silent
+    rather than guess.
+    """
+    _reset_warn_flags(monkeypatch)
+    monkeypatch.delenv("OSMOSE_TRUSTED_PROXY", raising=False)
+    logger_name = fm._log.name
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        assert fm._client_key(_fake_session(host=host)) == host
+    noise = [r.getMessage() for r in caplog.records if r.name == logger_name]
+    assert noise == [], f"a direct connection from {host!r} was reported as a proxy hop: {noise}"
+
+
+def test_client_key_does_not_double_warn_when_xff_was_already_reported(monkeypatch, caplog):
+    """Modes (a) and (d) must not both fire for one misconfiguration.
+
+    An untrusted XFF arriving from a loopback proxy satisfies the address heuristic too. Without
+    the ``not xff`` gate the operator gets two warnings describing the same problem, which reads
+    as two problems.
+    """
+    _reset_warn_flags(monkeypatch)
+    monkeypatch.delenv("OSMOSE_TRUSTED_PROXY", raising=False)
+    sess = _fake_session(headers={"x-forwarded-for": "1.2.3.4"}, host="127.0.0.1")
+    logger_name = fm._log.name
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        assert fm._client_key(sess) == "127.0.0.1"
+    warnings = [r for r in caplog.records if r.name == logger_name and r.levelno >= logging.WARNING]
+    assert len(warnings) == 1, (
+        f"one misconfiguration produced {len(warnings)} warnings: "
+        f"{[r.getMessage() for r in warnings]}"
+    )
+    assert "OSMOSE_TRUSTED_PROXY is unset" in warnings[0].getMessage(), (
+        f"the wrong one of the two warnings fired: {warnings[0].getMessage()!r}"
+    )
 
 
 def test_client_key_never_falls_back_to_the_session_id(monkeypatch, caplog):
@@ -421,6 +495,81 @@ def test_store_reports_failure_when_the_feedback_store_itself_fails(monkeypatch)
         nav_tab="run",
     )
     assert err is not None, "a failed append was reported to the user as success"
+
+
+def _store_with_append_raising(monkeypatch, exc: BaseException) -> str | None:
+    """Drive ``_store_submission`` with ``append_feedback`` raising ``exc``; return the copy."""
+
+    def _boom(rec):
+        raise exc
+
+    monkeypatch.setattr(fm, "append_feedback", _boom)
+    monkeypatch.setattr(fm, "save_contact", lambda *a, **k: None)
+    return fm._store_submission(
+        type="bug", msg="it broke", contact="", honeypot="", version="0.0.0", nav_tab="run"
+    )
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("feedback store is full (52428800 bytes) — rotate /x"),
+        PermissionError(errno.EACCES, "Permission denied"),
+        OSError(errno.EROFS, "Read-only file system"),
+        OSError(errno.ENOSPC, "No space left on device"),
+    ],
+    ids=["store-full", "eacces", "erofs", "enospc"],
+)
+def test_store_does_not_invite_a_retry_that_cannot_work(monkeypatch, exc):
+    """A full store and an unwritable path both persist until an OPERATOR acts.
+
+    "try again" is not merely unhelpful here, it is false: the user retries, it fails
+    identically, and they conclude the app is broken. Per DEPLOY.md:11 the production source
+    tree is read-only to the service user, so EACCES on every submission is the likely live
+    state of this deployment -- the case this copy is written for.
+    """
+    err = _store_with_append_raising(monkeypatch, exc)
+    assert err == fm._TERMINAL_SAVE_MSG, f"terminal failure {exc!r} produced retry copy: {err!r}"
+    assert "try again" not in err.lower(), f"terminal copy still invites a retry: {err!r}"
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [OSError("disk gremlins"), ValueError("something odd"), OSError(errno.EINTR, "Interrupted")],
+    ids=["errno-less-oserror", "valueerror", "eintr"],
+)
+def test_store_still_invites_a_retry_when_the_failure_may_be_transient(monkeypatch, exc):
+    """Positive control for the test above: the terminal copy must not swallow everything.
+
+    A classifier that answered "terminal" for every exception would pass the terminal test
+    while stranding users whose next attempt would have succeeded. An unknown failure keeps the
+    retry invitation.
+    """
+    err = _store_with_append_raising(monkeypatch, exc)
+    assert err == fm._RETRY_SAVE_MSG, (
+        f"possibly-transient {exc!r} was reported as terminal: {err!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("feedback store is full (52428800 bytes) — rotate /srv/osmose/feedback.jsonl"),
+        PermissionError(errno.EACCES, "Permission denied: '/opt/app/data/feedback/feedback.jsonl'"),
+    ],
+    ids=["store-full", "eacces"],
+)
+def test_save_failure_copy_never_leaks_the_cause_to_the_user(monkeypatch, exc):
+    """Task 5 measured error detail reaching the caller and found the TOKEN in the response.
+
+    The rule that came out of it applies here too: detail goes to the log, never to the user.
+    Both terminal causes must be indistinguishable in the UI -- otherwise an anonymous
+    submitter has a probe into the server's filesystem state.
+    """
+    err = _store_with_append_raising(monkeypatch, exc)
+    lowered = err.lower()
+    for leak in ("errno", "permission", "denied", "full", "space", "read-only", "rotate", "/"):
+        assert leak not in lowered, f"user-facing copy leaked {leak!r} from {exc!r}: {err!r}"
 
 
 # ── _finish_success ──────────────────────────────────────────────────────────────

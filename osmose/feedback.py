@@ -88,13 +88,22 @@ def build_feedback_record(
     }
 
 
-def append_feedback(record: dict, *, path: Path | None = None) -> None:
-    """Append one record as a JSON line (creates parent dir; POSIX flock; single-worker safe)."""
-    p = _resolve(path)
+def _append_json_line(p: Path, payload: dict, *, what: str) -> None:
+    """Append one JSON line under a size cap and an exclusive POSIX lock (creates parent dir).
+
+    Shared by BOTH stores deliberately. Until 2026-09-14 the size cap and the flock lived only
+    in ``append_feedback``, so ``feedback.jsonl`` — the file designed to be pasted into a public
+    issue — had both protections while ``contacts.jsonl``, the file holding email addresses, had
+    neither. The asymmetry ran backwards: the more sensitive store was the less protected one.
+    One implementation means the next change cannot reintroduce it on one side only.
+
+    Raises ``RuntimeError`` when the target is at or over ``MAX_STORE_BYTES``. Callers must
+    treat that as terminal — retrying cannot clear it, only rotation can.
+    """
     if p.is_file() and p.stat().st_size >= MAX_STORE_BYTES:
-        raise RuntimeError(f"feedback store is full ({p.stat().st_size} bytes) — rotate {p}")
+        raise RuntimeError(f"{what} is full ({p.stat().st_size} bytes) — rotate {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(record) + "\n"
+    line = json.dumps(payload) + "\n"
     with open(p, "a", encoding="utf-8") as f:
         try:
             import fcntl
@@ -105,20 +114,30 @@ def append_feedback(record: dict, *, path: Path | None = None) -> None:
         f.write(line)
 
 
+def append_feedback(record: dict, *, path: Path | None = None) -> None:
+    """Append one record as a JSON line (creates parent dir; POSIX flock; single-worker safe)."""
+    _append_json_line(_resolve(path), record, what="feedback store")
+
+
 def save_contact(feedback_id: str, email: str, *, path: Path | None = None) -> None:
     """Store an address OUT OF BAND, keyed by feedback id. Never goes in the main record.
 
     Lives in ``CONTACTS_FILE`` (default ``data/feedback/contacts.jsonl``, gitignored — it holds
     PII), a file structurally separate from the public-facing feedback record. A no-op for an
     empty address. Truncates to ``MAX_CONTACT``, same cap as the (now-removed) record field.
+
+    Goes through ``_append_json_line``, so it carries the SAME size cap and exclusive lock as
+    ``append_feedback`` — see that helper for why the two must not drift apart again. Raising
+    here is safe: the caller (``ui.components.feedback_modal._store_submission``) guards this
+    call separately, logs the address as lost, and still reports success, because by then the
+    feedback record itself is already stored.
     """
     email = (email or "").strip()[:MAX_CONTACT]
     if not email:
         return
-    p = _resolve_contacts(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "a", encoding="utf-8") as f:
-        f.write(json.dumps({"id": feedback_id, "email": email}) + "\n")
+    _append_json_line(
+        _resolve_contacts(path), {"id": feedback_id, "email": email}, what="contacts store"
+    )
 
 
 def lookup_contact(feedback_id: str, *, path: Path | None = None) -> str | None:

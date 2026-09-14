@@ -9,6 +9,16 @@ The production web app is a **systemd service** running Uvicorn directly:
 - **Public URL:** behind nginx at `/osmose/`.
 - **Supported runtime:** shiny **1.6.x** (`shiny>=1.6.3,<1.7`), shinyswatch ≥0.11, shinywidgets ≥0.7, cma ≥4.0, shiny_deckgl `v1.9.2`. To upgrade the shared env in place: `pip install --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7"` and reinstall `shiny_deckgl @v1.9.2`, then restart the service.
 - **Writable state:** the source tree lives under another user's home and is read-only to `shiny`, so calibration checkpoints must NOT use the package default (`<repo>/data/baltic/calibration_results`). The unit sets `StateDirectory=osmose/calibration_results` + `Environment=OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results` (systemd creates the dir, owned by `shiny`, on every start). Without this you'll see `RESULTS_DIR probe failed: [Errno 13] Permission denied` at startup and calibration checkpoint writes will fail.
+- **Writable state — the feedback store has the SAME problem** and, unlike the calibration one, has no override configured yet. `osmose/feedback.py` defaults both stores inside the read-only source tree (`<repo>/data/feedback/`), and `append_feedback` does `mkdir(parents=True)` + `open(..., "a")`, so every submission raises `PermissionError`, logs `feedback save failed`, and shows the user an error. Add to the unit, in the same shape as `OSMOSE_RESULTS_DIR`:
+
+  ```
+  StateDirectory=osmose/feedback
+  Environment=OSMOSE_FEEDBACK_FILE=/var/lib/osmose/feedback/feedback.jsonl
+  Environment=OSMOSE_CONTACTS_FILE=/var/lib/osmose/feedback/contacts.jsonl
+  ```
+
+  `contacts.jsonl` holds reporter **email addresses** — keep it off any path that gets copied or published. **This is INFERRED** from the read-only-source-tree fact above plus the code path, **not observed on the box**: submitting one piece of feedback after a restart and checking whether a record lands confirms it either way, in under a minute.
+- **Behind nginx, set `OSMOSE_TRUSTED_PROXY=1`** *and* make nginx send `X-Forwarded-For`. Without both, every user of the feedback form shares a single rate-limit bucket, because `client.host` is then nginx's own address rather than the client's. Since 2026-09-14 that case logs a warning naming this variable; before it, it was completely silent. Full treatment, including the other degraded modes and what to grep for: [`docs/feedback-runbook.md`](docs/feedback-runbook.md).
 
 ## Deploying a change — ALWAYS restart after pulling
 

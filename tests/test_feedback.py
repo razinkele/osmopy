@@ -190,3 +190,48 @@ def test_append_refuses_when_store_is_over_cap(tmp_path, monkeypatch):
     monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(p))
     with pytest.raises(RuntimeError, match="store is full"):
         append_feedback(build_feedback_record("bug", "m"))
+
+
+def test_contacts_store_refuses_when_over_cap(tmp_path, monkeypatch):
+    """The PII store gets the SAME size cap as the public one.
+
+    Until 2026-09-14 the cap and the flock lived only in ``append_feedback``, so the file
+    designed to be pasted into a public issue had both protections while ``contacts.jsonl`` --
+    the one holding email addresses -- had neither. The asymmetry ran backwards.
+    """
+    p = tmp_path / "c.jsonl"
+    p.write_bytes(b"x" * (MAX_STORE_BYTES + 1))
+    monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(p))
+    with pytest.raises(RuntimeError, match="contacts store is full"):
+        save_contact("some-id", "user@example.org")
+
+
+def test_contacts_store_under_cap_still_writes(tmp_path, monkeypatch):
+    """Positive control: the guard must refuse an OVER-cap file, not every existing file.
+
+    The file is pre-created and non-empty on purpose. A guard mutated to trip on any existing
+    file (or on any size >= 0) would still pass against a fresh path, so testing the empty case
+    alone would not constrain the comparison at all.
+    """
+    p = tmp_path / "c.jsonl"
+    p.write_text('{"id": "older", "email": "prior@example.org"}\n', encoding="utf-8")
+    monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(p))
+    save_contact("some-id", "user@example.org")
+    assert lookup_contact("some-id") == "user@example.org", "append to an under-cap file was lost"
+    assert lookup_contact("older") == "prior@example.org", "the pre-existing line was clobbered"
+
+
+def test_contacts_write_takes_an_exclusive_lock(tmp_path, monkeypatch):
+    """A concurrent append must not be able to interleave a half-written PII line."""
+    import fcntl
+
+    locks: list[int] = []
+    real_flock = fcntl.flock
+    monkeypatch.setattr(
+        fcntl, "flock", lambda fd, op: (locks.append(op), real_flock(fd, op))[1], raising=True
+    )
+    monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(tmp_path / "c.jsonl"))
+    save_contact("some-id", "user@example.org")
+    assert locks == [fcntl.LOCK_EX], (
+        f"save_contact did not take an exclusive lock (flock ops seen: {locks})"
+    )
