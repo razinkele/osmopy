@@ -827,6 +827,11 @@ _NAV_PAYLOADS = {
     "list": ["y" * 100_000] * 300,
     "dict": {"k" * 100_000: "v" * 100_000},
     "int": 10**4000,
+    # The caps count CHARACTERS; the store counts BYTES. json.dumps(ensure_ascii=True) writes an
+    # astral char as two \uXXXX escapes -- 12 bytes each -- so a capped 200-char nav_tab costs
+    # 2400 bytes, not 200. Every other payload here is ASCII, which hides that 12x entirely; the
+    # margin below MAX_STORE_BYTES is real but it is 12x smaller than an ASCII-only suite implies.
+    "astral": "\U0001f600" * 500_000,
 }
 
 
