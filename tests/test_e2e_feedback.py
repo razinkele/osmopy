@@ -1,5 +1,14 @@
 """End-to-end test for the feedback modal (submit → JSONL store).
 
+RATE-LIMIT BUDGET — read before adding a submitting test.
+``ui.components.feedback_modal._LIMITER`` is process-global and allows 5 submissions per hour
+per client key. Every session in one app subprocess keys on 127.0.0.1, so all tests in this
+FILE share ONE bucket of 5 (a separate subprocess, and so a separate bucket, per test module).
+This file spends **1 of 5**; ``tests/test_e2e_feedback_modal.py`` spends 3 of its own 5. Note
+that a honeypot submission consumes a slot too — it is rate-limited before it is dropped.
+A sixth submission here would fail with a rate-limit notice instead of "saved", for a reason
+nobody would guess from the failure. Adding one needs a plan, not just a new test.
+
 Run explicitly:
     .venv/bin/python -m pytest tests/test_e2e_feedback.py -v -m e2e
 """

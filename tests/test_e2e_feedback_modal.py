@@ -11,6 +11,16 @@ not be edited to — assert either of these, both of which fail SILENTLY:
 * a honeypot hit being INDISTINGUISHABLE from real success. Any difference a bot can observe
   (a different message, a modal left open) tells it which field is the trap.
 
+RATE-LIMIT BUDGET — read before adding a submitting test.
+``ui.components.feedback_modal._LIMITER`` is process-global and allows 5 submissions per hour
+per client key. Every session in one app subprocess keys on 127.0.0.1, so all tests in this
+FILE share ONE bucket of 5 (a separate subprocess, and so a separate bucket, per test module).
+This file spends **3 of 5**: one in the dismiss test, and two in the honeypot test — the
+honeypot hit consumes a slot as well, because it is rate-limited before it is dropped, and the
+positive control after it spends the third. A sixth submission would fail with a rate-limit
+notice instead of "saved", for a reason nobody would guess from the failure. Adding one needs a
+plan, not just a new test.
+
 Run explicitly:
     .venv/bin/python -m pytest tests/test_e2e_feedback_modal.py -v -m e2e
 """

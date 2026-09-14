@@ -49,10 +49,11 @@ _SHARED_KEY = "_no-client-address_"
 _SUCCESS_MSG = "Thanks — feedback saved."
 # tests/test_e2e_feedback.py waits for the substring "saved" in the notification. Keep it.
 
-# Warn-once flags for the two degraded rate-limiting modes. Silent degradation becomes a
+# Warn-once flags for the three degraded rate-limiting modes. Silent degradation becomes a
 # mystery ticket; one warning becomes a config fix.
 _warned_untrusted_proxy = False
 _warned_no_client = False
+_warned_empty_xff = False
 
 
 def _honeypot_field():
@@ -110,6 +111,19 @@ def feedback_modal():
     return _bs_modal(MODAL_ID, "Send feedback", body, size="lg")
 
 
+def _safe_text(input, name: str) -> str:
+    """Read a text input as a stripped string, tolerating one that is not registered yet.
+
+    Every input this handler reads goes through here, so the tolerance is uniform rather than
+    applied to whichever field someone remembered. A `SilentException` escaping a reactive
+    effect aborts the whole submission silently, which is the failure mode this prevents.
+    """
+    try:
+        return (getattr(input, name)() or "").strip()
+    except (SilentException, AttributeError):
+        return ""
+
+
 def _safe_nav(input) -> str:
     try:
         return input.main_nav() or ""
@@ -123,10 +137,7 @@ def _read_honeypot(input) -> str:
     Fails OPEN on purpose: treating an unreadable honeypot as empty risks letting one bot
     through, while the other direction silently discards a real user's bug report.
     """
-    try:
-        return (input.feedback_website() or "").strip()
-    except (SilentException, AttributeError):
-        return ""
+    return _safe_text(input, "feedback_website")
 
 
 def _client_key(session) -> str:
@@ -141,8 +152,11 @@ def _client_key(session) -> str:
        so that would let a shell loop fill the limiter's 10 000-key table — and the limiter
        fails closed on new keys when full, locking out every first-time submitter for an
        hour. A constant degrades to a single shared bucket instead: visible and bounded.
+
+    Every path that ends up NOT keying per client warns once. There are three of them, and the
+    third (2 reached from a trusted proxy) is the easiest to miss.
     """
-    global _warned_untrusted_proxy, _warned_no_client
+    global _warned_untrusted_proxy, _warned_no_client, _warned_empty_xff
 
     conn = getattr(session, "http_conn", None)
     headers = getattr(conn, "headers", None)
@@ -159,8 +173,20 @@ def _client_key(session) -> str:
             candidate = xff.split(",")[-1].strip()
             if candidate:
                 return candidate
-            # Trailing comma: no usable entry. Fall through rather than key on "", which
-            # would merge every client into one bucket.
+            # Trailing comma / empty entry: nothing usable here. Falling through does NOT
+            # recover per-client keying — behind this same trusted proxy, client.host is the
+            # PROXY's own address, so every user lands in one bucket just as an empty key
+            # would. It is chosen only because a real address is a saner key than "", and it
+            # warns because the result is a global throttle that nothing else would reveal.
+            if not _warned_empty_xff:
+                _warned_empty_xff = True
+                _log.warning(
+                    "%s is set but X-Forwarded-For (%r) has no usable rightmost entry — "
+                    "falling back to the connecting address, which behind that proxy is the "
+                    "PROXY, so all clients share one rate-limit bucket.",
+                    _TRUSTED_PROXY_ENV,
+                    xff,
+                )
         elif not _warned_untrusted_proxy:
             _warned_untrusted_proxy = True
             _log.warning(
@@ -200,18 +226,114 @@ def _rate_limit_notice(limiter: RateLimiter, key: str, now: float) -> str | None
     return "We couldn't accept this right now — please try again shortly."
 
 
+REJECT = "reject"  # show the message, store nothing
+DROP = "drop"  # look exactly like success, store nothing
+ACCEPT = "accept"  # store it, then look like success
+
+
+def _classify(
+    msg: str,
+    contact: str,
+    honeypot: str,
+    limiter: RateLimiter,
+    key: str,
+    now: float,
+) -> tuple[str, str]:
+    """Decide a submission's fate and the copy the user sees. Pure apart from the limiter.
+
+    **THE ORDER OF THESE CHECKS IS SECURITY-RELEVANT — do not reshuffle for tidiness.**
+
+    The honeypot is checked LAST, after every other rejection. Checking it earlier turns the
+    handler into a one-probe oracle: a bot submits the same malformed email twice, once with
+    the hidden field filled and once without, and the two different answers name the trap
+    field. A honeypot a bot can identify is not a honeypot. So every rejection reachable
+    without the honeypot must be decided BEFORE the honeypot is consulted, and the honeypot's
+    own outcome must be indistinguishable from plain success.
+
+    It also sits after the rate limiter so bot traffic is metered like anyone else's. Putting
+    it first left honeypot requests unbounded, and the "it protects the shared bucket"
+    argument does not hold: an attacker draining the bucket simply leaves the field empty.
+
+    R5 is unaffected — the honeypot is still checked explicitly here, before
+    ``build_feedback_record``, rather than by catching the ValueError that function raises for
+    it (that same exception also signals an empty message and an unknown type, so a broad
+    catch would thank the user for a record that was never stored).
+    """
+    if not msg:
+        return REJECT, "Enter a message before sending."
+    if contact and not looks_like_email(contact):
+        return REJECT, "That email address doesn't look right — correct it or leave it blank."
+    notice = _rate_limit_notice(limiter, key, now)
+    if notice is not None:
+        return REJECT, notice
+    if honeypot:
+        return DROP, _SUCCESS_MSG
+    return ACCEPT, _SUCCESS_MSG
+
+
+def _store_submission(
+    *,
+    type: str,
+    msg: str,
+    contact: str,
+    honeypot: str,
+    version: str,
+    nav_tab: str,
+) -> str | None:
+    """Persist one submission. Returns an error message for the user, or None on success.
+
+    The address is stored under a SEPARATE guard on purpose. Once ``append_feedback`` has
+    returned, the feedback IS stored; telling the user otherwise because the contacts
+    side-store failed makes them resubmit, which yields a duplicate record plus an orphan
+    ``has_contact: true`` record with no contacts row. A lost address is worth a log line, not
+    a false failure.
+    """
+    try:
+        rec = build_feedback_record(
+            type,
+            msg,
+            contact=contact,
+            version=version,
+            nav_tab=nav_tab,
+            honeypot=honeypot,  # provably "" here; keeps the library guard live, not inert
+        )
+        append_feedback(rec)
+    except Exception:  # noqa: BLE001 — never crash the session on a save failure
+        _log.error("feedback save failed", exc_info=True)
+        return "Couldn't save feedback — try again."
+
+    if contact:
+        try:
+            save_contact(rec["id"], contact)
+        except Exception:  # noqa: BLE001 — the feedback itself is already safely stored
+            _log.error(
+                "feedback %s was stored but its contact address was LOST — the record says "
+                "has_contact=true and no contacts row exists for it",
+                rec["id"],
+                exc_info=True,
+            )
+    return None
+
+
 async def _finish_success(session) -> None:
     """The one and only success path — the honeypot hit takes it too.
 
     A bot must not be able to tell it was caught from anything it can observe: same
     notification, same cleared fields, same dismissed modal. Leaving the modal open would be
     a tell.
+
+    Every step is best-effort. By the time this runs the record is already written, so a dead
+    socket must not undo that, must not surface as an error the user would act on by
+    resubmitting, and must not crash the effect.
     """
-    ui.notification_show(_SUCCESS_MSG, type="message", duration=4)
-    ui.update_text_area("feedback_message", value="")
-    ui.update_text("feedback_contact", value="")
-    ui.update_text("feedback_website", value="")
-    await session.send_custom_message("hide-modal", {"id": MODAL_ID})
+    try:
+        ui.notification_show(_SUCCESS_MSG, type="message", duration=4)
+        ui.update_text_area("feedback_message", value="")
+        ui.update_text("feedback_contact", value="")
+        ui.update_text("feedback_website", value="")
+        await session.send_custom_message("hide-modal", {"id": MODAL_ID})
+    except Exception:  # noqa: BLE001 — transport failure cannot undo a completed save
+        _log.warning("feedback: could not deliver the success UI (session gone?)", exc_info=True)
 
 
 def feedback_server(input, output, session, state):
@@ -220,57 +342,35 @@ def feedback_server(input, output, session, state):
     @reactive.effect
     @reactive.event(input.feedback_submit)
     async def _submit():
-        msg = (input.feedback_message() or "").strip()
-        if not msg:
-            ui.notification_show("Enter a message before sending.", type="warning", duration=5)
+        msg = _safe_text(input, "feedback_message")
+        contact = _safe_text(input, "feedback_contact")
+        honeypot = _read_honeypot(input)
+
+        # _LIMITER is read by global name at call time (a module-attribute read), so a test
+        # can monkeypatch it without this closure having captured the old one.
+        outcome, message = _classify(
+            msg, contact, honeypot, _LIMITER, _client_key(session), time.time()
+        )
+
+        if outcome == REJECT:
+            ui.notification_show(message, type="warning", duration=6)
             return
 
-        # Honeypot is checked EXPLICITLY here rather than by catching the ValueError
-        # build_feedback_record raises for it: that same exception type also signals an empty
-        # message and an unknown type, so a broad catch would show a thank-you for a record
-        # that was never stored. Silently discarding a real bug report is far worse than a
-        # bot learning something. build_feedback_record keeps its own guard (below, the value
-        # is still passed through) as defence in depth.
-        honeypot = _read_honeypot(input)
-        if honeypot:
-            # Before the limiter on purpose: in the shared-bucket fallback, bot hits would
-            # otherwise burn the 5/hour that real users have.
+        if outcome == DROP:
             _log.info("feedback honeypot filled — dropping submission silently")
             await _finish_success(session)
             return
 
-        contact = (input.feedback_contact() or "").strip()
-        if contact and not looks_like_email(contact):
-            ui.notification_show(
-                "That email address doesn't look right — correct it or leave it blank.",
-                type="warning",
-                duration=6,
-            )
-            return
-
-        notice = _rate_limit_notice(_LIMITER, _client_key(session), time.time())
-        if notice is not None:
-            ui.notification_show(notice, type="warning", duration=8)
-            return
-
-        try:
-            rec = build_feedback_record(
-                input.feedback_type(),
-                msg,
-                contact=contact,
-                version=__version__,
-                nav_tab=_safe_nav(input),
-                honeypot=honeypot,  # provably "" here; keeps the library guard live, not inert
-            )
-            append_feedback(rec)
-            # The address goes to the private side-store only, keyed by record id — it is
-            # deliberately absent from the record itself, which is designed to be copyable
-            # into a public issue.
-            save_contact(rec["id"], contact)
-        except Exception:  # noqa: BLE001 — never crash the session on a save failure
-            # Cannot swallow the empty-message or honeypot paths: both returned above.
-            _log.error("feedback save failed", exc_info=True)
-            ui.notification_show("Couldn't save feedback — try again.", type="error", duration=8)
+        error = _store_submission(
+            type=_safe_text(input, "feedback_type"),
+            msg=msg,
+            contact=contact,
+            honeypot=honeypot,
+            version=__version__,
+            nav_tab=_safe_nav(input),
+        )
+        if error is not None:
+            ui.notification_show(error, type="error", duration=8)
             return
 
         await _finish_success(session)

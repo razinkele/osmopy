@@ -9,19 +9,72 @@ must never assert a cause the limiter cannot prove).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+from html.parser import HTMLParser
 from types import SimpleNamespace
+
+import pytest
 
 import ui.components.feedback_modal as fm
 from osmose.feedback_limits import MAX_KEYS, RateLimiter
 from ui.components.feedback_modal import feedback_modal
 
 
+class _AncestryOf(HTMLParser):
+    """Collect the chain of open tags above ``<input id=...>``.
+
+    Used instead of substring searches so "is the honeypot hidden" is answered about the
+    honeypot's own ancestors, not about the document containing a hiding rule somewhere.
+    """
+
+    _VOID = {"input", "br", "hr", "img", "meta", "link", "source", "track", "wbr"}
+
+    def __init__(self, target_id: str) -> None:
+        super().__init__()
+        self._target = target_id
+        self._stack: list[tuple[str, dict]] = []
+        self.ancestors: list[tuple[str, dict]] | None = None
+
+    def handle_starttag(self, tag, attrs):
+        d = dict(attrs)
+        if tag == "input" and d.get("id") == self._target:
+            self.ancestors = list(self._stack)
+        if tag not in self._VOID:
+            self._stack.append((tag, d))
+
+    def handle_endtag(self, tag):
+        for i in range(len(self._stack) - 1, -1, -1):
+            if self._stack[i][0] == tag:
+                del self._stack[i:]
+                return
+
+
 def test_modal_has_honeypot_and_is_visually_hidden():
+    """The brief's own version searched the WHOLE document for the hiding rule.
+
+    That is the vacuity class this branch has already been bitten by twice: any unrelated
+    ``position:absolute`` in the modal would have satisfied it while the honeypot sat in plain
+    sight. Scoped here to the honeypot input's actual ancestor chain.
+    """
     html = str(feedback_modal())
     assert "feedback_website" in html  # honeypot field present
-    assert "position:absolute" in html or "d-none" in html  # and hidden from real users
+
+    parser = _AncestryOf("feedback_website")
+    parser.feed(html)
+    assert parser.ancestors is not None, 'no <input id="feedback_website"> in the modal'
+
+    def _hides(attrs: dict) -> bool:
+        style = (attrs.get("style") or "").replace(" ", "")
+        return "position:absolute" in style or "d-none" in (attrs.get("class") or "")
+
+    hiding = [(tag, a) for tag, a in parser.ancestors if _hides(a)]
+    assert hiding, (
+        "honeypot has no hiding ancestor — a position:absolute or d-none elsewhere in the "
+        "document does not count. Ancestor chain: "
+        f"{[(t, a.get('style'), a.get('class')) for t, a in parser.ancestors]}"
+    )
 
 
 def test_modal_offers_bug_and_feature_and_other():
@@ -77,6 +130,7 @@ def _reset_warn_flags(monkeypatch):
     """Re-arm the module-level warn-once flags so these tests are order-independent."""
     monkeypatch.setattr(fm, "_warned_untrusted_proxy", False, raising=False)
     monkeypatch.setattr(fm, "_warned_no_client", False, raising=False)
+    monkeypatch.setattr(fm, "_warned_empty_xff", False, raising=False)
 
 
 def test_client_key_takes_the_rightmost_xff_entry_when_a_proxy_is_trusted(monkeypatch):
@@ -103,6 +157,30 @@ def test_client_key_falls_through_when_the_rightmost_xff_entry_is_empty(monkeypa
     monkeypatch.setenv("OSMOSE_TRUSTED_PROXY", "1")
     sess = _fake_session(headers={"x-forwarded-for": "1.2.3.4,  "}, host="10.0.0.1")
     assert key_fn(sess) == "10.0.0.1"
+
+
+def test_client_key_warns_once_when_a_trusted_proxy_yields_no_usable_entry(monkeypatch, caplog):
+    """The third degraded path, and the easiest to miss.
+
+    Falling through to ``client.host`` here does NOT restore per-client keying: behind the very
+    proxy we just trusted, that address IS the proxy, so every user shares one bucket exactly
+    as an empty key would have. Silent, consequential, and invisible to every other signal --
+    so it warns, once, like the other two.
+    """
+    key_fn = getattr(fm, "_client_key", None)
+    assert key_fn is not None, "_client_key is not implemented"
+    _reset_warn_flags(monkeypatch)
+    monkeypatch.setenv("OSMOSE_TRUSTED_PROXY", "1")
+    sess = _fake_session(headers={"x-forwarded-for": "1.2.3.4,  "}, host="10.0.0.1")
+    logger_name = fm._log.name
+    with caplog.at_level(logging.WARNING, logger=logger_name):
+        assert key_fn(sess) == "10.0.0.1"
+        assert key_fn(sess) == "10.0.0.1"
+    warnings = [r for r in caplog.records if r.name == logger_name and r.levelno >= logging.WARNING]
+    assert len(warnings) == 1, f"expected exactly one warn-once record, got {len(warnings)}"
+    assert "PROXY" in warnings[0].getMessage(), (
+        f"warning does not say the bucket is now shared: {warnings[0].getMessage()!r}"
+    )
 
 
 def test_client_key_ignores_xff_when_no_proxy_is_trusted_and_warns_once(monkeypatch, caplog):
@@ -221,3 +299,151 @@ def test_success_copy_still_says_saved():
     msg = getattr(fm, "_SUCCESS_MSG", None)
     assert msg is not None, "_SUCCESS_MSG is not defined"
     assert "saved" in msg, f"e2e test waits for 'saved' in the notification, got {msg!r}"
+
+
+# ── _classify: check ORDER, which is security-relevant ───────────────────────────
+
+
+def _limiter(*, exhausted: bool) -> RateLimiter:
+    """A fresh limiter, optionally already at its per-key cap for "ip1"."""
+    rl = RateLimiter(max_per_window=1, window_s=3600)
+    if exhausted:
+        rl.allow("ip1", now=0.0)
+    return rl
+
+
+# label -> (message, contact, limiter already exhausted)
+_ORACLE_PROBES = {
+    "empty_message": ("", "", False),
+    "malformed_email": ("a real bug report", "not-an-email", False),
+    "rate_limited": ("a real bug report", "", True),
+    "everything_valid": ("a real bug report", "me@example.org", False),
+}
+
+
+@pytest.mark.parametrize("label", sorted(_ORACLE_PROBES))
+def test_honeypot_is_not_a_one_probe_oracle(label):
+    """The response must not reveal whether the hidden field was filled.
+
+    Otherwise the handler is a ONE-PROBE ORACLE: send the same malformed email twice, once
+    with the hidden field filled and once without, and the two different answers name the trap
+    field. A honeypot a bot can identify is not a honeypot. So every rejection reachable
+    without the honeypot has to be decided BEFORE the honeypot is consulted, and the honeypot's
+    own outcome has to be indistinguishable from plain success.
+
+    Only the user-visible message is compared. ACCEPT vs DROP differ on purpose — one stores
+    the record and one does not — but both take the identical success path, so the client
+    cannot tell them apart.
+    """
+    msg, contact, exhausted = _ORACLE_PROBES[label]
+    clean = fm._classify(msg, contact, "", _limiter(exhausted=exhausted), "ip1", 0.0)
+    baited = fm._classify(
+        msg, contact, "http://spam.example", _limiter(exhausted=exhausted), "ip1", 0.0
+    )
+
+    assert clean[1] == baited[1], (
+        f"{label}: honeypot is a one-probe oracle — with the hidden field filled the client "
+        f"sees {baited[1]!r}, without it {clean[1]!r}. The difference names the trap."
+    )
+    if clean[0] == fm.REJECT:
+        assert baited[0] == fm.REJECT, (
+            f"{label}: filling the honeypot turned a rejection into {baited[0]!r}"
+        )
+    else:
+        assert (clean[0], baited[0]) == (fm.ACCEPT, fm.DROP), (
+            f"{label}: expected accept/drop, got {clean[0]!r}/{baited[0]!r}"
+        )
+
+
+def test_honeypot_submissions_are_rate_limited_like_everyone_else():
+    """Honeypot traffic must consume the bucket, or it is unmetered handler work per bot hit.
+
+    "It protects the shared bucket for real users" does not survive contact with an attacker,
+    who simply leaves the hidden field empty to drain it anyway.
+    """
+    rl = RateLimiter(max_per_window=1, window_s=3600)
+    first = fm._classify("bait", "", "http://spam.example", rl, "ip1", 0.0)
+    second = fm._classify("bait", "", "http://spam.example", rl, "ip1", 0.0)
+    assert first[0] == fm.DROP
+    assert second[0] == fm.REJECT, "a second honeypot hit was not rate-limited"
+
+
+# ── _store_submission ────────────────────────────────────────────────────────────
+
+
+def test_store_reports_success_when_only_the_contact_side_store_fails(monkeypatch):
+    """append_feedback succeeded, so the report IS stored — never say otherwise.
+
+    Telling the user it failed makes them resubmit, which yields a duplicate record plus an
+    orphan has_contact=true record with no contacts row.
+    """
+    appended = []
+    monkeypatch.setattr(fm, "append_feedback", lambda rec: appended.append(rec))
+
+    def _contacts_boom(feedback_id, email):
+        raise OSError("contacts store is read-only")
+
+    monkeypatch.setattr(fm, "save_contact", _contacts_boom)
+
+    err = fm._store_submission(
+        type="bug",
+        msg="it broke",
+        contact="me@example.org",
+        honeypot="",
+        version="0.0.0",
+        nav_tab="run",
+    )
+    assert err is None, f"user was told the report failed, but it was stored: {err!r}"
+    assert len(appended) == 1, "the feedback record was not appended"
+
+
+def test_store_reports_failure_when_the_feedback_store_itself_fails(monkeypatch):
+    """The other direction: a genuine loss must surface, not be swallowed into a thank-you."""
+
+    def _store_boom(rec):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(fm, "append_feedback", _store_boom)
+    monkeypatch.setattr(fm, "save_contact", lambda *a, **k: None)
+
+    err = fm._store_submission(
+        type="bug",
+        msg="it broke",
+        contact="",
+        honeypot="",
+        version="0.0.0",
+        nav_tab="run",
+    )
+    assert err is not None, "a failed append was reported to the user as success"
+
+
+# ── _finish_success ──────────────────────────────────────────────────────────────
+
+
+def test_finish_success_survives_a_dead_socket(monkeypatch):
+    """A transport failure must not undo a completed save, nor crash the effect.
+
+    By the time this runs the record is written. If the dismissal raises, the user must not
+    see an error they would act on by resubmitting.
+    """
+    shown: list[str] = []
+    cleared: list[str] = []
+    monkeypatch.setattr(fm.ui, "notification_show", lambda m, **kw: shown.append(m))
+    monkeypatch.setattr(fm.ui, "update_text_area", lambda i, **kw: cleared.append(i))
+    monkeypatch.setattr(fm.ui, "update_text", lambda i, **kw: cleared.append(i))
+
+    class _DeadSession:
+        async def send_custom_message(self, name, payload):
+            raise RuntimeError("websocket is closed")
+
+    try:
+        asyncio.run(fm._finish_success(_DeadSession()))
+    except Exception as exc:  # noqa: BLE001 — any escape at all is the failure under test
+        raise AssertionError(
+            f"_finish_success let {exc!r} escape after the record was already stored"
+        ) from exc
+
+    # Proves the run actually reached the raising step rather than bailing out early, which
+    # would make the no-raise assertion above vacuous.
+    assert shown == [fm._SUCCESS_MSG], f"success notification was not shown: {shown!r}"
+    assert "feedback_message" in cleared, f"form was not cleared before the dismiss: {cleared!r}"
