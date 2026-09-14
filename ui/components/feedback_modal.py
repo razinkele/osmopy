@@ -49,6 +49,10 @@ _SHARED_KEY = "_no-client-address_"
 _SUCCESS_MSG = "Thanks — feedback saved."
 # tests/test_e2e_feedback.py waits for the substring "saved" in the notification. Keep it.
 
+# Post-write steps in _finish_success: notification, three field clears, modal dismiss. Used
+# only to recognise a total failure, which escalates from WARNING to ERROR.
+_FINISH_STEPS = 5
+
 # Warn-once flags for the three degraded rate-limiting modes. Silent degradation becomes a
 # mystery ticket; one warning becomes a config fix.
 _warned_untrusted_proxy = False
@@ -231,15 +235,25 @@ DROP = "drop"  # look exactly like success, store nothing
 ACCEPT = "accept"  # store it, then look like success
 
 
-def _classify(
+def _classify_and_consume(
     msg: str,
     contact: str,
     honeypot: str,
     limiter: RateLimiter,
     key: str,
     now: float,
-) -> tuple[str, str]:
-    """Decide a submission's fate and the copy the user sees. Pure apart from the limiter.
+) -> tuple[str, str | None]:
+    """Decide a submission's fate, CONSUMING a rate-limit slot in the process.
+
+    The name says "and consume" because this is not a predicate: reaching the rate-limit check
+    charges ``limiter`` for ``key``. Calling it twice to re-read a decision would double-charge
+    the caller and eventually refuse them. There is one call site today; the name is for the
+    next person, who will not read this docstring first.
+
+    Returns ``(outcome, message)``. ``message`` is the user-facing copy for REJECT and is
+    **None for DROP and ACCEPT** — those two share the handler's ``_SUCCESS_MSG``, which is the
+    single source of that copy. Returning a second copy here that only tests could observe
+    made the indistinguishability tests assert against a value the shipped handler never read.
 
     **THE ORDER OF THESE CHECKS IS SECURITY-RELEVANT — do not reshuffle for tidiness.**
 
@@ -267,8 +281,8 @@ def _classify(
     if notice is not None:
         return REJECT, notice
     if honeypot:
-        return DROP, _SUCCESS_MSG
-    return ACCEPT, _SUCCESS_MSG
+        return DROP, None
+    return ACCEPT, None
 
 
 def _store_submission(
@@ -322,18 +336,48 @@ async def _finish_success(session) -> None:
     notification, same cleared fields, same dismissed modal. Leaving the modal open would be
     a tell.
 
-    Every step is best-effort. By the time this runs the record is already written, so a dead
-    socket must not undo that, must not surface as an error the user would act on by
-    resubmitting, and must not crash the effect.
+    Every step is best-effort AND INDEPENDENTLY GUARDED. By the time this runs the record is
+    already written, so a failure here must not undo that, must not surface as an error the
+    user would act on by resubmitting, and must not crash the effect.
+
+    One try around the whole block would have been worse than none: a ``notification_show``
+    raise would have skipped the clear AND the dismiss AND said nothing, leaving the user
+    looking at an unchanged form with no message — which is precisely the "assume it failed,
+    submit again" duplicate that giving ``save_contact`` its own guard removed. Each step
+    therefore fails alone, and a clean sweep of failures escalates to ERROR so the silence is
+    never total.
     """
+    failed: list[str] = []
+
+    def _step(label: str, fn) -> None:
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 — one dead step must not take the others with it
+            failed.append(label)
+            _log.warning("feedback: %s failed after the record was written", label, exc_info=True)
+
+    _step(
+        "success notification",
+        lambda: ui.notification_show(_SUCCESS_MSG, type="message", duration=4),
+    )
+    _step("clear message field", lambda: ui.update_text_area("feedback_message", value=""))
+    _step("clear contact field", lambda: ui.update_text("feedback_contact", value=""))
+    _step("clear honeypot field", lambda: ui.update_text("feedback_website", value=""))
+
     try:
-        ui.notification_show(_SUCCESS_MSG, type="message", duration=4)
-        ui.update_text_area("feedback_message", value="")
-        ui.update_text("feedback_contact", value="")
-        ui.update_text("feedback_website", value="")
         await session.send_custom_message("hide-modal", {"id": MODAL_ID})
-    except Exception:  # noqa: BLE001 — transport failure cannot undo a completed save
-        _log.warning("feedback: could not deliver the success UI (session gone?)", exc_info=True)
+    except Exception:  # noqa: BLE001 — a closed socket cannot undo a completed save
+        failed.append("modal dismiss")
+        _log.warning("feedback: modal dismiss failed after the record was written", exc_info=True)
+
+    if len(failed) == _FINISH_STEPS:
+        # The user was shown nothing at all. They will assume it failed and submit again, so
+        # the operator has to be able to see that from the log alone.
+        _log.error(
+            "feedback: record written but EVERY post-write step failed (%s) — the user saw "
+            "no confirmation and will probably resubmit",
+            ", ".join(failed),
+        )
 
 
 def feedback_server(input, output, session, state):
@@ -348,7 +392,7 @@ def feedback_server(input, output, session, state):
 
         # _LIMITER is read by global name at call time (a module-attribute read), so a test
         # can monkeypatch it without this closure having captured the old one.
-        outcome, message = _classify(
+        outcome, message = _classify_and_consume(
             msg, contact, honeypot, _LIMITER, _client_key(session), time.time()
         )
 

@@ -301,7 +301,7 @@ def test_success_copy_still_says_saved():
     assert "saved" in msg, f"e2e test waits for 'saved' in the notification, got {msg!r}"
 
 
-# ── _classify: check ORDER, which is security-relevant ───────────────────────────
+# ── _classify_and_consume: check ORDER, which is security-relevant ───────────────
 
 
 def _limiter(*, exhausted: bool) -> RateLimiter:
@@ -331,13 +331,14 @@ def test_honeypot_is_not_a_one_probe_oracle(label):
     without the honeypot has to be decided BEFORE the honeypot is consulted, and the honeypot's
     own outcome has to be indistinguishable from plain success.
 
-    Only the user-visible message is compared. ACCEPT vs DROP differ on purpose — one stores
-    the record and one does not — but both take the identical success path, so the client
-    cannot tell them apart.
+    This covers the REJECT copy only, which is the copy the handler actually ships. ACCEPT and
+    DROP return no message at all — their shared wording lives in the handler's ``_SUCCESS_MSG``
+    — so their indistinguishability cannot be judged here and is gated instead by
+    ``test_accept_and_drop_are_indistinguishable_to_the_client``, which drives the real handler.
     """
     msg, contact, exhausted = _ORACLE_PROBES[label]
-    clean = fm._classify(msg, contact, "", _limiter(exhausted=exhausted), "ip1", 0.0)
-    baited = fm._classify(
+    clean = fm._classify_and_consume(msg, contact, "", _limiter(exhausted=exhausted), "ip1", 0.0)
+    baited = fm._classify_and_consume(
         msg, contact, "http://spam.example", _limiter(exhausted=exhausted), "ip1", 0.0
     )
 
@@ -349,9 +350,14 @@ def test_honeypot_is_not_a_one_probe_oracle(label):
         assert baited[0] == fm.REJECT, (
             f"{label}: filling the honeypot turned a rejection into {baited[0]!r}"
         )
+        assert clean[1] is not None, f"{label}: a REJECT must carry copy to show the user"
     else:
         assert (clean[0], baited[0]) == (fm.ACCEPT, fm.DROP), (
             f"{label}: expected accept/drop, got {clean[0]!r}/{baited[0]!r}"
+        )
+        assert (clean[1], baited[1]) == (None, None), (
+            "ACCEPT/DROP must carry no message — _SUCCESS_MSG in the handler is the single "
+            f"source of that copy, got {clean[1]!r}/{baited[1]!r}"
         )
 
 
@@ -362,8 +368,8 @@ def test_honeypot_submissions_are_rate_limited_like_everyone_else():
     who simply leaves the hidden field empty to drain it anyway.
     """
     rl = RateLimiter(max_per_window=1, window_s=3600)
-    first = fm._classify("bait", "", "http://spam.example", rl, "ip1", 0.0)
-    second = fm._classify("bait", "", "http://spam.example", rl, "ip1", 0.0)
+    first = fm._classify_and_consume("bait", "", "http://spam.example", rl, "ip1", 0.0)
+    second = fm._classify_and_consume("bait", "", "http://spam.example", rl, "ip1", 0.0)
     assert first[0] == fm.DROP
     assert second[0] == fm.REJECT, "a second honeypot hit was not rate-limited"
 
@@ -447,3 +453,202 @@ def test_finish_success_survives_a_dead_socket(monkeypatch):
     # would make the no-raise assertion above vacuous.
     assert shown == [fm._SUCCESS_MSG], f"success notification was not shown: {shown!r}"
     assert "feedback_message" in cleared, f"form was not cleared before the dismiss: {cleared!r}"
+
+
+# ── the SHIPPED handler: ACCEPT vs DROP must be indistinguishable ────────────────
+#
+# This is a plain unit test on purpose -- no e2e marker. `addopts` excludes `e2e` from a
+# default pytest AND from CI, so an e2e-only gate on this property is, in practice, no gate.
+# Driving the real _submit also means the assertions are about values the shipped code
+# actually emits, rather than about a return value only a test can see.
+
+
+class _FakeInput:
+    """Shiny `input` stand-in: every attribute is a zero-arg getter."""
+
+    def __init__(self, **values: str) -> None:
+        self._values = values
+
+    def __getattr__(self, name: str):
+        def _get() -> str:
+            return self._values.get(name, "")
+
+        return _get
+
+
+class _FakeSession:
+    """Records custom messages instead of writing to a websocket."""
+
+    def __init__(self) -> None:
+        self.custom_messages: list[tuple[str, dict]] = []
+        self.http_conn = SimpleNamespace(headers={}, client=SimpleNamespace(host="198.51.100.7"))
+        self.id = "fake-session"
+
+    async def send_custom_message(self, name: str, payload: dict) -> None:
+        self.custom_messages.append((name, payload))
+
+
+def _capture_submit(monkeypatch, input_obj, session):
+    """Register the real feedback_server and hand back its `_submit` coroutine.
+
+    `reactive.effect` / `reactive.event` are swapped for identity decorators so the handler
+    can be awaited directly. Nothing about the handler's body is stubbed -- this is the
+    shipped code path.
+    """
+    captured = {}
+
+    def _fake_effect(fn):
+        captured["fn"] = fn
+        return fn
+
+    def _fake_event(*_args, **_kwargs):
+        def _deco(fn):
+            return fn
+
+        return _deco
+
+    monkeypatch.setattr(fm.reactive, "effect", _fake_effect)
+    monkeypatch.setattr(fm.reactive, "event", _fake_event)
+    fm.feedback_server(input_obj, None, session, None)
+    assert "fn" in captured, "feedback_server did not register a reactive effect"
+    return captured["fn"]
+
+
+def _observe_submission(monkeypatch, *, honeypot: str) -> dict:
+    """Run one real submission and return everything the client could observe."""
+    notifications: list[tuple] = []
+    clears: list[tuple] = []
+    stored: list[dict] = []
+
+    monkeypatch.setattr(fm.ui, "notification_show", lambda m, **kw: notifications.append((m, kw)))
+    monkeypatch.setattr(fm.ui, "update_text_area", lambda i, **kw: clears.append((i, kw)))
+    monkeypatch.setattr(fm.ui, "update_text", lambda i, **kw: clears.append((i, kw)))
+    monkeypatch.setattr(fm, "append_feedback", lambda rec: stored.append(rec))
+    monkeypatch.setattr(fm, "save_contact", lambda feedback_id, email: None)
+    # A fresh limiter per run, so the second submission is not refused by the first.
+    monkeypatch.setattr(fm, "_LIMITER", RateLimiter(max_per_window=5, window_s=3600))
+
+    session = _FakeSession()
+    submit = _capture_submit(
+        monkeypatch,
+        _FakeInput(
+            feedback_message="a real bug report",
+            feedback_contact="me@example.org",
+            feedback_type="bug",
+            feedback_website=honeypot,
+        ),
+        session,
+    )
+    asyncio.run(submit())
+
+    return {
+        "notifications": notifications,
+        "clears": clears,
+        "custom_messages": session.custom_messages,
+        "stored": stored,
+    }
+
+
+def test_accept_and_drop_are_indistinguishable_to_the_client(monkeypatch):
+    """A bot must not learn it was caught from ANY observable the handler emits.
+
+    Notification text and kwargs, field clears, and the dismiss payload must match exactly.
+    The single permitted difference is invisible from the browser: whether a record was
+    stored.
+    """
+    accept = _observe_submission(monkeypatch, honeypot="")
+    drop = _observe_submission(monkeypatch, honeypot="http://spam.example")
+
+    assert accept["notifications"] == drop["notifications"], (
+        "honeypot hit is distinguishable by its notification — "
+        f"accept={accept['notifications']!r} drop={drop['notifications']!r}"
+    )
+    assert accept["clears"] == drop["clears"], (
+        f"honeypot hit clears different fields — accept={accept['clears']!r} "
+        f"drop={drop['clears']!r}"
+    )
+    assert accept["custom_messages"] == drop["custom_messages"], (
+        "honeypot hit is distinguishable by the dismiss message — "
+        f"accept={accept['custom_messages']!r} drop={drop['custom_messages']!r}"
+    )
+
+    # And the one difference that IS intended, asserted so the test cannot pass by both sides
+    # doing nothing at all.
+    assert len(accept["stored"]) == 1, "the genuine submission was not stored"
+    assert drop["stored"] == [], "the honeypot submission was stored"
+    assert accept["notifications"], "no notification was emitted by either arm"
+    assert accept["custom_messages"] == [("hide-modal", {"id": fm.MODAL_ID})], (
+        f"unexpected dismiss payload: {accept['custom_messages']!r}"
+    )
+
+
+# ── _finish_success: steps must fail INDEPENDENTLY ───────────────────────────────
+
+
+def test_a_failed_notification_still_clears_and_dismisses(monkeypatch, caplog):
+    """One dead step must not take the others with it.
+
+    A single try around the whole block meant a notification_show raise produced no message,
+    no clear, no dismiss and no surfaced error, after the record was already written — the
+    same "assume it failed, submit again" duplicate that giving save_contact its own guard
+    removed.
+    """
+    cleared: list[str] = []
+
+    def _notification_boom(_msg, **_kw):
+        raise RuntimeError("notification channel is gone")
+
+    monkeypatch.setattr(fm.ui, "notification_show", _notification_boom)
+    monkeypatch.setattr(fm.ui, "update_text_area", lambda i, **kw: cleared.append(i))
+    monkeypatch.setattr(fm.ui, "update_text", lambda i, **kw: cleared.append(i))
+
+    session = _FakeSession()
+    with caplog.at_level(logging.WARNING, logger=fm._log.name):
+        try:
+            asyncio.run(fm._finish_success(session))
+        except Exception as exc:  # noqa: BLE001 — any escape at all is the failure under test
+            raise AssertionError(f"_finish_success let {exc!r} escape") from exc
+
+    assert "feedback_message" in cleared, (
+        f"a failed notification prevented the field clear: {cleared!r}"
+    )
+    assert session.custom_messages == [("hide-modal", {"id": fm.MODAL_ID})], (
+        f"a failed notification prevented the modal dismiss: {session.custom_messages!r}"
+    )
+    assert any("success notification" in r.getMessage() for r in caplog.records), (
+        "the failed step left no log evidence"
+    )
+
+
+def test_a_total_post_write_failure_is_logged_as_an_error(monkeypatch, caplog):
+    """If the user is shown nothing at all, the operator must be able to see that.
+
+    They will assume the submission failed and send it again, so silence here becomes a
+    duplicate record with no trace of why.
+    """
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("session is gone")
+
+    monkeypatch.setattr(fm.ui, "notification_show", _boom)
+    monkeypatch.setattr(fm.ui, "update_text_area", _boom)
+    monkeypatch.setattr(fm.ui, "update_text", _boom)
+
+    class _DeadSession:
+        async def send_custom_message(self, name, payload):
+            raise RuntimeError("websocket is closed")
+
+    with caplog.at_level(logging.WARNING, logger=fm._log.name):
+        try:
+            asyncio.run(fm._finish_success(_DeadSession()))
+        except Exception as exc:  # noqa: BLE001 — any escape at all is the failure under test
+            raise AssertionError(f"_finish_success let {exc!r} escape") from exc
+
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors, (
+        "every post-write step failed and nothing was logged at ERROR — the user saw no "
+        "confirmation and the operator has no way to know"
+    )
+    assert "resubmit" in errors[0].getMessage(), (
+        f"the error does not say why it matters: {errors[0].getMessage()!r}"
+    )
