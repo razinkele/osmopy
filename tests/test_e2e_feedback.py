@@ -1,5 +1,23 @@
 """End-to-end test for the feedback modal (submit → JSONL store).
 
+WHEN TO RUN THIS. It is `e2e`, and `addopts` is `-m 'not e2e and not visual'`, so it does not
+run in a bare pytest or in CI — the marker here really does gate execution (unlike `slow`,
+see the marker list in pyproject.toml). The handler→disk half of this path is covered by
+default in ``tests/test_feedback_integration.py``; what only THIS test can see is the
+browser→handler half. Run it before merging any change to:
+
+* the modal markup or the input ids a browser actually fills
+  (``ui/components/feedback_modal.py``);
+* the ``feedback_server`` call in ``app.py`` — nothing else asserts the handler is wired into
+  the running app at all.
+
+A break in either leaves every default-run test green, because none of them goes through a
+browser. It does NOT see the modal dismissing itself (the ``hide-modal`` JS in ``app.py``) or
+honeypot indistinguishability in the browser — ``tests/test_e2e_feedback_modal.py`` owns both,
+and says in its own docstring that this file must not be edited to assert them.
+
+    .venv/bin/python -m pytest tests/test_e2e_feedback.py -v -m e2e
+
 RATE-LIMIT BUDGET — read before adding a submitting test.
 ``ui.components.feedback_modal._LIMITER`` is process-global and allows 5 submissions per hour
 per client key. Every session in one app subprocess keys on 127.0.0.1, so all tests in this
@@ -8,9 +26,6 @@ This file spends **1 of 5**; ``tests/test_e2e_feedback_modal.py`` spends 3 of it
 that a honeypot submission consumes a slot too — it is rate-limited before it is dropped.
 A sixth submission here would fail with a rate-limit notice instead of "saved", for a reason
 nobody would guess from the failure. Adding one needs a plan, not just a new test.
-
-Run explicitly:
-    .venv/bin/python -m pytest tests/test_e2e_feedback.py -v -m e2e
 """
 
 from __future__ import annotations

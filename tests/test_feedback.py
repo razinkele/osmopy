@@ -128,7 +128,8 @@ def test_contact_is_capped(tmp_path, monkeypatch):
 
 
 def test_contact_is_not_in_the_main_record(tmp_path, monkeypatch):
-    monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(tmp_path / "f.jsonl"))
+    feedback_file = tmp_path / "f.jsonl"
+    monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(feedback_file))
     monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(tmp_path / "c.jsonl"))
     rec = build_feedback_record("bug", "m", contact="user@example.org")
     append_feedback(rec)
@@ -138,6 +139,17 @@ def test_contact_is_not_in_the_main_record(tmp_path, monkeypatch):
     assert "user@example.org" not in json.dumps(stored)
     assert lookup_contact(rec["id"]) == "user@example.org"
     assert lookup_contact("nope") is None
+    # The reader is NOT a witness for the file: read_feedback() does
+    # `rec.pop("contact", "")` on every line, so it would scrub an address out of its own
+    # OUTPUT and report a clean record while the address sat in the store. Measured
+    # 2026-09-14: with `"contact": contact` put back into build_feedback_record, every
+    # assertion above still passed. Assert the bytes.
+    raw = feedback_file.read_text(encoding="utf-8")
+    # Control on the negative below: the id is unique to this record, so this fails if the
+    # line is not there at all. (A message of "m" would not be a control -- every record's
+    # "message" key contains an m.)
+    assert rec["id"] in raw, f"the line being asserted about is not in the file: {raw!r}"
+    assert "user@example.org" not in raw, f"the address is in the feedback store: {raw!r}"
 
 
 def test_legacy_contact_record_is_normalised_on_read(tmp_path):
