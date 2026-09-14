@@ -711,7 +711,13 @@ async def _feedback_review(request):
     try:
         if not check_feedback_token(request.headers.get("x-feedback-token")):
             return PlainTextResponse("forbidden", status_code=403)
-        return HTMLResponse(render_review_html(read_feedback(), _REPO_URL))
+        # no-store: a token-gated page of user-submitted content must not be retained by a
+        # browser or a shared proxy, which would serve it to callers that never presented
+        # the token. Only the 200 carries it — a cached "forbidden" leaks nothing.
+        return HTMLResponse(
+            render_review_html(read_feedback(), _REPO_URL),
+            headers={"Cache-Control": "no-store"},
+        )
     except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
         return PlainTextResponse("internal", status_code=500)
 

@@ -49,8 +49,9 @@ h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
 def _esc(value: object) -> str:
     """Escape any value for either a text or an attribute context. ``None`` -> empty string.
 
-    The ``None`` coercion is not cosmetic: a legacy or hand-written store line with a null field
-    would otherwise raise mid-render and blank the whole page for the maintainer.
+    The ``None`` branch is cosmetic, not a safety guard: without it a null field would render as
+    the literal string ``"None"`` (``html.escape(str(None))`` returns ``'None'`` and does not
+    raise). Returning ``""`` instead lets ``_or_dash`` show an em dash for a missing field.
     """
     if value is None:
         return ""
@@ -68,7 +69,9 @@ def _render_card(record: dict) -> str:
     raw_type = record.get("type")
     badge_class = _TYPE_CLASSES.get(str(raw_type), _DEFAULT_TYPE_CLASS)
     # Never render the value of has_contact, and never look the address up — just the flag.
-    has_contact = "yes" if bool(record.get("has_contact")) else "no"
+    # `is True`, not truthiness: a hand-written `"has_contact": "false"` is a non-empty string
+    # and would otherwise be reported as "yes". Only a real JSON boolean reads as yes.
+    has_contact = "yes" if record.get("has_contact") is True else "no"
     return (
         f'<article class="fb-card" data-has-contact="{has_contact}">'
         f'<div class="fb-card-head">'

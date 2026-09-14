@@ -135,6 +135,49 @@ def test_review_never_renders_an_email_address(client):
     assert "@example.org" not in body
 
 
+def test_review_survives_a_non_object_store_line(client, tmp_path):
+    """One bad line must not deny the maintainer the whole page (the cost of the read raising).
+
+    The page-level half of the `read_feedback` guard: the unit test proves the line is skipped,
+    this proves the consequence that justified fixing it -- the good records still render.
+    """
+    append_feedback(build_feedback_record("bug", "record BEFORE the bad line"))
+    with open(tmp_path / "fb.jsonl", "a", encoding="utf-8") as f:  # same path as the fixture env
+        f.write("null\n")
+    append_feedback(build_feedback_record("other", "record AFTER the bad line"))
+
+    resp = _get(client)
+    assert resp.status_code == 200  # not the 500 an unguarded read would produce
+    assert "record BEFORE the bad line" in resp.text
+    assert "record AFTER the bad line" in resp.text
+
+
+def test_review_reports_only_a_real_boolean_as_having_contact(client):
+    """`has_contact` is a FLAG, not a truthiness test: `"false"` is a non-empty string."""
+    append_feedback(
+        {
+            "id": "flagprobe",
+            "ts": "2026-09-14T12:00:00",
+            "type": "bug",
+            "message": "string-flag probe FLAG_MARK",
+            "has_contact": "false",
+            "version": "",
+            "nav_tab": "",
+        }
+    )
+    body = _get(client).text
+    assert "FLAG_MARK" in body  # positive control: the record rendered
+    assert 'data-has-contact="no"' in body
+    assert 'data-has-contact="yes"' not in body
+
+
+def test_review_response_is_not_cacheable(client):
+    append_feedback(build_feedback_record("bug", "cache header probe"))
+    resp = _get(client)
+    assert "cache header probe" in resp.text  # positive control: this is the real page
+    assert resp.headers.get("cache-control") == "no-store"
+
+
 def test_review_error_path_returns_bare_internal(client, monkeypatch):
     import app as app_module
 

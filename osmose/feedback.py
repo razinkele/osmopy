@@ -156,6 +156,12 @@ def read_feedback(*, path: Path | None = None) -> list[dict]:
         except Exception:  # noqa: BLE001 — skip a corrupt line, don't fail the read
             _log.warning("Skipping corrupt feedback line")
             continue
+        if not isinstance(rec, dict):
+            # Valid JSON but not an object (`null`, `[]`, `"x"`). Without this the `.setdefault`
+            # below raises AttributeError and the whole read fails, which takes the maintainer
+            # review page down entirely — one bad line would hide every good record.
+            _log.warning("Skipping non-object feedback line")
+            continue
         rec.setdefault("has_contact", bool(rec.pop("contact", "")))
         out.append(rec)
     out.reverse()

@@ -72,6 +72,24 @@ def test_read_skips_corrupt_line(tmp_path):
     assert len(out) == 1 and out[0]["message"] == "ok"
 
 
+def test_read_skips_non_object_line(tmp_path):
+    """Valid JSON that is not an object (`null`, `[]`) must be skipped, not raise.
+
+    It used to raise AttributeError on `.setdefault`, which failed the whole read -- and so
+    took the maintainer review page down entirely, hiding every good record behind one bad line.
+    """
+    p = tmp_path / "fb.jsonl"
+    append_feedback(build_feedback_record("bug", "before"), path=p)
+    with open(p, "a", encoding="utf-8") as f:
+        f.write('null\n[]\n"just a string"\n')
+    append_feedback(build_feedback_record("bug", "after"), path=p)
+    try:
+        out = read_feedback(path=p)
+    except Exception as exc:  # noqa: BLE001 — report the defect, not a raw AttributeError
+        raise AssertionError(f"read_feedback raised on a non-object line: {exc!r}") from exc
+    assert [r["message"] for r in out] == ["after", "before"]  # newest first, both survive
+
+
 def test_check_token_unset_env_is_false(monkeypatch):
     monkeypatch.delenv("OSMOSE_FEEDBACK_TOKEN", raising=False)
     assert check_feedback_token("anything") is False
