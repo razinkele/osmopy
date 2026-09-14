@@ -26,6 +26,9 @@ _MARKER = "BENIGN_MARKER_42"
 # block -- which is exactly how the positive control catches an unescaped render.
 _XSS_MESSAGE = f"</pre><script>alert('xss')</script>{_MARKER}"
 _EMAIL = "maintainer.probe@example.org"
+# Spelled out rather than imported from app: this asserts the page links to THE repository,
+# not merely to whatever string app.py happened to pass in.
+_REPO_URL = "https://github.com/razinkele/osmopy"
 
 
 @pytest.fixture
@@ -79,6 +82,14 @@ def test_review_renders_records_and_escapes_html(client):
     assert "&lt;/pre&gt;" in msg  # ... including the block-breakout attempt
     assert "<script" not in msg
     assert "<script>alert" not in body  # page-wide: no raw markup anywhere
+
+
+def test_review_links_to_the_repository(client):
+    """R15: `repo_url` must be a live parameter, not a dead one the page ignores."""
+    append_feedback(build_feedback_record("other", "repo link probe"))
+    body = _get(client).text
+    assert "repo link probe" in body  # positive control: the page rendered at all
+    assert f'href="{_REPO_URL}"' in body
 
 
 def test_review_escapes_record_metadata(client):
