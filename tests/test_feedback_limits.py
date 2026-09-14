@@ -23,13 +23,28 @@ def test_keys_are_independent():
 
 
 def test_pruning_bounds_memory():
+    """The key table stays bounded when more distinct keys arrive than it can hold.
+
+    The traffic is the load-bearing part. 15_000 distinct keys -- strictly more than
+    MAX_KEYS -- arrive inside a single 10 s window, so the stale sweep (which does fire
+    repeatedly here: the clock crosses the 1 s _sweep_interval three times) has nothing
+    to reclaim, and the MAX_KEYS refusal is the only thing bounding the table. Delete
+    that branch and the table reaches 15_000 and the assertion fails on a real number.
+
+    Before Round 5 this drove only 5_000 keys, so `max_keys <= 10_000` restated a
+    ceiling the traffic could not reach: it passed with BOTH the sweep neutered and the
+    refusal branch deleted. Asserting against MAX_KEYS rather than a literal keeps a
+    change to the constant from silently re-vacuating it.
+    """
     rl = RateLimiter(max_per_window=1, window_s=10)
     max_keys = 0
-    for i in range(5000):
-        rl.allow(f"ip{i}", now=float(i))
+    for i in range(15_000):
+        # 0.0 s .. 2.9998 s: the clock advances, but nothing reaches the 10 s window.
+        rl.allow(f"ip{i}", now=i / 5_000.0)
         max_keys = max(max_keys, len(rl._hits))
-    # Track max over entire run, not endpoint sample
-    assert max_keys <= 10_000
+    # Max over the whole run, not an endpoint sample (the Round-1 sawtooth lesson).
+    assert max_keys <= MAX_KEYS
+    assert len(rl._hits) <= MAX_KEYS
 
 
 def test_burst_same_timestamp_exceeds_limit():
@@ -51,20 +66,35 @@ def test_attacker_self_reset_via_eviction():
 
     Correct design: never evict. Only refuse new keys when table is full.
     With refusal, the attacker's key remains refused and stays in the table until expired.
+
+    The timing matters, and before Round 5 it was wrong. Every call used now=0.0, so the
+    sweep fired exactly once -- on the first call, against an empty table -- and never
+    again: eviction reintroduced INSIDE _sweep_stale was dead code and this test stayed
+    green over it, while it is the sole guard on the never-evict decision. Now the flood
+    lands at t=1.0 (so the attacker's hits are strictly the oldest, making any
+    oldest-first eviction unambiguous) and the retry at t=10.0, past the 6 s
+    _sweep_interval, so a sweep genuinely runs against a FULL table at the moment the
+    attacker retries. t=10.0 is still well inside the 60 s window, so the attacker's
+    three hits are all live and the refusal is the per-key cap doing its job.
     """
     rl = RateLimiter(max_per_window=3, window_s=60)
+    assert rl._sweep_interval == 6.0
     # Attacker exhausts their limit
     assert rl.allow("attacker", now=0.0) is True
     assert rl.allow("attacker", now=0.0) is True
     assert rl.allow("attacker", now=0.0) is True
     # Fourth request from attacker is refused
     assert rl.allow("attacker", now=0.0) is False
-    # Attacker floods with throwaway keys to fill the table
+    # Attacker floods with throwaway keys to fill the table, one second later so that
+    # the attacker's own key is strictly the oldest-by-last-hit.
     for i in range(12_000):
-        rl.allow(f"throwaway_{i}", now=0.0)
-    # With eviction, attacker's key would be evicted (oldest hit). With refusal only,
-    # the attacker key stays refused. Assert it is still refused.
-    assert rl.allow("attacker", now=0.0) is False
+        rl.allow(f"throwaway_{i}", now=1.0)
+    assert len(rl._hits) == MAX_KEYS
+    # Past _sweep_interval: a sweep now runs against a full table. With eviction in
+    # EITHER placement -- inside _sweep_stale, or inline in allow() -- the attacker's
+    # key is the one dropped and this retry succeeds. With refusal only, nothing is
+    # evicted, nothing is stale, and the attacker stays refused.
+    assert rl.allow("attacker", now=10.0) is False
 
 
 def test_existing_key_works_when_table_full():
