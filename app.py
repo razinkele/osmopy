@@ -43,6 +43,7 @@ from starlette.routing import Route
 from osmose.feedback import check_feedback_token, read_feedback
 from ui.components.feedback_modal import feedback_modal, feedback_server
 
+
 def _harden_shiny_otel_source_ref() -> None:
     """Make Shiny's per-renderer OTel source extraction non-fatal.
 
@@ -539,6 +540,26 @@ app_ui = ui.page_fillable(
                         pill.classList.remove('osm-disabled');
                     }
                 }
+            });
+        });
+
+        // ── Dismiss a static Bootstrap modal (server-driven) ─────
+        // For modals rendered as static markup and opened client-side by data-bs-toggle,
+        // ui.remove_modal() is a no-op (it only removes ui.modal_show() modals). The
+        // feedback modal's success path sends 'hide-modal' instead.
+        var _hideModalRegistered = false;
+        document.addEventListener('shiny:connected', function() {
+            if (_hideModalRegistered) return;
+            _hideModalRegistered = true;
+            Shiny.addCustomMessageHandler('hide-modal', function(msg) {
+                // Registration is safe without bootstrap, the body is not: the bundle can
+                // load AFTER shiny:connected (see the changelog modal's poll below).
+                if (typeof bootstrap === 'undefined') return;
+                var el = document.getElementById(msg.id);
+                if (!el) return;
+                // getOrCreateInstance, not getInstance: this modal may never have been
+                // instantiated from JS, and getInstance returns null in that case.
+                bootstrap.Modal.getOrCreateInstance(el).hide();
             });
         });
 
