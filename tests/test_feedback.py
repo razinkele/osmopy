@@ -5,9 +5,12 @@ from __future__ import annotations
 import pytest
 
 from osmose.feedback import (
+    MAX_CONTACT,
+    MAX_STORE_BYTES,
     append_feedback,
     build_feedback_record,
     check_feedback_token,
+    looks_like_email,
     read_feedback,
 )
 
@@ -79,3 +82,37 @@ def test_env_override_path(tmp_path, monkeypatch):
     monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(p))
     append_feedback(build_feedback_record("bug", "via env"))  # no path= → uses env
     assert [r["message"] for r in read_feedback()] == ["via env"]
+
+
+def test_contact_is_capped():
+    r = build_feedback_record("bug", "m", contact="c" * 5000)
+    assert len(r["contact"]) == MAX_CONTACT
+
+
+def test_honeypot_non_empty_is_rejected():
+    with pytest.raises(ValueError, match="honeypot"):
+        build_feedback_record("bug", "m", honeypot="i am a bot")
+
+
+@pytest.mark.parametrize(
+    "s,ok",
+    [
+        ("a@b.co", True),
+        ("first.last+tag@sub.example.org", True),
+        ("", False),
+        ("no-at-sign", False),
+        ("a@", False),
+        ("@b.co", False),
+        ("a b@c.co", False),
+    ],
+)
+def test_looks_like_email(s, ok):
+    assert looks_like_email(s) is ok
+
+
+def test_append_refuses_when_store_is_over_cap(tmp_path, monkeypatch):
+    p = tmp_path / "f.jsonl"
+    p.write_bytes(b"x" * (MAX_STORE_BYTES + 1))
+    monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(p))
+    with pytest.raises(RuntimeError, match="store is full"):
+        append_feedback(build_feedback_record("bug", "m"))

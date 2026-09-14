@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime
@@ -24,6 +25,9 @@ _FILE_ENV = "OSMOSE_FEEDBACK_FILE"
 _TOKEN_ENV = "OSMOSE_FEEDBACK_TOKEN"
 _VALID_TYPES = {"bug", "suggestion", "other"}
 _MAX_MESSAGE = 5000
+MAX_CONTACT = 254  # RFC 5321 practical maximum for an address
+MAX_STORE_BYTES = 50 * 1024 * 1024
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
 
 def _resolve(path: Path | None) -> Path:
@@ -34,10 +38,23 @@ def _resolve(path: Path | None) -> Path:
     return Path(env) if env else FEEDBACK_FILE
 
 
+def looks_like_email(s: str) -> bool:
+    """Shape check only — deliberately NOT an RFC validator and NOT a deliverability check."""
+    return bool(_EMAIL_RE.match((s or "").strip()))
+
+
 def build_feedback_record(
-    type: str, message: str, *, contact: str = "", version: str = "", nav_tab: str = ""
+    type: str,
+    message: str,
+    *,
+    contact: str = "",
+    version: str = "",
+    nav_tab: str = "",
+    honeypot: str = "",
 ) -> dict:
     """Validated feedback record. Raises ValueError on unknown type / empty message; truncates."""
+    if (honeypot or "").strip():
+        raise ValueError("honeypot field was filled — rejecting as automated submission")
     if type not in _VALID_TYPES:
         raise ValueError(f"Unknown feedback type: {type!r}")
     msg = (message or "").strip()
@@ -48,7 +65,7 @@ def build_feedback_record(
         "ts": datetime.now().isoformat(),
         "type": type,
         "message": msg[:_MAX_MESSAGE],
-        "contact": (contact or "").strip(),
+        "contact": (contact or "").strip()[:MAX_CONTACT],
         "version": version,
         "nav_tab": nav_tab,
     }
@@ -57,6 +74,8 @@ def build_feedback_record(
 def append_feedback(record: dict, *, path: Path | None = None) -> None:
     """Append one record as a JSON line (creates parent dir; POSIX flock; single-worker safe)."""
     p = _resolve(path)
+    if p.is_file() and p.stat().st_size >= MAX_STORE_BYTES:
+        raise RuntimeError(f"feedback store is full ({p.stat().st_size} bytes) — rotate {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(record) + "\n"
     with open(p, "a", encoding="utf-8") as f:
