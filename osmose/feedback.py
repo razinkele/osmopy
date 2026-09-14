@@ -32,6 +32,8 @@ module's ``build_feedback_record`` and, earlier in the request, the submit handl
 or the differing responses name the trap field. One constant so the two cannot drift."""
 _MAX_MESSAGE = 5000
 MAX_CONTACT = 254  # RFC 5321 practical maximum for an address
+MAX_NAV_TAB = 200  # a nav-panel id; 200 is generous for one
+MAX_VERSION = 64  # a version string; generous for any real one
 MAX_STORE_BYTES = 50 * 1024 * 1024
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 
@@ -57,6 +59,33 @@ def looks_like_email(s: str) -> bool:
     return bool(_EMAIL_RE.match((s or "").strip()))
 
 
+def _as_capped_text(value: object, cap: int) -> str:
+    """Coerce any value to a capped string. TOTAL — never raises, whatever ``value`` is.
+
+    Both halves matter, and the ``str()`` is the half that is easy to leave out.
+
+    * The CAP is what stops one request filling the 50 MiB store. Every other client-settable
+      field already had one (``message`` 5000, ``contact`` ``MAX_CONTACT``, ``type`` validated
+      against a whitelist); ``nav_tab`` did not, and it is stored verbatim. Four 16 MiB
+      submissions — inside the 5-per-hour budget — filled the store permanently, after which
+      the honeypot became a one-probe oracle again: the clean arm gets the terminal save error
+      with the modal open, the baited arm gets success and a dismiss.
+    * The ``str()`` is not cosmetic. ``(value or "")[:cap]`` — the obvious fix — RAISES for the
+      types a crafted client can actually send: ``KeyError`` for a ``dict``, ``TypeError`` for
+      ``int``/``float``/``bool``. A ``list`` and a ``str`` slice fine, so a test covering only
+      those two passes over a live hole. Measured 2026-09-14. And a raise here propagates to
+      ``_store_submission``, which is exactly the distinguishable-response oracle the cap
+      exists to close — so the naive fix reopens per request what it closed per store.
+
+    A ``list`` is the other trap: ``[:cap]`` keeps 200 *elements*, which can be 200 × 100 kB.
+    Only coercing first bounds the bytes.
+    """
+    try:
+        return "" if not value else str(value)[:cap]
+    except Exception:  # noqa: BLE001 — a record field must never take the submission down
+        return ""
+
+
 def build_feedback_record(
     type: str,
     message: str,
@@ -73,6 +102,13 @@ def build_feedback_record(
     call ``save_contact(record["id"], contact)``, which writes it to the private side-store.
     This is a deliberate structural split: the record is designed to be copied into a public
     GitHub issue, so the address must never be reachable through it.
+
+    Every field that lands in the record is BOUNDED here, at the chokepoint, rather than only at
+    the caller: ``id`` and ``ts`` are generated, ``type`` is whitelisted, ``has_contact`` is a
+    bool, ``message`` is capped at ``_MAX_MESSAGE``, and ``version``/``nav_tab`` go through
+    ``_as_capped_text``. Capping in the handler alone would leave the next caller of this
+    function free to reintroduce an unbounded field, and the store has no per-record size guard
+    of its own — only a whole-file one that, once tripped, stays tripped.
     """
     if (honeypot or "").strip():
         raise ValueError("honeypot field was filled — rejecting as automated submission")
@@ -87,8 +123,8 @@ def build_feedback_record(
         "type": type,
         "message": msg[:_MAX_MESSAGE],
         "has_contact": bool((contact or "").strip()),
-        "version": version,
-        "nav_tab": nav_tab,
+        "version": _as_capped_text(version, MAX_VERSION),
+        "nav_tab": _as_capped_text(nav_tab, MAX_NAV_TAB),
     }
 
 

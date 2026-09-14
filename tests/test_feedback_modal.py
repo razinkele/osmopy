@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import json
 import logging
 import re
 from html.parser import HTMLParser
@@ -19,6 +20,8 @@ from types import SimpleNamespace
 import pytest
 
 import ui.components.feedback_modal as fm
+import osmose.feedback as osmose_feedback
+from osmose.feedback import MAX_NAV_TAB
 from osmose.feedback_limits import MAX_KEYS, RateLimiter
 from ui.components.feedback_modal import feedback_modal
 
@@ -532,9 +535,15 @@ def test_store_does_not_invite_a_retry_that_cannot_work(monkeypatch, exc):
     """A full store and an unwritable path both persist until an OPERATOR acts.
 
     "try again" is not merely unhelpful here, it is false: the user retries, it fails
-    identically, and they conclude the app is broken. Per DEPLOY.md:11 the production source
-    tree is read-only to the service user, so EACCES on every submission is the likely live
-    state of this deployment -- the case this copy is written for.
+    identically, and they conclude the app is broken.
+
+    An earlier version of this docstring justified the EACCES case by claiming the production
+    source tree is read-only to the service user, citing DEPLOY.md. That was measured and
+    REFUTED (see DEPLOY.md's writable-state bullet, which now records the retraction): the tree
+    is service-user writable and the default store path works. The BEHAVIOUR pinned here is
+    unaffected and still correct -- EACCES, EROFS, ENOSPC and a full store are all terminal
+    wherever they occur, and a read-only mount or a wrong-owner StateDirectory can still
+    produce them. Only the "this is what production does" claim was wrong.
     """
     err = _store_with_append_raising(monkeypatch, exc)
     assert err == fm._TERMINAL_SAVE_MSG, f"terminal failure {exc!r} produced retry copy: {err!r}"
@@ -805,6 +814,134 @@ def test_a_refusal_notification_failure_does_not_kill_the_effect(monkeypatch):
     asyncio.run(submit())  # must not raise
 
     assert boom, "the refusal notification was never attempted — the test proved nothing"
+
+
+# nav_tab: the only client-settable field that had no cap.
+# Each payload is large enough that an UNCAPPED store would take ~4 requests to fill 50 MiB,
+# which fits inside the 5-per-hour budget. `int` and `dict` additionally break the NAIVE fix
+# `(nav_tab or "")[:200]` (TypeError / KeyError); `list` defeats it a third way, since slicing
+# keeps 200 *elements* which can be 200 x 100 kB; `str` is the only one the naive fix handles,
+# which is exactly why a str-only test would pass over a live hole.
+_NAV_PAYLOADS = {
+    "str": "x" * 2_000_000,
+    "list": ["y" * 100_000] * 300,
+    "dict": {"k" * 100_000: "v" * 100_000},
+    "int": 10**4000,
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_NAV_PAYLOADS))
+def test_nav_tab_cannot_fill_the_store_or_reopen_the_oracle(monkeypatch, tmp_path, kind):
+    """`nav_tab` is client-settable, was stored verbatim, and had no cap.
+
+    Two consequences, both closed by capping it:
+
+    * **The store is a shared, permanent resource.** ``MAX_STORE_BYTES`` is a whole-FILE guard
+      with no per-record limit, and once tripped it stays tripped until an operator rotates. A
+      handful of oversized ``nav_tab`` values inside the ordinary rate-limit budget therefore
+      DoS the feature for everyone, permanently.
+    * **A full store reopens the honeypot oracle.** Clean arm: terminal save error, modal stays
+      open. Baited arm: success copy, modal dismissed. All three observables differ again.
+
+    Driven against the REAL store on disk, not a monkeypatched ``append_feedback``: what is
+    being asserted is how many BYTES reach the file, which a fake cannot show.
+    """
+    store = tmp_path / "feedback.jsonl"
+    monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(store))
+    monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(tmp_path / "contacts.jsonl"))
+    monkeypatch.setattr(fm, "_LIMITER", RateLimiter(max_per_window=5, window_s=3600))
+    monkeypatch.setattr(fm.ui, "notification_show", lambda m, **kw: None)
+    monkeypatch.setattr(fm.ui, "update_text_area", lambda i, **kw: None)
+    monkeypatch.setattr(fm.ui, "update_text", lambda i, **kw: None)
+
+    submit = _capture_submit(
+        monkeypatch,
+        _FakeInput(
+            feedback_message="a real bug report",
+            feedback_type="bug",
+            feedback_website="",
+            main_nav=_NAV_PAYLOADS[kind],
+        ),
+        _FakeSession(),
+    )
+    asyncio.run(submit())
+
+    assert store.is_file(), f"{kind}: nothing was stored — the test proved nothing"
+    size = store.stat().st_size
+    assert size < 10_000, (
+        f"{kind}: one submission wrote {size} bytes; ~{fm_max_store() // size} of them would "
+        f"fill the {fm_max_store()} byte store permanently"
+    )
+    rec = json.loads(store.read_text(encoding="utf-8").splitlines()[0])
+    assert isinstance(rec["nav_tab"], str), (
+        f"{kind}: nav_tab was stored as {type(rec['nav_tab']).__name__}, not str — an "
+        "uncoerced value keeps its full size no matter what the cap says"
+    )
+    assert len(rec["nav_tab"]) <= MAX_NAV_TAB, (
+        f"{kind}: nav_tab stored {len(rec['nav_tab'])} chars, cap is {MAX_NAV_TAB}"
+    )
+
+
+@pytest.mark.parametrize("kind", sorted(_NAV_PAYLOADS))
+def test_a_crafted_nav_tab_cannot_exhaust_the_store_within_the_rate_limit(
+    monkeypatch, tmp_path, kind
+):
+    """The exploit itself: spend the whole hourly budget on oversized `nav_tab` values.
+
+    This is the assertion that matters, and it is deliberately NOT "the two honeypot arms look
+    the same once the store is full". Once the store IS full, ACCEPT and DROP *are*
+    distinguishable — the clean arm gets the terminal save error, the baited arm gets success —
+    and no amount of capping changes that. The oracle is a CONSEQUENCE of a full store; the
+    defence is preventing a client from filling one. So what is pinned here is that the whole
+    5-per-hour budget cannot fill it.
+
+    ``MAX_STORE_BYTES`` is patched down to 1 MiB so one uncapped submission (payloads are ~2 MiB
+    and up) would blow it. Patching the constant rather than writing 50 MiB per parameter keeps
+    the test honest about the ratio while staying fast.
+    """
+    store = tmp_path / "feedback.jsonl"
+    monkeypatch.setenv("OSMOSE_FEEDBACK_FILE", str(store))
+    monkeypatch.setenv("OSMOSE_CONTACTS_FILE", str(tmp_path / "contacts.jsonl"))
+    monkeypatch.setattr(osmose_feedback, "MAX_STORE_BYTES", 1_000_000)
+    monkeypatch.setattr(fm, "_LIMITER", RateLimiter(max_per_window=5, window_s=3600))
+    notes: list = []
+    monkeypatch.setattr(fm.ui, "notification_show", lambda m, **kw: notes.append(m))
+    monkeypatch.setattr(fm.ui, "update_text_area", lambda i, **kw: None)
+    monkeypatch.setattr(fm.ui, "update_text", lambda i, **kw: None)
+
+    submit = _capture_submit(
+        monkeypatch,
+        _FakeInput(
+            feedback_message="a real bug report",
+            feedback_type="bug",
+            feedback_website="",
+            main_nav=_NAV_PAYLOADS[kind],
+        ),
+        _FakeSession(),
+    )
+    for _ in range(5):  # the entire per-client hourly budget
+        asyncio.run(submit())
+
+    assert store.is_file(), f"{kind}: nothing was ever stored — the test proved nothing"
+    lines = [ln for ln in store.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == 5, (
+        f"{kind}: {len(lines)}/5 submissions stored — the store filled part-way through and "
+        f"the feature is now broken for every other user. Notifications seen: {notes!r}"
+    )
+    size = store.stat().st_size
+    assert size < osmose_feedback.MAX_STORE_BYTES, (
+        f"{kind}: one client filled the store to {size} bytes against a "
+        f"{osmose_feedback.MAX_STORE_BYTES} byte cap using nothing but nav_tab"
+    )
+    assert fm._TERMINAL_SAVE_MSG not in notes, (
+        f"{kind}: the store hit its cap inside one client's hourly budget — {notes!r}"
+    )
+
+
+def fm_max_store() -> int:
+    from osmose.feedback import MAX_STORE_BYTES
+
+    return MAX_STORE_BYTES
 
 
 # ── _finish_success: steps must fail INDEPENDENTLY ───────────────────────────────

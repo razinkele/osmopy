@@ -234,10 +234,15 @@ ExecStart=${SHINY_PYTHON} -m uvicorn app:app --host 127.0.0.1 --port ${APP_PORT}
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
-# Calibration checkpoints must land in a service-user-writable dir. The source
-# tree (WorkingDirectory) lives under another user's home and is read-only to
-# 'shiny', so point OSMOSE_RESULTS_DIR at a systemd StateDirectory that systemd
-# creates (owned by the service user) on every start.
+# Calibration checkpoints land in a systemd StateDirectory that systemd creates,
+# owned by the service user, on every start.
+# NOTE: this comment used to say the source tree "lives under another user's home
+# and is read-only to 'shiny'". That was measured on 2026-09-14 and is FALSE --
+# the tree is owned by and writable to the service user, and this unit sets no
+# ProtectSystem/ReadOnlyPaths. Do not reason from the old claim: it was copied
+# into DEPLOY.md and from there into a wrong prediction about the feedback store
+# that took a review round to retract. OSMOSE_RESULTS_DIR is still correct and
+# should stay -- keeping state out of the source tree survives a redeploy.
 StateDirectory=osmose/calibration_results
 Environment=OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results
 

@@ -23,7 +23,9 @@ from shiny.types import SilentException
 
 from osmose import __version__
 from osmose.feedback import (
+    MAX_NAV_TAB,
     VALID_TYPES,
+    _as_capped_text,
     append_feedback,
     build_feedback_record,
     looks_like_email,
@@ -182,8 +184,16 @@ def _safe_text(input, name: str) -> str:
 
 
 def _safe_nav(input) -> str:
+    """The active nav panel, coerced to a capped string. Never raises.
+
+    ``main_nav`` is a client-settable Shiny input with no whitelist, and until 2026-09-14 its
+    value was stored VERBATIM and uncapped — the only record field without a bound. See
+    ``osmose.feedback._as_capped_text`` for what that cost and why the cap must coerce rather
+    than slice. The authoritative cap is in ``build_feedback_record``; this one bounds the value
+    at the boundary it enters, so nothing downstream ever handles the raw object.
+    """
     try:
-        return input.main_nav() or ""
+        return _as_capped_text(input.main_nav(), MAX_NAV_TAB)
     except (SilentException, AttributeError):
         return ""
 
