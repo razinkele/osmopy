@@ -336,7 +336,9 @@ def test_issue_url_rejects_a_non_http_scheme(bad):
     Raising beats emitting a link the caller might escape and render anyway: escaping an attribute
     value cannot make its scheme safe, so there is no "safe" way to render one of these.
     """
-    with pytest.raises(ValueError):
+    # `match=` so the test asserts WHICH guard fired: a bare `raises(ValueError)` would also be
+    # satisfied by some unrelated future ValueError and would stop testing the scheme gate.
+    with pytest.raises(ValueError, match="must use http or https"):
         github_issue_url({"type": "bug", "message": "SCHEME_MARK m"}, bad)
 
 
