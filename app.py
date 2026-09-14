@@ -37,11 +37,15 @@ from ui.pages.fisheries import fisheries_ui, fisheries_server
 
 from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 from osmose.feedback import check_feedback_token, read_feedback
+from osmose.feedback_review import render_review_html
 from ui.components.feedback_modal import feedback_modal, feedback_server
+
+# Project repository — same URL the About modal links to (ui/components/help_modal.py).
+_REPO_URL = "https://github.com/razinkele/osmopy"
 
 
 def _harden_shiny_otel_source_ref() -> None:
@@ -703,6 +707,17 @@ async def _feedback_endpoint(request):
         return JSONResponse({"error": "internal"}, status_code=500)
 
 
+async def _feedback_review(request):
+    try:
+        if not check_feedback_token(request.headers.get("x-feedback-token")):
+            return PlainTextResponse("forbidden", status_code=403)
+        return HTMLResponse(render_review_html(read_feedback(), _REPO_URL))
+    except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+        return PlainTextResponse("internal", status_code=500)
+
+
 # Mount the read-only feedback API BEFORE Shiny's catch-all Mount("/") — add_route would
 # append AFTER it and the route would 404. See the feedback-system spec.
 app.starlette_app.routes.insert(0, Route("/api/feedback", _feedback_endpoint, methods=["GET"]))
+# Same reason for the maintainer review page: it must precede the catch-all Mount("/").
+app.starlette_app.routes.insert(0, Route("/feedback/review", _feedback_review, methods=["GET"]))
