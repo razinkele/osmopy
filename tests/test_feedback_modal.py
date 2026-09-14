@@ -618,6 +618,13 @@ def test_a_failed_notification_still_clears_and_dismisses(monkeypatch, caplog):
     assert any("success notification" in r.getMessage() for r in caplog.records), (
         "the failed step left no log evidence"
     )
+    # The ERROR escalation is for a TOTAL failure only. Firing it here would make it noise and
+    # would also let a `>= 1` comparison masquerade as the `== attempted` one.
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert not errors, (
+        "one failed step out of several escalated to ERROR — that level is reserved for the "
+        f"case where the user saw nothing at all: {[r.getMessage() for r in errors]}"
+    )
 
 
 def test_a_total_post_write_failure_is_logged_as_an_error(monkeypatch, caplog):
@@ -625,6 +632,13 @@ def test_a_total_post_write_failure_is_logged_as_an_error(monkeypatch, caplog):
 
     They will assume the submission failed and send it again, so silence here becomes a
     duplicate record with no trace of why.
+
+    **This test pins the PROPERTY, not the step count.** It never says "five"; it makes the
+    underlying calls raise and asserts the escalation fired. Add a sixth best-effort step that
+    goes through the same ``ui`` functions and this keeps working, while an escalation compared
+    against a hand-maintained literal would silently stop firing. A step added through some
+    *other* mechanism will red this test rather than pass it — which is the correct signal to
+    extend the patching below, not a reason to loosen the assertion.
     """
 
     def _boom(*_a, **_kw):
@@ -644,10 +658,16 @@ def test_a_total_post_write_failure_is_logged_as_an_error(monkeypatch, caplog):
         except Exception as exc:  # noqa: BLE001 — any escape at all is the failure under test
             raise AssertionError(f"_finish_success let {exc!r} escape") from exc
 
+    # Guard against the test silently stopping to force failures at all: without this, a
+    # refactor that routed the steps elsewhere would leave the ERROR assertion below failing
+    # for a reason nobody could read off the message.
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings, "no step was made to fail — this test is no longer forcing the scenario"
+
     errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
     assert errors, (
         "every post-write step failed and nothing was logged at ERROR — the user saw no "
-        "confirmation and the operator has no way to know"
+        f"confirmation and the operator has no way to know ({len(warnings)} steps failed)"
     )
     assert "resubmit" in errors[0].getMessage(), (
         f"the error does not say why it matters: {errors[0].getMessage()!r}"

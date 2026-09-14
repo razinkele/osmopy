@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 
 from shiny import reactive, ui
 from shiny.types import SilentException
@@ -48,10 +49,6 @@ _SHARED_KEY = "_no-client-address_"
 
 _SUCCESS_MSG = "Thanks — feedback saved."
 # tests/test_e2e_feedback.py waits for the substring "saved" in the notification. Keep it.
-
-# Post-write steps in _finish_success: notification, three field clears, modal dismiss. Used
-# only to recognise a total failure, which escalates from WARNING to ERROR.
-_FINISH_STEPS = 5
 
 # Warn-once flags for the three degraded rate-limiting modes. Silent degradation becomes a
 # mystery ticket; one warning becomes a config fix.
@@ -347,30 +344,39 @@ async def _finish_success(session) -> None:
     therefore fails alone, and a clean sweep of failures escalates to ERROR so the silence is
     never total.
     """
-    failed: list[str] = []
+    # Every synchronous best-effort step, as (label, call). The ERROR escalation below derives
+    # its total from this list rather than from a hand-maintained constant: a literal would
+    # silently stop matching the moment a step was added, and the escalation would cease to
+    # exist with nothing going red to say so.
+    steps: list[tuple[str, Callable[[], None]]] = [
+        (
+            "success notification",
+            lambda: ui.notification_show(_SUCCESS_MSG, type="message", duration=4),
+        ),
+        ("clear message field", lambda: ui.update_text_area("feedback_message", value="")),
+        ("clear contact field", lambda: ui.update_text("feedback_contact", value="")),
+        ("clear honeypot field", lambda: ui.update_text("feedback_website", value="")),
+    ]
 
-    def _step(label: str, fn) -> None:
+    failed: list[str] = []
+    for label, call in steps:
         try:
-            fn()
+            call()
         except Exception:  # noqa: BLE001 — one dead step must not take the others with it
             failed.append(label)
             _log.warning("feedback: %s failed after the record was written", label, exc_info=True)
 
-    _step(
-        "success notification",
-        lambda: ui.notification_show(_SUCCESS_MSG, type="message", duration=4),
-    )
-    _step("clear message field", lambda: ui.update_text_area("feedback_message", value=""))
-    _step("clear contact field", lambda: ui.update_text("feedback_contact", value=""))
-    _step("clear honeypot field", lambda: ui.update_text("feedback_website", value=""))
-
+    # The dismiss is awaited, so it cannot sit in `steps`. It is still a post-write step, so it
+    # is counted on BOTH sides — +1 here and a `failed` entry below — because special-casing it
+    # out of either side would make a genuine total failure uncountable.
+    attempted = len(steps) + 1
     try:
         await session.send_custom_message("hide-modal", {"id": MODAL_ID})
     except Exception:  # noqa: BLE001 — a closed socket cannot undo a completed save
         failed.append("modal dismiss")
         _log.warning("feedback: modal dismiss failed after the record was written", exc_info=True)
 
-    if len(failed) == _FINISH_STEPS:
+    if len(failed) == attempted:
         # The user was shown nothing at all. They will assume it failed and submit again, so
         # the operator has to be able to see that from the log alone.
         _log.error(
