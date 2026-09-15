@@ -15,7 +15,7 @@ import pytest
 
 from osmose.plotly_theme import ensure_templates
 from osmose.schema import build_registry
-from tests._xdist_support import worker_numba_cache_dir
+from tests._xdist_support import worker_numba_cache_dir, worker_numba_thread_cap
 
 # Give each xdist worker its own numba cache dir BEFORE any engine kernel
 # compiles. The engine's @njit(cache=True) kernels otherwise share one
@@ -28,6 +28,23 @@ _worker_cache = worker_numba_cache_dir(
 if _worker_cache is not None:
     _worker_cache.mkdir(parents=True, exist_ok=True)
     os.environ["NUMBA_CACHE_DIR"] = str(_worker_cache)
+
+# Cap each xdist worker's numba thread pool, for the same reason and at the same
+# moment: numba reads NUMBA_NUM_THREADS once, at ITS import, which has not happened
+# yet here (conftest's own imports above do not pull numba in -- verified). Without
+# this, every worker sizes its pool from the LOGICAL cpu count while `-n auto`
+# spawns one worker per PHYSICAL cpu, so the machine is ~14x oversubscribed and
+# wall-clock budgets in subprocesses blow (PR #148). No-op on serial runs.
+#
+# `setdefault`, so an explicit NUMBA_NUM_THREADS from the developer still wins.
+# `os.sched_getaffinity` where available, because numba derives its own maximum the
+# same way and the value must never exceed it.
+_worker_threads = worker_numba_thread_cap(
+    os.environ.get("PYTEST_XDIST_WORKER"),
+    len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1),
+)
+if _worker_threads is not None:
+    os.environ.setdefault("NUMBA_NUM_THREADS", _worker_threads)
 
 # Register the "osmose" Plotly template once before any test runs. Without this,
 # tests that render charts (tests/test_ui_results.py, test_ui_charts.py, etc.)
