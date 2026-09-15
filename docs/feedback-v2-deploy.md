@@ -33,6 +33,34 @@ Run everything as root on the app host. `deploy.sh` needs sudo. Do step 0 first 
 Expect c21349d1..., Environment without any feedback vars, and 200.
 **Write the SHA down** — it is the rollback ref in step 6.
 
+## ORDERING — do steps 1-3 in one sitting, and do not invite submissions between them
+
+Steps 1-2 take effect on the **still-running v1**, because the service restarts before the code is
+replaced. Two consequences, neither fatal but both worth closing quickly:
+
+- **v1 honours `OSMOSE_FEEDBACK_FILE`** (`_FILE_ENV`, `osmose/feedback.py:23` on the deployed tree),
+  so from step 2's restart until step 3 completes, v1 writes to the new `/var/lib/osmose/feedback/`
+  path — in v1's shape, i.e. with the reporter's address **inline**.
+- **v1's `read_feedback` does no scrubbing**: it returns each record verbatim, `contact` key and all
+  (the normalisation that drops it exists only in v2). So the moment the token from step 1 is live,
+  v1's `GET /api/feedback` will serve unscrubbed addresses to anyone holding it.
+
+The store is empty at the time of writing (`data/feedback/` does not exist), so there is nothing to
+expose *today* — the risk is only for a submission that arrives inside the window. Keep the window to
+minutes and it is a non-issue.
+
+**If you must stop between step 2 and step 3**, remove the `OSMOSE_FEEDBACK_TOKEN` line from
+`/etc/osmose-shiny.env` and `systemctl restart osmose-shiny` first: with no token,
+`check_feedback_token` returns False for every caller and the endpoint is closed again. Put the line
+back before step 3.
+
+Setting it to an EMPTY STRING also disables it — `check_feedback_token` (`osmose/feedback.py`) reads
+`tok = os.environ.get(...)` then `if not tok ... return False`, so unset and `""` behave identically
+and the endpoint is closed either way. **This is the opposite of `OSMOSE_TRUSTED_PROXY` in the same
+file**, which is a bare `os.environ.get(...)` truthiness test on the string, so `0` and `false`
+ENABLE it and only removing the line disables it. The two variables genuinely do not share a
+convention — check the guard, do not pattern-match from the neighbouring line.
+
 ## 1. Secrets file (root-owned, 0600)
 
 NOT `Environment=` in the unit: `systemctl show` prints those to ANY local user (demonstrated this
