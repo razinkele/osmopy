@@ -1,5 +1,24 @@
 # Feedback v2 deploy sequence
 
+> **STATUS: EXECUTED 2026-09-15 ~22:45. This deploy is DONE.**
+> Prod moved `c21349d1` (2026-07-19) -> `54ccac8`, 481 commits. All four steps verified: v1 gone
+> (`feedback_review.py` present, HTTP 200, `NRestarts=0`); token set in a root-owned 0600
+> EnvironmentFile and absent from `systemctl show -p Environment`; `OSMOSE_TRUSTED_PROXY=1`; and a
+> real UI submission whose record carried `has_contact: true` with NO `contact` key, address in a
+> separate `contacts.jsonl`. The store was then hardened to 0700/0600 (see below) and the smoke-test
+> record removed.
+>
+> **Do not re-run this sequence.** It is kept as the record of what was done and why, and for the
+> traps in it that generalise — steps 1-2 still describe the live configuration. Retire it once
+> `DEPLOY.md` fully describes the steady state.
+>
+> **One thing changed AFTER this ran:** the store's 0600 file mode is now enforced in code
+> (`_append_json_line`, PR #154), not only by this host's `StateDirectoryMode=0700`. systemd's
+> StateDirectory defaults to 0755 and `osmose/feedback.py` set no mode at all, so `contacts.jsonl` —
+> which holds reporter email addresses — landed world-readable on first write. Found by checking
+> the modes after everything else already looked green.
+
+
 A one-time, ordered runbook for moving production from feedback **v1** to **v2**. Written
 2026-09-15 against master @ `55cadb6`.
 
@@ -145,11 +164,17 @@ dependencies. Consider checking those three still load afterwards.
 
 ## 5. Known, pre-existing, NOT caused by this deploy
 
-- `pyvis` is MISSING from the shared env and deploy.sh never installs it (it handles only 5 of the 18
-  runtime deps). The import at osmose/trophic_network.py:204 is lazy and UNGUARDED, so the app starts
-  fine and the trophic-network feature raises ModuleNotFoundError when used. Broken before the deploy,
-  broken after. Fix separately:
-      /opt/micromamba/envs/shiny/bin/pip install "pyvis @ git+https://github.com/razinkele/pyvis.git@v4.2"
+- **`pyvis` — RESOLVED 2026-09-15, no action needed.** It was missing from the shared env because
+  `deploy.sh` did not install it; the import at `osmose/trophic_network.py:204` is lazy and
+  UNGUARDED, so the app started fine and the trophic-network feature raised `ModuleNotFoundError`
+  only when used. `deploy.sh` now installs it (PR #152, `bee2996`), and the deploy carried it into
+  the running env — verified there: `pyvis 4.2`.
+  **The trap, if this ever recurs:** `pyvis` is a FORK (`razinkele/pyvis`, "Optimized Edition",
+  versioned 4.x); PyPI's `pyvis` is a different lineage that stops at **0.3.2**, and `pip show pyvis`
+  succeeds for BOTH. So it can never be a presence check like `pymoo`/`SALib` — a presence check
+  passes while leaving the WRONG package installed. The floor check (`pyvis: 4.2`) is what
+  distinguishes them, because `0.3.2 < 4.2` fails it. If you ever see `pyvis 0.3.2`, pip resolved
+  PyPI instead of the fork; reinstall with `--force-reinstall` from the git URL.
 - The env has `shiny==1.7.0` against a declared `shiny>=1.6.3,<1.7`. deploy.sh's floor check only
   tests the LOWER bound, so it passes a check meant to catch exactly this. Pre-dates the deployed
   commit (pin added 2026-06-16, prod deployed 2026-07-19) and prod currently serves 200, so it is
