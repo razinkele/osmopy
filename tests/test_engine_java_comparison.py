@@ -389,7 +389,25 @@ class TestJavaEngineComparison:
 
     @pytest.fixture(scope="class")
     def java_output(self, tmp_path_factory):
-        """Run Java engine once for the entire test class."""
+        """Run Java engine once for the entire test class.
+
+        The 600s budget is contention hardening, not headroom for a slow JVM.
+        Serially this 30-year run costs ~15s (the whole file is ~19s). But it is a
+        WALL-CLOCK budget on a child process, and this repo's own suite invocation
+        oversubscribes the box: `-n auto` spawns one worker per PHYSICAL core (14
+        here) while each worker's Numba kernels default to NUMBA_NUM_THREADS = one
+        per LOGICAL core (28) -- ~14x more runnable threads than CPUs, exactly the
+        hazard .github/workflows/ci.yml already warns about. The JVM is descheduled
+        accordingly. Measured 2026-09-15: at `-n 14` over the engine-heavy files,
+        120s (~8x serial) expired and ERRORed all four tests in this class -- one
+        class-scoped fixture failure takes the whole class down -- while the same
+        tests pass serially and under a lighter mix. 600s is ~40x serial, outside
+        any plausible contention factor, and still bounds a genuinely hung JVM.
+
+        Same reasoning as the CPU-time switch in tests/test_csv_overlay_perf.py
+        (commit 02c43d3); `time.process_time()` is not an option here because the
+        cost is incurred in a child process, not this one.
+        """
         output_dir = tmp_path_factory.mktemp("java_output")
         cmd = [
             "java",
@@ -401,7 +419,7 @@ class TestJavaEngineComparison:
             "-Psimulation.time.nyear=30",
             "-Poutput.start.year=0",
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         assert result.returncode == 0, f"Java engine failed:\n{result.stderr}"
         return output_dir
 
