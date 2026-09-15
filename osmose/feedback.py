@@ -144,7 +144,36 @@ def _append_json_line(p: Path, payload: dict, *, what: str) -> None:
         raise RuntimeError(f"{what} is full ({p.stat().st_size} bytes) — rotate {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(payload) + "\n"
-    with open(p, "a", encoding="utf-8") as f:
+    # 0600, enforced HERE for the same reason the size cap and the flock live here: one
+    # implementation, so it cannot be applied to one store and not the other. `contacts.jsonl`
+    # holds email addresses, and `feedback.jsonl` is only PII-free when written entirely by
+    # current code (a legacy v1 line can still carry an inline `contact`; `read_feedback`
+    # scrubs its OUTPUT, not the file).
+    #
+    # os.open with the mode argument rather than open()+chmod, so the file is never even
+    # briefly group/world-readable between creation and the fix. The explicit chmod after it
+    # covers the two cases the creation mode cannot: a file created by an older version of
+    # this code, and a umask that masked bits out of the requested 0600.
+    #
+    # Measured in production 2026-09-15: both stores landed 0644 because nothing here set a
+    # mode at all. A deployment-side fix (systemd StateDirectoryMode=0700) protects one host;
+    # this protects every host.
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as f:
+        # A chmod failure must NOT cost us the record. The realistic cause is a store file owned
+        # by another user (someone ran the app as root once), where the mode is exactly what we
+        # cannot fix and exactly what we most want to know about. So: log loudly, keep storing.
+        # Raising here would trade a permissions problem for silent data loss, which is the worse
+        # of the two — the record is the thing a reporter cannot resubmit.
+        try:
+            os.chmod(p, 0o600)
+        except OSError as exc:  # noqa: BLE001 — never let a mode fix discard a record
+            _log.warning(
+                "Could not set 0600 on %s (%s); the store may be readable by other local "
+                "users. Check its owner — this process cannot chmod a file it does not own.",
+                p,
+                exc,
+            )
         try:
             import fcntl
 
