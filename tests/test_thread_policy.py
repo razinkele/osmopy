@@ -234,7 +234,7 @@ def test_cap_is_thread_local_same_process(restore_numba_threads):
 
 
 @pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores to observe a cap")
-def test_cap_does_not_leak_into_forkserver_worker(monkeypatch, restore_numba_threads):
+def test_cap_does_not_leak_into_forkserver_worker(restore_numba_threads):
     """Regression guard: the single-run cap must stay a *thread-local runtime*
     call (`numba.set_num_threads`), so calibration's forkserver workers keep the
     unrestricted default. Note the cap cannot leak into a forkserver worker via
@@ -256,18 +256,24 @@ def test_cap_does_not_leak_into_forkserver_worker(monkeypatch, restore_numba_thr
 
     from tests.helpers import numba_thread_count
 
-    # Defuse a cross-file hazard: tests/test_jit_determinism.py sets
-    # os.environ["NUMBA_NUM_THREADS"] and never restores it. multiprocessing's
-    # forkserver process is a singleton that persists (and is reused) for the
-    # rest of THIS interpreter's life once started, so if any earlier test in
-    # the same process (e.g. a real ProcessPoolExecutor(forkserver) pool, as
-    # osmose/calibration's "process" backend uses) started it while that env
-    # var was polluted, every worker forked from it inherits the stale value
-    # forever after — clearing the env here would be too late for an
-    # already-running server. `_stop()` is multiprocessing's own sanctioned
-    # test hook ("Method used by unit tests to stop the server") to force a
-    # fresh respawn once the env is clean, regardless of what ran before.
-    monkeypatch.delenv("NUMBA_NUM_THREADS", raising=False)
+    # Force a fresh forkserver. multiprocessing's forkserver process is a
+    # singleton that persists (and is reused) for the rest of THIS interpreter's
+    # life once started, so a server spawned earlier — by any real
+    # ProcessPoolExecutor(forkserver) pool, as osmose/calibration's "process"
+    # backend uses — hands every later worker the environment it was started
+    # with. `_stop()` is multiprocessing's own sanctioned test hook ("Method used
+    # by unit tests to stop the server") to force a respawn from the current env.
+    #
+    # This deliberately does NOT delete NUMBA_NUM_THREADS. It used to, to defuse
+    # the unrestored os.environ write in tests/test_jit_determinism.py; conftest's
+    # autouse `_restore_numba_thread_state` now guarantees that centrally, and
+    # under xdist conftest legitimately SETS this var (the per-worker thread cap,
+    # `_xdist_support.worker_numba_thread_cap`). Deleting it would desynchronise
+    # parent from child — the parent's numba.config.NUMBA_NUM_THREADS is frozen at
+    # the capped value while a freshly forked child would compute the uncapped one,
+    # and the assertion below reads `28 == 8` instead of a leak. Measured, not
+    # theorised. The test keeps its teeth either way: if the single-run cap leaked,
+    # the child reports 1, not `default`.
     multiprocessing.forkserver._forkserver._stop()
     tp.apply_single_run_threads(1)
     assert numba.get_num_threads() == 1
