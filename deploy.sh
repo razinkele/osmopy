@@ -196,9 +196,15 @@ fi
 # unconditionally. cma <=3.3.0 breaks under numpy 2; shinyswatch <0.11 forces a sass
 # compile under shiny 1.6.3; shinywidgets floor raised. shiny_deckgl must match prod's
 # layer_legend_widget API (v1.9.2).
-info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl)..."
+info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl, pyvis)..."
 "${PIP_INSTALL[@]}" --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
 "${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
+# pyvis is a FORK (razinkele/pyvis "Optimized Edition", versioned 4.x); PyPI's pyvis is a
+# different lineage that stops at 0.3.2. So it must be installed from the git URL, and it must
+# NOT be a presence check like pymoo/SALib above: `pip show pyvis` succeeds for the upstream
+# package too, so a presence check would happily leave the WRONG pyvis in place. The floor
+# check below is what distinguishes them -- 0.3.2 < 4.2 fails it loudly.
+"${PIP_INSTALL[@]}" --quiet --upgrade "pyvis @ git+https://github.com/razinkele/pyvis.git@v4.2"
 
 # Fail loudly if any floor is unmet after install.
 "${PIP_INSTALL[@]}" --quiet "packaging" || true
@@ -206,7 +212,8 @@ info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_d
 import sys
 from importlib.metadata import version
 from packaging.version import Version
-floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.6.3", "shiny_deckgl": "1.9.2"}
+floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.6.3",
+          "shiny_deckgl": "1.9.2", "pyvis": "4.2"}
 bad = []
 for pkg, floor in floors.items():
     have = version(pkg)
