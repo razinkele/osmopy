@@ -63,6 +63,33 @@ class TestSingleMapLoad:
         )
         assert mms.maps[0].dtype == np.float64
 
+    def test_missing_map_file_raises(self, tmp_path):
+        cfg = _base_config(tmp_path, map_file="missing.csv")
+        with pytest.raises(FileNotFoundError, match="Movement map file"):
+            MovementMapSet(
+                cfg,
+                "Anchovy",
+                n_dt_per_year=4,
+                n_years=1,
+                lifespan_dt=12,
+                ny=3,
+                nx=3,
+            )
+
+    def test_invalid_map_file_raises(self, tmp_path):
+        (tmp_path / "map0.csv").write_text("0.1;0.2\n")
+        cfg = _base_config(tmp_path)
+        with pytest.raises(ValueError, match="Failed to load movement map file"):
+            MovementMapSet(
+                cfg,
+                "Anchovy",
+                n_dt_per_year=4,
+                n_years=1,
+                lifespan_dt=12,
+                ny=3,
+                nx=3,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Test 2 — index_maps filled for all age/step combos
