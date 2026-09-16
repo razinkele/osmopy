@@ -21,13 +21,14 @@ logger = logging.getLogger(__name__)
 def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
     """Resolve a relative CSV map file path against multiple candidate directories.
 
-    Thin wrapper around :func:`resolve_data_path`. Returns the original path
-    (for a clear FileNotFoundError) when the shared resolver returns None.
+    Thin wrapper around :func:`resolve_data_path`. Missing explicit movement
+    map files are config errors: returning ``None`` is reserved for authored
+    ``movement.file.mapN=null`` entries that intentionally move schools out.
     """
     result = resolve_data_path(filepath_str, config_dir=config_dir)
     if result is not None:
         return result
-    return Path(filepath_str)  # fall through — open() will raise FileNotFoundError
+    raise FileNotFoundError(f"Movement map file could not be resolved: {filepath_str!r}")
 
 
 def _parse_semicolon_ints(value: str, limit: int) -> list[int]:
@@ -218,8 +219,7 @@ class MovementMapSet:
                 try:
                     raw_grids[i] = _load_csv_grid(fp, ny, nx)
                 except (FileNotFoundError, OSError, ValueError) as exc:
-                    logger.error("Failed to load movement map file %s: %s", fp, exc)
-                    raw_grids[i] = None
+                    raise ValueError(f"Failed to load movement map file {fp}: {exc}") from exc
 
         # --- Build deduplicated maps list ---
         # Collect only canonical indices (remap[i] == i), preserving order
