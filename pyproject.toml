@@ -41,6 +41,31 @@ docs = ["sphinx>=8", "myst-parser>=4", "furo>=2024.1"]
 # unit-tested has no rasterio dependency, and the network-fetch script itself is not
 # unit-tested -- only opt in when actually building the fine grid.
 forcing = ["rasterio>=1.3"]
+
+# Runtime deps for the MCP servers under mcp_servers/ (currently: Copernicus Marine).
+# NOT in [dev]: the servers are launched by an MCP client via .mcp.json, not by the test
+# suite, and pulling a ~fastmcp+copernicusmarine stack into every dev install is a large
+# cost for code CI does not exercise. Install with: pip install -e ".[mcp]"
+#
+# These were previously UNDECLARED ENTIRELY, which is how issue #162 happened:
+# copernicusmarine 2.x renamed `overwrite_output_data` to `overwrite`, the server kept
+# passing the old name, and `download_baltic_data` failed on every call for an unknown
+# period. With no version floor or ceiling anywhere, that upgrade was invisible.
+#
+# copernicusmarine: the <3 ceiling is the point of this entry, not decoration -- the
+#   v1->v2 rename is the break it exists to catch. VERIFIED against 2.4.1, the version
+#   `tests/test_copernicus_mcp_api_signatures.py` checks the server's kwargs against.
+# fastmcp: UNVERIFIED ceiling. fastmcp is not installed in this dev env (the MCP env
+#   tests skip on its absence), so the working major is untested from here; latest on
+#   PyPI is 4.x. `<5` is a TRIPWIRE so the next major is a deliberate upgrade, not a
+#   silent one -- narrow it once someone confirms which majors the server runs on.
+# python-dotenv: already required by [dev] for scripts/make_baltic_oxygen_forcing.py;
+#   repeated here because server.py imports it at module scope and [mcp] must stand alone.
+mcp = [
+    "copernicusmarine>=2,<3",
+    "fastmcp>=2,<5",
+    "python-dotenv>=1.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
