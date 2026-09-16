@@ -82,7 +82,7 @@ def _as_capped_text(value: object, cap: int) -> str:
     """
     try:
         return "" if not value else str(value)[:cap]
-    except Exception:  # noqa: BLE001 — a record field must never take the submission down
+    except Exception:
         return ""
 
 
@@ -119,7 +119,11 @@ def build_feedback_record(
         raise ValueError("Feedback message is empty")
     return {
         "id": uuid.uuid4().hex,
-        "ts": datetime.now().isoformat(),
+        # DTZ005 is suppressed below: a tz-aware ts would change the stored record format,
+        # which is
+        # live in production and already written to disk. Naive local time is the existing
+        # convention here, not an oversight — changing it is a data-format decision.
+        "ts": datetime.now().isoformat(),  # noqa: DTZ005
         "type": type,
         "message": msg[:_MAX_MESSAGE],
         "has_contact": bool((contact or "").strip()),
@@ -167,7 +171,7 @@ def _append_json_line(p: Path, payload: dict, *, what: str) -> None:
         # of the two — the record is the thing a reporter cannot resubmit.
         try:
             os.chmod(p, 0o600)
-        except OSError as exc:  # noqa: BLE001 — never let a mode fix discard a record
+        except OSError as exc:
             _log.warning(
                 "Could not set 0600 on %s (%s); the store may be readable by other local "
                 "users. Check its owner — this process cannot chmod a file it does not own.",
@@ -217,7 +221,7 @@ def lookup_contact(feedback_id: str, *, path: Path | None = None) -> str | None:
     for raw in p.read_text(encoding="utf-8").splitlines():
         try:
             rec = json.loads(raw)
-        except Exception:  # noqa: BLE001 — skip a corrupt line, don't fail the lookup
+        except Exception:
             continue
         if rec.get("id") == feedback_id:
             return rec.get("email")
@@ -241,7 +245,7 @@ def read_feedback(*, path: Path | None = None) -> list[dict]:
             continue
         try:
             rec = json.loads(raw)
-        except Exception:  # noqa: BLE001 — skip a corrupt line, don't fail the read
+        except Exception:
             _log.warning("Skipping corrupt feedback line")
             continue
         if not isinstance(rec, dict):

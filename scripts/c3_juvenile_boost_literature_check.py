@@ -63,7 +63,7 @@ from scipy.stats import pearsonr, spearmanr
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from osmose.calibration.bioen_offline import (  # noqa: E402
+from osmose.calibration.bioen_offline import (
     BioenFixed,
     c_m_from_share,
     fit_species,
@@ -71,9 +71,9 @@ from osmose.calibration.bioen_offline import (  # noqa: E402
     solve_tp,
     vbgf_weight,
 )
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine.config import EngineConfig  # noqa: E402
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine.config import EngineConfig
 
 NDT = 24
 BETA_EMPIRICAL = 0.75  # Kiorboe & Hirst 2014: ingestion ~ w^(3/4)
@@ -125,7 +125,7 @@ def main() -> int:
     for tg in targets:
         res = fit_species(tg, fx, ndt=NDT, juvenile_boost=True)
         j = res.juvenile_boost
-        n_steps = int(round(tg.lifespan_years * NDT))
+        n_steps = round(tg.lifespan_years * NDT)
         t_p = solve_tp(tg.t_opt, fx)
 
         # The fitted model's own weight path, including the boost it chose.

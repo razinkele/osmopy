@@ -304,7 +304,7 @@ def _restore_numba_thread_state():
         numba = sys.modules.get("numba")
         try:
             return numba.get_num_threads() if numba is not None else None
-        except Exception:  # noqa: BLE001 — numba present but threading layer unusable
+        except Exception:
             return None
 
     saved_threads = _snapshot()
@@ -326,5 +326,5 @@ def _restore_numba_thread_state():
         target = saved_threads if saved_threads is not None else numba.config.NUMBA_NUM_THREADS
         try:
             numba.set_num_threads(target)
-        except Exception:  # noqa: BLE001 — never let cleanup mask a real failure
+        except Exception:
             pass

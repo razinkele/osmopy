@@ -66,8 +66,7 @@ class RateLimiter:
 
     def allow(self, key: str, now: float) -> bool:
         cutoff = now - self.window_s
-        if now < self._last_sweep:
-            self._last_sweep = now
+        self._last_sweep = min(self._last_sweep, now)
         if now - self._last_sweep >= self._sweep_interval:
             self._sweep_stale(cutoff)
             self._last_sweep = now

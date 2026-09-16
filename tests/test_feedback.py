@@ -85,7 +85,7 @@ def test_read_skips_non_object_line(tmp_path):
     append_feedback(build_feedback_record("bug", "after"), path=p)
     try:
         out = read_feedback(path=p)
-    except Exception as exc:  # noqa: BLE001 — report the defect, not a raw AttributeError
+    except Exception as exc:
         raise AssertionError(f"read_feedback raised on a non-object line: {exc!r}") from exc
     assert [r["message"] for r in out] == ["after", "before"]  # newest first, both survive
 

@@ -78,11 +78,11 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import osmose.engine.processes.reproduction as repro_mod  # noqa: E402
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
-from osmose.engine.config import EngineConfig  # noqa: E402
+import osmose.engine.processes.reproduction as repro_mod
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
+from osmose.engine.config import EngineConfig
 
 N_YEAR = 50
 FINAL_DECADE = 10
@@ -101,7 +101,7 @@ def assert_seeds_match_stage1() -> bool:
     check must not have side effects.
     """
     src = (ROOT / "scripts" / "baltic_c3_bioen_ab.py").read_text()
-    m = re.search(r"^SEEDS\s*=\s*\(([^)]*)\)", src, re.M)
+    m = re.search(r"^SEEDS\s*=\s*\(([^)]*)\)", src, re.MULTILINE)
     if not m:
         print("  E4 WARNING: could not find SEEDS in baltic_c3_bioen_ab.py")
         return False
@@ -201,9 +201,7 @@ def main() -> int:
     print(f"{'species':<13}" + "".join(f"{t:>18}" for t, *_ in arms) + f"{'floor (1%)':>14}")
     for s in focal:
         floor = 0.01 * across("baseline", s)
-        print(
-            f"{s:<13}" + "".join(f"{across(t, s):>18.1f}" for t, *_ in arms) + f"{floor:>14.1f}"
-        )
+        print(f"{s:<13}" + "".join(f"{across(t, s):>18.1f}" for t, *_ in arms) + f"{floor:>14.1f}")
 
     print(f"\n{'=' * 96}\nPER-SEED final-decade biomass (t), the four Stage-1 collapsed stocks")
     print("=" * 96)

@@ -301,7 +301,8 @@ def mode_budget(raw, overlay, ab, years, seed):
         q = [float(np.mean(v)) if v else float("nan") for v in a["wq"]]
         print(
             f"{name:<14}{a['em'] / a['eg']:>9.3f}{float(np.mean(a['phi'])):>8.3f}"
-            + "".join(f"{x:>9.2f}" if x == x else f"{'--':>9}" for x in q)
+            # `x == x` is the NaN test (NaN != itself): print "--" for NaN, not a typo.
+            + "".join(f"{x:>9.2f}" if x == x else f"{'--':>9}" for x in q)  # noqa: PLR0124
         )
     print("\nm_share >> target => c_m | phiT far below Sec.3's phiT(Tbar) => inflation")
     print("m_small != m_large => beta (both e_gross and e_maint scale as w^beta)")

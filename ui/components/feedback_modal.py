@@ -17,7 +17,9 @@ import ipaddress
 import os
 import time
 from collections.abc import Callable
+from typing import Literal
 
+from htmltools import Tag
 from shiny import reactive, ui
 from shiny.types import SilentException
 
@@ -126,7 +128,10 @@ def _honeypot_field():
     """
     tag = ui.input_text("feedback_website", "Website", width="100%")
     for child in tag.children:
-        if getattr(child, "name", None) == "input":
+        # isinstance rather than getattr(child, "name"): tag.children is a union (Tag, str,
+        # HTML, MetadataNode, ...) and only Tag has .attrs, so the getattr form was an
+        # unnarrowed attribute access that happened to work at runtime.
+        if isinstance(child, Tag) and child.name == "input":
             child.attrs.update({"autocomplete": "off", "tabindex": "-1"})
     return tag
 
@@ -244,7 +249,7 @@ def _client_key(session) -> str:
             # Lowercase key via .get: Starlette's Headers is case-insensitive and a plain
             # dict fake then behaves identically.
             xff = (headers.get("x-forwarded-for", "") or "").strip()
-        except Exception:  # noqa: BLE001 — an exotic headers object must not kill submission
+        except Exception:
             xff = ""
     if xff:
         if os.environ.get(_TRUSTED_PROXY_ENV):
@@ -421,14 +426,14 @@ def _store_submission(
             honeypot=honeypot,  # provably "" here; keeps the library guard live, not inert
         )
         append_feedback(rec)
-    except Exception as exc:  # noqa: BLE001 — never crash the session on a save failure
+    except Exception as exc:
         _log.error("feedback save failed", exc_info=True)
         return _TERMINAL_SAVE_MSG if _is_terminal_save_failure(exc) else _RETRY_SAVE_MSG
 
     if contact:
         try:
             save_contact(rec["id"], contact)
-        except Exception:  # noqa: BLE001 — the feedback itself is already safely stored
+        except Exception:
             _log.error(
                 "feedback %s was stored but its contact address was LOST — the record says "
                 "has_contact=true and no contacts row exists for it",
@@ -460,7 +465,9 @@ async def _finish_success(session) -> None:
     # its total from this list rather than from a hand-maintained constant: a literal would
     # silently stop matching the moment a step was added, and the escalation would cease to
     # exist with nothing going red to say so.
-    steps: list[tuple[str, Callable[[], None]]] = [
+    # Callable[[], object]: these lambdas return whatever the shiny call returns
+    # (notification_show yields a str id); the return value is deliberately unused.
+    steps: list[tuple[str, Callable[[], object]]] = [
         (
             "success notification",
             lambda: ui.notification_show(_SUCCESS_MSG, type="message", duration=4),
@@ -474,7 +481,7 @@ async def _finish_success(session) -> None:
     for label, call in steps:
         try:
             call()
-        except Exception:  # noqa: BLE001 — one dead step must not take the others with it
+        except Exception:
             failed.append(label)
             _log.warning("feedback: %s failed after the record was written", label, exc_info=True)
 
@@ -484,7 +491,7 @@ async def _finish_success(session) -> None:
     attempted = len(steps) + 1
     try:
         await session.send_custom_message("hide-modal", {"id": MODAL_ID})
-    except Exception:  # noqa: BLE001 — a closed socket cannot undo a completed save
+    except Exception:
         failed.append("modal dismiss")
         _log.warning("feedback: modal dismiss failed after the record was written", exc_info=True)
 
@@ -498,7 +505,12 @@ async def _finish_success(session) -> None:
         )
 
 
-def _notify(message: str, *, type: str, duration: int) -> None:
+def _notify(
+    message: str,
+    *,
+    type: Literal["default", "message", "warning", "error"],
+    duration: int,
+) -> None:
     """Show one notification, best-effort. Never raises.
 
     ``_finish_success`` already guards its own ``notification_show`` because a transport
@@ -510,7 +522,7 @@ def _notify(message: str, *, type: str, duration: int) -> None:
     """
     try:
         ui.notification_show(message, type=type, duration=duration)
-    except Exception:  # noqa: BLE001 — a dead socket must not kill the submit effect
+    except Exception:
         _log.warning("feedback: could not show the %r notification", type, exc_info=True)
 
 
@@ -534,7 +546,9 @@ def feedback_server(input, output, session, state):
         )
 
         if outcome == REJECT:
-            _notify(message, type="warning", duration=6)
+            # message is Optional by the classifier's signature; REJECT always carries one,
+            # but fall back rather than pass None into a str parameter.
+            _notify(message or _RETRY_SAVE_MSG, type="warning", duration=6)
             return
 
         if outcome == DROP:

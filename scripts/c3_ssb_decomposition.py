@@ -79,9 +79,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
 
 # 20 yr, one ARM PER PROCESS: a 30-yr two-arm run exceeded the memory envelope (swap 87% full).
 # cod_east/herring/flounder seed for 15/12/15 yr, so years 15-19 are already 4-8 yr post-seeding
@@ -231,7 +231,7 @@ def main() -> int:
         rows[s] = (rt, prod, closes, dom)
         print(
             f"{s:<13}{rt['SSB']:>11.4f}{rt['N_total']:>10.4f}{rt['frac_mature']:>10.4f}"
-            f"{rt['mean_w']:>10.4f}{prod:>10.4f}{str(closes):>9}   {dom}"
+            f"{rt['mean_w']:>10.4f}{prod:>10.4f}{closes!s:>9}   {dom}"
         )
 
     print(

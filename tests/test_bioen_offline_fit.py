@@ -459,8 +459,9 @@ def test_juvenile_boost_fixes_age_one_without_costing_rms():
 
 def test_juvenile_boost_maps_onto_the_engine_cap_form():
     """`j` must be expressible in the engine's own `imax + (theta-1)*c_rate` form."""
-    from osmose.engine.processes.bioen_predation import per_fish_ingestion_cap
     import numpy as np
+
+    from osmose.engine.processes.bioen_predation import per_fish_ingestion_cap
 
     imax, j = 7.46, 2.88
     # the documented mapping: c_rate := imax, theta := j

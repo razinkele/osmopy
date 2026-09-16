@@ -3,47 +3,40 @@
 import json
 from pathlib import Path
 
-from osmose import __version__
-
 from shiny import App, reactive, render, ui
-
-from ui.state import AppState
-from ui.components.help_modal import about_modal, changelog_modal, help_modal
-from ui.theme import THEME
-from osmose.plotly_theme import ensure_templates
-
 from shiny_deckgl import head_includes as _deckgl_head
-
-from ui.components.renderer_badge import renderer_badge_script
-
-from ui.pages.setup import setup_ui, setup_server
-from ui.pages.grid import grid_ui, grid_server
-from ui.pages.forcing import forcing_ui, forcing_server
-from ui.pages.fishing import fishing_ui, fishing_server
-from ui.pages.movement import movement_ui, movement_server
-from ui.pages.run import run_ui, run_server
-from ui.pages.results import results_ui, results_server
-from ui.pages.spatial_results import spatial_results_ui, spatial_results_server
-from ui.pages.calibration import calibration_ui, calibration_server
-from ui.pages.sensitivity_explorer import sensitivity_explorer_ui, sensitivity_explorer_server
-from ui.pages.scenarios import scenarios_ui, scenarios_server
-from ui.pages.advanced import advanced_ui, advanced_server
-from ui.pages.map_viewer import map_viewer_ui, map_viewer_server
-from ui.pages.map_builder import map_builder_ui, map_builder_server
-from ui.pages.genetics import genetics_ui, genetics_server
-from ui.pages.economic import economic_ui, economic_server
-from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
-from ui.pages.fisheries import fisheries_ui, fisheries_server
-
-from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
-
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
+from osmose import __version__
+from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 from osmose.feedback import check_feedback_token, read_feedback
 from osmose.feedback_review import render_review_html
 from osmose.logging import setup_logging
+from osmose.plotly_theme import ensure_templates
 from ui.components.feedback_modal import feedback_modal, feedback_server
+from ui.components.help_modal import about_modal, changelog_modal, help_modal
+from ui.components.renderer_badge import renderer_badge_script
+from ui.pages.advanced import advanced_server, advanced_ui
+from ui.pages.calibration import calibration_server, calibration_ui
+from ui.pages.diagnostics import diagnostics_server, diagnostics_ui
+from ui.pages.economic import economic_server, economic_ui
+from ui.pages.fisheries import fisheries_server, fisheries_ui
+from ui.pages.fishing import fishing_server, fishing_ui
+from ui.pages.forcing import forcing_server, forcing_ui
+from ui.pages.genetics import genetics_server, genetics_ui
+from ui.pages.grid import grid_server, grid_ui
+from ui.pages.map_builder import map_builder_server, map_builder_ui
+from ui.pages.map_viewer import map_viewer_server, map_viewer_ui
+from ui.pages.movement import movement_server, movement_ui
+from ui.pages.results import results_server, results_ui
+from ui.pages.run import run_server, run_ui
+from ui.pages.scenarios import scenarios_server, scenarios_ui
+from ui.pages.sensitivity_explorer import sensitivity_explorer_server, sensitivity_explorer_ui
+from ui.pages.setup import setup_server, setup_ui
+from ui.pages.spatial_results import spatial_results_server, spatial_results_ui
+from ui.state import AppState
+from ui.theme import THEME
 
 # Project repository — same URL the About modal links to (ui/components/help_modal.py).
 _REPO_URL = "https://github.com/razinkele/osmopy"
@@ -68,7 +61,7 @@ def _harden_shiny_otel_source_ref() -> None:
     """
     try:
         from shiny.session import _session as _sess
-    except Exception:  # noqa: BLE001 — older/newer Shiny without this internal
+    except Exception:
         return
     orig = getattr(_sess, "extract_source_ref", None)
     if orig is None or getattr(orig, "_osmose_guarded", False):
@@ -77,13 +70,13 @@ def _harden_shiny_otel_source_ref() -> None:
     def _guarded(func):  # type: ignore[no-untyped-def]
         try:
             return orig(func)
-        except Exception:  # noqa: BLE001 — OTel attrs are best-effort, never fatal
+        except Exception:
             return {}
 
     _guarded._osmose_guarded = True  # type: ignore[attr-defined]
     # setattr (not direct assignment): extract_source_ref is a `from … import`
     # binding on the module, so pyright doesn't treat it as a known attribute.
-    setattr(_sess, "extract_source_ref", _guarded)
+    _sess.extract_source_ref = _guarded
 
 
 # Apply at import time, before any session runs server() / registers renderers.
@@ -715,7 +708,7 @@ async def _feedback_endpoint(request):
         if not check_feedback_token(request.headers.get("x-feedback-token")):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return JSONResponse(read_feedback())
-    except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+    except Exception:
         _log.exception("feedback API failed; returning 500 with no detail to the caller")
         return JSONResponse({"error": "internal"}, status_code=500)
 
@@ -731,7 +724,7 @@ async def _feedback_review(request):
             render_review_html(read_feedback(), _REPO_URL),
             headers={"Cache-Control": "no-store"},
         )
-    except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+    except Exception:
         # The response stays bare; the traceback goes to the log. Without this the page is
         # lost in full and nothing anywhere records why -- silent, not loud.
         _log.exception("feedback review page failed; returning 500 with no detail to the caller")

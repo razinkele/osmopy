@@ -105,11 +105,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import osmose.engine.processes.reproduction as repro_mod  # noqa: E402
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
-from osmose.engine.config import EngineConfig  # noqa: E402
+import osmose.engine.processes.reproduction as repro_mod
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
+from osmose.engine.config import EngineConfig
 
 N_YEAR = 8
 SEED = 42
@@ -299,7 +299,7 @@ def main() -> int:
     for tag, *_rest in arms:
         rows[tag] = juvenile_row_in_effect(out[tag]["cfg"])
         shown = rows[tag][:9] if rows[tag] else []
-        print(f"  {tag:<10} {['%.4f' % v for v in shown]}")
+        print(f"  {tag:<10} {[f'{v:.4f}' for v in shown]}")
     distinct = {tuple(v) for v in rows.values() if v}
     e1 = len(distinct) > 1
     print(f"  E1 arms differ in the loaded matrix: {e1}")
