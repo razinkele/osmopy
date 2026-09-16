@@ -249,7 +249,7 @@ def download_field(
             maximum_depth=depth_max,
             output_directory=str(out_path),
             output_filename=filename,
-            overwrite_output_data=True,
+            overwrite=True,
             disable_progress_bar=False,
         )
 
