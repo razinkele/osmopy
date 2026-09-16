@@ -1231,6 +1231,97 @@ before this branch.
     > > reads 0.0 t. With eggs tracking SSB at 1.02–1.24×, more spawners should mean more eggs. That
     > > they do not translate into biomass points at egg→recruit survival, which no test here has
     > > yet isolated.
+    > >
+    > > ---
+    > >
+    > > **⚠️ RESOLVED 2026-09-16 — AND THE QUESTION WAS MALFORMED. IT IS NOT egg→recruit.**
+    > > `scripts/c3_cod_east_egg_pathway.py` (base / ×1.00 / ×0.50 / ×0.25, 25 yr, seed 42) closes it
+    > > with two findings. **The instrument is exact**: its `b_cut` reproduces `res.biomass()` to
+    > > **0.000 %** on all nine species, so it measures precisely the series the "0.0 t" came from.
+    > >
+    > > **(1) The 67 % is noise on an extinct stock — the paragraph above reads a symptom as a
+    > > success.** Over the final 8 yr at ×0.25, cod_east's `frac_mature` is **0.6700** (the same
+    > > number, reproduced) over a total abundance of **6.9 × 10⁻²² fish**. A pre-registered stock
+    > > floor — `tot(d025) ≥ 10 % of tot(d100)` — **FAILS at 0.000**. The fraction is a ratio of two
+    > > numbers that are both ≈ 10⁻²². Worse, its *rise* is caused by the collapse, not opposed to
+    > > it: at ×0.25 `matN/totN` runs 0.56 → 0.78 → 0.87 → 0.92 → 0.91 → 0.85 across years 1–6 while
+    > > abundance falls 7.2e7 → 2.5e5 → 1.6e3 → 13 → 0.08 → 4e-4. Only the largest, oldest fish
+    > > survive, and a 5.5 cm bar marks all of them mature. **"Maturation rose" and "the stock died"
+    > > are the same fact.** So "more spawners should mean more eggs" never had its premise: there
+    > > were no more spawners, only fewer fish.
+    > >
+    > > **egg→recruit survival is NOT the culprit — measured on the years the stock still existed.**
+    > > The tail cannot answer this (it is the noise above), so the ratio is taken where there were
+    > > fish: year-2 age-1 abundance against year-1 eggs, computed without the egg-contaminated
+    > > `by_age` bin 0. cod_east reads **base 7.16e-6, ×1.00 1.50e-6, ×0.50 2.44e-4, ×0.25 7.59e-6** —
+    > > ×0.25 is **1.06× the bioen-off baseline**, i.e. indistinguishable, and ×0.50 is 34× *higher*.
+    > > Nothing here is a survival bottleneck. The pathway the paragraph above points at is the one
+    > > place the deficit is **not**.
+    > >
+    > > **(2) "Both cods collapse FASTER" is an ARTIFACT OF THE INTERVENTION, not the `rho` growth
+    > > tax.** `_bioen_reproduction` (`simulate.py:864-868`) substitutes phantom SSB when — and only
+    > > when — real SSB is **exactly** zero, and `n_eggs_linear` is strictly proportional to whatever
+    > > `ssb` then holds:
+    > >
+    > > ```python
+    > > if ssb[sp] == 0.0 and step < config.seeding_max_step[sp] and config.seeding_biomass[sp] > 0:
+    > >     ssb[sp] = float(config.seeding_biomass[sp])      # cod_east: 100 000 t
+    > > ```
+    > >
+    > > Lowering `m0` makes the first spawner appear sooner, which **switches that off sooner**.
+    > > **Crutch duration is monotone in the dose for all three species in the table above** — and
+    > > cod_west carries it with the RV gate **off** (`…enabled.sp0=false`), so the `from_seeding`
+    > > exemption is *not* what drives the ordering:
+    > >
+    > > | species | crutch steps ×1.00 / ×0.50 / ×0.25 | real SSB yr 1, ×0.25 | N yr 4 ×1.00 / ×0.50 / ×0.25 |
+    > > |---|---|---:|---|
+    > > | cod_east | **44 / 31 / 23** | 146 t | 2.77e3 / 3.31e-2 / 1.30e1 |
+    > > | cod_west | **65 / 43 / 30** | 2.8 t | 5.61e4 / 5.73e0 / 5.69e-1 |
+    > > | flounder | **56 / 37 / 21** | **302 t** | 1.45e7 / 6.91e6 / 4.75e6 |
+    > >
+    > > **The collapse itself is NOT monotone, and the original table was right to call it so** —
+    > > for cod_east ×0.50 is the *worst* arm, not ×0.25. What tracks the outcome is not crutch
+    > > step-count but **total egg supply in the first years, phantom + real**: lowering `m0` trades
+    > > phantom eggs for real ones, and `season_factor` means only crutched steps overlapping the
+    > > spawning window ever produced phantom eggs at all. cod_east year-1 eggs order
+    > > ×1.00 6.35e12 > ×0.25 1.65e10 > ×0.50 1.65e8 — exactly as year-2 abundance orders
+    > > (5.79e7 > 2.50e5 > 4.16e4). In the one year ×1.00 was crutched and ×0.25 was not, eggs differ
+    > > **384×** (ratio 0.0026).
+    > >
+    > > **This also explains flounder's reversal** (the one species in the original table that decayed
+    > > *more slowly* at lower `m0`, and which that table's growth-tax story left unexplained). The
+    > > trade is only bad when real SSB cannot replace the phantom. Flounder builds **302 t** of real
+    > > SSB by year 1 at ×0.25 against cod_west's 2.8 t, and its egg→recruit is ~1.3e-4 against the
+    > > cods' ~1e-6 — **two orders of magnitude more recruit per egg** — so for flounder the real
+    > > spawners genuinely substitute and lowering `m0` helps. Same mechanism, opposite sign.
+    > > The withdrawal is a cliff, not a gradient — the test is exact equality against 0.0, so a stock
+    > > is cut off from 100 000 t of phantom SSB **for producing its first spawner**, here 0.04 t at
+    > > ×1.00 and 0.11 t at ×0.25. Egg supply falls ~7 orders of magnitude in one year. Seeded eggs
+    > > are additionally tagged `from_seeding`, which exempts them from the RV egg-survival penalty
+    > > (`natural.py:161`) — live for cod_east (`reproduction.rv.gate.species.enabled.sp8=true`) and
+    > > not for cod_west — so cod_east loses two advantages at once.
+    > >
+    > > **The `rho` trade-off above is real in the source, but it is not what produced the ordering
+    > > in that table, and no measurement here supports attributing the ordering to it.** The dose
+    > > ladder varied crutch duration and maturation threshold together; it cannot separate them.
+    > >
+    > > **What this does NOT overturn.** The bioen-off baseline gets the same crutch (21 steps, 1 yr)
+    > > and then sustains itself at **113 690 t**; every bioen arm gets a comparable crutch and goes
+    > > to zero. So bioen cod_east **never reaches self-sustaining SSB under this seeding regime** —
+    > > C3's headline negative stands. Note the weaning SSBs are six orders of magnitude apart, not
+    > > the crutch lengths: base was weaned holding ~5 420 t of real SSB at year 1, the bioen arms at
+    > > **0.0–146 t**. What falls is only the *ordering* within the m0 ladder and the egg→recruit
+    > > reading built on it. **The m0 lever remains refuted; the reason is different.**
+    > >
+    > > **Genuinely open, and cheap:** whether a *sustained* crutch changes the verdict — force
+    > > `population.seeding.year.max` to 15 (rather than popping it) so the fallback cannot be
+    > > switched off by a fractional spawner, and see whether any bioen stock reaches self-sustaining
+    > > SSB given time. This run cannot answer that: every arm here was weaned within 1–3 years.
+    > >
+    > > **Reusable:** a dose ladder whose knob also moves a *discontinuous* engine switch is
+    > > confounded. Record `seeded_this_step` in any Baltic experiment that changes maturity, growth
+    > > or recruitment — the crutch is invisible in every headline output, since `biomass()` shows
+    > > only its consequences.
     > 90–100 % of cap, `m_share` below target), not size (the seal explained that and fixing it
     > changes no biomass), not recruitment as originally framed (there were never spawners to begin
     > with), and not the listed predators. Something removes the numbers while leaving the energetics
