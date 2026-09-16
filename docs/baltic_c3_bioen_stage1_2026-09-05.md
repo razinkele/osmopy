@@ -1313,10 +1313,47 @@ before this branch.
     > > **0.0–146 t**. What falls is only the *ordering* within the m0 ladder and the egg→recruit
     > > reading built on it. **The m0 lever remains refuted; the reason is different.**
     > >
-    > > **Genuinely open, and cheap:** whether a *sustained* crutch changes the verdict — force
-    > > `population.seeding.year.max` to 15 (rather than popping it) so the fallback cannot be
-    > > switched off by a fractional spawner, and see whether any bioen stock reaches self-sustaining
-    > > SSB given time. This run cannot answer that: every arm here was weaned within 1–3 years.
+    > > **The sustained-crutch follow-up is now ANSWERED — 2026-09-16, and it STRENGTHENS the
+    > > negative.** `scripts/c3_sustained_crutch_test.py`. Two corrections to how this follow-up was
+    > > first written down, both from re-reading the source:
+    > >
+    > > * "Force `population.seeding.year.max` to 15" would have been a **NO-OP**. With the key
+    > >   absent the window is already `lifespan_years × n_dt` (`config.py:539-542`) and cod_east's
+    > >   lifespan **is** 15. The window never ended the crutch — the `ssb == 0.0` test did. The
+    > >   **condition** is what has to change, not the window.
+    > > * Unseeded bioen eggs are **not** SSB-proportional: the `elif idx.size:` branch
+    > >   (`simulate.py:880-889`) derives them from gonad mass via `bioen_egg_release`. The sentence
+    > >   above — "eggs are strictly proportional to whatever `ssb` then holds" — is exact for the
+    > >   **seeded** branch, which is the one the crutch drives, but does not generalise. The
+    > >   measured 6.35e12 → 2.88e5 drop and every conclusion drawn from it are unaffected.
+    > >
+    > > The test floors SSB at `seeding_biomass` for the whole window (`ssb = max(ssb_real, floor)`)
+    > > via a `regulate_recruitment` wrapper, on the four collapsing stocks only. It is faithful
+    > > rather than approximate: the engine mutates `ssb`/`n_eggs_linear`/`seeded_this_step` in place
+    > > and hands the same `seeded_this_step` object to `create_egg_schools`, so the sustained eggs
+    > > are tagged `from_seeding` and skip the RV penalty too — **verified**, not assumed (6.35e13
+    > > `from_seeding` egg abundance observed in-window). Instrument reproduces `res.biomass()` to
+    > > 0.00 %; the wrapper forced only its targets (4/5 untouched species bit-identical, perch
+    > > drifts as a food-web response, none shows the forced signature).
+    > >
+    > > | species | eggs delivered vs bioen-OFF base | in-window `b_cut` vs base | vs the `d100` arm | yr 24 |
+    > > |---|---:|---:|---:|---:|
+    > > | cod_west | **2.18×** | 0.64 % | 17.7 t vs 0.00 t | **0.00** |
+    > > | cod_east | **1.10×** | 0.30 % | 380 t vs 0.00 t | **0.00** |
+    > > | herring | **1.02×** | 4.49 % | 111 755 t vs 249 t | **0.00** |
+    > > | flounder | 0.73× | 2.65 % | 889 t vs 2.17 t | **0.00** |
+    > >
+    > > **RECRUITMENT WAS NEVER THE BINDING CONSTRAINT.** Handed egg supply at or above what the
+    > > healthy bioen-off baseline produces, sustained every step for the entire seeding window, the
+    > > bioen stocks still stand up only **0.3–4.5 %** of baseline biomass — and all four go to
+    > > **exactly zero** after weaning. The loss is between the egg and the 0.5 yr cutoff, not in the
+    > > supply of eggs.
+    > >
+    > > **Both things are true at once, and the second does not rescue the stocks.** Removing the
+    > > discontinuity helps enormously *relative to the bioen arms* — herring 249 t → 111 755 t
+    > > (449×), cod_east 0.00 → 380 t — so the crutch's switch-off is genuinely load-bearing for the
+    > > differences *between* m0 arms, which is what confounded that ladder. But the gap to the
+    > > bioen-off baseline stays 20–300×. **C3's headline negative is not a seeding artifact.**
     > >
     > > **Reusable:** a dose ladder whose knob also moves a *discontinuous* engine switch is
     > > confounded. Record `seeded_this_step` in any Baltic experiment that changes maturity, growth
