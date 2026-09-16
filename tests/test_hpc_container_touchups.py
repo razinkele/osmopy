@@ -47,3 +47,25 @@ def test_cmd_run_clear_error_when_no_jar(tmp_path, monkeypatch, capsys):
     rc = cmd_run(Namespace(config=str(cfg), jar=None, output=None, java_opts=None, timeout=None))
     assert rc == 1
     assert "jar" in capsys.readouterr().err.lower()  # clear error, NOT an argparse usage error
+
+
+def test_cmd_run_rejects_unsafe_java_opts(tmp_path, capsys):
+    from argparse import Namespace
+
+    from osmose.cli import cmd_run
+
+    cfg = tmp_path / "c.csv"
+    cfg.write_text("simulation.nspecies;1\n")
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    rc = cmd_run(
+        Namespace(
+            config=str(cfg),
+            jar=str(jar),
+            output=None,
+            java_opts="-javaagent:/tmp/evil.jar",
+            timeout=None,
+        )
+    )
+    assert rc == 1
+    assert "unsafe jvm option" in capsys.readouterr().err.lower()

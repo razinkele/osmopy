@@ -46,7 +46,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Run an OSMOSE simulation."""
     import asyncio
 
-    from osmose.runner import OsmoseRunner
+    from osmose.runner import OsmoseRunner, validate_java_opts
 
     config_path = Path(args.config)
     if not config_path.exists():
@@ -65,6 +65,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     runner = OsmoseRunner(jar_path=jar_path)
     output_dir = Path(args.output) if args.output else None
     java_opts = args.java_opts.split() if args.java_opts else None
+    try:
+        validate_java_opts(java_opts or [])
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     timeout = args.timeout
 
     result = asyncio.run(

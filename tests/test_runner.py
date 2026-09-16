@@ -560,7 +560,8 @@ def test_validate_java_opts_allows_safe_flags():
     from osmose.runner import validate_java_opts
 
     validate_java_opts(["-Xmx2g", "-Xms512m", "-Xss1m"])
-    validate_java_opts(["-Dfoo.bar=baz"])
+    validate_java_opts(["-Dosmose.log.level=INFO"])
+    validate_java_opts(["-Djava.awt.headless=true"])
     validate_java_opts(["-XX:+UseG1GC"])
     validate_java_opts(["-server"])
     validate_java_opts(["-ea"])
@@ -575,3 +576,19 @@ def test_validate_java_opts_rejects_unsafe_flags():
 
     with pytest.raises(ValueError, match="[Uu]nsafe"):
         validate_java_opts(["-agentlib:jdwp=transport=dt_socket"])
+
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        validate_java_opts(["-Djava.library.path=/tmp"])
+
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        validate_java_opts(["-Dfoo.bar=baz"])
+
+
+def test_build_cmd_validates_java_opts(tmp_path):
+    jar = tmp_path / "osmose.jar"
+    jar.touch()
+    config = tmp_path / "config.csv"
+    config.touch()
+    runner = OsmoseRunner(jar_path=jar)
+    with pytest.raises(ValueError, match="[Uu]nsafe"):
+        runner._build_cmd(config, java_opts=["-javaagent:/tmp/evil.jar"])

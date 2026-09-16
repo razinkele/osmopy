@@ -82,7 +82,6 @@ _OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
 
 _SAFE_JVM_PATTERNS = [
     re.compile(r"^-X(mx|ms|ss)\d+[kmgKMG]?$"),  # memory flags
-    re.compile(r"^-D[\w.]+=[^;|&`$()]*$"),  # system properties
     re.compile(r"^-XX:[+-]?\w+(=[\w.]+)?$"),  # XX flags
     re.compile(r"^-server$"),  # JVM mode
     re.compile(r"^-client$"),
@@ -98,10 +97,47 @@ def validate_java_opts(opts: list[str]) -> None:
     Raises ValueError for any option that doesn't match a known-safe pattern.
     """
     for opt in opts:
+        if opt.startswith("-D"):
+            _validate_system_property(opt)
+            continue
         if not any(p.match(opt) for p in _SAFE_JVM_PATTERNS):
             raise ValueError(
-                f"Unsafe JVM option: {opt!r}. Only memory, GC, and -D flags are allowed."
+                f"Unsafe JVM option: {opt!r}. Only memory, GC, safe -D properties, "
+                "and basic JVM mode/assertion flags are allowed."
             )
+
+
+_SAFE_SYSTEM_PROPERTY_KEYS = {
+    "osmose.log.level",
+    "osmose.output.flush",
+    "java.awt.headless",
+}
+
+_DENIED_SYSTEM_PROPERTY_PREFIXES = (
+    "java.",
+    "javax.",
+    "jdk.",
+    "sun.",
+    "com.sun.",
+    "log4j",
+)
+
+
+def _validate_system_property(opt: str) -> None:
+    match = re.fullmatch(r"-D([\w.]+)=([^;|&`$()]*)", opt)
+    if match is None:
+        raise ValueError(f"Unsafe JVM option: {opt!r}. Invalid -D property syntax.")
+    key = match.group(1)
+    key_lower = key.lower()
+    if key_lower in _SAFE_SYSTEM_PROPERTY_KEYS:
+        return
+    if key_lower.startswith("osmose."):
+        return
+    if any(key_lower.startswith(prefix) for prefix in _DENIED_SYSTEM_PROPERTY_PREFIXES):
+        raise ValueError(f"Unsafe JVM option: {opt!r}. System property {key!r} is not allowed.")
+    raise ValueError(
+        f"Unsafe JVM option: {opt!r}. System property {key!r} is not in the allowlist."
+    )
 
 
 @dataclass
@@ -146,6 +182,7 @@ class OsmoseRunner:
     ) -> list[str]:
         """Build the command list for executing the OSMOSE engine."""
         opts = list(java_opts or [])
+        validate_java_opts(opts)
         if not any(o.startswith("-Xmx") for o in opts):
             opts.append("-Xmx2g")
         cmd = [self.java_cmd, *opts, "-jar", str(self.jar_path), str(config_path)]
