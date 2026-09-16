@@ -5,6 +5,7 @@ and grows with extinction (persistence), envelope violation, drift (trend), and 
 It is a pure function so the picklable calibration objective can call it across a ProcessPool boundary.
 
 Design notes (see docs/superpowers/specs/2026-07-01-baltic-stability-recalibration-spA-design.md):
+
 - persistence is a SMOOTH log10-below-floor term (commensurate with the ICES log10^2 error), not a
   flat step, so it trades off continuously against the ICES match instead of swamping it.
 - the trend term takes the MAX of the full-window and late-window slopes, so a config that holds flat
