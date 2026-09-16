@@ -109,11 +109,11 @@ ROOT = Path(__file__).resolve().parents[1]
 # install to whatever branch the MAIN checkout is on -- the trap CLAUDE.md records.
 sys.path.insert(0, str(ROOT))
 
-import osmose.engine.processes.reproduction as repro_mod  # noqa: E402
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
-from osmose.engine.state import MortalityCause  # noqa: E402
+import osmose.engine.processes.reproduction as repro_mod
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
+from osmose.engine.state import MortalityCause
 
 # OSMOSE_C3_SMOKE_YEARS shortens the run to smoke-test the instrument (E1-E4 wiring) without
 # paying for the full ladder. It is NOT a reporting mode: the pre-registered readings are all
@@ -173,11 +173,28 @@ def run_arm(cfg, n_sp, ndt):
     if not np.isfinite(cutoff).any() or cutoff.max() <= 0:
         cutoff = np.full(n_sp, 0.5)
 
-    z = lambda: np.zeros((N_YEAR, n_sp))  # noqa: E731
-    acc = {k: z() for k in ("tot", "mat_n", "mat_b", "mat_n_yoy", "mat_b_yoy", "n_cut", "b_cut",
-                            "n_age1", "eggs", "ssb_in", "n_linear", "seeded")}
-    deaths = {"yoy": np.zeros((N_YEAR, n_sp, len(CAUSES))),
-              "adult": np.zeros((N_YEAR, n_sp, len(CAUSES)))}
+    z = lambda: np.zeros((N_YEAR, n_sp))
+    acc = {
+        k: z()
+        for k in (
+            "tot",
+            "mat_n",
+            "mat_b",
+            "mat_n_yoy",
+            "mat_b_yoy",
+            "n_cut",
+            "b_cut",
+            "n_age1",
+            "eggs",
+            "ssb_in",
+            "n_linear",
+            "seeded",
+        )
+    }
+    deaths = {
+        "yoy": np.zeros((N_YEAR, n_sp, len(CAUSES))),
+        "adult": np.zeros((N_YEAR, n_sp, len(CAUSES))),
+    }
     steps = np.zeros(N_YEAR)
     n_calls = [0]
 
@@ -197,8 +214,9 @@ def run_arm(cfg, n_sp, ndt):
         def bc(mask, w=None):
             if not mask.any():
                 return np.zeros(n_sp)
-            return np.bincount(sp[mask], weights=None if w is None else w[mask],
-                               minlength=n_sp)[:n_sp]
+            return np.bincount(sp[mask], weights=None if w is None else w[mask], minlength=n_sp)[
+                :n_sp
+            ]
 
         w = np.asarray(state.weight, dtype=np.float64)  # tonnes/fish, gonad EXCLUDED
         aw = abd * w
@@ -243,8 +261,15 @@ def run_arm(cfg, n_sp, ndt):
     ec, grid, rng, mv, mo = PythonEngine()._prepare_run(cfg, SEED)
     repro_mod.regulate_recruitment = wrapper
     try:
-        outs = simulate(ec, grid, rng, movement_rngs=mv, mortality_rngs=mo,
-                        output_dir=None, step_observer=observer)
+        outs = simulate(
+            ec,
+            grid,
+            rng,
+            movement_rngs=mv,
+            mortality_rngs=mo,
+            output_dir=None,
+            step_observer=observer,
+        )
     finally:
         repro_mod.regulate_recruitment = _ORIG_REGULATE
 
@@ -319,8 +344,10 @@ def combine(where: Path, names, ndt) -> int:
     tail = slice(N_YEAR - TAIL, N_YEAR)
 
     print(f"\n{'=' * 100}\nC3 cod_east: why 0.0 t at m0 x 0.25 while 67 % is 'mature'")
-    print(f"arms present: {', '.join(arms)}   cod_east = sp{i}   cutoff = "
-          f"{arms[next(iter(arms))]['cutoff'][i]} yr\n{'=' * 100}")
+    print(
+        f"arms present: {', '.join(arms)}   cod_east = sp{i}   cutoff = "
+        f"{arms[next(iter(arms))]['cutoff'][i]} yr\n{'=' * 100}"
+    )
 
     # ---- FALSIFIERS -------------------------------------------------------------------------
     print("\nFALSIFIERS")
@@ -335,8 +362,10 @@ def combine(where: Path, names, ndt) -> int:
         rel = abs(mine - pub) / pub if pub else (0.0 if mine == 0 else float("inf"))
         ok = rel <= 0.05 or (mine < 1e-9 and pub < 1e-9)
         e3ok &= ok
-        print(f"     E3 {k:<5} b_cut tail mean {mine:>14.4f} t  vs biomass() {pub:>14.4f} t"
-              f"   rel {rel:>7.2%}  {'OK' if ok else 'MISMATCH'}")
+        print(
+            f"     E3 {k:<5} b_cut tail mean {mine:>14.4f} t  vs biomass() {pub:>14.4f} t"
+            f"   rel {rel:>7.2%}  {'OK' if ok else 'MISMATCH'}"
+        )
     print(f"  E3 instrument reproduces the published series (<=5 %)       : {e3ok}")
     m0s = {k: a["m0"][i] for k, a in arms.items()}
     print(f"  E4 cod_east bioen_m0 per arm                                : {m0s}")
@@ -346,15 +375,19 @@ def combine(where: Path, names, ndt) -> int:
         t025 = float(np.mean(_per_step(arms["d025"], "tot", i)[tail]))
         frac = t025 / t100 if t100 else float("inf")
         e5 = frac >= 0.10
-        print(f"  E5 stock floor tot(d025)/tot(d100) over tail = {frac:>8.3f}     : "
-              f"{'OK' if e5 else 'INSUFFICIENT STOCK — fraction is noise on a dying stock'}")
+        print(
+            f"  E5 stock floor tot(d025)/tot(d100) over tail = {frac:>8.3f}     : "
+            f"{'OK' if e5 else 'INSUFFICIENT STOCK — fraction is noise on a dying stock'}"
+        )
     if not (e1 and e2 and e3ok):
         print("\n  A falsifier failed. Nothing below is readable.")
         return 1
 
     # ---- SSB identity -----------------------------------------------------------------------
-    print(f"\n{'-' * 100}\nSSB = N_total x frac_mature x mean_w_mature   (per-step means over the "
-          f"final {TAIL} yr)\n{'-' * 100}")
+    print(
+        f"\n{'-' * 100}\nSSB = N_total x frac_mature x mean_w_mature   (per-step means over the "
+        f"final {TAIL} yr)\n{'-' * 100}"
+    )
     # CAVEAT, and it is not cosmetic: with bioen OFF `bioen_m0` is absent and defaults to 0.0
     # (`config.py:2509`), so the observer's `length >= m0` marks EVERY non-egg school mature and
     # `mat_n` collapses onto `tot`. The bioen-off engine's real maturity is `config.maturity_size`,
@@ -366,8 +399,10 @@ def combine(where: Path, names, ndt) -> int:
     #   mean_w_cut  b_cut / n_cut -- mean weight per fish above the output cutoff, which needs no
     #               maturity definition at all and so is directly comparable across arms.
     base_degenerate = {k: a["m0"][i] == 0.0 for k, a in arms.items()}
-    print(f"  {'arm':<6}{'N_total':>13}{'frac_mat':>10}{'mean_w (t)':>12}{'SSB_obs':>12}"
-          f"{'SSB_eng':>12}{'mean_w_cut':>12}{'b_cut (t)':>13}{'biomass()':>13}")
+    print(
+        f"  {'arm':<6}{'N_total':>13}{'frac_mat':>10}{'mean_w (t)':>12}{'SSB_obs':>12}"
+        f"{'SSB_eng':>12}{'mean_w_cut':>12}{'b_cut (t)':>13}{'biomass()':>13}"
+    )
     ident = {}
     for k, a in arms.items():
         n = float(np.mean(_per_step(a, "tot", i)[tail]))
@@ -381,15 +416,21 @@ def combine(where: Path, names, ndt) -> int:
         mwc = bc / nc if nc else 0.0
         ident[k] = {"n": n, "fm": fm, "mw": mw, "ssb": mb, "bcut": bc, "ssb_eng": se, "mwc": mwc}
         flag = "  <- m0=0, 'mature' = all fish" if base_degenerate[k] else ""
-        print(f"  {k:<6}{n:>13.4e}{fm:>10.4f}{mw:>12.4e}{mb:>12.2f}{se:>12.2f}{mwc:>12.4e}"
-              f"{bc:>13.2f}{a['fd'].get('cod_east', float('nan')):>13.2f}{flag}")
+        print(
+            f"  {k:<6}{n:>13.4e}{fm:>10.4f}{mw:>12.4e}{mb:>12.2f}{se:>12.2f}{mwc:>12.4e}"
+            f"{bc:>13.2f}{a['fd'].get('cod_east', float('nan')):>13.2f}{flag}"
+        )
 
     # ---- H4: the seeding crutch -------------------------------------------------------------
-    print(f"\n{'-' * 100}\nH4  seeding crutch: eggs are proportional to the SSB handed to the "
-          f"regulator,\n    and that SSB is PHANTOM whenever real SSB is exactly 0 inside the "
-          f"window\n{'-' * 100}")
-    print(f"  {'arm':<6}{'steps seeded':>14}{'yrs seeded':>12}{'eggs (total)':>15}"
-          f"{'ssb_in (mean t)':>18}{'real SSB (t)':>15}")
+    print(
+        f"\n{'-' * 100}\nH4  seeding crutch: eggs are proportional to the SSB handed to the "
+        f"regulator,\n    and that SSB is PHANTOM whenever real SSB is exactly 0 inside the "
+        f"window\n{'-' * 100}"
+    )
+    print(
+        f"  {'arm':<6}{'steps seeded':>14}{'yrs seeded':>12}{'eggs (total)':>15}"
+        f"{'ssb_in (mean t)':>18}{'real SSB (t)':>15}"
+    )
     h4 = {}
     for k, a in arms.items():
         sd = np.asarray(a["seeded"])[:, i]
@@ -397,8 +438,9 @@ def combine(where: Path, names, ndt) -> int:
         si = float(np.mean(_per_step(a, "ssb_in", i)))
         rs = float(np.mean(_per_step(a, "mat_b", i)))
         h4[k] = {"seeded": sd, "eggs": eggs}
-        print(f"  {k:<6}{sd.sum():>14.0f}{int((sd > 0).sum()):>12}{eggs:>15.4e}"
-              f"{si:>18.4f}{rs:>15.4f}")
+        print(
+            f"  {k:<6}{sd.sum():>14.0f}{int((sd > 0).sum()):>12}{eggs:>15.4e}{si:>18.4f}{rs:>15.4f}"
+        )
     if "d100" in arms and "d025" in arms:
         s100, s025 = h4["d100"]["seeded"], h4["d025"]["seeded"]
         yrs = np.where((s100 > 0) & (s025 == 0))[0]
@@ -416,10 +458,14 @@ def combine(where: Path, names, ndt) -> int:
         h4_fires = False
 
     # ---- H3: are the 'mature' fish below the output cutoff? ---------------------------------
-    print(f"\n{'-' * 100}\nH3  do the two numbers count the same fish? (mature biomass below the "
-          f"0.5 yr cutoff)\n{'-' * 100}")
-    print(f"  {'arm':<6}{'mat_b (t)':>14}{'mat_b_yoy (t)':>16}{'yoy share':>12}"
-          f"{'mat_n':>14}{'mat_n_yoy':>14}")
+    print(
+        f"\n{'-' * 100}\nH3  do the two numbers count the same fish? (mature biomass below the "
+        f"0.5 yr cutoff)\n{'-' * 100}"
+    )
+    print(
+        f"  {'arm':<6}{'mat_b (t)':>14}{'mat_b_yoy (t)':>16}{'yoy share':>12}"
+        f"{'mat_n':>14}{'mat_n_yoy':>14}"
+    )
     h3 = {}
     for k, a in arms.items():
         mb = float(np.mean(_per_step(a, "mat_b", i)[tail]))
@@ -431,8 +477,10 @@ def combine(where: Path, names, ndt) -> int:
         print(f"  {k:<6}{mb:>14.4f}{my:>16.4f}{sh:>12.4f}{mn:>14.4e}{mny:>14.4e}")
 
     # ---- egg -> recruit ---------------------------------------------------------------------
-    print(f"\n{'-' * 100}\nH2  egg -> recruit: age-1 abundance per egg (eggs from year y-1)"
-          f"\n{'-' * 100}")
+    print(
+        f"\n{'-' * 100}\nH2  egg -> recruit: age-1 abundance per egg (eggs from year y-1)"
+        f"\n{'-' * 100}"
+    )
     print(f"  {'arm':<6}{'eggs/yr':>15}{'age-1 N':>15}{'recruits/egg':>15}")
     sr = {}
     for k, a in arms.items():
@@ -445,8 +493,10 @@ def combine(where: Path, names, ndt) -> int:
         print(f"  {k:<6}{e:>15.4e}{n1:>15.4e}{sr[k]:>15.4e}")
 
     # ---- deaths by cause, split at the cutoff ------------------------------------------------
-    print(f"\n{'-' * 100}\ndeaths by cause over the final {TAIL} yr (young-of-year | at or above "
-          f"cutoff)\n{'-' * 100}")
+    print(
+        f"\n{'-' * 100}\ndeaths by cause over the final {TAIL} yr (young-of-year | at or above "
+        f"cutoff)\n{'-' * 100}"
+    )
     print(f"  {'arm':<6}{'stage':<7}" + "".join(f"{c[:9]:>13}" for c in CAUSES))
     for k, a in arms.items():
         for lab, key in (("yoy", "deaths_yoy"), ("adult", "deaths_adult")):
@@ -454,42 +504,57 @@ def combine(where: Path, names, ndt) -> int:
             print(f"  {k:<6}{lab:<7}" + "".join(f"{x:>13.3e}" for x in d))
 
     # ---- pre-registered verdicts -------------------------------------------------------------
-    print(f"\n{'=' * 100}\nPRE-REGISTERED VERDICTS (fixed before the run; may co-fire)\n{'=' * 100}")
+    print(
+        f"\n{'=' * 100}\nPRE-REGISTERED VERDICTS (fixed before the run; may co-fire)\n{'=' * 100}"
+    )
     # E5 gates H1/H2/H3 because all three are read off the TAIL. When the stock floor fails the
     # tail holds ~1e-22 fish and every ratio through it is noise -- the pre-registration says so, so
     # the printout must say so too rather than reporting a FIRES a later reader would quote.
     b, d = ident.get("base"), ident.get("d025")
     if not e5:
-        print("  H1/H2/H3 are TAIL readings and E5 FAILED -> NOT READABLE. The tail holds ~1e-22 "
-              "fish;\n     no hypothesis about weight, egg->recruit or the cutoff is under test "
-              "there. Read the\n     live years instead (the egg->recruit table above uses yr1->yr2"
-              ", where fish existed).")
+        print(
+            "  H1/H2/H3 are TAIL readings and E5 FAILED -> NOT READABLE. The tail holds ~1e-22 "
+            "fish;\n     no hypothesis about weight, egg->recruit or the cutoff is under test "
+            "there. Read the\n     live years instead (the egg->recruit table above uses yr1->yr2"
+            ", where fish existed)."
+        )
         if b and d:
-            print(f"     for the record only, NOT a verdict: frac_mature(d025) = {d['fm']:.4f} over "
-                  f"N = {d['n']:.4e} fish -- this IS the doc's '67 % maturation'.")
+            print(
+                f"     for the record only, NOT a verdict: frac_mature(d025) = {d['fm']:.4f} over "
+                f"N = {d['n']:.4e} fish -- this IS the doc's '67 % maturation'."
+            )
     elif b and d:
         # SSB vs base uses the ENGINE's own per-arm SSB, and mean weight uses the definition-free
         # per-fish weight above the cutoff -- see the caveat above the identity table.
         ssb_r = d["ssb_eng"] / b["ssb_eng"] if b["ssb_eng"] else float("inf")
         mw_r = d["mwc"] / b["mwc"] if b["mwc"] else float("inf")
         h1 = mw_r <= 0.25 and ssb_r < 0.05 and d["fm"] >= 0.6
-        print(f"  H1 weight tax        mean_w_cut ratio {mw_r:.4f} (<=0.25), SSB_eng ratio "
-              f"{ssb_r:.4f} (<0.05), frac_mat {d['fm']:.4f} (>=0.6)  -> {'FIRES' if h1 else 'no'}")
+        print(
+            f"  H1 weight tax        mean_w_cut ratio {mw_r:.4f} (<=0.25), SSB_eng ratio "
+            f"{ssb_r:.4f} (<0.05), frac_mat {d['fm']:.4f} (>=0.6)  -> {'FIRES' if h1 else 'no'}"
+        )
         if "d100" in ident:
             p = ident["d100"]
-            print(f"     within-bioen (d025 vs d100, same maturity machinery): mean_w_mature "
-                  f"{d['mw'] / p['mw'] if p['mw'] else float('nan'):.4f}x, "
-                  f"mean_w_cut {d['mwc'] / p['mwc'] if p['mwc'] else float('nan'):.4f}x, "
-                  f"SSB_obs {d['ssb'] / p['ssb'] if p['ssb'] else float('nan'):.4f}x")
-        eg_r = (np.asarray(arms["d025"]["eggs"])[:, i].sum()
-                / max(np.asarray(arms["base"]["eggs"])[:, i].sum(), 1e-300))
+            print(
+                f"     within-bioen (d025 vs d100, same maturity machinery): mean_w_mature "
+                f"{d['mw'] / p['mw'] if p['mw'] else float('nan'):.4f}x, "
+                f"mean_w_cut {d['mwc'] / p['mwc'] if p['mwc'] else float('nan'):.4f}x, "
+                f"SSB_obs {d['ssb'] / p['ssb'] if p['ssb'] else float('nan'):.4f}x"
+            )
+        eg_r = np.asarray(arms["d025"]["eggs"])[:, i].sum() / max(
+            np.asarray(arms["base"]["eggs"])[:, i].sum(), 1e-300
+        )
         rec_r = sr.get("d025", 0.0) / sr["base"] if sr.get("base") else float("inf")
         h2 = ssb_r >= 0.20 and eg_r >= 0.20 and rec_r <= 0.10
-        print(f"  H2 egg->recruit      SSB ratio {ssb_r:.4f} (>=0.20), eggs ratio {eg_r:.4f} "
-              f"(>=0.20), recruits/egg ratio {rec_r:.4f} (<=0.10)  -> {'FIRES' if h2 else 'no'}")
+        print(
+            f"  H2 egg->recruit      SSB ratio {ssb_r:.4f} (>=0.20), eggs ratio {eg_r:.4f} "
+            f"(>=0.20), recruits/egg ratio {rec_r:.4f} (<=0.10)  -> {'FIRES' if h2 else 'no'}"
+        )
         h3f = h3.get("d025", 0.0) >= 0.90 and d["bcut"] < 0.01 * max(b["bcut"], 1e-300)
-        print(f"  H3 disjoint pops     yoy share of mature biomass {h3.get('d025', 0):.4f} "
-              f"(>=0.90)  -> {'FIRES' if h3f else 'no'}")
+        print(
+            f"  H3 disjoint pops     yoy share of mature biomass {h3.get('d025', 0):.4f} "
+            f"(>=0.90)  -> {'FIRES' if h3f else 'no'}"
+        )
     print(f"  H4 seeding crutch    -> {'FIRES' if h4_fires else 'no'}")
     return 0
 
