@@ -6,10 +6,9 @@ import inspect
 
 import numpy as np
 
-from osmose.engine.processes.movement import movement
 from osmose.engine.processes.mortality import mortality
+from osmose.engine.processes.movement import movement
 from osmose.engine.processes.predation import predation_for_cell
-
 
 # ---------------------------------------------------------------------------
 # Signature tests

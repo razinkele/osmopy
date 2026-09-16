@@ -12,8 +12,8 @@ Python orchestration layer, simulation engine, and Shiny web interface for the O
 - **Run tests:** `.venv/bin/python -m pytest`
 - **Run single test:** `.venv/bin/python -m pytest tests/test_schema.py::test_name -v`
 - **Run app:** `.venv/bin/shiny run app.py --host 0.0.0.0 --port 8000`
-- **Lint:** `.venv/bin/ruff check osmose/ ui/ tests/`
-- **Format:** `.venv/bin/ruff format osmose/ ui/ tests/`
+- **Lint:** `.venv/bin/ruff check osmose/ ui/ tests/ scripts/ app.py`
+- **Format:** `.venv/bin/ruff format osmose/ ui/ tests/ scripts/ app.py`
 
 ## Architecture
 Schema-driven: every OSMOSE parameter is defined once as an `OsmoseField` in `osmose/schema/`. The UI auto-generates forms from schema metadata. Adding a parameter = adding one field to the schema.
@@ -33,7 +33,6 @@ osmose/          # Core library (usable without Shiny)
 ui/              # Shiny UI (page_fillable + navset_pill_list sidebar)
   pages/         # One module per tab (*_ui() + *_server())
   components/    # Reusable widgets (param_form, etc.)
-  charts.py      # Custom "osmose" Plotly template (ocean palette)
   styles.py      # Centralized style constants
   theme.py       # shinyswatch superhero theme
 mcp_servers/     # MCP servers (Copernicus CMEMS, ICES) — env-based credentials via .env
@@ -109,7 +108,7 @@ When writing bash commands, strictly follow these rules to avoid triggering secu
 - Config reader auto-detects separator per line (`;`, `=`, `,`, `:`, tab) — don't assume a single separator
 - Runner tests use `_ScriptRunner` subclass with mock Python scripts as fake JARs
 - SALib uses `SALib.sample.sobol` (not deprecated `saltelli`)
-- `import ui.charts` in page modules shadows `from shiny import ui` — register templates in `app.py` only
+- The "osmose" Plotly template lives in `osmose/plotly_theme.py`; `app.py` calls `ensure_templates()` once at import. Page modules must not register templates or bind any module to the name `ui` (it shadows `from shiny import ui`)
 - `navset_pill_list` doesn't accept bare strings as section headers — use `ui.nav_control()` wrapper
 - `EngineConfig.from_dict` validates keys against `osmose/engine/config_validation.py`'s allowlist (schema + AST walk of `config.py` + `_SUPPLEMENTARY_ALLOWLIST` for reader-injected metadata / legacy aliases). When adding a new config key the engine reads, the AST walker should capture it automatically; if it doesn't (e.g., key built from a caller-arg `key_pattern`), add to `_SUPPLEMENTARY_ALLOWLIST` rather than extending the walker. Integration test: `tests/test_engine_config_validation.py::test_from_dict_warn_mode_clean_on_example_configs[*]` must stay warning-free.
 - **RNG reproducibility** is Python-side only. `simulation.rng.fixed=true` makes a single config + seed reproducible across Python-engine runs. It does NOT produce bit-equal outputs against the Java engine — NumPy uses PCG64, Java uses MT19937, the streams diverge on the first draw. Cross-engine equivalence is "within 1 OoM" per the parity tests (14/14 EEC, 8/8 BoB). For bit-exact Java parity, set `OsmoseCalibrationProblem(use_java_engine=True)`. See `osmose/engine/rng.py` module docstring.

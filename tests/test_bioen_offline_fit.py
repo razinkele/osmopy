@@ -171,13 +171,13 @@ def test_param_lines_writes_background_beta_matching_the_default():
     """species.beta.sp{background} must be authored (progress-log ruling R1, hard requirement
     for Task 11): Java's BackgroundSpecies.java has no default and errors on absence."""
     res = [FitResult("cod", 4.0, 0.3, 1e12, 13.0, 10.0, 2.0, 5e3, 5.1e3, 0.6, 400)]
-    kwargs = dict(
-        zlayer={"cod": 1},
-        sp_index={"cod": 0},
-        background_imax={15: 2.5},
-        notes={"cod": "x"},
-        m0={"cod": 2.0},
-    )
+    kwargs = {
+        "zlayer": {"cod": 1},
+        "sp_index": {"cod": 0},
+        "background_imax": {15: 2.5},
+        "notes": {"cod": "x"},
+        "m0": {"cod": 2.0},
+    }
     text_default = "\n".join(bioen_param_lines(res, FX, **kwargs))
     # default beta must equal per_fish_ingestion_cap's hardcoded background exponent (0.8) --
     # if these two numbers drift apart the "cap equals standard cap at w_mean" property that
@@ -459,8 +459,9 @@ def test_juvenile_boost_fixes_age_one_without_costing_rms():
 
 def test_juvenile_boost_maps_onto_the_engine_cap_form():
     """`j` must be expressible in the engine's own `imax + (theta-1)*c_rate` form."""
-    from osmose.engine.processes.bioen_predation import per_fish_ingestion_cap
     import numpy as np
+
+    from osmose.engine.processes.bioen_predation import per_fish_ingestion_cap
 
     imax, j = 7.46, 2.88
     # the documented mapping: c_rate := imax, theta := j

@@ -4,7 +4,9 @@ no dead knobs, conversions self-consistent."""
 import json
 from pathlib import Path
 
-SPEC_PATH = Path(__file__).resolve().parent.parent / "data/baltic/scenarios/b2_literature_deltas.json"
+SPEC_PATH = (
+    Path(__file__).resolve().parent.parent / "data/baltic/scenarios/b2_literature_deltas.json"
+)
 
 
 def _spec():
@@ -16,7 +18,10 @@ def test_arms_and_matrix():
     assert [a["name"] for a in arms] == ["rcp45_bsap", "rcp45_ref", "rcp85_bsap", "rcp85_ref"]
     assert all(a["dT_C"] in (1.9, 2.9) for a in arms)
     assert {(a["rcp"], a["load"]) for a in arms} == {
-        ("RCP4.5", "BSAP"), ("RCP4.5", "REF"), ("RCP8.5", "BSAP"), ("RCP8.5", "REF")
+        ("RCP4.5", "BSAP"),
+        ("RCP4.5", "REF"),
+        ("RCP8.5", "BSAP"),
+        ("RCP8.5", "REF"),
     }
 
 

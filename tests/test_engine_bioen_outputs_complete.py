@@ -10,9 +10,7 @@ from osmose.engine.grid import Grid
 from osmose.engine.output import write_outputs
 from osmose.engine.processes.energy_budget import compute_energy_budget
 from osmose.engine.simulate import simulate
-
 from tests.test_engine_bioen_integration import _make_bioen_config
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 

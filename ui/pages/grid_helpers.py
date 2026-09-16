@@ -193,7 +193,7 @@ def discover_spatial_files(
     for key, val in sorted(cfg.items()):
         if not val or not isinstance(val, str):
             continue
-        if not (val.endswith(".nc") or val.endswith(".csv")):
+        if not val.endswith((".nc", ".csv")):
             continue
         if key.startswith(skip_prefixes) or "season" in key:
             continue
@@ -1244,7 +1244,7 @@ def make_diff_map(
     finite = data[np.isfinite(data)]
     if finite.size == 0:
         return go.Figure().update_layout(
-            title=dict(text=title or f"Δ {var_name} (no data)"), template=template
+            title={"text": title or f"Δ {var_name} (no data)"}, template=template
         )
     half = max(float(np.abs(finite).max()), 1e-9)
     fig = px.imshow(

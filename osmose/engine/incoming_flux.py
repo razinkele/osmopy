@@ -212,7 +212,7 @@ class IncomingFluxState:
 
                 # Split into n_schools if abundance is large enough
                 n_schools_sp = int(ec.n_schools[flux.species_id])
-                if abundance >= n_schools_sp and n_schools_sp > 0:
+                if abundance >= n_schools_sp > 0:
                     n_new = n_schools_sp
                 else:
                     n_new = 1

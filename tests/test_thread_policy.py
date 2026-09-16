@@ -124,7 +124,7 @@ def test_python_engine_thread_applies_policy(monkeypatch):
     run_mod._python_engine_thread("cfg", "out", None, None, done_q, n_threads=7)
 
     assert recorded["requested"] == 7
-    kind, result, msg = done_q.get_nowait()
+    kind, result, _msg = done_q.get_nowait()
     assert kind == "done"
     assert result == "RESULT"
 

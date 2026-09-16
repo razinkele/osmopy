@@ -11,7 +11,7 @@ ICES = Path("data/baltic/reference/ices_snapshots")
 
 
 def test_autofill_fmsy_from_primary_tonnes_stock():
-    refs, unmatched = fr.load_reference_points(
+    refs, _unmatched = fr.load_reference_points(
         Path("/nonexistent"), ["sprat", "cod", "perch"], ices_snapshot_dir=ICES
     )
     # sprat: single tonnes stock spr.27.22-32 fmsy=0.34

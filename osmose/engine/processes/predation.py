@@ -217,14 +217,14 @@ if _HAS_NUMBA:
                         if p_acc >= 0 and q_acc >= 0:
                             if q_acc < access_matrix.shape[0] and p_acc < access_matrix.shape[1]:
                                 access_coeff = access_matrix[q_acc, p_acc]
-                            if access_coeff <= 0.0 or access_coeff != access_coeff:
+                            if access_coeff <= 0.0 or access_coeff != access_coeff:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
                                 continue
                         # If index is -1 (not found), keep default 1.0
                     else:
                         sp_prey = species_id[q_idx]
                         if sp_pred < access_matrix.shape[0] and sp_prey < access_matrix.shape[1]:
                             access_coeff = access_matrix[sp_pred, sp_prey]
-                            if access_coeff <= 0.0 or access_coeff != access_coeff:
+                            if access_coeff <= 0.0 or access_coeff != access_coeff:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
                                 continue
 
                 prey_bio = abundance[q_idx] * weight[q_idx]
@@ -337,7 +337,7 @@ def _predation_in_cell_python(
                         and p_acc < stage_access_matrix.shape[1]
                     ):
                         access_coeff = stage_access_matrix[q_acc, p_acc]
-                    if access_coeff <= 0.0 or access_coeff != access_coeff:
+                    if access_coeff <= 0.0 or access_coeff != access_coeff:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
                         continue
             elif config.accessibility_matrix is not None:
                 sp_prey = state.species_id[q_idx]
@@ -346,7 +346,7 @@ def _predation_in_cell_python(
                     and sp_prey < config.accessibility_matrix.shape[1]
                 ):
                     access_coeff = config.accessibility_matrix[sp_pred, sp_prey]
-                    if access_coeff <= 0.0 or access_coeff != access_coeff:
+                    if access_coeff <= 0.0 or access_coeff != access_coeff:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
                         continue
 
             prey_bio = state.abundance[q_idx] * state.weight[q_idx]
@@ -481,7 +481,7 @@ def _predation_on_resources(
                         and p_acc < stage_access_matrix.shape[1]
                     ):
                         access_coeff = stage_access_matrix[rsc_row, p_acc]
-                        if access_coeff <= 0.0 or access_coeff != access_coeff:
+                        if access_coeff <= 0.0 or access_coeff != access_coeff:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
                             continue
             elif config.accessibility_matrix is not None:
                 rsc_sp_idx = config.n_species + r
@@ -490,7 +490,7 @@ def _predation_on_resources(
                     and rsc_sp_idx < config.accessibility_matrix.shape[1]
                 ):
                     access_coeff = config.accessibility_matrix[sp_pred, rsc_sp_idx]
-                    if access_coeff <= 0.0 or access_coeff != access_coeff:
+                    if access_coeff <= 0.0 or access_coeff != access_coeff:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
                         continue
 
             eligible_bio = rsc_bio * percent_resource * access_coeff

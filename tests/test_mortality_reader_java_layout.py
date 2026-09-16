@@ -70,7 +70,9 @@ def test_python_layout_still_parses(tmp_path):
     cause_row = ",".join(["Time"] + [c for c in CAUSES for _ in STAGES])
     stage_row = ",".join([""] + STAGES * 8)
     rows = [",".join(["1.0"] + [f"{0.01 * (i + 1):.4f}" for i in range(24)])]
-    p.write_text("\n".join(['"Mortality rates per time step for sprat"', cause_row, stage_row, *rows]) + "\n")
+    p.write_text(
+        "\n".join(['"Mortality rates per time step for sprat"', cause_row, stage_row, *rows]) + "\n"
+    )
     df = _read_mortality_rate_csv(p)
     assert isinstance(df.columns, pd.MultiIndex)
     assert df[("Mpred", "Eggs")].iloc[0] == pytest.approx(0.01)

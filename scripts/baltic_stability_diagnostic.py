@@ -23,8 +23,14 @@ from osmose.results import OsmoseResults
 
 FOCAL = ["cod", "herring", "sprat", "flounder", "perch", "pikeperch", "smelt", "stickleback"]
 LOWER = {
-    "cod": 60000, "herring": 800000, "sprat": 800000, "flounder": 20000,
-    "perch": 8000, "pikeperch": 4000, "smelt": 20000, "stickleback": 50000,
+    "cod": 60000,
+    "herring": 800000,
+    "sprat": 800000,
+    "flounder": 20000,
+    "perch": 8000,
+    "pikeperch": 4000,
+    "smelt": 20000,
+    "stickleback": 50000,
 }
 
 
@@ -37,7 +43,7 @@ def _mortality_shares(results: OsmoseResults, sp: str, collapse_year: int) -> di
     """Mean share of each mortality cause over the ~5 years before collapse, or None if unavailable."""
     try:
         m = results.mortality(sp)  # (cause, stage) MultiIndex columns, indexed by time
-    except Exception as exc:  # noqa: BLE001 — diagnostic must not crash on output-shape drift
+    except Exception as exc:
         print(f"    (mortality({sp}) unavailable: {exc})")
         return None
     try:
@@ -48,7 +54,7 @@ def _mortality_shares(results: OsmoseResults, sp: str, collapse_year: int) -> di
         means = window.mean(axis=0)
         tot = float(means.sum()) or 1.0
         return {str(c): round(float(means[c]) / tot, 3) for c in means.index}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"    (mortality decomposition failed for {sp}: {exc})")
         return None
 

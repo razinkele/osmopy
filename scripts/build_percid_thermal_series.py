@@ -110,7 +110,7 @@ def _thetao_surface_tyx(grid: GridSpec) -> tuple[np.ndarray, np.ndarray, np.ndar
 
 
 def main() -> int:
-    cfg_path = sorted((ROOT / "data" / "baltic").glob("*all-parameters*.csv"))[0]
+    cfg_path = min((ROOT / "data" / "baltic").glob("*all-parameters*.csv"))
     cfg = OsmoseConfigReader().read(str(cfg_path))
     cfg_dir = cfg_path.parent
     grid = GridSpec.from_config(cfg)

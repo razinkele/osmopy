@@ -88,11 +88,11 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import osmose.engine.processes.reproduction as repro_mod  # noqa: E402
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
-from osmose.engine.state import MortalityCause  # noqa: E402
+import osmose.engine.processes.reproduction as repro_mod
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
+from osmose.engine.state import MortalityCause
 
 N_YEAR = 50
 SEED = 42

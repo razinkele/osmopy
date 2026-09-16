@@ -87,10 +87,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import osmose.engine.processes.reproduction as repro_mod  # noqa: E402
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
+import osmose.engine.processes.reproduction as repro_mod
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
 
 N_YEAR = 20  # the flush is a PER-STEP property; 20 yr is ample and keeps the footprint small
 SEED = 42

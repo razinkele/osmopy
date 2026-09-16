@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from functools import partial
 from multiprocessing import get_context
 from pathlib import Path
+from typing import Self
 
 import numpy as np
 from scipy.stats.qmc import LatinHypercube
@@ -51,7 +52,14 @@ def lhs_design(free_params: list[FreeParameter], n_points: int, seed: int) -> np
     simulator-input boundary.
     """
     d = len(free_params)
-    unit = LatinHypercube(d=d, seed=seed).random(n=n_points)
+    # DO NOT "modernise" `seed=` to scipy's newer `rng=`. Both are accepted by
+    # scipy 1.18 and neither warns, but they seed different generators and
+    # produce DIFFERENT designs: verified 2026-09-05, `LatinHypercube(d=3,
+    # seed=s).random(5)` != `...rng=s...` for s in {0, 1, 42}. Switching would
+    # silently change every design, and with it every stored UQ result, while
+    # looking like a no-op cleanup. pyright flags `seed` because scipy's stub
+    # declares only `rng`; the runtime signature still carries `seed`.
+    unit = LatinHypercube(d=d, seed=seed).random(n=n_points)  # type: ignore[call-arg]
     lower = np.array([fp.lower_bound for fp in free_params])
     upper = np.array([fp.upper_bound for fp in free_params])
     return unit * (upper - lower) + lower
@@ -211,7 +219,7 @@ class _ParallelEngineEvaluator:
             self._pool.shutdown(wait=True)
             self._pool = None
 
-    def __enter__(self) -> _ParallelEngineEvaluator:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc: object) -> None:

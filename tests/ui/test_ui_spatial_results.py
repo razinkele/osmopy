@@ -2,7 +2,6 @@
 
 from ui.pages.spatial_results import _nc_label
 
-
 # ---------------------------------------------------------------------------
 # _nc_label: known _NC_LABELS keys → exact mapped labels
 # ---------------------------------------------------------------------------

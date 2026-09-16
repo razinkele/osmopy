@@ -68,6 +68,7 @@ class TestSchoolStateValidate:
 
     def _minimal_valid_state(self, n: int = 2):
         import numpy as np
+
         from osmose.engine.state import SchoolState
 
         s = SchoolState.create(n_schools=n, species_id=np.zeros(n, dtype=np.int32))

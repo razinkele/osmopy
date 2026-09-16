@@ -202,9 +202,9 @@ def test_focal_outputs_thread_phenotypes_when_genetics_on(monkeypatch, tmp_path)
     create a separate binding that bypasses the patch — we intentionally do
     NOT import `_collect_outputs` at the top of this test file.
     """
+    import osmose.engine.simulate as sim_mod  # not exported from osmose.engine.__init__
     from osmose.config import OsmoseConfigReader
     from osmose.engine import PythonEngine
-    import osmose.engine.simulate as sim_mod  # not exported from osmose.engine.__init__
 
     captured: dict = {}
     real_collect = sim_mod._collect_outputs

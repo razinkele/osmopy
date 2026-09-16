@@ -87,35 +87,47 @@ note(
 h("Executive summary", 1)
 bullets(
     [
-        "The current 9-species Baltic configuration certifies at 7 of 9 species inside their "
-        "reference envelopes (50-year runs, five seeds, final-decade means). Under the new "
-        "weight-aware verdict the headline is 5 of 5: every target backed by a real stock "
-        "assessment is reproduced. The two failures — pikeperch (~58× over) and smelt (~5.7× "
-        "over) — are the two lowest-confidence literature estimates in the reference file.",
-        "No species collapses at equilibrium. Earlier 'collapse' verdicts (as low as 2/9) were an "
-        "artifact of a defective persistence criterion that measured the seeding bootstrap "
-        "transient instead of the equilibrium; the criterion was corrected and all prior "
-        "certification notes audited (2026-08-01).",
-        "The pikeperch overshoot investigation is concluded: the overshoot is structural and "
-        "over-determined. Seven interventions across removal and production returned between "
-        "−86% and +8% against a 58-fold gap, four intermediate explanations were withdrawn under "
-        "scrutiny, and the biomass target itself was re-derived and retained — the gap is real, "
-        "and this configuration cannot represent Baltic pikeperch at a defensible biomass on the "
-        "current grid.",
-        "Cross-engine fidelity with the Java reference engine improved substantially: a "
-        "prey-axis defect in the diet diagnostic was found and repaired (it had been reporting "
-        "every predator as 100% piscivorous), along with mortality-rate, header-parsing and "
-        "diet-normalisation parity fixes. The test suite stands at ~4,390 tests.",
-        "A trophic control on stickleback was identified and quantified: herring predation on "
-        "stickleback eggs and young-of-year accounts for 55–63% of their early-stage mortality, "
-        "while stickleback is only 0.038% of herring's diet. Shifting herring's spawning window "
-        "by ±2 timesteps moves stickleback biomass by ∓20%. The finding is diagnostic — no "
-        "parameter was changed, and the configuration re-certifies unchanged at 5 of 5 assessed.",
-        "Literature watch (2026-07-28 alert): upstream OSMOSE has been static at v4.4.1 for "
-        "three consecutive months — the 4.4.x parity port now has a stable target. The most "
-        "actionable new paper is Voss & Quaas (2026) on temperature-dependent stock–recruitment "
-        "for Western Baltic cod and herring. The ICES 2027 Baltic advice cycle is confirmed, so "
-        "the reference envelopes for the pelagics have moved materially and need refreshing.",
+        (
+            "The current 9-species Baltic configuration certifies at 7 of 9 species inside their "
+            "reference envelopes (50-year runs, five seeds, final-decade means). Under the new "
+            "weight-aware verdict the headline is 5 of 5: every target backed by a real stock "
+            "assessment is reproduced. The two failures — pikeperch (~58× over) and smelt (~5.7× "
+            "over) — are the two lowest-confidence literature estimates in the reference file."
+        ),
+        (
+            "No species collapses at equilibrium. Earlier 'collapse' verdicts (as low as 2/9) were an "
+            "artifact of a defective persistence criterion that measured the seeding bootstrap "
+            "transient instead of the equilibrium; the criterion was corrected and all prior "
+            "certification notes audited (2026-08-01)."
+        ),
+        (
+            "The pikeperch overshoot investigation is concluded: the overshoot is structural and "
+            "over-determined. Seven interventions across removal and production returned between "
+            "−86% and +8% against a 58-fold gap, four intermediate explanations were withdrawn under "
+            "scrutiny, and the biomass target itself was re-derived and retained — the gap is real, "
+            "and this configuration cannot represent Baltic pikeperch at a defensible biomass on the "
+            "current grid."
+        ),
+        (
+            "Cross-engine fidelity with the Java reference engine improved substantially: a "
+            "prey-axis defect in the diet diagnostic was found and repaired (it had been reporting "
+            "every predator as 100% piscivorous), along with mortality-rate, header-parsing and "
+            "diet-normalisation parity fixes. The test suite stands at ~4,390 tests."
+        ),
+        (
+            "A trophic control on stickleback was identified and quantified: herring predation on "
+            "stickleback eggs and young-of-year accounts for 55–63% of their early-stage mortality, "
+            "while stickleback is only 0.038% of herring's diet. Shifting herring's spawning window "
+            "by ±2 timesteps moves stickleback biomass by ∓20%. The finding is diagnostic — no "
+            "parameter was changed, and the configuration re-certifies unchanged at 5 of 5 assessed."
+        ),
+        (
+            "Literature watch (2026-07-28 alert): upstream OSMOSE has been static at v4.4.1 for "
+            "three consecutive months — the 4.4.x parity port now has a stable target. The most "
+            "actionable new paper is Voss & Quaas (2026) on temperature-dependent stock–recruitment "
+            "for Western Baltic cod and herring. The ICES 2027 Baltic advice cycle is confirmed, so "
+            "the reference envelopes for the pelagics have moved materially and need refreshing."
+        ),
     ]
 )
 
@@ -126,8 +138,10 @@ table(
     [
         (
             "Focal species (9)",
-            "cod_west, cod_east (disaggregated 2026-07-25), herring, sprat, flounder, "
-            "perch, pikeperch, smelt, stickleback",
+            (
+                "cod_west, cod_east (disaggregated 2026-07-25), herring, sprat, flounder, "
+                "perch, pikeperch, smelt, stickleback"
+            ),
         ),
         ("Background predators", "grey seal, cormorant"),
         (
@@ -138,13 +152,17 @@ table(
         ("Forcing", "CMEMS-derived LTL biomass and physics"),
         (
             "Engines",
-            "pure-Python (NumPy/Numba, full Java parity: 14/14 EEC, 8/8 Bay of Biscay) "
-            "and Java OSMOSE via subprocess",
+            (
+                "pure-Python (NumPy/Numba, full Java parity: 14/14 EEC, 8/8 Bay of Biscay) "
+                "and Java OSMOSE via subprocess"
+            ),
         ),
         (
             "Certification protocol",
-            "scripts/baltic_stability_certify.py — 50-year runs, seeds [42, 123, 7, 999, 2024], "
-            "final-decade means vs data/baltic/reference/biomass_targets.csv",
+            (
+                "scripts/baltic_stability_certify.py — 50-year runs, seeds [42, 123, 7, 999, 2024], "
+                "final-decade means vs data/baltic/reference/biomass_targets.csv"
+            ),
         ),
     ],
 )
@@ -200,21 +218,29 @@ para(
 )
 bullets(
     [
-        "Every prior certification note was audited: rows reading 'persists ✗' with "
-        "'in-envelope ✓' are bootstrap artifacts, not collapses. The same five stocks recur "
-        "in every affected note: cod (both stocks after disaggregation), sprat, flounder, perch.",
-        "Under the corrected criterion the current configuration moved from a reported 2/9 to "
-        "7/9, and the 8-species pre-disaggregation baseline re-certified at 5/8 — in both cases "
-        "the persist set now coincides with the in-envelope set, so no species collapses at "
-        "equilibrium.",
-        "An artifactual signal does not mean the decision it prompted was wrong. cod_east's "
-        "natural mortality was lowered from M = 1.2546 to M = 0.9 partly on the faulty flag; the "
-        "revert was tested and rejected — at the original M the stock does not collapse but "
-        "settles ~5.6× below its ICES envelope (final-decade mean ~14.5–15.1 kt against "
-        "60–85 kt). M = 0.9 stands on the mean, independent of the flag that prompted it.",
-        "Decisions citing a persistence flag are being re-tested individually; configs behind "
-        "older notes should be re-certified under the corrected criterion before their "
-        "persistence verdicts are cited.",
+        (
+            "Every prior certification note was audited: rows reading 'persists ✗' with "
+            "'in-envelope ✓' are bootstrap artifacts, not collapses. The same five stocks recur "
+            "in every affected note: cod (both stocks after disaggregation), sprat, flounder, perch."
+        ),
+        (
+            "Under the corrected criterion the current configuration moved from a reported 2/9 to "
+            "7/9, and the 8-species pre-disaggregation baseline re-certified at 5/8 — in both cases "
+            "the persist set now coincides with the in-envelope set, so no species collapses at "
+            "equilibrium."
+        ),
+        (
+            "An artifactual signal does not mean the decision it prompted was wrong. cod_east's "
+            "natural mortality was lowered from M = 1.2546 to M = 0.9 partly on the faulty flag; the "
+            "revert was tested and rejected — at the original M the stock does not collapse but "
+            "settles ~5.6× below its ICES envelope (final-decade mean ~14.5–15.1 kt against "
+            "60–85 kt). M = 0.9 stands on the mean, independent of the flag that prompted it."
+        ),
+        (
+            "Decisions citing a persistence flag are being re-tested individually; configs behind "
+            "older notes should be re-certified under the corrected criterion before their "
+            "persistence verdicts are cited."
+        ),
     ]
 )
 
@@ -231,15 +257,19 @@ table(
         (
             "2026-07-25",
             "Cod east/west disaggregation (Phase 1)",
-            "cod split into cod_west (sp0) + cod_east (sp8) with name-labelled 15×15 "
-            "predation matrices; joint recalibration hit an apex-predation bottleneck and the "
-            "split was retained as a flagged configuration change rather than a refit",
+            (
+                "cod split into cod_west (sp0) + cod_east (sp8) with name-labelled 15×15 "
+                "predation matrices; joint recalibration hit an apex-predation bottleneck and the "
+                "split was retained as a flagged configuration change rather than a refit"
+            ),
         ),
         (
             "2026-07-28",
             "Realistic percid removals",
-            "percid fishing mortality (~44–46 kt total removals) plus cormorant predation "
-            "close perch to its envelope; certified at five seeds with no regression",
+            (
+                "percid fishing mortality (~44–46 kt total removals) plus cormorant predation "
+                "close perch to its envelope; certified at five seeds with no regression"
+            ),
         ),
         (
             "2026-07-28",
@@ -249,8 +279,10 @@ table(
         (
             "2026-08-01",
             "Seeding-mode A/B (stock_recruitment vs linear) and criterion fix",
-            "equilibrium means byte-identical across seeding modes — mode immaterial; "
-            "persistence criterion corrected and all notes audited",
+            (
+                "equilibrium means byte-identical across seeding modes — mode immaterial; "
+                "persistence criterion corrected and all notes audited"
+            ),
         ),
         (
             "2026-08-02/06",
@@ -276,30 +308,40 @@ para(
 )
 bullets(
     [
-        "Not an engine defect: consumption-to-biomass ratios at equilibrium are within "
-        "published ranges for every species (pikeperch has the lowest Q/B in the system, 2.55); "
-        "no conservation violation.",
-        "Four explanations were reached and withdrawn under measurement or adversarial review: "
-        "a resource subsidy (equilibrium diet is 36.9% resource, below perch), a spatial-supply "
-        "mechanism (the corrected time-weighted herring overlap refutes it — perch has twice "
-        "pikeperch's access and is in envelope), predation release (pikeperch is fourth-least "
-        "predated; the three less-predated species are all in envelope), and a mis-scoped "
-        "target (the reference file already declares whole-domain aggregate scope).",
-        "The surviving mechanism — escape from every predator's size window before maturity "
-        "(no predator can take a pikeperch above 36 cm; it matures at 40 cm) — is real but "
-        "not sufficient: opening cod's window past maturity moved biomass +3.4%, the wrong way. "
-        "Cod totals ~97 kt against pikeperch's 1.45 Mt; grey seal consumes ~58.5 kt/yr across "
-        "all prey. No predator in the configuration has the biomass to regulate the stock.",
-        "Seven interventions (accessibility cuts, F sweeps to 4.0, gear selectivity, size "
-        "windows, reduced asymptotic length, recruitment ssbhalf cut 97.6×) returned −86% to "
-        "+8% against the 58× gap. Biomass scales as roughly the 0.42 power of the recruitment "
-        "parameter; reaching the target would require indefensible values.",
-        "The target was re-derived and retained: ICES assesses no Baltic pikeperch, perch, "
-        "smelt or stickleback stock, so these are literature estimates — but the perch target "
-        "survives an independent production cross-check against the Curonian Lagoon anchor "
-        "(Hansson et al., 2018), and pikeperch must sit below perch given its restricted, "
-        "patchy distribution and the depleted state of both assessed Baltic stocks "
-        "(Jakubavičiūtė et al., 2022). The 58× gap is real.",
+        (
+            "Not an engine defect: consumption-to-biomass ratios at equilibrium are within "
+            "published ranges for every species (pikeperch has the lowest Q/B in the system, 2.55); "
+            "no conservation violation."
+        ),
+        (
+            "Four explanations were reached and withdrawn under measurement or adversarial review: "
+            "a resource subsidy (equilibrium diet is 36.9% resource, below perch), a spatial-supply "
+            "mechanism (the corrected time-weighted herring overlap refutes it — perch has twice "
+            "pikeperch's access and is in envelope), predation release (pikeperch is fourth-least "
+            "predated; the three less-predated species are all in envelope), and a mis-scoped "
+            "target (the reference file already declares whole-domain aggregate scope)."
+        ),
+        (
+            "The surviving mechanism — escape from every predator's size window before maturity "
+            "(no predator can take a pikeperch above 36 cm; it matures at 40 cm) — is real but "
+            "not sufficient: opening cod's window past maturity moved biomass +3.4%, the wrong way. "
+            "Cod totals ~97 kt against pikeperch's 1.45 Mt; grey seal consumes ~58.5 kt/yr across "
+            "all prey. No predator in the configuration has the biomass to regulate the stock."
+        ),
+        (
+            "Seven interventions (accessibility cuts, F sweeps to 4.0, gear selectivity, size "
+            "windows, reduced asymptotic length, recruitment ssbhalf cut 97.6×) returned −86% to "
+            "+8% against the 58× gap. Biomass scales as roughly the 0.42 power of the recruitment "
+            "parameter; reaching the target would require indefensible values."
+        ),
+        (
+            "The target was re-derived and retained: ICES assesses no Baltic pikeperch, perch, "
+            "smelt or stickleback stock, so these are literature estimates — but the perch target "
+            "survives an independent production cross-check against the Curonian Lagoon anchor "
+            "(Hansson et al., 2018), and pikeperch must sit below perch given its restricted, "
+            "patchy distribution and the depleted state of both assessed Baltic stocks "
+            "(Jakubavičiūtė et al., 2022). The 58× gap is real."
+        ),
     ]
 )
 para(
@@ -338,14 +380,18 @@ para(
 para("The causal chain, end to end:")
 bullets(
     [
-        "Herring spawns later → herring biomass falls ~10% → its predation on stickleback eggs "
-        "and young-of-year falls (−8.9% on young-of-year, close to proportional) → more "
-        "stickleback survive past the 0.5-year reporting cutoff → stickleback biomass +20.7%.",
-        "Six alternative hypotheses were tested and refuted along the way: dietary competition, "
-        "growth-mediated competition, starvation mortality, egg survival, alternative equilibria, "
-        "and egg production. Egg production in fact moves opposite to abundance, because "
-        "stickleback's stock–recruitment curve is over-compensatory (Shepherd β ≈ 1.3) with "
-        "spawning stock 9–14× above half-saturation.",
+        (
+            "Herring spawns later → herring biomass falls ~10% → its predation on stickleback eggs "
+            "and young-of-year falls (−8.9% on young-of-year, close to proportional) → more "
+            "stickleback survive past the 0.5-year reporting cutoff → stickleback biomass +20.7%."
+        ),
+        (
+            "Six alternative hypotheses were tested and refuted along the way: dietary competition, "
+            "growth-mediated competition, starvation mortality, egg survival, alternative equilibria, "
+            "and egg production. Egg production in fact moves opposite to abundance, because "
+            "stickleback's stock–recruitment curve is over-compensatory (Shepherd β ≈ 1.3) with "
+            "spawning stock 9–14× above half-saturation."
+        ),
     ]
 )
 note(
@@ -371,19 +417,27 @@ para(
 h("7. Engine and cross-engine fidelity", 1)
 bullets(
     [
-        "Diet diagnostic defect repaired (#146): the prey axis of dietMatrix/predatorPressure "
-        "was mislabelled (focal + background instead of schools + resources), silently dropping "
-        "all resource columns — every predator reported 100% fish. Any diet-based conclusion "
-        "predating commits e121c6d/3e320ff has been re-derived; a regression test now asserts "
-        "no fish consumes less than its own body weight annually.",
-        "Java cross-engine parity fixes: mortality-rate outputs were counts not rates (#140), "
-        "output header parsing (#141), dietMatrix percentage normalisation (#144), and the "
-        "predatorPressure time convention. The remaining sprat seeding gap (~7.1×) is isolated "
-        "to the SeedingInterface lambda convention.",
-        "Seeding mode (population.seeding.mode: stock_recruitment | linear) is configurable and "
-        "measured immaterial at equilibrium (#143).",
-        "Test suite: ~4,390 tests, green as of 2026-08-06, including 11 new weight-aware "
-        "certifier tests.",
+        (
+            "Diet diagnostic defect repaired (#146): the prey axis of dietMatrix/predatorPressure "
+            "was mislabelled (focal + background instead of schools + resources), silently dropping "
+            "all resource columns — every predator reported 100% fish. Any diet-based conclusion "
+            "predating commits e121c6d/3e320ff has been re-derived; a regression test now asserts "
+            "no fish consumes less than its own body weight annually."
+        ),
+        (
+            "Java cross-engine parity fixes: mortality-rate outputs were counts not rates (#140), "
+            "output header parsing (#141), dietMatrix percentage normalisation (#144), and the "
+            "predatorPressure time convention. The remaining sprat seeding gap (~7.1×) is isolated "
+            "to the SeedingInterface lambda convention."
+        ),
+        (
+            "Seeding mode (population.seeding.mode: stock_recruitment | linear) is configurable and "
+            "measured immaterial at equilibrium (#143)."
+        ),
+        (
+            "Test suite: ~4,390 tests, green as of 2026-08-06, including 11 new weight-aware "
+            "certifier tests."
+        ),
     ]
 )
 
@@ -394,30 +448,40 @@ table(
     [
         (
             "High",
-            "Ingest the ICES 2026 assessment cycle (advice for 2027) and refresh "
-            "biomass_targets.csv",
-            "cycle confirmed; reported directions: central Baltic herring +74% TAC, sprat "
-            "+32%, both cod stocks zero catch — numbers are trade-press-sourced and must be "
-            "re-read from the ICES advice sheets before use",
+            (
+                "Ingest the ICES 2026 assessment cycle (advice for 2027) and refresh "
+                "biomass_targets.csv"
+            ),
+            (
+                "cycle confirmed; reported directions: central Baltic herring +74% TAC, sprat "
+                "+32%, both cod stocks zero catch — numbers are trade-press-sourced and must be "
+                "re-read from the ICES advice sheets before use"
+            ),
         ),
         (
             "High",
             "Temperature-dependent stock–recruitment in processes/reproduction.py",
-            "Voss & Quaas (2026): ignoring temperature-dependent SR 'might trigger "
-            "overexploitation'; osmopy already ingests CMEMS temperature but does not route it "
-            "into reproduction; design jointly with the 4.4.x temperature-bioenergetics slice",
+            (
+                "Voss & Quaas (2026): ignoring temperature-dependent SR 'might trigger "
+                "overexploitation'; osmopy already ingests CMEMS temperature but does not route it "
+                "into reproduction; design jointly with the 4.4.x temperature-bioenergetics slice"
+            ),
         ),
         (
             "High",
             "OSMOSE 4.4.x parity port (staged)",
-            "upstream static at v4.4.1 for three consecutive months — the moving-target "
-            "argument for deferral has expired",
+            (
+                "upstream static at v4.4.1 for three consecutive months — the moving-target "
+                "argument for deferral has expired"
+            ),
         ),
         (
             "High",
             "WGSAM cod predation-mortality as a validation target",
-            "2022 Baltic key run (1974–2021, ~64,000 cod stomachs) gives an independent check "
-            "on emergent M2 on sprat and central Baltic herring",
+            (
+                "2022 Baltic key run (1974–2021, ~64,000 cod stomachs) gives an independent check "
+                "on emergent M2 on sprat and central Baltic herring"
+            ),
         ),
         (
             "Medium",
@@ -427,8 +491,10 @@ table(
         (
             "Medium",
             "Percid representation decision",
-            "separate coastal stock units are the only like-for-like fix for the pikeperch/smelt "
-            "limitation; currently excluded on cost grounds (cod E/W is the cautionary precedent)",
+            (
+                "separate coastal stock units are the only like-for-like fix for the pikeperch/smelt "
+                "limitation; currently excluded on cost grounds (cod E/W is the cautionary precedent)"
+            ),
         ),
     ],
 )
@@ -441,24 +507,34 @@ para(
 )
 bullets(
     [
-        "Upstream OSMOSE: frozen for a third consecutive month at v4.4.1 (18 Jun 2026); "
-        "no new org repos; homepage byte-identical. The whole v4.4.0 breaking-change set "
-        "remains un-ported in osmopy (region-aware mortality, abundance-based fishing, "
-        "stochastic maturity ogive, temperature bioenergetics, gradient movement, etc.).",
-        "Most actionable paper: Voss & Quaas (2026), ICES JMS 83(4) — temperature-dependent "
-        "stock–recruitment for Western Baltic cod and herring under RCP4.5/RCP8.5; herring "
-        "recovers only after a ~4-year moratorium; cod catch potential stays below 5,000 t "
-        "even under optimal management; MMEY dominates MMSY under climate change. (Note: the "
-        "alert file credits Quaas as first author; the paper is Voss & Quaas.)",
-        "ICES: 2027 Baltic catch advice confirmed published (see Section 7); the Baltic Sea "
-        "Ecosystem Overview was read in full for the first time — late-1980s regime shift to "
-        "sprat dominance, persistent hypoxia, warming and freshening are the qualitative "
-        "behaviours the configuration should reproduce.",
-        "Comparator models all unchanged: mizer 2.5.3, EwE 6.7 beta (build 18865), Atlantis "
-        "with no public release. HELCOM HOLAS 4 (2022–2027) publishes in 2029.",
-        "Carried comparators: Atlantis semi-automated calibration framework, global "
-        "sensitivity-analysis of a complex marine ecosystem model, cross-ecosystem trophic "
-        "transfer efficiency synthesis (all Ecological Modelling / Science Advances 2026).",
+        (
+            "Upstream OSMOSE: frozen for a third consecutive month at v4.4.1 (18 Jun 2026); "
+            "no new org repos; homepage byte-identical. The whole v4.4.0 breaking-change set "
+            "remains un-ported in osmopy (region-aware mortality, abundance-based fishing, "
+            "stochastic maturity ogive, temperature bioenergetics, gradient movement, etc.)."
+        ),
+        (
+            "Most actionable paper: Voss & Quaas (2026), ICES JMS 83(4) — temperature-dependent "
+            "stock–recruitment for Western Baltic cod and herring under RCP4.5/RCP8.5; herring "
+            "recovers only after a ~4-year moratorium; cod catch potential stays below 5,000 t "
+            "even under optimal management; MMEY dominates MMSY under climate change. (Note: the "
+            "alert file credits Quaas as first author; the paper is Voss & Quaas.)"
+        ),
+        (
+            "ICES: 2027 Baltic catch advice confirmed published (see Section 7); the Baltic Sea "
+            "Ecosystem Overview was read in full for the first time — late-1980s regime shift to "
+            "sprat dominance, persistent hypoxia, warming and freshening are the qualitative "
+            "behaviours the configuration should reproduce."
+        ),
+        (
+            "Comparator models all unchanged: mizer 2.5.3, EwE 6.7 beta (build 18865), Atlantis "
+            "with no public release. HELCOM HOLAS 4 (2022–2027) publishes in 2029."
+        ),
+        (
+            "Carried comparators: Atlantis semi-automated calibration framework, global "
+            "sensitivity-analysis of a complex marine ecosystem model, cross-ecosystem trophic "
+            "transfer efficiency synthesis (all Ecological Modelling / Science Advances 2026)."
+        ),
     ]
 )
 
@@ -494,8 +570,10 @@ para(
 h("Source documents in the repository", 1)
 bullets(
     [
-        "docs/baltic_percid_overshoot_report_2026-08-03.docx — full percid investigation "
-        "(updated 2026-08-06)",
+        (
+            "docs/baltic_percid_overshoot_report_2026-08-03.docx — full percid investigation "
+            "(updated 2026-08-06)"
+        ),
         "docs/baltic_percid_target_rederivation_2026-08-06.md — target re-derivation",
         "docs/baltic_certification_reread_2026-08-01.md — persistence-criterion audit",
         "docs/baltic_8species_recert_corrected_criterion_2026-08-01.md — baseline re-certification",

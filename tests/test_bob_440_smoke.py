@@ -2,8 +2,10 @@
 import shutil
 import subprocess
 from pathlib import Path
+
 import numpy as np
 import pytest
+
 from osmose.config.reader import OsmoseConfigReader
 from osmose.engine import PythonEngine
 from ui.pages.run import write_temp_config

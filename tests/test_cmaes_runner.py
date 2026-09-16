@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -131,7 +133,7 @@ def test_partial_nan_uses_running_worst_penalty():
     # Best objective from history monotone non-increasing (no penalty injection
     # spuriously becoming the best)
     bests = [h["best"] for h in result["history"]]
-    for prev, nxt in zip(bests[:-1], bests[1:]):
+    for prev, nxt in itertools.pairwise(bests):
         assert nxt <= prev + 1e-9
 
 

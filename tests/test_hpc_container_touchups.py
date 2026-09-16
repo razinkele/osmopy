@@ -38,6 +38,7 @@ def test_jar_from_prefers_arg_then_env(monkeypatch):
 
 def test_cmd_run_clear_error_when_no_jar(tmp_path, monkeypatch, capsys):
     from argparse import Namespace
+
     from osmose.cli import cmd_run
 
     monkeypatch.delenv("OSMOSE_JAR", raising=False)

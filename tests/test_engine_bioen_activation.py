@@ -76,7 +76,7 @@ class TestBioenStarvationSwitch:
         weight = np.array([0.01])
         eta = 0.8
 
-        n_dead, new_gonad = bioen_starvation(e_net, gonad_weight, weight, eta, n_subdt=1)
+        _n_dead, new_gonad = bioen_starvation(e_net, gonad_weight, weight, eta, n_subdt=1)
         # Gonad should absorb some deficit
         assert new_gonad[0] < gonad_weight[0]
 

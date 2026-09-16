@@ -3,13 +3,12 @@
 import numpy as np
 import pytest
 
-from tests.helpers import _make_school
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.mortality import _apply_additional_for_school
 from osmose.engine.processes.natural import additional_mortality
 from osmose.engine.processes.reproduction import reproduction
 from osmose.engine.state import MortalityCause, SchoolState
-
+from tests.helpers import _make_school
 
 # ---------------------------------------------------------------------------
 # Helpers

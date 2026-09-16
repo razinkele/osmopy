@@ -159,12 +159,14 @@ def format_mortality_report(balances: list[MortalityBalance], *, window_years: i
     lines = [
         "# OSMOSE fishing-vs-natural mortality (F/M)",
         "",
-        f"Model window: last {window_years} years. F and M are computed on the "
-        "**exploited life stage(s)** — those carrying fishing mortality (so natural "
-        "mortality of unfished egg/adult stages doesn't swamp the ratio). F = total "
-        "annual fishing mortality; M = annual natural mortality (Mpred+Mstarv+Madd) on "
-        "the same fished stage(s). F/M > 1 means fishing exceeds natural mortality for "
-        "the exploited cohort.",
+        (
+            f"Model window: last {window_years} years. F and M are computed on the "
+            "**exploited life stage(s)** — those carrying fishing mortality (so natural "
+            "mortality of unfished egg/adult stages doesn't swamp the ratio). F = total "
+            "annual fishing mortality; M = annual natural mortality (Mpred+Mstarv+Madd) on "
+            "the same fished stage(s). F/M > 1 means fishing exceeds natural mortality for "
+            "the exploited cohort."
+        ),
         "",
         "| species | F | M | F/M | overexploited |",
         "|---|---:|---:|---:|:---:|",

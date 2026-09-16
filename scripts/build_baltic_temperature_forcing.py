@@ -244,7 +244,7 @@ def build(
     bd_regridded[~wet] = np.nan
 
     commit = _git_commit()
-    generated = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    generated = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     da_temp = xr.DataArray(
         temperature,

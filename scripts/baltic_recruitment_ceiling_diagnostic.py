@@ -32,6 +32,7 @@ def run_ab(config_path: str, cod_index: int, cod_name: str = "cod", out_ceiling=
     import tempfile
 
     import derive_recruitment_ceiling as derive
+
     from osmose.config import OsmoseConfigReader
     from osmose.engine import PythonEngine
     from osmose.engine.config import EngineConfig

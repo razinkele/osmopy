@@ -14,6 +14,7 @@ Design contract (fixed — do not change without updating A5–A8):
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 import numpy as np
@@ -294,12 +295,14 @@ def test_python_fallback_path_runs_and_is_deterministic():
         py_call_count += 1
         return original_py(*args, **kwargs)
 
-    with mock.patch("osmose.engine.processes.mortality._HAS_NUMBA", False):
-        with mock.patch(
+    with (
+        mock.patch("osmose.engine.processes.mortality._HAS_NUMBA", False),
+        mock.patch(
             "osmose.engine.processes.mortality._apply_predation_for_school",
             side_effect=_spy_py,
-        ):
-            _run_short_sim(numba=False, fr=None, seed=7, background=True)
+        ),
+    ):
+        _run_short_sim(numba=False, fr=None, seed=7, background=True)
 
     assert py_call_count > 0, (
         "_apply_predation_for_school was never called with numba=False (Baltic config) — "
@@ -536,14 +539,14 @@ def test_oracle_anchors_and_limits():
     xs = [0.05, 0.2, 0.5, 1.0, 2.0]
     for shape in (2, 3):
         gs = [_g_ref(x, shape, 1.0) for x in xs]
-        assert all(b >= a - 1e-12 for a, b in zip(gs, gs[1:]))
+        assert all(b >= a - 1e-12 for a, b in itertools.pairwise(gs))
 
 
 def test_oracle_type3_refuge_ratio_increasing():
     k = 1.0
     rs = [0.05, 0.1, 0.2, 0.4]
     ratios = [((x * x) / (x * x + k * k)) / x for x in rs]
-    assert all(b > a for a, b in zip(ratios, ratios[1:]))
+    assert all(b > a for a, b in itertools.pairwise(ratios))
     assert _g_ref(0.05, 3, k) < _g_ref(0.05, 2, k)
 
 
@@ -679,8 +682,8 @@ def test_python_kernel_matches_oracle(shape, k, r):
 
 
 def test_python_kernel_type3_reduces_eaten_at_low_r():
-    eaten1, me1 = _run_single_predation_step_python(r=0.3, shape=1, k=1.0)
-    eaten3, me3 = _run_single_predation_step_python(r=0.3, shape=3, k=1.0)
+    eaten1, _me1 = _run_single_predation_step_python(r=0.3, shape=1, k=1.0)
+    eaten3, _me3 = _run_single_predation_step_python(r=0.3, shape=3, k=1.0)
     assert eaten3 < eaten1  # type-III refuge eats less at low r
 
 
@@ -1130,9 +1133,11 @@ def _run_baltic_short_with_diet(fr: dict | None = None, width: int = 16):
             return padded
         return result
 
-    with mock.patch.object(_pred, "enable_diet_tracking", _wide_enable):
-        with mock.patch.object(_output, "aggregate_diet_by_species", _capturing_agg):
-            PythonEngine().run_in_memory(cfg, seed=11)
+    with (
+        mock.patch.object(_pred, "enable_diet_tracking", _wide_enable),
+        mock.patch.object(_output, "aggregate_diet_by_species", _capturing_agg),
+    ):
+        PythonEngine().run_in_memory(cfg, seed=11)
 
     assert "diet_matrix" in captured, "diet aggregation hook was never invoked"
     return captured["diet_matrix"], captured["species_id"]

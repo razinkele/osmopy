@@ -1,12 +1,13 @@
 from pathlib import Path
+
 import numpy as np
 import xarray as xr
 
 from osmose.config.reader import OsmoseConfigReader
-from osmose.engine.config import EngineConfig
 from osmose.engine import PythonEngine
-from osmose.engine.movement_maps import _load_csv_grid
+from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
+from osmose.engine.movement_maps import _load_csv_grid
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "data" / "benguela"

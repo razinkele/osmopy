@@ -77,9 +77,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
 
 N_YEAR = 20
 SEED = 42
@@ -203,7 +203,7 @@ def main() -> int:
         f"{'yr':>3}{'ref N_tot':>13}{'nocod N_tot':>14}{'ratio':>8}"
         f"{'ref N_mat':>13}{'nocod N_mat':>14}{'  cods alive (ref)':>20}"
     )
-    for y in range(0, 14):
+    for y in range(14):
         rt, nt = res["ref"]["tot"][y, i], res["nocod"]["tot"][y, i]
         rm, nm = res["ref"]["mat"][y, i], res["nocod"]["mat"][y, i]
         codn = res["ref"]["tot"][y, cw] + res["ref"]["tot"][y, ce]

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
 from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem, Transform
 
 
@@ -295,9 +296,11 @@ def test_evaluate_logs_candidate_failure(tmp_path, caplog):
     with patch.object(problem, "_evaluate_candidate", side_effect=OSError("boom")):
         X = np.array([[0.5]])
         out = {}
-        with caplog.at_level(logging.WARNING):
-            with pytest.raises(RuntimeError, match="Calibration aborted"):
-                problem._evaluate(X, out)
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.raises(RuntimeError, match="Calibration aborted"),
+        ):
+            problem._evaluate(X, out)
         assert "boom" in caplog.text
 
 
@@ -317,9 +320,11 @@ def test_evaluate_propagates_unexpected_exceptions(tmp_path):
     X = np.array([[0.1], [0.5], [0.9]])
     out = {}
 
-    with patch.object(problem, "_evaluate_candidate", side_effect=TypeError("bad objective")):
-        with pytest.raises(TypeError):
-            problem._evaluate(X, out)
+    with (
+        patch.object(problem, "_evaluate_candidate", side_effect=TypeError("bad objective")),
+        pytest.raises(TypeError),
+    ):
+        problem._evaluate(X, out)
 
 
 def test_evaluate_tolerates_expected_failures(tmp_path):
@@ -336,9 +341,11 @@ def test_evaluate_tolerates_expected_failures(tmp_path):
     X = np.array([[0.1], [0.5], [0.9]])
     out = {}
 
-    with patch.object(problem, "_evaluate_candidate", side_effect=OSError("disk full")):
-        with pytest.raises(RuntimeError, match="Calibration aborted"):
-            problem._evaluate(X, out)
+    with (
+        patch.object(problem, "_evaluate_candidate", side_effect=OSError("disk full")),
+        pytest.raises(RuntimeError, match="Calibration aborted"),
+    ):
+        problem._evaluate(X, out)
 
 
 def test_evaluate_parallel_handles_mixed_failures(tmp_path):
@@ -399,9 +406,11 @@ def test_run_single_accepts_valid_override_keys(tmp_path):
     )
     mock_result = MagicMock()
     mock_result.returncode = 0
-    with patch("subprocess.run", return_value=mock_result):
-        with patch("osmose.results.OsmoseResults", return_value=MagicMock()):
-            result = problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
+    with (
+        patch("subprocess.run", return_value=mock_result),
+        patch("osmose.results.OsmoseResults", return_value=MagicMock()),
+    ):
+        result = problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
     assert result == [0.5]
 
 
@@ -534,8 +543,8 @@ def test_clear_cache(tmp_path):
 
 def test_validate_overrides_catches_bad_value(tmp_path):
     """Schema validation rejects values outside [min_val, max_val]."""
-    from osmose.schema.registry import ParameterRegistry
     from osmose.schema.base import OsmoseField, ParamType
+    from osmose.schema.registry import ParameterRegistry
 
     registry = ParameterRegistry()
     registry.register(
@@ -584,7 +593,7 @@ def test_validate_overrides_skipped_when_no_registry(tmp_path):
 
 
 def test_subprocess_timeout_is_configurable(tmp_path):
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     problem = OsmoseCalibrationProblem(
         free_params=[FreeParameter("k", 0.1, 1.0)],
@@ -598,7 +607,7 @@ def test_subprocess_timeout_is_configurable(tmp_path):
 
 
 def test_subprocess_timeout_default_is_3600(tmp_path):
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     problem = OsmoseCalibrationProblem(
         free_params=[FreeParameter("k", 0.1, 1.0)],
@@ -618,7 +627,7 @@ def test_subprocess_timeout_default_is_3600(tmp_path):
 def test_run_single_persists_full_stderr_on_failure(monkeypatch, tmp_path):
     """A non-zero subprocess exit must write the full stderr to run_dir/stderr.txt."""
     import osmose.calibration.problem as prob_mod
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     big_stderr = b"ERROR: " + (b"x" * 2000)
 
@@ -654,7 +663,7 @@ def test_run_single_persists_full_stderr_on_failure(monkeypatch, tmp_path):
 def test_cleanup_after_eval_true_removes_run_dir(monkeypatch, tmp_path):
     import osmose.calibration.problem as prob_mod
     import osmose.results as results_mod
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     class _Result:
         returncode = 0
@@ -690,7 +699,7 @@ def test_cleanup_after_eval_true_removes_run_dir(monkeypatch, tmp_path):
 def test_cleanup_after_eval_false_keeps_run_dir(monkeypatch, tmp_path):
     import osmose.calibration.problem as prob_mod
     import osmose.results as results_mod
-    from osmose.calibration.problem import OsmoseCalibrationProblem, FreeParameter
+    from osmose.calibration.problem import FreeParameter, OsmoseCalibrationProblem
 
     class _Result:
         returncode = 0

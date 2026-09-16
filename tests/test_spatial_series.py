@@ -155,9 +155,8 @@ def test_spatial_slice_2d_time_clamped(tmp_path):
 
 def test_spatial_slice_2d_non_spatial_raises(tmp_path):
     p = _make_spatial_nc(tmp_path / "s.nc")
-    with xr.open_dataset(p) as ds:
-        with pytest.raises(ValueError):
-            spatial_slice_2d(ds, "totals", time_index=0)
+    with xr.open_dataset(p) as ds, pytest.raises(ValueError):
+        spatial_slice_2d(ds, "totals", time_index=0)
 
 
 def test_from_dataset_works_on_already_open_handle(tmp_path):
@@ -174,7 +173,7 @@ def test_from_dataset_works_on_already_open_handle(tmp_path):
 
 # --- spatial_diff_2d -------------------------------------------------------
 
-from osmose.spatial_series import grid_latlon, spatial_diff_2d  # noqa: E402
+from osmose.spatial_series import grid_latlon, spatial_diff_2d
 
 
 def _diff_ds(*, ny=3, nx=4, n_time=2, species=("cod", "sprat"), base=0.0, lat=None, land=None):

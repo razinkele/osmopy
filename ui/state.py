@@ -24,6 +24,10 @@ _log = setup_logging("osmose.state")
 
 REGISTRY = build_registry()
 
+# Anchored to the repo root rather than the process CWD so `shiny run` launched
+# from any directory still finds the bundled scenarios.
+_DEFAULT_SCENARIOS_DIR = Path(__file__).resolve().parent.parent / "data" / "scenarios"
+
 
 class AppState:
     """Shared reactive state passed to all page server functions.
@@ -32,7 +36,7 @@ class AppState:
     All pages read/write through this single source of truth.
     """
 
-    def __init__(self, scenarios_dir: Path = Path("data/scenarios")):
+    def __init__(self, scenarios_dir: Path = _DEFAULT_SCENARIOS_DIR):
         self.config: reactive.Value[dict[str, str]] = reactive.Value({})
         self.output_dir: reactive.Value[Path | None] = reactive.Value(None)
         self.run_result: reactive.Value[RunResult | None] = reactive.Value(None)

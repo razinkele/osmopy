@@ -27,7 +27,7 @@ def test_factor_series_is_anchored():
     for y in range(2018, 2023):
         f[y] = 4.0
     fac = m.factor_series(f)
-    assert fac[0] == 0.5   # 1993: 2.0 / anchor 4.0
+    assert fac[0] == 0.5  # 1993: 2.0 / anchor 4.0
     assert fac[27] == 1.0  # 2020 is inside the anchor window: 4.0 / 4.0
 
 
@@ -53,24 +53,24 @@ def test_herring_factors_are_scale_free():
 def test_build_rows_layout_and_verbatim_spinup():
     rows = m.build_rows("0.3799687566571175", [1.0] * 31)
     assert len(rows) == 50
-    assert rows[:19] == ["0.3799687566571175"] * 19   # verbatim string
-    assert float(rows[19]) == 0.3799687566571175      # repr round-trips exactly
+    assert rows[:19] == ["0.3799687566571175"] * 19  # verbatim string
+    assert float(rows[19]) == 0.3799687566571175  # repr round-trips exactly
 
 
 def test_herring_factors_weighting_unequal():
     """3:1 catch weights, hand-computed value (transposition/indexing canary —
     herring is a pass/fail stock)."""
     years = m.YEARS
-    f_flat = {y: 1.0 for y in years}                 # factor 1.0 everywhere
-    f_step = {y: 1.0 for y in years}                 # factor 0.5 outside the anchor
+    f_flat = {y: 1.0 for y in years}  # factor 1.0 everywhere
+    f_step = {y: 1.0 for y in years}  # factor 0.5 outside the anchor
     for y in years:
         if not (2018 <= y <= 2022):
             f_step[y] = 0.5
     big = {y: 300.0 for y in years}
     small = {y: 100.0 for y in years}
     agg = m.herring_factor_series([(f_flat, big), (f_step, small)])
-    assert agg[0] == 0.875                            # (3*1.0 + 1*0.5) / 4, exact in FP
-    assert agg[years.index(2020)] == 1.0              # inside the anchor window
+    assert agg[0] == 0.875  # (3*1.0 + 1*0.5) / 4, exact in FP
+    assert agg[years.index(2020)] == 1.0  # inside the anchor window
 
 
 def test_no_flounder_in_stocks():

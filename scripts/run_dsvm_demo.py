@@ -58,24 +58,24 @@ EEC_CONFIG = PROJECT_ROOT / "data" / "eec_full" / "eec_all-parameters.csv"
 # catch volumes are larger. Sources: roughly aligned with EUMOFA market
 # briefs and FAO commodity statistics (2018-2020 range), rounded for clarity.
 _PRICES_EUR_PER_TONNE: dict[int, float] = {
-    0: 800.0,    # lesserSpottedDogfish — low value, often by-catch
-    1: 8000.0,   # redMullet — premium demersal
-    2: 1500.0,   # pouting — mid value
-    3: 1500.0,   # whiting — mid value
-    4: 800.0,    # poorCod — low value
-    5: 4000.0,   # cod — premium demersal
-    6: 600.0,    # dragonet — low value
+    0: 800.0,  # lesserSpottedDogfish — low value, often by-catch
+    1: 8000.0,  # redMullet — premium demersal
+    2: 1500.0,  # pouting — mid value
+    3: 1500.0,  # whiting — mid value
+    4: 800.0,  # poorCod — low value
+    5: 4000.0,  # cod — premium demersal
+    6: 600.0,  # dragonet — low value
     7: 12000.0,  # sole — premium flatfish
-    8: 6000.0,   # plaice — premium flatfish
-    9: 1200.0,   # horseMackerel — pelagic, mid value
+    8: 6000.0,  # plaice — premium flatfish
+    9: 1200.0,  # horseMackerel — pelagic, mid value
     10: 1500.0,  # mackerel — pelagic, mid-to-high value
-    11: 800.0,   # herring — pelagic, lower per-tonne
+    11: 800.0,  # herring — pelagic, lower per-tonne
     12: 1000.0,  # sardine — pelagic
     13: 5000.0,  # squids — high value
 }
 
-DEMERSAL_TARGETS = [5, 3, 7, 8]   # cod, whiting, sole, plaice
-PELAGIC_TARGETS = [11, 12, 10]    # herring, sardine, mackerel
+DEMERSAL_TARGETS = [5, 3, 7, 8]  # cod, whiting, sole, plaice
+PELAGIC_TARGETS = [11, 12, 10]  # herring, sardine, mackerel
 
 
 def _build_dsvm_overrides(
@@ -101,34 +101,38 @@ def _build_dsvm_overrides(
     n_species = 14  # eec_full has 14 focal species
 
     # Fleet 0: Demersal trawlers
-    overrides.update(_fleet_keys(
-        fid=0,
-        name="DemersalTrawlers",
-        n_vessels=5,
-        home_y=10,
-        home_x=12,
-        gear="bottom_trawl",
-        max_days=200,
-        fuel_cost=15.0,           # € per cell traversed
-        operating_cost=2_000.0,   # € per vessel per day at sea
-        target_species=DEMERSAL_TARGETS,
-        n_species=n_species,
-    ))
+    overrides.update(
+        _fleet_keys(
+            fid=0,
+            name="DemersalTrawlers",
+            n_vessels=5,
+            home_y=10,
+            home_x=12,
+            gear="bottom_trawl",
+            max_days=200,
+            fuel_cost=15.0,  # € per cell traversed
+            operating_cost=2_000.0,  # € per vessel per day at sea
+            target_species=DEMERSAL_TARGETS,
+            n_species=n_species,
+        )
+    )
 
     # Fleet 1: Pelagic trawlers
-    overrides.update(_fleet_keys(
-        fid=1,
-        name="PelagicTrawlers",
-        n_vessels=5,
-        home_y=5,
-        home_x=8,
-        gear="midwater_trawl",
-        max_days=180,
-        fuel_cost=20.0,
-        operating_cost=2_500.0,
-        target_species=PELAGIC_TARGETS,
-        n_species=n_species,
-    ))
+    overrides.update(
+        _fleet_keys(
+            fid=1,
+            name="PelagicTrawlers",
+            n_vessels=5,
+            home_y=5,
+            home_x=8,
+            gear="midwater_trawl",
+            max_days=180,
+            fuel_cost=20.0,
+            operating_cost=2_500.0,
+            target_species=PELAGIC_TARGETS,
+            n_species=n_species,
+        )
+    )
 
     # Output enablement: spatial outputs are needed for fleet effort maps.
     overrides["output.spatial.enabled"] = "true"
@@ -287,7 +291,9 @@ def _format_report(
         if baseline_run is not None:
             base_val = baseline_run["final_biomass"].get(species, 0.0)
             ratio = value / base_val if base_val > 0 else float("nan")
-            lines.append(f"  {species:24s}  DSVM {value:>15,.1f}  baseline {base_val:>15,.1f}  ×{ratio:.2f}")
+            lines.append(
+                f"  {species:24s}  DSVM {value:>15,.1f}  baseline {base_val:>15,.1f}  ×{ratio:.2f}"
+            )
         else:
             lines.append(f"  {species:24s}  {value:>15,.1f}")
     if baseline_run is not None:
@@ -306,11 +312,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--years", type=int, default=3, help="Years to simulate (default: 3)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed (default: 42)")
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("/tmp/dsvm-demo"),
+        "--output-dir",
+        type=Path,
+        default=Path("/tmp/dsvm-demo"),
         help="Output dir for DSVM run (default: /tmp/dsvm-demo)",
     )
     parser.add_argument(
-        "--baseline", action="store_true",
+        "--baseline",
+        action="store_true",
         help="Also run a no-DSVM baseline for side-by-side comparison",
     )
     args = parser.parse_args(argv)
@@ -340,13 +349,18 @@ def main(argv: list[str] | None = None) -> int:
     print(report_text)
 
     summary_path = args.output_dir / "dsvm_demo_summary.json"
-    summary_path.write_text(json.dumps({
-        "dsvm_run": dsvm_run,
-        "baseline_run": baseline_run,
-        "econ_summary": econ_summary,
-        "n_years": args.years,
-        "seed": args.seed,
-    }, indent=2))
+    summary_path.write_text(
+        json.dumps(
+            {
+                "dsvm_run": dsvm_run,
+                "baseline_run": baseline_run,
+                "econ_summary": econ_summary,
+                "n_years": args.years,
+                "seed": args.seed,
+            },
+            indent=2,
+        )
+    )
     print(f"\nSummary JSON: {summary_path}")
     return 0
 

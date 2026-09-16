@@ -78,8 +78,9 @@ def test_view_reports_model_source(tmp_path, monkeypatch):
 
 def test_build_fisheries_view_forwards_ices_snapshot_dir(monkeypatch):
     """ices_snapshot_dir kwarg must reach load_reference_points."""
-    import ui.pages.fisheries as page
     from pathlib import Path
+
+    import ui.pages.fisheries as page
 
     captured = {}
 

@@ -76,7 +76,9 @@ t = doc.add_heading("Pikeperch Overshoot in the Baltic OSMOSE Configuration", le
 for r in t.runs:
     r.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
 sub = doc.add_paragraph()
-sr = sub.add_run("Diagnostic investigation: seven failed interventions, four withdrawn hypotheses, and a target that holds")
+sr = sub.add_run(
+    "Diagnostic investigation: seven failed interventions, four withdrawn hypotheses, and a target that holds"
+)
 sr.italic = True
 sr.font.size = Pt(12)
 sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -110,32 +112,52 @@ para(
     "replaced."
 )
 para("Principal findings:", bold=True)
-bullets([
-    "The overshoot is not an engine defect. Consumption-to-biomass ratios (Q/B) at equilibrium fall "
-    "within published ranges for every species; there is no conservation violation and no "
-    "growth-without-eating.",
-    "Demand-side levers are closed. A 10× cut in percid access to herring and sprat yields −25%; "
-    "fishing mortality swept from F = 0.5 to F = 4.0 yields −10.6%, non-monotonically, while the "
-    "envelope count degrades from 7/9 to 4/9. Pikeperch cannot be fished down.",
-    "WITHDRAWN: a spatial-supply explanation. The supporting figure was wrong by a factor of ~3.5, and "
-    "the corrected numbers refute the hypothesis outright (Section 5).",
-    "WITHDRAWN: a predation-release explanation. Pikeperch is fourth-least predated, not least, and "
-    "three less-predated species are all in envelope (Section 6).",
-    "Escape from the predator size window is established — no predator in the configuration can take a "
-    "pikeperch above 36 cm, and pikeperch matures at 40 cm — but it is not sufficient: opening cod's "
-    "window past maturity moved biomass the wrong way, because no predator here has the biomass to "
-    "regulate a stock fifteen times its own size (Section 7).",
-    "Seven interventions across the removal and production sides returned between -86% and +8% against "
-    "a 58-fold gap. The overshoot is over-determined (Section 8).",
-    "The target was re-derived and RETAINED. Its scope is correctly declared and its magnitude survives "
-    "an independent production-based cross-check, so the gap is real and not an artefact of the "
-    "reference point (Section 9).",
-    "Certification is now weight-aware. The model reproduces five of five targets that have a real "
-    "assessment behind them; the two failures are the two lowest-confidence literature estimates in "
-    "the reference file (Section 10).",
-    "All diet-based results required first repairing a defect in the diet diagnostic itself, which had "
-    "been reporting every predator as 100% piscivorous and 0% resource-feeding (Section 3).",
-])
+bullets(
+    [
+        (
+            "The overshoot is not an engine defect. Consumption-to-biomass ratios (Q/B) at equilibrium fall "
+            "within published ranges for every species; there is no conservation violation and no "
+            "growth-without-eating."
+        ),
+        (
+            "Demand-side levers are closed. A 10× cut in percid access to herring and sprat yields −25%; "
+            "fishing mortality swept from F = 0.5 to F = 4.0 yields −10.6%, non-monotonically, while the "
+            "envelope count degrades from 7/9 to 4/9. Pikeperch cannot be fished down."
+        ),
+        (
+            "WITHDRAWN: a spatial-supply explanation. The supporting figure was wrong by a factor of ~3.5, and "
+            "the corrected numbers refute the hypothesis outright (Section 5)."
+        ),
+        (
+            "WITHDRAWN: a predation-release explanation. Pikeperch is fourth-least predated, not least, and "
+            "three less-predated species are all in envelope (Section 6)."
+        ),
+        (
+            "Escape from the predator size window is established — no predator in the configuration can take a "
+            "pikeperch above 36 cm, and pikeperch matures at 40 cm — but it is not sufficient: opening cod's "
+            "window past maturity moved biomass the wrong way, because no predator here has the biomass to "
+            "regulate a stock fifteen times its own size (Section 7)."
+        ),
+        (
+            "Seven interventions across the removal and production sides returned between -86% and +8% against "
+            "a 58-fold gap. The overshoot is over-determined (Section 8)."
+        ),
+        (
+            "The target was re-derived and RETAINED. Its scope is correctly declared and its magnitude survives "
+            "an independent production-based cross-check, so the gap is real and not an artefact of the "
+            "reference point (Section 9)."
+        ),
+        (
+            "Certification is now weight-aware. The model reproduces five of five targets that have a real "
+            "assessment behind them; the two failures are the two lowest-confidence literature estimates in "
+            "the reference file (Section 10)."
+        ),
+        (
+            "All diet-based results required first repairing a defect in the diet diagnostic itself, which had "
+            "been reporting every predator as 100% piscivorous and 0% resource-feeding (Section 3)."
+        ),
+    ]
+)
 
 # ================= 1 =================
 h("1. Problem statement", 1)
@@ -171,7 +193,7 @@ para(
     "pikeperch without a pikeperch source."
 )
 para(
-    "Stock structure is fine-grained. Pikeperch shows \"a very local population structure\" (Björklund "
+    'Stock structure is fine-grained. Pikeperch shows "a very local population structure" (Björklund '
     "et al., 2007, cited in Olsson et al., 2015). Anadromous perch populations less than 50 km apart "
     "are genetically differentiated with only 3–5% gene flow and exhibit reproductive homing (Hall et "
     "al., 2022). Along the Swedish coast, perch shows isolation by distance with stretches of deep "
@@ -186,7 +208,7 @@ note(
 )
 para(
     "Percids nonetheless do take herring inside bays. Jensen, Hansson and Didrikas (2011) examined diel "
-    "vertical migration of young-of-the-year herring and \"one of their major predators, pikeperch\" in "
+    'vertical migration of young-of-the-year herring and "one of their major predators, pikeperch" in '
     "Himmerfjärden, a brackish Baltic bay, in summer, identifying piscivorous targets as pikeperch "
     "larger than 45 cm — above the 40 cm maturity size used in this configuration. The predator–prey "
     "size window already restricts this link to the coastal size class. The link is real and must not "
@@ -249,11 +271,31 @@ h("4. Hypotheses eliminated by measurement", 1)
 table(
     ["Hypothesis", "Test", "Result"],
     [
-        ["Missing fishing mortality", "Read configuration", "Rejected — pikeperch F = 0.50, above perch's 0.40"],
-        ["Fishery not wired to species", "Catchability matrix", "Rejected — pikeperch maps to coastalpikeperch = 1"],
-        ["Stock–fishery spatial mismatch", "Map overlap", "Rejected — 100% of occupied cells overlap the fishery"],
-        ["Resource (LTL) subsidy", "Equilibrium diet", "Rejected — 36.9% resource, below perch's 42.1%"],
-        ["Engine accounting / bioenergetics", "Q/B at equilibrium", "Rejected — all species within published ranges"],
+        [
+            "Missing fishing mortality",
+            "Read configuration",
+            "Rejected — pikeperch F = 0.50, above perch's 0.40",
+        ],
+        [
+            "Fishery not wired to species",
+            "Catchability matrix",
+            "Rejected — pikeperch maps to coastalpikeperch = 1",
+        ],
+        [
+            "Stock–fishery spatial mismatch",
+            "Map overlap",
+            "Rejected — 100% of occupied cells overlap the fishery",
+        ],
+        [
+            "Resource (LTL) subsidy",
+            "Equilibrium diet",
+            "Rejected — 36.9% resource, below perch's 42.1%",
+        ],
+        [
+            "Engine accounting / bioenergetics",
+            "Q/B at equilibrium",
+            "Rejected — all species within published ranges",
+        ],
     ],
 )
 para("Consumption-to-biomass ratios at equilibrium:", bold=True)
@@ -426,7 +468,7 @@ para(
 para(
     "First, ICES assesses none of these species. A query of the 2023 assessments for area 27.2x returns "
     "thirteen stocks — cod, herring, sprat, plaice, dab, sole, brill and ray — and no pikeperch, perch, "
-    "smelt or stickleback. The phrase \"ICES envelope\", used throughout this project's certification "
+    'smelt or stickleback. The phrase "ICES envelope", used throughout this project\'s certification '
     "notes, is therefore wrong for these four species; the reference file sources them as literature "
     "estimates for the coastal Baltic."
 )
@@ -501,15 +543,23 @@ para(
     "hypothesis requires."
 )
 h("11.2 Tier B — trophic corrections (configuration only)", 2)
-bullets([
-    "Sprat → 0 for both percids. Sprat is genuinely offshore; this is the defensible half of the "
-    "original proposal.",
-    "Herring → scaled, not removed. The documented bay link is retained at the coastal-available "
-    "fraction, using the time-weighted spatial overlap as the scale: pikeperch ≈ 0.05, perch ≈ 0.06.",
-    "Smelt → time-averaged over a corrected window. Spring (April–May), 20–45 day runs, giving W ≈ 1 "
-    "month rather than 3: perch ≈ 0.04, pikeperch ≈ 0.05. These are a lower bound, since smelt is "
-    "present year-round in some basins.",
-])
+bullets(
+    [
+        (
+            "Sprat → 0 for both percids. Sprat is genuinely offshore; this is the defensible half of the "
+            "original proposal."
+        ),
+        (
+            "Herring → scaled, not removed. The documented bay link is retained at the coastal-available "
+            "fraction, using the time-weighted spatial overlap as the scale: pikeperch ≈ 0.05, perch ≈ 0.06."
+        ),
+        (
+            "Smelt → time-averaged over a corrected window. Spring (April–May), 20–45 day runs, giving W ≈ 1 "
+            "month rather than 3: perch ≈ 0.04, pikeperch ≈ 0.05. These are a lower bound, since smelt is "
+            "present year-round in some basins."
+        ),
+    ]
+)
 h("11.3 Tier C — seasonal accessibility (engine feature, conditional)", 2)
 para(
     "The accessibility matrix is stage-indexed by age threshold and carries no time axis, so seasonal "
@@ -532,20 +582,32 @@ para(
     "Measured on final-decade means, 50-year runs, five seeds, using the same certifier that produced "
     "the baseline verdict."
 )
-bullets([
-    "Non-regression (hard): at least 7 of 9 species in envelope. This is a floor, not a target — the "
-    "baseline already satisfies it, so it cannot be the sole criterion.",
-    "Effect demonstrated (hard): pikeperch's final-decade mean must fall by more than twice the "
-    "five-seed spread of the baseline, so that the change is distinguishable from noise.",
-    "Mechanism demonstrated (hard): for Tier A, pikeperch's realised predation mortality as a share of "
-    "total mortality must rise, read from model output rather than inferred from the coefficient. For "
-    "Tier B, herring must remain present but reduced in realised diet; its disappearance would indicate "
-    "the coefficient acting as a hard gate rather than a scale, which is a defect.",
-    "Collapse guard: pikeperch must not fall below its envelope floor on the final-decade minimum. "
-    "Reaching envelope by starvation or collapse dynamics is a failure, not a fix.",
-    "Explicitly not a criterion: smelt reaching envelope, which is a separate failure with no mechanism "
-    "in this work.",
-])
+bullets(
+    [
+        (
+            "Non-regression (hard): at least 7 of 9 species in envelope. This is a floor, not a target — the "
+            "baseline already satisfies it, so it cannot be the sole criterion."
+        ),
+        (
+            "Effect demonstrated (hard): pikeperch's final-decade mean must fall by more than twice the "
+            "five-seed spread of the baseline, so that the change is distinguishable from noise."
+        ),
+        (
+            "Mechanism demonstrated (hard): for Tier A, pikeperch's realised predation mortality as a share of "
+            "total mortality must rise, read from model output rather than inferred from the coefficient. For "
+            "Tier B, herring must remain present but reduced in realised diet; its disappearance would indicate "
+            "the coefficient acting as a hard gate rather than a scale, which is a defect."
+        ),
+        (
+            "Collapse guard: pikeperch must not fall below its envelope floor on the final-decade minimum. "
+            "Reaching envelope by starvation or collapse dynamics is a failure, not a fix."
+        ),
+        (
+            "Explicitly not a criterion: smelt reaching envelope, which is a separate failure with no mechanism "
+            "in this work."
+        ),
+    ]
+)
 para("Risk, ranked by measured headroom to the nearest envelope bound:", bold=True)
 table(
     ["Species", "Current (t)", "Nearest bound (t)", "Headroom"],
@@ -565,30 +627,48 @@ para(
 
 # ================= 9 =================
 h("13. Limitations", 1)
-bullets([
-    "Single configuration, single parameter set. Nothing here transfers to other OSMOSE configurations.",
-    "Several figures derive from single-seed runs and are labelled as such in the source documents; the "
-    "five-seed certification is the standard for envelope verdicts.",
-    "The predation-release hypothesis is untested. It tracks the observed asymmetry between perch and "
-    "pikeperch but causation has not been demonstrated.",
-    "Linf = 90 cm for Baltic pikeperch sits at the upper end of the plausible range and has not been "
-    "independently validated here, though biomass scales with roughly the cube of length.",
-    "The envelope comparison is not like-for-like: a per-stock reference target is being applied to an "
-    "aggregated basin-wide model stock.",
-    "Four substantive conclusions reached during this work were subsequently withdrawn: the "
-    "resource-subsidy, spatial-supply and predation-release explanations, and the suggestion that the "
-    "target was mis-scoped. Each was caught by measurement or by adversarial review rather than by the "
-    "author's own reasoning, which suggests further unexamined assumptions may remain.",
-    "The target re-derivation retains both figures because they are not refuted, which is weaker than "
-    "deriving them. The perch cross-check rests on a single lagoon anchor scaled by an estimated rather "
-    "than measured habitat fraction; it bounds the target to within about an order of magnitude.",
-    "No quantitative anchor was found for pikeperch or smelt specifically. Both conclusions are "
-    "relative — to perch, and to herring — rather than absolute.",
-    "The weight-aware verdict changes what is reported, not the underlying dynamics. Pikeperch remains "
-    "58-fold above a target that survived re-derivation; the configuration cannot currently represent "
-    "the species at a defensible biomass, which is what the reference file's own note about coarse-grid "
-    "under-resolution anticipated.",
-])
+bullets(
+    [
+        "Single configuration, single parameter set. Nothing here transfers to other OSMOSE configurations.",
+        (
+            "Several figures derive from single-seed runs and are labelled as such in the source documents; the "
+            "five-seed certification is the standard for envelope verdicts."
+        ),
+        (
+            "The predation-release hypothesis is untested. It tracks the observed asymmetry between perch and "
+            "pikeperch but causation has not been demonstrated."
+        ),
+        (
+            "Linf = 90 cm for Baltic pikeperch sits at the upper end of the plausible range and has not been "
+            "independently validated here, though biomass scales with roughly the cube of length."
+        ),
+        (
+            "The envelope comparison is not like-for-like: a per-stock reference target is being applied to an "
+            "aggregated basin-wide model stock."
+        ),
+        (
+            "Four substantive conclusions reached during this work were subsequently withdrawn: the "
+            "resource-subsidy, spatial-supply and predation-release explanations, and the suggestion that the "
+            "target was mis-scoped. Each was caught by measurement or by adversarial review rather than by the "
+            "author's own reasoning, which suggests further unexamined assumptions may remain."
+        ),
+        (
+            "The target re-derivation retains both figures because they are not refuted, which is weaker than "
+            "deriving them. The perch cross-check rests on a single lagoon anchor scaled by an estimated rather "
+            "than measured habitat fraction; it bounds the target to within about an order of magnitude."
+        ),
+        (
+            "No quantitative anchor was found for pikeperch or smelt specifically. Both conclusions are "
+            "relative — to perch, and to herring — rather than absolute."
+        ),
+        (
+            "The weight-aware verdict changes what is reported, not the underlying dynamics. Pikeperch remains "
+            "58-fold above a target that survived re-derivation; the configuration cannot currently represent "
+            "the species at a defensible biomass, which is what the reference file's own note about coarse-grid "
+            "under-resolution anticipated."
+        ),
+    ]
+)
 
 # ---- review outcome, filled if provided ----
 if REVIEW2 and REVIEW2.exists():
@@ -613,67 +693,75 @@ if REVIEW2 and REVIEW2.exists():
                 [[f.get("severity", ""), f.get("title", "")[:180]] for f in conf],
             )
         else:
-            para(
-                "No findings survived refutation in the second round.", italic=True
-            )
+            para("No findings survived refutation in the second round.", italic=True)
     except Exception as exc:  # pragma: no cover
         print("review section skipped:", exc)
 
 # ================= REFERENCES =================
 h("References", 1)
 REFS = [
-    "Ahlbeck Bergendahl, I., Holliland, P. B., & Hansson, S. (2017). Feeding range of age 1+ year "
-    "Eurasian perch Perca fluviatilis in the Baltic Sea. Journal of Fish Biology, 90(5), 2060–2072. "
-    "https://doi.org/10.1111/jfb.13285",
-
+    (
+        "Ahlbeck Bergendahl, I., Holliland, P. B., & Hansson, S. (2017). Feeding range of age 1+ year "
+        "Eurasian perch Perca fluviatilis in the Baltic Sea. Journal of Fish Biology, 90(5), 2060–2072. "
+        "https://doi.org/10.1111/jfb.13285"
+    ),
     "Björklund, M., et al. (2007). Cited in Olsson, Tomczak & Ojaveer (2015).",
-
-    "Downing, J. A., & Plante, C. (1993); Randall, R. G., & Minns, C. K. (2000). Production/biomass "
-    "relationships, cited in Hansson, Bergström & Bonsdorff (2018).",
-
-    "Hansson, S., Bergström, U., & Bonsdorff, E. (2018). Competition for the fish — fish extraction "
-    "from the Baltic Sea by humans, aquatic mammals, and birds. ICES Journal of Marine Science, 75(3), "
-    "999–1008. https://doi.org/10.1093/icesjms/fsx207",
-
-    "Christensen, E. A. F., et al. (2020); Hansson, S., et al. (2019). Cited in Hall, Koch-Schmidt & "
-    "Larsson (2022).",
-
+    (
+        "Downing, J. A., & Plante, C. (1993); Randall, R. G., & Minns, C. K. (2000). Production/biomass "
+        "relationships, cited in Hansson, Bergström & Bonsdorff (2018)."
+    ),
+    (
+        "Hansson, S., Bergström, U., & Bonsdorff, E. (2018). Competition for the fish — fish extraction "
+        "from the Baltic Sea by humans, aquatic mammals, and birds. ICES Journal of Marine Science, 75(3), "
+        "999–1008. https://doi.org/10.1093/icesjms/fsx207"
+    ),
+    (
+        "Christensen, E. A. F., et al. (2020); Hansson, S., et al. (2019). Cited in Hall, Koch-Schmidt & "
+        "Larsson (2022)."
+    ),
     "Dainys, J., et al. (2022). Cited in Jakubavičiūtė, Arula & Dainys (2022).",
-
-    "Hall, M., Koch-Schmidt, P., & Larsson, P. (2022). Reproductive homing and fine-scaled genetic "
-    "structuring of anadromous Baltic Sea perch (Perca fluviatilis). Fisheries Management and Ecology, "
-    "29(5), 586–596. https://doi.org/10.1111/fme.12542",
-
+    (
+        "Hall, M., Koch-Schmidt, P., & Larsson, P. (2022). Reproductive homing and fine-scaled genetic "
+        "structuring of anadromous Baltic Sea perch (Perca fluviatilis). Fisheries Management and Ecology, "
+        "29(5), 586–596. https://doi.org/10.1111/fme.12542"
+    ),
     "Heikinheimo, O., et al. (2015). Cited in Jakubavičiūtė, Arula & Dainys (2022).",
-
-    "Jakubavičiūtė, E., Arula, T., & Dainys, J. (2022). Status and future perspectives for pikeperch "
-    "(Sander lucioperca) stocks in Europe. openRxiv. https://doi.org/10.1101/2022.12.20.521162",
-
-    "Jensen, O. P., Hansson, S., & Didrikas, T. (2011). Foraging, bioenergetic and predation "
-    "constraints on diel vertical migration. Journal of Fish Biology, 78(2), 449–465. "
-    "https://doi.org/10.1111/j.1095-8649.2010.02855.x",
-
-    "Kokkonen, E., Heikinheimo, O., & Pekcan-Hekim, Z. (2019). Effects of water temperature and "
-    "pikeperch (Sander lucioperca) abundance on the stock–recruitment relationship of Eurasian perch "
-    "(Perca fluviatilis) in the northern Baltic Sea. Hydrobiologia, 841(1), 79–94. "
-    "https://doi.org/10.1007/s10750-019-04008-z",
-
-    "Olin, M., Heikinheimo, O., & Lehtonen, T. K. (2023). Long-term monitoring of pikeperch (Sander "
-    "lucioperca) populations under increasing temperatures and predator abundances in the Finnish "
-    "coastal waters of the Baltic Sea. Ecology of Freshwater Fish, 32(4), 750–764. "
-    "https://doi.org/10.1111/eff.12721",
-
-    "Olsson, J., Mo, K., & Florin, A.-B. (2011). Genetic population structure of perch Perca "
-    "fluviatilis along the Swedish coast of the Baltic Sea. Journal of Fish Biology, 79(1), 122–137. "
-    "https://doi.org/10.1111/j.1095-8649.2011.02998.x",
-
-    "Olsson, J., Tomczak, M. T., & Ojaveer, H. (2015). Temporal development of coastal ecosystems in "
-    "the Baltic Sea over the past two decades. ICES Journal of Marine Science, 72(9), 2539–2548. "
-    "https://doi.org/10.1093/icesjms/fsv143",
-
-    "Sendek, D. S., & Bogdanov, D. V. (2019). European smelt Osmerus eperlanus in the eastern Gulf of "
-    "Finland, Baltic Sea: Stock status and fishery. Journal of Fish Biology. "
-    "https://doi.org/10.1111/jfb.14009",
+    (
+        "Jakubavičiūtė, E., Arula, T., & Dainys, J. (2022). Status and future perspectives for pikeperch "
+        "(Sander lucioperca) stocks in Europe. openRxiv. https://doi.org/10.1101/2022.12.20.521162"
+    ),
+    (
+        "Jensen, O. P., Hansson, S., & Didrikas, T. (2011). Foraging, bioenergetic and predation "
+        "constraints on diel vertical migration. Journal of Fish Biology, 78(2), 449–465. "
+        "https://doi.org/10.1111/j.1095-8649.2010.02855.x"
+    ),
+    (
+        "Kokkonen, E., Heikinheimo, O., & Pekcan-Hekim, Z. (2019). Effects of water temperature and "
+        "pikeperch (Sander lucioperca) abundance on the stock–recruitment relationship of Eurasian perch "
+        "(Perca fluviatilis) in the northern Baltic Sea. Hydrobiologia, 841(1), 79–94. "
+        "https://doi.org/10.1007/s10750-019-04008-z"
+    ),
+    (
+        "Olin, M., Heikinheimo, O., & Lehtonen, T. K. (2023). Long-term monitoring of pikeperch (Sander "
+        "lucioperca) populations under increasing temperatures and predator abundances in the Finnish "
+        "coastal waters of the Baltic Sea. Ecology of Freshwater Fish, 32(4), 750–764. "
+        "https://doi.org/10.1111/eff.12721"
+    ),
+    (
+        "Olsson, J., Mo, K., & Florin, A.-B. (2011). Genetic population structure of perch Perca "
+        "fluviatilis along the Swedish coast of the Baltic Sea. Journal of Fish Biology, 79(1), 122–137. "
+        "https://doi.org/10.1111/j.1095-8649.2011.02998.x"
+    ),
+    (
+        "Olsson, J., Tomczak, M. T., & Ojaveer, H. (2015). Temporal development of coastal ecosystems in "
+        "the Baltic Sea over the past two decades. ICES Journal of Marine Science, 72(9), 2539–2548. "
+        "https://doi.org/10.1093/icesjms/fsv143"
+    ),
+    (
+        "Sendek, D. S., & Bogdanov, D. V. (2019). European smelt Osmerus eperlanus in the eastern Gulf of "
+        "Finland, Baltic Sea: Stock status and fishery. Journal of Fish Biology. "
+        "https://doi.org/10.1111/jfb.14009"
+    ),
 ]
 for r in REFS:
     p = doc.add_paragraph(r)

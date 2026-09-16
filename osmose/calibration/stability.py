@@ -65,7 +65,7 @@ def stability_penalty(
     n = len(biomass)
     if n < 5:
         return float("inf")
-    start = int(round(warmup_frac * n))
+    start = round(warmup_frac * n)
     late = max(start + 1, n - 10)  # relative final-decade
     total = 0.0
     for t in targets:

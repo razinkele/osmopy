@@ -4,6 +4,7 @@ Pulls only the rows for Gadus morhua (FishBase) and Carcinus maenas (SeaLifeBase
 so fixtures stay small. Run: .venv/bin/python scripts/_record_fishbase_fixtures.py
 Requires network (one-off); CI never runs this.
 """
+
 from pathlib import Path
 
 from osmose import fishbase

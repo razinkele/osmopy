@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from osmose.logging import setup_logging
 
@@ -249,7 +249,7 @@ class OsmoseRunner:
                     read_stream(self._process.stdout, stdout_lines),
                     read_stream(self._process.stderr, stderr_lines),
                 )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _log.warning("OSMOSE run timed out after %ds, killing process", timeout_sec)
             try:
                 self._process.kill()
@@ -280,11 +280,16 @@ class OsmoseRunner:
                 message="Run cancelled by user",
             )
 
+        returncode = self._process.returncode if self._process.returncode is not None else -1
+        # A non-zero exit is a failed run: keep `status` consistent with
+        # `returncode` so consumers that only look at one of them agree.
         return RunResult(
-            returncode=self._process.returncode if self._process.returncode is not None else -1,
+            returncode=returncode,
             output_dir=result_output_dir,
             stdout="\n".join(stdout_lines),
             stderr="\n".join(stderr_lines),
+            status="ok" if returncode == 0 else "failed",
+            message="" if returncode == 0 else f"Process exited with code {returncode}",
         )
 
     def cancel(self) -> None:
@@ -372,6 +377,7 @@ class OsmoseRunner:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,  # absent/broken java is reported as None, not raised
             )
             # Java prints version to stderr
             return result.stderr.strip() or result.stdout.strip() or None

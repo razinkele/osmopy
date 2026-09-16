@@ -1,10 +1,10 @@
-import numpy as np
 import pytest
 
 from scripts.spikes.rng_repro.parity import GRID_N, GRID_SEEDS, compare_cell
 
 try:
     from scripts.spikes.rng_repro import _rng_portable as R
+
     _HAVE_SO = True
 except ImportError:
     _HAVE_SO = False

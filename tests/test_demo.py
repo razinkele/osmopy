@@ -2,7 +2,7 @@
 
 import pytest
 
-from osmose.demo import DEMO_INFO, demo_info, migrate_config, osmose_demo, list_demos
+from osmose.demo import DEMO_INFO, demo_info, list_demos, migrate_config, osmose_demo
 
 
 def test_osmose_demo_bay_of_biscay(tmp_path):

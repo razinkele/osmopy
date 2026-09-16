@@ -62,27 +62,37 @@ def main() -> int:
         "# Spatial RV field diagnostic",
         "",
         f"RV_ref = {ref:.2f} m",
-        f"within-basin CV = {cv:.3f}  (GO/NO-GO: go if >= 0.20)  ->  "
-        f"{'GO' if cv >= 0.20 else 'NO-GO'}",
+        (
+            f"within-basin CV = {cv:.3f}  (GO/NO-GO: go if >= 0.20)  ->  "
+            f"{'GO' if cv >= 0.20 else 'NO-GO'}"
+        ),
         f"mean(s_cell) over RV>0 spawning cells = {mean_s:.3f}  (mean-anchor target [0.6, 1.0])",
         f"fraction of cod_spawning cells with RV > 0 = {frac_viable:.3f}",
         "",
         "## Basin contrast",
-        f"spawn vs fresh northern gulf = {ratio_fresh:.2f}  (mean_spawn={mean_spawn:.2f}, "
-        f"mean_fresh={mean_fresh:.2f})",
-        f"spawn vs ALL non-spawning ocean = {ratio_naive:.2f}  (mean_coast={mean_coast:.2f}) "
-        "-- CONFOUNDED, see finding",
+        (
+            f"spawn vs fresh northern gulf = {ratio_fresh:.2f}  (mean_spawn={mean_spawn:.2f}, "
+            f"mean_fresh={mean_fresh:.2f})"
+        ),
+        (
+            f"spawn vs ALL non-spawning ocean = {ratio_naive:.2f}  (mean_coast={mean_coast:.2f}) "
+            "-- CONFOUNDED, see finding"
+        ),
         "",
         "## Finding: the Danish-straits confound",
-        "The viable-thickness metric (salinity >= 11 PSU AND O2 >= 89.3 mmol/m3) makes the "
-        "ultra-saline Danish straits/Kattegat the highest-RV cells (up to ~220 m), even though "
-        "they are outside the cod spawning range and receive no eggs. A naive spawn-vs-all-ocean "
-        "contrast therefore inverts. This does NOT affect the mechanism (eggs are placed only on "
-        "the cod_spawning map), and the within-basin CV -- the real go/no-go -- is a strong GO.",
+        (
+            "The viable-thickness metric (salinity >= 11 PSU AND O2 >= 89.3 mmol/m3) makes the "
+            "ultra-saline Danish straits/Kattegat the highest-RV cells (up to ~220 m), even though "
+            "they are outside the cod spawning range and receive no eggs. A naive spawn-vs-all-ocean "
+            "contrast therefore inverts. This does NOT affect the mechanism (eggs are placed only on "
+            "the cod_spawning map), and the within-basin CV -- the real go/no-go -- is a strong GO."
+        ),
         "",
         "## Gate on/off cod biomass (15-yr, years 3-14 mean)",
-        f"off={off_mean:.0f}  on={on_mean:.0f}  delta={100 * (on_mean / off_mean - 1):+.0f}%  "
-        "(SP1b larval-M recalibration restores the mean; not done here)",
+        (
+            f"off={off_mean:.0f}  on={on_mean:.0f}  delta={100 * (on_mean / off_mean - 1):+.0f}%  "
+            "(SP1b larval-M recalibration restores the mean; not done here)"
+        ),
     ]
     print("\n".join(lines))
     out = ROOT / "docs" / "diagnostics" / "rv_spatial_field.md"

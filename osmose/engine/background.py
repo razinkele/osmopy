@@ -106,7 +106,7 @@ class BackgroundSpeciesInfo:
     proportions: list[float]
     """Fraction of total biomass in each size class (sums to 1.0)."""
 
-    proportion_ts: "NDArray[np.float64] | None" = field(default=None)
+    proportion_ts: NDArray[np.float64] | None = field(default=None)
     """Time-varying proportion overrides (shape: n_steps x n_class). None = use proportions."""
 
     fr_shape: int = 1

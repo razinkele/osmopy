@@ -8,7 +8,7 @@ _SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
-import chunkc_accessibility as cc  # noqa: E402
+import chunkc_accessibility as cc
 
 _DEPLOYED = (
     "v Prey / Predator >;cod;herring;sprat;smelt\n"

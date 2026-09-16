@@ -20,6 +20,7 @@ from osmose.calibration.sobol_io import (
 )
 from osmose.logging import setup_logging
 from ui.pages.calibration_charts import make_sobol_tornado
+from ui.state import AppState
 from ui.styles import STYLE_MONO_KEY
 
 _log = setup_logging("osmose.sensitivity_explorer")
@@ -74,7 +75,7 @@ def sensitivity_explorer_ui():
     )
 
 
-def sensitivity_explorer_server(input, output, session, state):
+def sensitivity_explorer_server(input, output, session, state: AppState):
     # `state` is unused (page is config-independent) but kept for the standard
     # *_server(input, output, session, state) call signature.
     _last_choices: reactive.Value[dict] = reactive.Value({})
@@ -91,7 +92,7 @@ def sensitivity_explorer_server(input, output, session, state):
             return
         try:
             summaries = list_sobol_results()
-        except Exception:  # noqa: BLE001 — never crash the page on a discovery error
+        except Exception:
             return
         choices = _run_choices(summaries)
         with reactive.isolate():
@@ -107,7 +108,7 @@ def sensitivity_explorer_server(input, output, session, state):
             return None
         try:
             return load_sobol_result(ts)
-        except Exception:  # noqa: BLE001 — degrade to empty state on a bad/missing artifact
+        except Exception:
             _log.warning("Failed to load sobol result %r", ts, exc_info=True)
             return None
 

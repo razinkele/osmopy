@@ -210,7 +210,7 @@ def safe_run(runner, config, overrides, n_years, seed) -> dict:
     """Model call; `_failed` sentinel (distinct from a real cod_east_mean==0) on crash or empty output."""
     try:
         stats = runner(config, overrides, n_years, seed)
-    except Exception as exc:  # noqa: BLE001 — a diagnostic must not abort the whole grid
+    except Exception as exc:
         return {"_failed": True, "_error": repr(exc)}
     if not stats or f"{_COD_STOCK}_mean" not in stats:
         return {"_failed": True, "_error": f"empty or partial stats (no {_COD_STOCK}_mean)"}
@@ -593,6 +593,7 @@ def run_accessibility_ab(
 
 def read_base_config() -> dict:
     from calibrate_baltic import BALTIC_CONFIG
+
     from osmose.config.reader import OsmoseConfigReader
 
     return OsmoseConfigReader().read(str(BALTIC_CONFIG))

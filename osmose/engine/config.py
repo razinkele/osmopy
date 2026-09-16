@@ -10,7 +10,7 @@ import warnings
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -25,9 +25,6 @@ from osmose.engine.background import (
 from osmose.engine.path_resolution import resolve_data_path
 from osmose.engine.physical_data import PhysicalData
 from osmose.logging import setup_logging
-
-if TYPE_CHECKING:
-    from osmose.engine.physical_data import PhysicalData
 
 _log = setup_logging("osmose.engine.config")
 
@@ -195,7 +192,7 @@ def _cfg_dir(cfg: dict[str, str]) -> str:
     return cfg.get("_osmose.config.dir", "")
 
 
-def _accessibility_path_or_none(cfg: dict[str, str]) -> "Path | None":
+def _accessibility_path_or_none(cfg: dict[str, str]) -> Path | None:
     """Resolve predation.accessibility.file once, shared by both accessibility loaders.
 
     Returns None when the key is absent or empty. Raises :class:`FileNotFoundError`
@@ -2361,7 +2358,7 @@ class EngineConfig:
         for i in range(n_sp):
             for variant in ["bydt.byage", "bydt.bysize"]:
                 key = f"mortality.fishing.rate.{variant}.file.sp{i}"
-                if key in cfg and cfg[key]:
+                if cfg.get(key):
                     ts_path = _resolve_file(cfg[key], _cfg_dir(cfg))
                     if ts_path is not None:
                         n_years = int(cfg.get("simulation.time.nyear", "1"))
@@ -2383,7 +2380,7 @@ class EngineConfig:
                     fishing_catches = np.zeros(n_sp, dtype=np.float64)
                 fishing_catches[i] = float(cfg[key])
             year_key = f"mortality.fishing.catches.byyear.file.sp{i}"
-            if year_key in cfg and cfg[year_key]:
+            if cfg.get(year_key):
                 if fishing_catches_by_year is None:
                     fishing_catches_by_year = [None] * n_sp
                 yr_path = _resolve_file(cfg[year_key], _cfg_dir(cfg))

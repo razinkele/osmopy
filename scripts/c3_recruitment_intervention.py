@@ -82,10 +82,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import osmose.engine.processes.reproduction as repro_mod  # noqa: E402
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
+import osmose.engine.processes.reproduction as repro_mod
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
 
 N_YEAR = 8
 SEED = 42
@@ -97,7 +97,7 @@ _ORIGINAL = repro_mod.regulate_recruitment
 
 
 def _make_recorder(n_sp: int) -> dict[str, np.ndarray]:
-    z = lambda: np.zeros(n_sp, dtype=np.float64)  # noqa: E731
+    z = lambda: np.zeros(n_sp, dtype=np.float64)
     return {
         "ssb": z(),
         "linear_used": z(),
@@ -250,7 +250,7 @@ def main() -> int:
             verdict = "RECRUITMENT CONFIRMED"
         else:
             verdict = "RECRUITMENT REFUTED"
-        print(f"{s:<13}{r:>22.2f}{str(persists):>20}   {verdict}")
+        print(f"{s:<13}{r:>22.2f}{persists!s:>20}   {verdict}")
 
     print("\ncod_east caveat: its recruitment is partly prescribed by the RV gate, so the")
     print("intervention may be unable to move it. Read its row with that in mind.")

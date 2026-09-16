@@ -67,7 +67,7 @@ class TestLoadTargets:
             cod,120000,60000,250000,1.0
         """)
         )
-        targets, metadata = load_targets(csv)
+        targets, _metadata = load_targets(csv)
         assert len(targets) == 1
         assert targets[0].reference_point_type == "biomass"
         assert targets[0].source == ""

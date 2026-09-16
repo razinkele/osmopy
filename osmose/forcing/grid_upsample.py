@@ -3,6 +3,7 @@ maps / masks / fishing-distribution maps ({-99,0,weight}) — NOT absolute bioma
 (use osmose/forcing/conserve_regrid for those)."""
 
 from __future__ import annotations
+
 import numpy as np
 
 

@@ -25,6 +25,7 @@ from osmose.results import OsmoseResults
 from osmose.spatial_series import grid_latlon, spatial_diff_2d
 from ui.components.config_diff import render_config_diff_table
 from ui.pages.grid_helpers import make_diff_map, make_spatial_map
+from ui.state import AppState
 
 _log = setup_logging("osmose.scenario_diff")
 
@@ -82,7 +83,7 @@ def scenario_diff_nav_panel():
     )
 
 
-def scenario_diff_server(input, output, session, state):
+def scenario_diff_server(input, output, session, state: AppState):
     """Reactives for the Scenario Diff tab. Called once from results_server."""
     _ds_a: reactive.Value = reactive.Value(None)  # xarray Dataset | None
     _ds_b: reactive.Value = reactive.Value(None)
@@ -110,7 +111,7 @@ def scenario_diff_server(input, output, session, state):
             return
         try:
             runs = default_run_history().list_runs()
-        except Exception:  # noqa: BLE001 — never crash the page on a history-read error
+        except Exception:
             return
         choices = _run_choices(runs)
         with reactive.isolate():
@@ -126,7 +127,7 @@ def scenario_diff_server(input, output, session, state):
             return None
         try:
             rec = default_run_history().load_run(ts)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         return OsmoseResults(Path(rec.output_dir), strict=False)
 
@@ -140,7 +141,7 @@ def scenario_diff_server(input, output, session, state):
         if ds is not None:
             try:
                 ds.close()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _log.warning("Failed to close scenario-diff dataset", exc_info=True)
 
     def _close_handles():
@@ -264,7 +265,7 @@ def scenario_diff_server(input, output, session, state):
             return ui.p("Same run selected — no config differences.", class_="text-muted")
         try:
             diffs = default_run_history().compare_runs(ts_a, ts_b)
-        except Exception:  # noqa: BLE001 — stale/missing run file: degrade, don't crash the render
+        except Exception:
             return ui.p("Could not load run configs.", class_="text-muted")
         if not diffs:
             return ui.p("Identical configuration — no differences.", class_="text-muted")
@@ -303,11 +304,12 @@ def scenario_diff_server(input, output, session, state):
         var_a, var_b = _spatial_var(a), _spatial_var(b)
         if var_a is None or var_b is None:
             return "No spatial variable in one of the runs."
-        if _spatial_species() is None:  # "All (summed)" path
-            if (_has_species_dim(a, var_a) or _has_species_dim(b, var_b)) and not _common_species(
-                a, b
-            ):
-                return "No common species for spatial maps."
+        if (
+            _spatial_species() is None  # "All (summed)" path
+            and (_has_species_dim(a, var_a) or _has_species_dim(b, var_b))
+            and not _common_species(a, b)
+        ):
+            return "No common species for spatial maps."
         return None
 
     # ── Spatial controls (species + time), rendered dynamically ──

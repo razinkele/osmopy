@@ -31,7 +31,7 @@ def _read_frame(getter: Callable[[], pd.DataFrame]) -> pd.DataFrame | None:
     """Call a results getter, returning None if its output is absent/empty."""
     try:
         frame = getter()
-    except Exception:  # noqa: BLE001 -- output not enabled/absent for this run: skip its stats
+    except Exception:
         return None
     if frame is None or frame.empty:
         return None

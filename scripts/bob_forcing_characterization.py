@@ -2,8 +2,11 @@
 This is the DELIBERATE forcing change (A4.3) -- characterized, not gated. Run after Task 4."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
 import numpy as np
+
 from scripts.native_440_parity import run_outputs
 
 ROOT = Path(__file__).resolve().parents[1]

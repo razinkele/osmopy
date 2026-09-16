@@ -7,7 +7,6 @@ import pytest
 from osmose.config.validator import validate_config, validate_field
 from osmose.schema.base import OsmoseField, ParamType
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

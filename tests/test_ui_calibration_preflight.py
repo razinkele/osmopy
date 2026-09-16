@@ -9,8 +9,8 @@ from osmose.calibration.preflight import (
     PreflightIssue,
     PreflightResult,
 )
-from ui.pages.calibration_handlers import apply_preflight_fixes, build_preflight_modal
 from osmose.calibration.problem import FreeParameter
+from ui.pages.calibration_handlers import apply_preflight_fixes, build_preflight_modal
 
 
 class TestBuildPreflightModal:

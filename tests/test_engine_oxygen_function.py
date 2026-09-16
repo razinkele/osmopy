@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+
 from osmose.engine.processes.oxygen_function import f_o2
 
 

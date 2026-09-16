@@ -108,8 +108,18 @@ def _cod_east_seasonality() -> str:
     """cod_west spring curve shifted +4 timesteps (~2 months) → eastern summer peak
     (Jul-Aug deep-basin spawning). Sums to 1.0."""
     western = [
-        0.021739, 0.043478, 0.065217, 0.086957, 0.130435, 0.152174,
-        0.152174, 0.130435, 0.086957, 0.065217, 0.043478, 0.021739,
+        0.021739,
+        0.043478,
+        0.065217,
+        0.086957,
+        0.130435,
+        0.152174,
+        0.152174,
+        0.130435,
+        0.086957,
+        0.065217,
+        0.043478,
+        0.021739,
     ]
     n = 24
     shift = 4  # ~2 months later than western

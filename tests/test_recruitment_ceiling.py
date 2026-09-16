@@ -222,11 +222,11 @@ def test_ceiling_off_is_bit_identical():
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
 
 
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import derive_recruitment_ceiling as derive  # noqa: E402
+import derive_recruitment_ceiling as derive
 
 
 def test_zero_fishing_disables_both_modes():
@@ -272,7 +272,7 @@ def test_write_ceiling_csv_roundtrips(tmp_path):
     text = out.read_text().strip().splitlines()
     assert text[0] == "season_idx,ceiling_sp0,ceiling_sp1"
     assert text[1].startswith("0,")
-    loaded, mask = _load_recruitment_ceiling(
+    loaded, _mask = _load_recruitment_ceiling(
         {
             "_osmose.config.dir": str(tmp_path),
             "reproduction.recruitment.ceiling.enabled": "true",
@@ -299,7 +299,7 @@ def test_seeding_overlap_no_warning_when_clear():
     assert derive.seeding_overlap_warnings(smax, 360, 24, 1.0 / 3.0) == []
 
 
-import baltic_recruitment_ceiling_diagnostic as abdiag  # noqa: E402
+import baltic_recruitment_ceiling_diagnostic as abdiag
 
 
 def test_overshoot_ratio_basic():

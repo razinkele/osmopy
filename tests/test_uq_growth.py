@@ -58,8 +58,8 @@ def test_merge_designs_concatenates_x_and_per_key_arrays():
 
 
 def test_growth_aborts_at_n_max_when_gate_always_fails():
-    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
-    gate_fn = lambda X, Y, alpha, **kw: _report(False)  # noqa: E731
+    ev = lambda x, seed: {"k": 10.0}
+    gate_fn = lambda X, Y, alpha, **kw: _report(False)
     result = grow_until_calibrated(
         ev, _fp2(), ["k"], n_seeds=2, n0=10, increment=10, n_max=25, seed=0, gate_fn=gate_fn
     )
@@ -69,7 +69,7 @@ def test_growth_aborts_at_n_max_when_gate_always_fails():
 
 
 def test_growth_returns_calibrated_after_one_append():
-    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
+    ev = lambda x, seed: {"k": 10.0}
     calls = {"n": 0}
 
     def gate_fn(X, Y, alpha, **kw):
@@ -127,18 +127,18 @@ def test_growth_misspecified_synthetic_aborts_loudly():
 
 
 def test_growth_rejects_nonpositive_increment():
-    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
+    ev = lambda x, seed: {"k": 10.0}
     with pytest.raises(ValueError, match="positive"):
         grow_until_calibrated(ev, _fp2(), ["k"], n_seeds=2, n0=10, increment=0, n_max=100)
 
 
 def test_growth_rejects_n0_exceeding_n_max():
-    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
+    ev = lambda x, seed: {"k": 10.0}
     with pytest.raises(ValueError, match="n_max"):
         grow_until_calibrated(ev, _fp2(), ["k"], n_seeds=2, n0=50, increment=10, n_max=25)
 
 
 def test_growth_rejects_empty_target_keys():
-    ev = lambda x, seed: {"k": 10.0}  # noqa: E731
+    ev = lambda x, seed: {"k": 10.0}
     with pytest.raises(ValueError, match="target_keys"):
         grow_until_calibrated(ev, _fp2(), [], n_seeds=2, n0=10, increment=10, n_max=100)

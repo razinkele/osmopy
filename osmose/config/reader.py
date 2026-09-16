@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from osmose.logging import setup_logging
 
@@ -67,8 +68,8 @@ class OsmoseConfigReader:
     restore Java's expected case when writing config back.
     """
 
-    SEPARATORS = re.compile(r"\s*[=;,:\t]\s*")
-    COMMENT_CHARS = {"#", "!"}
+    SEPARATORS: ClassVar[re.Pattern[str]] = re.compile(r"\s*[=;,:\t]\s*")
+    COMMENT_CHARS: ClassVar[set[str]] = {"#", "!"}
 
     def __init__(self) -> None:
         self.key_case_map: dict[str, str] = {}

@@ -1,5 +1,6 @@
 # tests/test_bathymetry.py
 import numpy as np
+
 from osmose.forcing.bathymetry import shallow_fraction
 from osmose.maps.builder import GridSpec
 

@@ -2,12 +2,11 @@
 
 import numpy as np
 
-from tests.helpers import _make_school  # noqa: F401 — used in tests below
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.simulate import StepOutput, simulate
 from osmose.engine.state import MortalityCause
-
+from tests.helpers import _make_school  # noqa: F401 — used in tests below
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -256,6 +255,7 @@ class TestInitialStateOutput:
 
 def test_write_outputs_skips_diet_csv_when_disabled(tmp_path):
     import numpy as np
+
     from osmose.engine.output import write_outputs
     from osmose.engine.simulate import StepOutput
     from tests.helpers import make_minimal_engine_config

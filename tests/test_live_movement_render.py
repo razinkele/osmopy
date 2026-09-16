@@ -223,6 +223,7 @@ def test_live_legend_stage_in_title():
 
 def test_live_legend_heatmap_is_gradient():
     from shiny_deckgl import PALETTE_THERMAL
+
     from ui.pages.live_movement_render import _HEATMAP_ID, live_legend_widget
 
     snap = _snap([0, 1], [0, 1], [0, 1], [1, 1])

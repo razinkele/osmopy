@@ -61,6 +61,6 @@ def rank_candidates_multiseed(
         scores.append(score)
 
     means = [s["mean"] for s in scores]
-    rankings = list(int(i) for i in np.argsort(means))
+    rankings = [int(i) for i in np.argsort(means)]
 
     return {"rankings": rankings, "scores": scores}

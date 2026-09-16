@@ -394,7 +394,7 @@ class TestRunnerCommandBuilding:
     """Verify OsmoseRunner builds correct commands for each study config."""
 
     def test_build_cmd_includes_config_path(self, study_demo, tmp_path):
-        name, result, _ = study_demo
+        _name, result, _ = study_demo
         jar = tmp_path / "osmose.jar"
         jar.touch()
         runner = OsmoseRunner(jar_path=jar)
@@ -402,7 +402,7 @@ class TestRunnerCommandBuilding:
         assert str(result["config_file"]) in cmd
 
     def test_build_cmd_with_output_dir(self, study_demo, tmp_path):
-        name, result, _ = study_demo
+        _name, result, _ = study_demo
         jar = tmp_path / "osmose.jar"
         jar.touch()
         runner = OsmoseRunner(jar_path=jar)
@@ -412,7 +412,7 @@ class TestRunnerCommandBuilding:
 
     def test_build_cmd_with_study_overrides(self, study_demo, tmp_path):
         """Verify overrides for common study tweaks (e.g., shorter run)."""
-        name, result, config = study_demo
+        _name, result, _config = study_demo
         jar = tmp_path / "osmose.jar"
         jar.touch()
         runner = OsmoseRunner(jar_path=jar)
@@ -536,71 +536,71 @@ class TestOutputReading:
         )
 
     def test_biomass_filter_by_species(self, study_output):
-        name, species, results = study_output
+        _name, species, results = study_output
         sp = species[0]
         df = results.biomass(species=sp)
         assert not df.empty
         assert set(df["species"].unique()) == {sp}
 
     def test_abundance_reads_all_species(self, study_output):
-        name, species, results = study_output
+        _name, species, results = study_output
         df = results.abundance()
         assert not df.empty
         assert set(df["species"].unique()) == set(species)
 
     def test_mortality_reads_all_species(self, study_output):
-        name, species, results = study_output
+        _name, species, results = study_output
         df = results.mortality()
         assert not df.empty
         assert set(df["species"].unique()) == set(species)
 
     def test_yield_biomass_reads_data(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.yield_biomass()
         assert not df.empty
 
     def test_mean_tl_reads_data(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.mean_trophic_level()
         assert not df.empty
 
     def test_mean_size_reads_data(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.mean_size()
         assert not df.empty
 
     def test_diet_matrix_reads_data(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.diet_matrix()
         assert not df.empty
 
     def test_biomass_by_age_reads_2d(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.biomass_by_age()
         assert not df.empty
         assert "bin" in df.columns
         assert "value" in df.columns
 
     def test_biomass_by_size_reads_2d(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.biomass_by_size()
         assert not df.empty
         assert "bin" in df.columns
 
     def test_size_spectrum(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.size_spectrum()
         assert not df.empty
         assert "size" in df.columns
         assert "abundance" in df.columns
 
     def test_export_dataframe_biomass(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.export_dataframe("biomass")
         assert not df.empty
 
     def test_export_dataframe_unknown_type(self, study_output):
-        name, _, results = study_output
+        _name, _, results = study_output
         df = results.export_dataframe("nonexistent_type")
         assert df.empty
 
@@ -645,7 +645,7 @@ class TestAnalysisPipeline:
         return name, species, replicates
 
     def test_ensemble_stats_computes_mean_and_ci(self, study_biomass):
-        name, species, replicates = study_biomass
+        _name, _species, replicates = study_biomass
         result = ensemble_stats(replicates, value_col="biomass", group_cols=["time"])
         assert not result.empty
         assert "mean" in result.columns
@@ -657,7 +657,7 @@ class TestAnalysisPipeline:
         assert (result["mean"] <= result["ci_upper"]).all()
 
     def test_summary_table_all_species(self, study_biomass):
-        name, species, replicates = study_biomass
+        _name, species, replicates = study_biomass
         result = summary_table(replicates, value_col="biomass")
         assert not result.empty
         assert set(result["species"]) == set(species)
@@ -666,7 +666,7 @@ class TestAnalysisPipeline:
         assert "max" in result.columns
 
     def test_shannon_diversity(self, study_biomass):
-        name, _, replicates = study_biomass
+        _name, _, replicates = study_biomass
         df = replicates[0]
         result = shannon_diversity(df)
         assert not result.empty
@@ -700,7 +700,7 @@ class TestEnsembleAggregation:
         return name, species, dirs
 
     def test_aggregate_biomass(self, replicate_dirs):
-        name, _, dirs = replicate_dirs
+        _name, _, dirs = replicate_dirs
         result = aggregate_replicates(dirs, "biomass")
         assert len(result["time"]) > 0
         assert len(result["mean"]) == len(result["time"])
@@ -708,19 +708,19 @@ class TestEnsembleAggregation:
         assert len(result["upper"]) == len(result["time"])
 
     def test_aggregate_lower_le_mean_le_upper(self, replicate_dirs):
-        name, _, dirs = replicate_dirs
+        _name, _, dirs = replicate_dirs
         result = aggregate_replicates(dirs, "biomass")
         for i in range(len(result["time"])):
             assert result["lower"][i] <= result["mean"][i] + 1e-10
             assert result["mean"][i] <= result["upper"][i] + 1e-10
 
     def test_aggregate_abundance(self, replicate_dirs):
-        name, _, dirs = replicate_dirs
+        _name, _, dirs = replicate_dirs
         result = aggregate_replicates(dirs, "abundance")
         assert len(result["time"]) > 0
 
     def test_aggregate_mortality(self, replicate_dirs):
-        name, _, dirs = replicate_dirs
+        _name, _, dirs = replicate_dirs
         result = aggregate_replicates(dirs, "mortality")
         assert len(result["time"]) > 0
 
@@ -734,7 +734,7 @@ class TestEnsembleAggregation:
 # ---------------------------------------------------------------------------
 
 
-from tests.helpers import _ScriptRunner  # noqa: E402
+from tests.helpers import _ScriptRunner
 
 
 class TestFullPipeline:
@@ -743,7 +743,7 @@ class TestFullPipeline:
     @pytest.fixture
     def pipeline_setup(self, study_demo, tmp_path):
         """Set up the full pipeline for a study."""
-        name, demo_result, config = study_demo
+        name, _demo_result, config = study_demo
         spec = STUDY_SPECS[name]
 
         # Write config to a fresh directory
@@ -773,7 +773,7 @@ class TestFullPipeline:
         return name, spec, config_path, output_dir, species
 
     def test_full_pipeline_biomass_analysis(self, pipeline_setup):
-        name, spec, config_path, output_dir, species = pipeline_setup
+        _name, _spec, _config_path, output_dir, species = pipeline_setup
         results = OsmoseResults(output_dir, prefix="osm")
 
         # Read biomass
@@ -788,7 +788,7 @@ class TestFullPipeline:
             assert (diversity["shannon"] >= 0).all()
 
     def test_full_pipeline_summary_stats(self, pipeline_setup):
-        name, spec, _, output_dir, species = pipeline_setup
+        _name, _spec, _, output_dir, species = pipeline_setup
         results = OsmoseResults(output_dir, prefix="osm")
 
         # Read all output types and verify non-empty
@@ -808,7 +808,7 @@ class TestFullPipeline:
             assert row["max"] >= row["mean"]
 
     def test_full_pipeline_2d_outputs(self, pipeline_setup):
-        name, _, _, output_dir, _ = pipeline_setup
+        _name, _, _, output_dir, _ = pipeline_setup
         results = OsmoseResults(output_dir, prefix="osm")
 
         by_age = results.biomass_by_age()
@@ -828,7 +828,7 @@ class TestFullPipeline:
         spectrum = results.size_spectrum()
         assert not spectrum.empty
 
-        slope, intercept, r_squared = size_spectrum_slope(spectrum)
+        slope, _intercept, r_squared = size_spectrum_slope(spectrum)
         # Size spectrum slope should be negative (larger sizes have fewer individuals)
         assert slope < 0, f"{name}: expected negative slope, got {slope}"
         assert 0 <= r_squared <= 1
@@ -973,7 +973,7 @@ class TestFileReferences:
         name, result, config = study_demo
         config_dir = result["config_file"].parent
         key = "predation.accessibility.file"
-        if key in config and config[key]:
+        if config.get(key):
             ref = Path(config[key])
             if not ref.is_absolute():
                 ref = config_dir / ref
@@ -983,7 +983,7 @@ class TestFileReferences:
         name, result, config = study_demo
         config_dir = result["config_file"].parent
         key = "grid.netcdf.file"
-        if key in config and config[key]:
+        if config.get(key):
             ref = Path(config[key])
             if not ref.is_absolute():
                 ref = config_dir / ref

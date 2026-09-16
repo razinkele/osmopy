@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import xarray as xr
+
 from osmose.engine.grid import Grid
 from osmose.engine.physical_data import PhysicalData
 from osmose.engine.processes.oxygen_function import f_o2_hill

@@ -3,6 +3,7 @@ coarse cell's mass equally across its factor**2 sub-cells so the global total is
 preserved. block_replicate here would inflate total system biomass factor**2x."""
 
 from __future__ import annotations
+
 import numpy as np
 
 

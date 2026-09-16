@@ -81,9 +81,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from osmose.config import OsmoseConfigReader  # noqa: E402
-from osmose.demo import osmose_demo  # noqa: E402
-from osmose.engine import PythonEngine  # noqa: E402
+from osmose.config import OsmoseConfigReader
+from osmose.demo import osmose_demo
+from osmose.engine import PythonEngine
 
 N_YEAR = 25
 TAIL = 8
@@ -115,7 +115,7 @@ def build_cfg(raw, cfg_dir, overlay, dose):
         cfg["module.bioenergetics.enabled"] = "false"
     else:
         cfg.update(overlay)
-        for _name, i in TARGETS.items():
+        for i in TARGETS.values():
             k = f"species.maturity.m0.sp{i}"
             cfg[k] = repr(float(overlay[k]) * dose)
     repaired(cfg_dir / "predation-accessibility.csv", cfg_dir / "acc-rep.csv")
@@ -123,7 +123,7 @@ def build_cfg(raw, cfg_dir, overlay, dose):
     return cfg
 
 
-def run_arm(cfg, n_sp, ndt):  # noqa: C901
+def run_arm(cfg, n_sp, ndt):
     tot = np.zeros((N_YEAR, n_sp))
     mat = np.zeros((N_YEAR, n_sp))
     from osmose.engine.config import EngineConfig

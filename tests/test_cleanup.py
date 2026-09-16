@@ -3,8 +3,7 @@
 import os
 import tempfile
 
-
-from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup, _OSMOSE_PREFIXES
+from osmose.cleanup import _OSMOSE_PREFIXES, cleanup_old_temp_dirs, register_cleanup
 
 
 def test_cleanup_removes_old_dirs(tmp_path, monkeypatch):

@@ -12,6 +12,7 @@ def test_preflight_invariant_raises():
 
 def test_preflight_invariant_passes_with_all_paths():
     from pathlib import Path
+
     from ui.pages.calibration_handlers import _require_preflight
 
     a, b, c = _require_preflight(Path("/tmp/a"), Path("/tmp/b"), Path("/tmp/c"))

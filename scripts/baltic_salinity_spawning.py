@@ -35,9 +35,9 @@ MAPS = ROOT / "data" / "baltic" / "maps"
 GRID = ROOT / "data" / "baltic" / "baltic_grid.nc"
 
 # Salinity-proxy thresholds (Baltic oceanography; geographic gradient, saline SW -> fresh N)
-COD_SALINE_MAX_LAT = 57.5   # reliable deep reproductive volume (Bornholm/Gdansk, S. Gotland)
-FRESH_MIN_LAT = 58.0        # northern gulfs (Bothnian, N. Baltic proper) are fresh
-FRESH_MIN_LON = 21.5        # eastern gulfs (Riga, Finland) are fresh even at lower latitude
+COD_SALINE_MAX_LAT = 57.5  # reliable deep reproductive volume (Bornholm/Gdansk, S. Gotland)
+FRESH_MIN_LAT = 58.0  # northern gulfs (Bothnian, N. Baltic proper) are fresh
+FRESH_MIN_LON = 21.5  # eastern gulfs (Riga, Finland) are fresh even at lower latitude
 
 
 def _grid_latlon() -> tuple[np.ndarray, np.ndarray]:
@@ -79,9 +79,11 @@ def main() -> int:
     fresh = (LAT >= FRESH_MIN_LAT) | (LON >= FRESH_MIN_LON)
 
     print("=== Salinity-refined spawning areas ===")
-    for name, keep in (("cod_spawning", cod_saline),
-                       ("perch_spawning", fresh),
-                       ("pikeperch_spawning", fresh)):
+    for name, keep in (
+        ("cod_spawning", cod_saline),
+        ("perch_spawning", fresh),
+        ("pikeperch_spawning", fresh),
+    ):
         b, a = refine(name, keep)
         print(f"  {name:20s} {b:3d} -> {a:3d} cells ({b - a} dropped out-of-zone)")
     print("\nBackups written as *.csv.pre-salinity.bak. data/baltic maps refined in place.")

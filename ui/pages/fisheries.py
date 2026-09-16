@@ -183,7 +183,7 @@ def fisheries_server(input, output, session, state: AppState):
             eco = ecosystem_of(config_dir)
             snapshot_dir = _ices_snapshot_dir(eco)
             return build_fisheries_view(results, config, eco, ices_snapshot_dir=snapshot_dir)
-        except Exception as exc:  # noqa: BLE001 — graceful degrade
+        except Exception as exc:
             _log.warning("Fisheries view error: %s", exc)
             return build_fisheries_view(None, None, "unknown")
 
@@ -220,7 +220,7 @@ def fisheries_server(input, output, session, state: AppState):
                 steps_per_year=steps_per_year,
             )
             return make_fm_ratio_bars(balances)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _log.warning("F/M chart error: %s", exc)
             return go.Figure().update_layout(title=f"F/M unavailable: {exc}", template="osmose")
 
@@ -306,7 +306,7 @@ def fisheries_server(input, output, session, state: AppState):
                     if st.species in sdf.columns:
                         mean_ssb = float(cast("float", sdf[st.species].mean()))
                         ssb_means[st.species] = f"{mean_ssb:,.0f} t"
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 _log.warning("SSB scale-hint unavailable: %s", e)
 
         # Collect reference points to show their source in the table
@@ -314,7 +314,7 @@ def fisheries_server(input, output, session, state: AppState):
             _rp_dir = Path("data") / ecosystem_of(config_dir) / "reference"
         try:
             _refs, _ = load_reference_points(_rp_dir, [st.species for st in statuses])
-        except Exception:  # noqa: BLE001
+        except Exception:
             _refs = {}
 
         rows = []
@@ -414,11 +414,11 @@ def fisheries_server(input, output, session, state: AppState):
             fmsy_val = None
             try:
                 bmsy_val = float(input[f"bmsy_{sid}"]())
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             try:
                 fmsy_val = float(input[f"fmsy_{sid}"]())
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
             rp = ReferencePoint(species=st.species)

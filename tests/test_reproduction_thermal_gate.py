@@ -11,7 +11,7 @@ import pytest
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
 
-BALTIC = sorted(Path("data/baltic").glob("*all-parameters*.csv"))[0]
+BALTIC = min(Path("data/baltic").glob("*all-parameters*.csv"))
 THERMAL = Path("tests/data/percid_thermal_ok.csv").resolve()
 DET = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fixed": "true"}
 

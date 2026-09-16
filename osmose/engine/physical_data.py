@@ -1,7 +1,9 @@
 """Generic NetCDF/constant physical data loader for temperature and oxygen forcing."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
 import numpy as np
 from numpy.typing import NDArray
 

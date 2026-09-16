@@ -67,7 +67,7 @@ class TestBioenStarvation:
         e_net = np.array([0.1, -0.01, -10.0])
         gonad = np.array([0.0, 0.1, 0.0])
         weight = np.array([0.01, 0.01, 0.01])
-        n_dead, new_gonad = bioen_starvation(e_net, gonad, weight, eta=1.5, n_subdt=1)
+        n_dead, _new_gonad = bioen_starvation(e_net, gonad, weight, eta=1.5, n_subdt=1)
         assert n_dead[0] == 0.0  # positive E_net
         assert n_dead[1] == 0.0  # gonad sufficient
         assert n_dead[2] > 0  # no gonad, big deficit

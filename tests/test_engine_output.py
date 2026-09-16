@@ -333,10 +333,10 @@ def test_netcdf_cf_conventions_attr(tmp_path):
 # Spatial output tests (Task 3)
 # ---------------------------------------------------------------------------
 
-from osmose.engine.grid import Grid  # noqa: E402
-from osmose.engine.output import write_outputs_netcdf_spatial  # noqa: E402
-from osmose.engine.simulate import _average_step_outputs, _collect_spatial_outputs  # noqa: E402
-from tests.helpers import make_schools_in_cells  # noqa: E402
+from osmose.engine.grid import Grid
+from osmose.engine.output import write_outputs_netcdf_spatial
+from osmose.engine.simulate import _average_step_outputs, _collect_spatial_outputs
+from tests.helpers import make_schools_in_cells
 
 
 def _make_grid_2x2_with_land() -> Grid:
@@ -399,7 +399,7 @@ def test_collect_spatial_empty_state_returns_zeros():
     grid = _make_grid_2x2_with_land()
     state = SchoolState.create(n_schools=0)
     cfg = make_minimal_engine_config(output_spatial_enabled=True)
-    sb, sa, sy = _collect_spatial_outputs(state, grid, cfg)
+    sb, _sa, _sy = _collect_spatial_outputs(state, grid, cfg)
     assert sb[0].shape == (2, 2)
     assert sb[0].sum() == 0.0
 
@@ -415,7 +415,7 @@ def test_collect_spatial_yield_uses_fishing_mortality():
         n_dead_fishing=[5.0],
     )
     cfg = make_minimal_engine_config(output_spatial_enabled=True)
-    sb, sa, sy = _collect_spatial_outputs(state, grid, cfg)
+    _sb, _sa, sy = _collect_spatial_outputs(state, grid, cfg)
     assert sy[0][0, 0] == 10.0
 
 
@@ -437,7 +437,7 @@ def test_collect_spatial_excludes_unlocated_schools():
         weight=[1.0, 1.0, 1.0],
     )
     cfg = make_minimal_engine_config(output_spatial_enabled=True)
-    sb, sa, sy = _collect_spatial_outputs(state, grid, cfg)
+    sb, _sa, _sy = _collect_spatial_outputs(state, grid, cfg)
     # Cell (0,0) should hold ONLY the located school's 10.0 (not 10+999).
     assert sb[0][0, 0] == 10.0
     assert sb[0][0, 1] == 30.0
@@ -651,5 +651,5 @@ def test_spatial_biomass_sum_equals_nonspatial_biomass(tmp_path):
         weight=[1.0, 1.0, 1.0],
     )
     cfg = make_minimal_engine_config(output_spatial_enabled=True)
-    sb, sa, sy = _collect_spatial_outputs(state, grid, cfg)
+    sb, _sa, _sy = _collect_spatial_outputs(state, grid, cfg)
     assert np.isclose(sb[0].sum(), 60.0, rtol=1e-12)

@@ -1,4 +1,5 @@
 """Bit-exact parity: C cell_rng vs the @njit oracle, across an n x seed grid."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -18,7 +19,7 @@ def c_cell_rng(seed: int, n: int, lib, ffi):
     c = np.empty(n, dtype=np.int32)
     d = np.empty(n, dtype=np.int32)
     orders = np.empty(n * 4, dtype=np.int32)
-    cast = lambda arr: ffi.cast("int32_t *", arr.ctypes.data)  # noqa: E731
+    cast = lambda arr: ffi.cast("int32_t *", arr.ctypes.data)
     # seed is int64 in the C signature; pass the Python int directly (cffi coerces).
     lib.cell_rng(int(seed), n, cast(a), cast(b), cast(c), cast(d), cast(orders))
     return a, b, c, d, orders.reshape(n, 4)

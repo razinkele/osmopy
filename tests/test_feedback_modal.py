@@ -16,11 +16,12 @@ import logging
 import re
 from html.parser import HTMLParser
 from types import SimpleNamespace
+from typing import ClassVar
 
 import pytest
 
-import ui.components.feedback_modal as fm
 import osmose.feedback as osmose_feedback
+import ui.components.feedback_modal as fm
 from osmose.feedback import MAX_NAV_TAB
 from osmose.feedback_limits import MAX_KEYS, RateLimiter
 from ui.components.feedback_modal import feedback_modal
@@ -33,7 +34,17 @@ class _AncestryOf(HTMLParser):
     honeypot's own ancestors, not about the document containing a hiding rule somewhere.
     """
 
-    _VOID = {"input", "br", "hr", "img", "meta", "link", "source", "track", "wbr"}
+    _VOID: ClassVar[set[str]] = {
+        "input",
+        "br",
+        "hr",
+        "img",
+        "meta",
+        "link",
+        "source",
+        "track",
+        "wbr",
+    }
 
     def __init__(self, target_id: str) -> None:
         super().__init__()
@@ -94,7 +105,7 @@ def test_message_field_label_says_it_is_required():
     appearing anywhere else on the page cannot satisfy it.
     """
     html = str(feedback_modal())
-    m = re.search(r'<label[^>]*for="feedback_message"[^>]*>(.*?)</label>', html, re.S)
+    m = re.search(r'<label[^>]*for="feedback_message"[^>]*>(.*?)</label>', html, re.DOTALL)
     assert m is not None, "no <label> bound to feedback_message in the modal"
     label = m.group(1)
     assert "(required)" in label, f"message label carries no required hint: {label!r}"
@@ -322,7 +333,7 @@ def test_client_key_survives_a_session_with_no_http_conn(monkeypatch):
     _reset_warn_flags(monkeypatch)
     try:
         key = key_fn(SimpleNamespace())
-    except Exception as exc:  # noqa: BLE001 — any raise at all is the failure under test
+    except Exception as exc:
         raise AssertionError(f"_client_key raised {exc!r} on a session with no http_conn") from exc
     assert isinstance(key, str)
 
@@ -610,7 +621,7 @@ def test_finish_success_survives_a_dead_socket(monkeypatch):
 
     try:
         asyncio.run(fm._finish_success(_DeadSession()))
-    except Exception as exc:  # noqa: BLE001 — any escape at all is the failure under test
+    except Exception as exc:
         raise AssertionError(
             f"_finish_success let {exc!r} escape after the record was already stored"
         ) from exc
@@ -973,7 +984,7 @@ def test_a_failed_notification_still_clears_and_dismisses(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger=fm._log.name):
         try:
             asyncio.run(fm._finish_success(session))
-        except Exception as exc:  # noqa: BLE001 — any escape at all is the failure under test
+        except Exception as exc:
             raise AssertionError(f"_finish_success let {exc!r} escape") from exc
 
     assert "feedback_message" in cleared, (
@@ -1022,7 +1033,7 @@ def test_a_total_post_write_failure_is_logged_as_an_error(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger=fm._log.name):
         try:
             asyncio.run(fm._finish_success(_DeadSession()))
-        except Exception as exc:  # noqa: BLE001 — any escape at all is the failure under test
+        except Exception as exc:
             raise AssertionError(f"_finish_success let {exc!r} escape") from exc
 
     # Guard against the test silently stopping to force failures at all: without this, a

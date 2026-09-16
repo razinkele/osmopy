@@ -2,7 +2,8 @@
 
 import numpy as np
 import pytest
-from osmose.engine.processes.temp_function import phi_t, arrhenius
+
+from osmose.engine.processes.temp_function import arrhenius, phi_t
 
 
 class TestPhiT:

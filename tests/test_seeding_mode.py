@@ -76,6 +76,4 @@ def test_linear_seeds_more_than_stock_recruitment_on_the_baltic(tmp_path):
         df = pd.read_csv(f, skiprows=1)
         out[mode] = float(np.nanmax(df["sprat"].to_numpy(dtype=float)))
 
-    assert out["linear"] > out["stock_recruitment"], (
-        f"modes did not diverge as expected: {out}"
-    )
+    assert out["linear"] > out["stock_recruitment"], f"modes did not diverge as expected: {out}"

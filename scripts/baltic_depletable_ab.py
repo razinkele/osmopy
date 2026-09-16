@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from baltic_stability_certify import CERT_SEEDS, _print_table, certify_python  # noqa: E402
+from baltic_stability_certify import CERT_SEEDS, _print_table, certify_python
 
 # CAUTION: fitted on the PRE-SPLIT 8-species config (phase1_results.json, 2026-07-10, before the
 # cod E/W disaggregation); carried over as a plausible prior, NOT an optimum of this layout.

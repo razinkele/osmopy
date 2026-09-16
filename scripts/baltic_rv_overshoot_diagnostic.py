@@ -354,10 +354,12 @@ def write_plot(model: dict, rv: dict, path: Path) -> bool:
             axes[1].plot(
                 np.arange(rv["fraction"].size), rv["fraction"], marker="o", color="#c1440e"
             )
-        crit = "S>=%.0f PSU & O2>=%.0f mmol/m3" % (rv["sal_thresh"], rv["o2_thresh_mmol_m3"])
+        crit = "S>={:.0f} PSU & O2>={:.0f} mmol/m3".format(
+            rv["sal_thresh"], rv["o2_thresh_mmol_m3"]
+        )
         if not rv["both_criteria"]:
             crit += "  (OXYGEN-ONLY proxy — no salinity)"
-        axes[1].set_title("Deep-basin reproductive-volume fraction  [%s]" % crit)
+        axes[1].set_title(f"Deep-basin reproductive-volume fraction  [{crit}]")
     axes[1].set_xlabel(xlabel)
     axes[1].set_ylabel("fraction of deep-basin cells")
     axes[1].set_ylim(0, 1)
@@ -377,7 +379,7 @@ def write_csv(rv: dict, path: Path) -> None:
     lines = ["timestep,time,rv_fraction"]
     for i, f in enumerate(rv["fraction"]):
         tlabel = str(times[i]) if times is not None and i < len(times) else ""
-        lines.append("%d,%s,%.6f" % (i, tlabel, f))
+        lines.append(f"{i},{tlabel},{f:.6f}")
     path.write_text("\n".join(lines) + "\n")
 
 
@@ -389,7 +391,7 @@ def report(model: dict, rv: dict, forcing: dict) -> None:
     print("\n[1] MODEL FORCING AUDIT (does the config couple cod to salinity/O2?)")
     print("    oxygen forcing keys : %s" % (forcing["oxygen_keys"] or "NONE"))
     print("    salinity forcing keys: %s" % (forcing["salinity_keys"] or "NONE"))
-    print("    bioen fO2 enabled    : %s" % forcing["bioen_fo2_enabled"])
+    print("    bioen fO2 enabled    : {}".format(forcing["bioen_fo2_enabled"]))
     coupled = bool(
         forcing["oxygen_keys"] or forcing["salinity_keys"] or forcing["bioen_fo2_enabled"]
     )
@@ -407,12 +409,14 @@ def report(model: dict, rv: dict, forcing: dict) -> None:
             print("    Cod biomass all-zero.")
         else:
             print(
-                "    mean=%.3g t   min=%.3g   max=%.3g"
-                % (stats["mean"], stats["min"], stats["max"])
+                "    mean={:.3g} t   min={:.3g}   max={:.3g}".format(
+                    stats["mean"], stats["min"], stats["max"]
+                )
             )
             print(
-                "    CV=%.2f   boom/bust(max/min)=%.1fx   tail slope=%.3g t/step"
-                % (stats["cv"], stats["boom_bust_ratio"], stats["tail_slope_per_step"])
+                "    CV={:.2f}   boom/bust(max/min)={:.1f}x   tail slope={:.3g} t/step".format(
+                    stats["cv"], stats["boom_bust_ratio"], stats["tail_slope_per_step"]
+                )
             )
 
     print("\n[3] REAL-WORLD REPRODUCTIVE VOLUME (CMEMS, deep-basin cells)")
@@ -421,32 +425,29 @@ def report(model: dict, rv: dict, forcing: dict) -> None:
     else:
         f = rv["fraction"]
         print(
-            "    deep-basin cells: %d   criteria: %s"
-            % (
-                rv["n_deep"],
-                "salinity+oxygen" if rv["both_criteria"] else "OXYGEN-ONLY (proxy, optimistic)",
-            )
+            f"    deep-basin cells: {rv['n_deep']}   criteria: "
+            + ("salinity+oxygen" if rv["both_criteria"] else "OXYGEN-ONLY (proxy, optimistic)")
         )
         print(
-            "    RV fraction  mean=%.3f  min=%.3f  max=%.3f  (n=%d timesteps)"
-            % (np.nanmean(f), np.nanmin(f), np.nanmax(f), f.size)
+            f"    RV fraction  mean={np.nanmean(f):.3f}  min={np.nanmin(f):.3f}  "
+            f"max={np.nanmax(f):.3f}  (n={f.size} timesteps)"
         )
         yrs, spawn = annual_rv(rv.get("times"), f, months=SPAWNING_MONTHS)
         if yrs is not None:
             order = np.argsort(spawn)
-            lo = ", ".join("%d(%.2f)" % (yrs[i], spawn[i]) for i in order[:5])
-            hi = ", ".join("%d(%.2f)" % (yrs[i], spawn[i]) for i in order[::-1][:5])
+            lo = ", ".join(f"{yrs[i]}({spawn[i]:.2f})" for i in order[:5])
+            hi = ", ".join(f"{yrs[i]}({spawn[i]:.2f})" for i in order[::-1][:5])
             print(
-                "    spawning-season (Mar-Aug) RV over %d-%d: mean=%.3f  range %.3f-%.3f"
-                % (yrs[0], yrs[-1], np.nanmean(spawn), np.nanmin(spawn), np.nanmax(spawn))
+                f"    spawning-season (Mar-Aug) RV over {yrs[0]}-{yrs[-1]}: "
+                f"mean={np.nanmean(spawn):.3f}  "
+                f"range {np.nanmin(spawn):.3f}-{np.nanmax(spawn):.3f}"
             )
-            print("      lowest  RV years: %s" % lo)
-            print("      highest RV years: %s  (major-inflow pulses)" % hi)
+            print(f"      lowest  RV years: {lo}")
+            print(f"      highest RV years: {hi}  (major-inflow pulses)")
         if np.isfinite(rv.get("o2_bottom_mean", np.nan)):
             print(
-                "    source bottom O2 over deep cells: mean=%.0f  min=%.0f mmol/m3"
-                "  (threshold=%.0f)  source max depth=%.0f m"
-                % (
+                "    source bottom O2 over deep cells: mean={:.0f}  min={:.0f} mmol/m3"
+                "  (threshold={:.0f})  source max depth={:.0f} m".format(
                     rv["o2_bottom_mean"],
                     rv["o2_bottom_min"],
                     rv["o2_thresh_mmol_m3"],
@@ -455,8 +456,8 @@ def report(model: dict, rv: dict, forcing: dict) -> None:
             )
         if rv.get("blind_to_hypoxia"):
             print(
-                "    !! DATA INADEQUATE: O2 source is depth-capped at %.0f m and every"
-                " deep-cell" % rv["src_max_depth_m"]
+                "    !! DATA INADEQUATE: O2 source is depth-capped at {:.0f} m and every"
+                " deep-cell".format(rv["src_max_depth_m"])
             )
             print("       bottom value exceeds the threshold, so this file CANNOT see the sub-sill")
             print(
@@ -483,16 +484,16 @@ def _verdict(model: dict, rv: dict, coupled: bool) -> None:
     if rv_ok and np.nanmean(rv["fraction"]) < 0.5:
         kind = "" if both else " (oxygen-only proxy — TRUE fraction is lower)"
         print(
-            "    * Real deep basins are substantially RV-limited: only %.0f%% of cod"
-            " spawning cells%s meet the survival thresholds."
-            % (100 * np.nanmean(rv["fraction"]), kind)
+            "    * Real deep basins are substantially RV-limited: only {:.0f}% of cod"
+            " spawning cells{} meet the survival thresholds.".format(
+                100 * np.nanmean(rv["fraction"]), kind
+            )
         )
 
     if multiyear_rv and both:
         yrs, spawn = annual_rv(rv.get("times"), rv["fraction"], months=SPAWNING_MONTHS)
         print(
-            "    * Interannual RV series BUILT (%d-%d, full-depth salinity+oxygen)."
-            % (yrs[0], yrs[-1])
+            f"    * Interannual RV series BUILT ({yrs[0]}-{yrs[-1]}, full-depth salinity+oxygen)."
         )
         print(
             "      Real spawning RV is chronically low (mean %.0f%%) and pulses with major"
@@ -560,7 +561,7 @@ def build_rv_gate_series(rv: dict, out_path: Path) -> Path:
         raise ValueError("RV series needs a calendar time axis spanning >= 2 years.")
     if np.any(~np.isfinite(spawn)):
         raise ValueError("RV series has NaN spawning-season year(s); cannot emit gate series.")
-    lines = ["year,spawning_rv"] + ["%d,%.6f" % (int(y), v) for y, v in zip(yrs, spawn)]
+    lines = ["year,spawning_rv"] + [f"{int(y)},{v:.6f}" for y, v in zip(yrs, spawn)]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n")
     return out_path

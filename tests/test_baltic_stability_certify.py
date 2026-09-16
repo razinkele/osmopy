@@ -64,7 +64,7 @@ def test_java_table_does_not_manufacture_extinction_for_missing_column(certify):
     series = _full_series(certify)
     del series["codeast"]
 
-    with pytest.raises(Exception) as exc:  # noqa: PT011 — message is what matters here
+    with pytest.raises(Exception) as exc:
         certify.java_table_from_series(series)
     assert "codeast" in str(exc.value) or "cod_east" in str(exc.value), (
         f"error must name the missing species/column, got: {exc.value}"

@@ -19,8 +19,8 @@ import pytest
 import xarray as xr
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.path_resolution import resolve_data_path as _resolve_file
 from osmose.engine.grid import Grid
+from osmose.engine.path_resolution import resolve_data_path as _resolve_file
 from osmose.engine.processes.growth import growth
 from osmose.engine.processes.mortality import (
     _apply_fishing_for_school,
@@ -29,7 +29,6 @@ from osmose.engine.processes.mortality import (
 from osmose.engine.processes.reproduction import reproduction
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import SchoolState
-
 
 # ---------------------------------------------------------------------------
 # Issue 1: Resource species key pattern mismatch

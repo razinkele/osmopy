@@ -4,6 +4,7 @@ The leaf is called from inside @njit and cannot be intercepted directly, but
 its args are (almost all) the arrays the cell-loop kernel receives — which IS
 patchable because mortality() dispatches to it by module-global name.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -21,8 +22,9 @@ from osmose.engine.simulate import simulate
 from .provenance import assert_provenance
 
 
-def capture_cellloop(config_path: Path, capture_call_index: int, out_dir: Path,
-                     worktree_root: Path) -> Path:
+def capture_cellloop(
+    config_path: Path, capture_call_index: int, out_dir: Path, worktree_root: Path
+) -> Path:
     info = assert_provenance(worktree_root)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -54,16 +56,19 @@ def capture_cellloop(config_path: Path, capture_call_index: int, out_dir: Path,
         # handles both branches and the real flag value is recorded in meta.json.
         raw["output.diet.composition.enabled"] = "false"
         cfg = EngineConfig.from_dict(raw)
-        grid = G.from_netcdf(config_path.parent / raw["grid.netcdf.file"],
-                             mask_var=raw.get("grid.var.mask", "mask"))
+        grid = G.from_netcdf(
+            config_path.parent / raw["grid.netcdf.file"], mask_var=raw.get("grid.var.mask", "mask")
+        )
         simulate(cfg, grid, np.random.default_rng(42))
     finally:
         M._mortality_all_cells_parallel = real_fn
 
     cap = state["captured"]
     if cap is None:
-        raise RuntimeError(f"capture_call_index={capture_call_index} never reached "
-                           f"(only {state['n']} cell-loop calls)")
+        raise RuntimeError(
+            f"capture_call_index={capture_call_index} never reached "
+            f"(only {state['n']} cell-loop calls)"
+        )
 
     arrays: dict[str, np.ndarray] = {}
     scalars: dict[str, object] = {}
@@ -91,8 +96,7 @@ def capture_cellloop(config_path: Path, capture_call_index: int, out_dir: Path,
         "provenance": info,
         "arg_order": params,
         "scalars": {k: _json_scalar(v) for k, v in scalars.items()},
-        "n_resources": int(scalars.get("n_resources",
-                                       arrays["rsc_biomass"].shape[0])),
+        "n_resources": int(scalars.get("n_resources", arrays["rsc_biomass"].shape[0])),
         "n_cells": int(len(arrays["boundaries"]) - 1),
         "flags": {
             "diet_enabled": bool(scalars.get("diet_enabled", False)),
@@ -105,6 +109,7 @@ def capture_cellloop(config_path: Path, capture_call_index: int, out_dir: Path,
 
 if __name__ == "__main__":
     import sys
+
     root = Path(__file__).resolve().parents[3]
     cfg = root / "data" / "eec_full" / "eec_all-parameters.csv"
     idx = int(sys.argv[1]) if len(sys.argv) > 1 else 200

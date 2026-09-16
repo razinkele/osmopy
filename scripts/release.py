@@ -167,7 +167,7 @@ def generate_changelog() -> str:
     last_tag = tags[-1] if tags else None
     unreleased = git_log_between(last_tag, "HEAD")
     if unreleased:
-        title = f"## [{current_version}] - {date.today().isoformat()}"
+        title = f"## [{current_version}] - {date.today().isoformat()}"  # noqa: DTZ011 - local report date stamp, not an instant
         sections.append(f"{title}\n")
         sections.append(format_section(unreleased))
 

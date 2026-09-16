@@ -164,7 +164,7 @@ def compute_sheldon_spectrum(
         w_ref = min(masses)
         binned: dict[int, float] = defaultdict(float)
         for m, v in zip(masses, vals):
-            k = int(math.floor(math.log2(m / w_ref)))
+            k = math.floor(math.log2(m / w_ref))
             binned[k] += v
         for k in sorted(binned):
             lower = w_ref * 2.0**k
@@ -397,15 +397,21 @@ def format_community_report(diag: CommunityDiagnostics) -> str:
         lines += [
             "## Sheldon (body-mass) normalized biomass spectrum",
             "",
-            f"- NBSS slope: {_fmt(s.slope)} "
-            f"(intercept {_fmt(s.intercept)}, R²={_fmt(s.r_squared)}, n_bins_fit={s.n_bins_fit})",
-            "  _Canonical normalized-biomass NBSS slope ≈ −1; a flatter (less negative) slope "
-            "suggests relative loss of large individuals (fishing-down). Loose reference for an "
-            "exploited fish community, not a strict Sheldon continuum._",
+            (
+                f"- NBSS slope: {_fmt(s.slope)} "
+                f"(intercept {_fmt(s.intercept)}, R²={_fmt(s.r_squared)}, n_bins_fit={s.n_bins_fit})"
+            ),
+            (
+                "  _Canonical normalized-biomass NBSS slope ≈ −1; a flatter (less negative) slope "
+                "suggests relative loss of large individuals (fishing-down). Loose reference for an "
+                "exploited fish community, not a strict Sheldon continuum._"
+            ),
             f"- Size diversity (Shannon evenness over per-octave biomass): {_fmt(s.size_diversity)}",
-            f"- Community total biomass: {_fmt(s.total_biomass, '.6g')}; "
-            f"total abundance: {_fmt(s.total_abundance, '.6g')}; "
-            f"mean body mass: {_fmt(s.mean_body_mass, '.6g')}",
+            (
+                f"- Community total biomass: {_fmt(s.total_biomass, '.6g')}; "
+                f"total abundance: {_fmt(s.total_abundance, '.6g')}; "
+                f"mean body mass: {_fmt(s.mean_body_mass, '.6g')}"
+            ),
             f"- Window: last {s.window_years} yr ({s.n_timesteps_used} timesteps)",
         ]
         if s.note:
@@ -418,10 +424,12 @@ def format_community_report(diag: CommunityDiagnostics) -> str:
             "## Trophic indicators",
             "",
             f"- Mean Trophic Level (biomass-weighted): {_fmt(t.mtl)}",
-            f"- Marine Trophic Index (biomass-weighted standing stock, TL ≥ "
-            f"{_fmt(t.mti_tl_cutoff, '.2f')}): {_fmt(t.mti)} "
-            f"({t.n_species_above_cutoff}/{t.n_species} species). _A standing-stock analogue of the "
-            f"catch-based Pauly & Watson index._",
+            (
+                f"- Marine Trophic Index (biomass-weighted standing stock, TL ≥ "
+                f"{_fmt(t.mti_tl_cutoff, '.2f')}): {_fmt(t.mti)} "
+                f"({t.n_species_above_cutoff}/{t.n_species} species). _A standing-stock analogue of the "
+                f"catch-based Pauly & Watson index._"
+            ),
         ]
         if t.note:
             lines.append(f"- _Note: {t.note}_")
@@ -430,9 +438,9 @@ def format_community_report(diag: CommunityDiagnostics) -> str:
     if diag.abc is not None:
         a = diag.abc
         w = a.w_statistic
-        if w == w and w > 0:
+        if w == w and w > 0:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
             w_interp = "biomass-dominated / undisturbed"
-        elif w == w and w < 0:
+        elif w == w and w < 0:  # noqa: PLR0124 - x != x is the NaN test (numba-safe)
             w_interp = "abundance-dominated / disturbed"
         else:
             w_interp = "n/a"

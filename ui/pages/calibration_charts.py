@@ -38,7 +38,7 @@ def make_convergence_chart(
 
         try:
             runs = hist_mod.list_runs()
-        except Exception:  # noqa: BLE001 — defensive; history is optional context
+        except Exception:
             runs = []
         matching = [r for r in runs if r.get("algorithm") == optimizer and r.get("phase") == phase]
         finite = [

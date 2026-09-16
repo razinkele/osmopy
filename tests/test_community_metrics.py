@@ -6,8 +6,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from tests._data_guards import require_eec_output
-
 from osmose.community_metrics import (
     ABCResult,
     CommunityDiagnostics,
@@ -17,12 +15,13 @@ from osmose.community_metrics import (
     _species_columns,
     _species_lw_coeffs,
     _to_float,
-    compute_abc,
     community_report,
+    compute_abc,
     compute_sheldon_spectrum,
     compute_trophic_indicators,
     format_community_report,
 )
+from tests._data_guards import require_eec_output
 
 
 def test_to_float_handles_bad_values():

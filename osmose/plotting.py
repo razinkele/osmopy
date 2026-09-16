@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE, ensure_templates
+from osmose.plotly_theme import PLOTLY_TEMPLATE as TEMPLATE
+from osmose.plotly_theme import ensure_templates
 
 ensure_templates()
 
@@ -31,7 +33,7 @@ _MORT_COLORS = {
 
 def _empty_figure(title: str) -> go.Figure:
     """Return an empty figure with the given title and osmose template."""
-    return go.Figure().update_layout(title=dict(text=title), template=TEMPLATE)
+    return go.Figure().update_layout(title={"text": title}, template=TEMPLATE)
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +73,7 @@ def make_stacked_area(
                 stackgroup="one",
             )
         )
-    fig.update_layout(title=dict(text=title), template=TEMPLATE)
+    fig.update_layout(title={"text": title}, template=TEMPLATE)
     return fig
 
 
@@ -117,10 +119,10 @@ def make_mortality_breakdown(
                 mode="lines",
                 stackgroup="one",
                 fillcolor=_MORT_COLORS[source],
-                line=dict(color=_MORT_COLORS[source]),
+                line={"color": _MORT_COLORS[source]},
             )
         )
-    fig.update_layout(title=dict(text="Mortality Breakdown"), template=TEMPLATE)
+    fig.update_layout(title={"text": "Mortality Breakdown"}, template=TEMPLATE)
     return fig
 
 
@@ -168,7 +170,7 @@ def make_size_spectrum_plot(df: pd.DataFrame) -> go.Figure:
                 y=fitted,
                 mode="lines",
                 name="Regression",
-                line=dict(dash="dash"),
+                line={"dash": "dash"},
             )
         )
         fig.add_annotation(
@@ -178,13 +180,13 @@ def make_size_spectrum_plot(df: pd.DataFrame) -> go.Figure:
             x=0.95,
             y=0.95,
             showarrow=False,
-            font=dict(size=12),
+            font={"size": 12},
         )
 
     fig.update_layout(
-        title=dict(text=title),
-        xaxis=dict(type="log", title="Size"),
-        yaxis=dict(type="log", title="Abundance"),
+        title={"text": title},
+        xaxis={"type": "log", "title": "Size"},
+        yaxis={"type": "log", "title": "Abundance"},
         template=TEMPLATE,
     )
     return fig
@@ -201,7 +203,7 @@ def make_size_indicator_timeseries(df: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     for col in ("slope", "lfi", "mean_size_cm"):
         fig.add_trace(go.Scatter(x=df["time"], y=df[col], mode="lines", name=col))
-    fig.update_layout(title=dict(text=title), xaxis_title="time", template=TEMPLATE)
+    fig.update_layout(title={"text": title}, xaxis_title="time", template=TEMPLATE)
     return fig
 
 
@@ -236,7 +238,7 @@ def make_ci_timeseries(
             y=upper + lower[::-1],
             fill="toself",
             fillcolor="rgba(232, 168, 56, 0.2)",
-            line=dict(color="rgba(255, 255, 255, 0)"),
+            line={"color": "rgba(255, 255, 255, 0)"},
             name="CI",
             showlegend=False,
         )
@@ -249,13 +251,13 @@ def make_ci_timeseries(
             y=mean,
             mode="lines",
             name="Mean",
-            line=dict(color="#e8a838", width=2),
+            line={"color": "#e8a838", "width": 2},
         )
     )
 
     fig.update_layout(
-        title=dict(text=title),
-        yaxis=dict(title=dict(text=y_label)),
+        title={"text": title},
+        yaxis={"title": {"text": y_label}},
         template=TEMPLATE,
     )
     return fig
@@ -291,9 +293,9 @@ def make_growth_curves(species_params: list[dict]) -> go.Figure:
         )
 
     fig.update_layout(
-        title=dict(text=title),
-        xaxis=dict(title="Age (years)"),
-        yaxis=dict(title="Length (cm)"),
+        title={"text": title},
+        xaxis={"title": "Age (years)"},
+        yaxis={"title": "Length (cm)"},
         template=TEMPLATE,
     )
     return fig
@@ -327,8 +329,8 @@ def make_predation_ranges(species_params: list[dict]) -> go.Figure:
         )
 
     fig.update_layout(
-        title=dict(text=title),
-        xaxis=dict(title="Prey/Predator Size Ratio"),
+        title={"text": title},
+        xaxis={"title": "Prey/Predator Size Ratio"},
         template=TEMPLATE,
     )
     return fig
@@ -345,15 +347,15 @@ def make_fm_ratio_bars(balances) -> go.Figure:
         go.Bar(
             x=[b.species for b in valid],
             y=[b.f_over_m for b in valid],
-            marker=dict(color=colors),
+            marker={"color": colors},
             name="F/M",
         )
     )
-    fig.add_hline(y=1.0, line=dict(dash="dash", width=1))
+    fig.add_hline(y=1.0, line={"dash": "dash", "width": 1})
     fig.update_layout(
-        title=dict(text="Fishing vs natural mortality (F/M)"),
-        xaxis=dict(title="species"),
-        yaxis=dict(title="F / M"),
+        title={"text": "Fishing vs natural mortality (F/M)"},
+        xaxis={"title": "species"},
+        yaxis={"title": "F / M"},
         template=TEMPLATE,
     )
     return fig
@@ -372,10 +374,10 @@ def make_kobe_plot(statuses, *, year=None) -> go.Figure:
     ]
     for x0, x1, y0, y1, c in quads:
         fig.add_shape(
-            type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=c, line=dict(width=0), layer="below"
+            type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=c, line={"width": 0}, layer="below"
         )
-    fig.add_hline(y=1, line=dict(color="grey", dash="dash"))
-    fig.add_vline(x=1, line=dict(color="grey", dash="dash"))
+    fig.add_hline(y=1, line={"color": "grey", "dash": "dash"})
+    fig.add_vline(x=1, line={"color": "grey", "dash": "dash"})
     xs, ys, names = [], [], []
     for s in statuses:
         idx = (
@@ -397,7 +399,7 @@ def make_kobe_plot(statuses, *, year=None) -> go.Figure:
                 mode="markers+text",
                 text=names,
                 textposition="top center",
-                marker=dict(size=12),
+                marker={"size": 12},
             )
         )
     fig.add_annotation(
@@ -431,7 +433,7 @@ def make_ratio_timeseries(statuses, which) -> go.Figure:
                     x=[y for y, _ in xy], y=[v for _, v in xy], mode="lines+markers", name=s.species
                 )
             )
-    fig.add_hline(y=1, line=dict(color="grey", dash="dash"))
+    fig.add_hline(y=1, line={"color": "grey", "dash": "dash"})
     title = "SSB / Bmsy" if which == "b" else "F / Fmsy"
     fig.update_layout(template=TEMPLATE, xaxis_title="Year", yaxis_title=title)
     return fig
@@ -453,19 +455,19 @@ def make_run_delta_chart(deltas, *, metric: str = "biomass") -> go.Figure:
             x=[d.pct_delta * 100 for d in finite],
             y=[d.species for d in finite],
             orientation="h",
-            marker=dict(color=colors),
+            marker={"color": colors},
             name="Δ%",
         )
     )
-    fig.add_vline(x=0.0, line=dict(width=1))
+    fig.add_vline(x=0.0, line={"width": 1})
     from_zero = [d.species for d in deltas if getattr(d, "from_zero", False)]
     title = f"Run delta — {metric} (% change, variant vs baseline)"
     if from_zero:
         title += f"  ·  from 0: {', '.join(from_zero)}"
     fig.update_layout(
-        title=dict(text=title),
-        xaxis=dict(title="Δ%"),
-        yaxis=dict(title="species"),
+        title={"text": title},
+        xaxis={"title": "Δ%"},
+        yaxis={"title": "species"},
         template=TEMPLATE,
     )
     return fig
@@ -502,15 +504,15 @@ def make_food_web(
 
     fig = go.Figure(
         go.Sankey(
-            node=dict(label=all_species, pad=15, thickness=20),
-            link=dict(
-                source=[node_idx[p] for p in diet_df["predator"]],
-                target=[node_idx[p] for p in diet_df["prey"]],
-                value=diet_df["proportion"].tolist(),
-            ),
+            node={"label": all_species, "pad": 15, "thickness": 20},
+            link={
+                "source": [node_idx[p] for p in diet_df["predator"]],
+                "target": [node_idx[p] for p in diet_df["prey"]],
+                "value": diet_df["proportion"].tolist(),
+            },
         )
     )
-    fig.update_layout(title=dict(text=title), template=TEMPLATE)
+    fig.update_layout(title={"text": title}, template=TEMPLATE)
     return fig
 
 
@@ -545,7 +547,7 @@ def make_run_comparison(
         fig.add_trace(go.Bar(name=label, x=metrics, y=values))
 
     fig.update_layout(
-        title=dict(text=title),
+        title={"text": title},
         barmode="group",
         template=TEMPLATE,
     )
@@ -595,13 +597,13 @@ def make_species_dashboard(
                         y=sp_yield["yield"],
                         name=f"{sp} yield",
                         mode="lines",
-                        line=dict(dash="dash"),
+                        line={"dash": "dash"},
                     ),
                     row=i,
                     col=1,
                 )
 
-    fig.update_layout(title=dict(text=title), template=TEMPLATE, height=300 * n)
+    fig.update_layout(title={"text": title}, template=TEMPLATE, height=300 * n)
     return fig
 
 
@@ -648,7 +650,7 @@ def make_biomass_overlay(
                     y=a["value"],
                     mode="lines",
                     name=f"{sp} ({label_a})",
-                    line=dict(color=color),
+                    line={"color": color},
                 )
             )
         if len(b):
@@ -658,11 +660,11 @@ def make_biomass_overlay(
                     y=b["value"],
                     mode="lines",
                     name=f"{sp} ({label_b})",
-                    line=dict(color=color, dash="dash"),
+                    line={"color": color, "dash": "dash"},
                 )
             )
     fig.update_layout(
-        title=dict(text=title), xaxis_title="time", yaxis_title="biomass", template=TEMPLATE
+        title={"text": title}, xaxis_title="time", yaxis_title="biomass", template=TEMPLATE
     )
     return fig
 
@@ -681,7 +683,7 @@ def make_sheldon_spectrum_plot(spec) -> go.Figure:
         log_mid = np.log10(np.asarray(mids, dtype=float))
         fitted = 10 ** (spec.slope * log_mid + spec.intercept)
         fig.add_trace(
-            go.Scatter(x=mids, y=fitted, mode="lines", name="Regression", line=dict(dash="dash"))
+            go.Scatter(x=mids, y=fitted, mode="lines", name="Regression", line={"dash": "dash"})
         )
         fig.add_annotation(
             text=f"Slope = {spec.slope:.2f}",
@@ -692,9 +694,9 @@ def make_sheldon_spectrum_plot(spec) -> go.Figure:
             y=0.95,
         )
     fig.update_layout(
-        title=dict(text=title),
-        xaxis=dict(title="Body mass (bin midpoint)", type="log"),
-        yaxis=dict(title="Normalized biomass (per mass width)", type="log"),
+        title={"text": title},
+        xaxis={"title": "Body mass (bin midpoint)", "type": "log"},
+        yaxis={"title": "Normalized biomass (per mass width)", "type": "log"},
         template=TEMPLATE,
     )
     return fig
@@ -717,9 +719,9 @@ def make_abc_plot(abc) -> go.Figure:
         text=f"W = {w_txt}", showarrow=False, xref="paper", yref="paper", x=0.95, y=0.05
     )
     fig.update_layout(
-        title=dict(text=title),
-        xaxis=dict(title="Species rank"),
-        yaxis=dict(title="Cumulative dominance (%)"),
+        title={"text": title},
+        xaxis={"title": "Species rank"},
+        yaxis={"title": "Cumulative dominance (%)"},
         template=TEMPLATE,
     )
     return fig

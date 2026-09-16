@@ -24,6 +24,7 @@ from osmose.scenario_wizard import (
 from osmose.scenarios import Scenario, ScenarioManager
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.config_diff import render_config_diff_table
+from ui.state import AppState
 from ui.styles import STYLE_EMPTY
 
 _log = setup_logging("osmose.scenarios_ui")
@@ -41,7 +42,7 @@ def _resolve_compare_state(name_a, name_b, compare):
         return ("same", None)
     try:
         diffs = compare(name_a, name_b)
-    except Exception:  # noqa: BLE001 — missing/corrupt/deleted scenario: degrade
+    except Exception:
         return ("error", None)
     if not diffs:
         return ("identical", None)
@@ -101,7 +102,7 @@ def scenarios_ui():
     )
 
 
-def scenarios_server(input, output, session, state):
+def scenarios_server(input, output, session, state: AppState):
     mgr = ScenarioManager(state.scenarios_dir)
     refresh_trigger = reactive.value(0)
 

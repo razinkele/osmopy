@@ -13,7 +13,7 @@ from osmose.engine.processes.recruitment_gate import rv_gate_factor
 from osmose.schema import build_registry
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-import baltic_rv_overshoot_diagnostic as diag  # noqa: E402
+import baltic_rv_overshoot_diagnostic as diag
 
 
 def test_rv_gate_keys_registered():
@@ -65,7 +65,7 @@ def _write_series(tmp_path, years, vals, name="s.csv"):
     # the same tmp_path do not overwrite each other (a good series written by
     # _cfg would otherwise clobber a bad series written for a validation test).
     p = tmp_path / name
-    rows = ["year,spawning_rv"] + ["%d,%.6f" % (y, v) for y, v in zip(years, vals)]
+    rows = ["year,spawning_rv"] + [f"{y:d},{v:.6f}" for y, v in zip(years, vals)]
     p.write_text("\n".join(rows) + "\n")
     return p
 

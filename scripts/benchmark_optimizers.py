@@ -38,8 +38,8 @@ from scipy.optimize import differential_evolution
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from osmose.calibration.cmaes_runner import run_cmaes  # noqa: E402
-from osmose.calibration.surrogate_de import surrogate_assisted_de  # noqa: E402
+from osmose.calibration.cmaes_runner import run_cmaes
+from osmose.calibration.surrogate_de import surrogate_assisted_de
 
 DEFAULT_BUDGET = 200
 DEFAULT_SEEDS = 3
@@ -54,7 +54,7 @@ SURROGATE_MAX_ITER = 6
 # ---------------------------------------------------------------------------
 def sphere(x: NDArray[np.float64]) -> float:
     """Convex bowl. Minimum 0 at origin. Easy."""
-    return float(np.sum(x ** 2))
+    return float(np.sum(x**2))
 
 
 def rosenbrock(x: NDArray[np.float64]) -> float:
@@ -65,7 +65,7 @@ def rosenbrock(x: NDArray[np.float64]) -> float:
 def rastrigin(x: NDArray[np.float64]) -> float:
     """Highly multi-modal bowl with many local minima. Tests global search."""
     n = len(x)
-    return float(10.0 * n + np.sum(x ** 2 - 10.0 * np.cos(2.0 * np.pi * x)))
+    return float(10.0 * n + np.sum(x**2 - 10.0 * np.cos(2.0 * np.pi * x)))
 
 
 @dataclass(frozen=True)
@@ -169,16 +169,25 @@ OPTIMIZERS = {
 # ---------------------------------------------------------------------------
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--budget", type=int, default=DEFAULT_BUDGET,
-                        help="Approximate real-eval budget per (optimizer, problem) run")
-    parser.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
-                        help="Number of independent seeds per (optimizer, problem) pair")
+    parser.add_argument(
+        "--budget",
+        type=int,
+        default=DEFAULT_BUDGET,
+        help="Approximate real-eval budget per (optimizer, problem) run",
+    )
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        default=DEFAULT_SEEDS,
+        help="Number of independent seeds per (optimizer, problem) pair",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
 
     # Suppress sklearn ConvergenceWarning noise on smooth analytic test functions —
     # benign and unactionable for benchmarks.
     import warnings as _w
+
     _w.filterwarnings("ignore", category=Warning, module="sklearn")
 
     print(f"=== Optimizer Benchmark — budget={args.budget}, seeds={args.seeds} ===\n")
@@ -191,12 +200,14 @@ def main() -> int:
             runs = []
             for seed in range(args.seeds):
                 fun, nfev, elapsed = runner(problem, args.budget, seed)
-                runs.append({
-                    "seed": seed,
-                    "fun": fun,
-                    "nfev": nfev,
-                    "elapsed_s": elapsed,
-                })
+                runs.append(
+                    {
+                        "seed": seed,
+                        "fun": fun,
+                        "nfev": nfev,
+                        "elapsed_s": elapsed,
+                    }
+                )
             results[problem.name][opt_name] = runs
 
     # Render markdown table
@@ -226,7 +237,7 @@ def main() -> int:
         margin = (runner_up[1] - winner[1]) / max(abs(winner[1]), 1e-12)
         print(
             f"  {problem.name:18s}: {winner[0]:12s} fun={winner[1]:.4g}  "
-            f"(beats {runner_up[0]} by {margin*100:.1f}%)"
+            f"(beats {runner_up[0]} by {margin * 100:.1f}%)"
         )
 
     # JSON dump

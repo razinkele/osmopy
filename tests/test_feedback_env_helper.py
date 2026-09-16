@@ -80,7 +80,7 @@ def test_collecting_the_e2e_modules_does_not_set_the_variables():
     that would have caught the original defect, since the e2e tests never run in CI.
     """
     pytest.importorskip("playwright", reason="e2e modules are not collectable without playwright")
-    import tests.test_e2e_feedback  # noqa: F401
+    import tests.test_e2e_feedback
     import tests.test_e2e_feedback_modal  # noqa: F401
 
     leaked = {k: os.environ.get(k) for k in _BOTH if os.environ.get(k) is not None}

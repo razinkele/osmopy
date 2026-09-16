@@ -65,7 +65,7 @@ class TestFleetDecision:
 
     def test_vessels_move_to_fish(self):
         """With high rationality, vessels should concentrate where biomass is highest."""
-        fleet, fs = self._make_fleet_and_state(n_vessels=100)
+        _fleet, fs = self._make_fleet_and_state(n_vessels=100)
 
         biomass_by_cell = np.zeros((3, 3), dtype=np.float64)
         biomass_by_cell[1, 1] = 1000.0
@@ -81,7 +81,7 @@ class TestFleetDecision:
 
     def test_port_option_chosen_when_no_fish(self):
         """When no biomass anywhere, vessels should stay at port (home)."""
-        fleet, fs = self._make_fleet_and_state(n_vessels=50)
+        _fleet, fs = self._make_fleet_and_state(n_vessels=50)
         biomass_by_cell = np.zeros((1, 3, 3), dtype=np.float64)
         rng = np.random.default_rng(42)
         fs = fleet_decision(fleet_state=fs, biomass_by_cell_species=biomass_by_cell, rng=rng)

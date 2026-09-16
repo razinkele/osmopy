@@ -185,7 +185,7 @@ def test_make_step_observer_swallows_build_errors():
 
 
 def test_build_snapshot_assigns_life_stage():
-    from osmose.live_movement import build_snapshot, STAGE_LABELS
+    from osmose.live_movement import STAGE_LABELS, build_snapshot
 
     g = Grid.from_dimensions(ny=3, nx=3)
     # 3 cod schools: egg (is_egg), juvenile (small/young, immature), adult (mature)

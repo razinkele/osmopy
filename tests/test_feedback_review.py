@@ -59,7 +59,7 @@ def client(tmp_path, monkeypatch):
 
 def _pre_blocks(body: str) -> list[str]:
     """Contents of every `<pre>` element -- lets a test assert on the message, not the page."""
-    return re.findall(r"<pre[^>]*>(.*?)</pre>", body, re.S)
+    return re.findall(r"<pre[^>]*>(.*?)</pre>", body, re.DOTALL)
 
 
 def _get(client, token: str | None = "secret"):
@@ -377,7 +377,7 @@ def test_issue_url_survives_a_degenerate_record(case, rec):
     """
     try:
         url = github_issue_url(rec, _REPO_URL)
-    except Exception as exc:  # noqa: BLE001 -- ANY exception here is the failure under test
+    except Exception as exc:
         pytest.fail(
             f"{case}: github_issue_url raised {exc!r}; one bad store line would blank "
             "the whole review page"

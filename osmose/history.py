@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +27,7 @@ class RunRecord:
 
     def __post_init__(self) -> None:
         if not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
+            self.timestamp = datetime.now().isoformat()  # noqa: DTZ005 - naive local ISO by design; run history sorts these as STRINGS (history.py:58), so emitting +00:00 would misorder new vs existing records. Migrating to tz-aware needs a record migration, not a lint fix.
 
 
 class RunHistory:

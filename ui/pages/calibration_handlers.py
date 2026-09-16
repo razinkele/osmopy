@@ -12,10 +12,11 @@ import queue as _queue_mod
 import stat
 import subprocess
 import tempfile
-from typing import Any
 import threading
 import time
+from datetime import UTC
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from shiny import reactive, render, ui
@@ -323,7 +324,7 @@ def _all_picklable(objective_fns: list) -> bool:
     try:
         pickle.dumps(objective_fns)
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         _log.info("Some objectives are not picklable — NSGA-II falls back to the thread backend")
         return False
 
@@ -392,9 +393,9 @@ def _make_progress_callback(
     new write is additive and wrapped in try/except so a disk failure cannot
     regress the convergence chart. See spec §6 runner table (NSGA-II row).
     """
-    from datetime import datetime, timezone
     import logging
     import time
+    from datetime import datetime
 
     from pymoo.core.callback import Callback  # type: ignore[import-untyped]
 
@@ -479,7 +480,7 @@ def _make_progress_callback(
                     },
                     gens_since_improvement=state["gens_since_improvement"],
                     elapsed_seconds=time.time() - state["start_time"],
-                    timestamp_iso=datetime.now(timezone.utc).isoformat(),
+                    timestamp_iso=datetime.now(UTC).isoformat(),
                     banded_targets=banded_targets,
                     proxy_source=proxy_source,
                 )
@@ -499,8 +500,8 @@ def _save_run_for_nsga2(payload, X, F, phase: str, param_keys: list[str]) -> Non
 
     Mirrors _save_run_for_de in scripts/calibrate_baltic.py.
     """
-    from datetime import datetime, timezone
     import logging
+    from datetime import datetime
 
     from osmose.calibration.history import _save_run_safe
 
@@ -509,7 +510,7 @@ def _save_run_for_nsga2(payload, X, F, phase: str, param_keys: list[str]) -> Non
     best_F = float(F.sum(axis=1)[best_idx])
     best_x = X[best_idx]
     record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "algorithm": "nsga2",
         "phase": phase,
         "parameters": list(param_keys),
@@ -602,7 +603,7 @@ def _extract_species_stats(results, species_names: list[str], n_eval_years: int 
 
     try:
         yld = results.yield_biomass()
-    except Exception:  # noqa: BLE001 — yield CSV absent/empty: leave yield stats unset
+    except Exception:
         yld = None
 
     stats: dict[str, float] = {}
@@ -1041,7 +1042,7 @@ def register_calibration_handlers(
                         phase="ui_nsga2",
                         param_keys=cal_param_names.get() or [],
                     )
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     surrogate_status.set(f"history persist failed: {e}")
             elif kind == "error":
                 surrogate_status.set(f"Failed: {payload}")
@@ -1294,6 +1295,7 @@ def register_calibration_handlers(
                         msg_queue.post_results(X=res.X, F=res.F)
 
                         import time as _time
+
                         from osmose.calibration.history import save_run
 
                         save_run(
@@ -1824,7 +1826,7 @@ def register_calibration_handlers(
                             "objective_names": obj_names_sens or None,
                         },
                     )
-                except Exception:  # noqa: BLE001 — persistence is additive; never break the live run
+                except Exception:
                     _log.warning("Failed to persist sensitivity result", exc_info=True)
                 msg_queue.post_sensitivity(sens_result)
             except Exception as exc:

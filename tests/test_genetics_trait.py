@@ -3,11 +3,11 @@
 import numpy as np
 import pytest
 
-from osmose.engine.genetics.trait import Trait, TraitRegistry
 from osmose.engine.genetics.genotype import (
     compact_genetic_state,
     create_initial_genotypes,
 )
+from osmose.engine.genetics.trait import Trait, TraitRegistry
 
 
 class TestTrait:
@@ -119,6 +119,7 @@ class TestGeneticState:
 def test_apply_trait_overrides_routes_imax_to_bioen_i_max_target() -> None:
     """Sanity: `apply_trait_overrides` writes under the declared target."""
     import numpy as np
+
     from osmose.engine.genetics import (
         TraitRegistry,
         apply_trait_overrides,
@@ -156,6 +157,7 @@ def test_bioen_i_max_inherits_genetic_and_env_variance() -> None:
     with empirical SD ≈ sqrt(var + envvar). Catches a silent-zero regression
     where the trait reads as registered but doesn't actually draw values."""
     import numpy as np
+
     from osmose.engine.genetics import (
         TraitRegistry,
         apply_trait_overrides,
@@ -193,6 +195,7 @@ def test_bioen_i_max_pins_zero_variance_species_to_species_mean() -> None:
     """Multi-species: cod (sp0) evolves, herring (sp1) does not. Herring's
     phenotype must remain pinned to its species_mean exactly."""
     import numpy as np
+
     from osmose.engine.genetics import (
         TraitRegistry,
         apply_trait_overrides,

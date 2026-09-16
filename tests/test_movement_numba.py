@@ -64,7 +64,7 @@ def test_flatten_all_map_sets_null_detection():
 
 
 def test_flatten_all_map_sets_empty():
-    all_maps, all_max_proba, all_is_null, sp_offsets = _flatten_all_map_sets(
+    all_maps, all_max_proba, _all_is_null, sp_offsets = _flatten_all_map_sets(
         {}, n_species=3, ny=5, nx=5
     )
     assert all_maps.shape == (0, 5, 5)
@@ -110,7 +110,7 @@ def test_precompute_map_indices_out_of_range():
     idx_maps = np.zeros((3, 24), dtype=np.int32)
     ms = _mock_map_set([np.ones((2, 2))], idx_maps, np.array([0.0]))
 
-    current, same = _precompute_map_indices(
+    current, _same = _precompute_map_indices(
         np.array([0], dtype=np.int32),
         np.array([10], dtype=np.int32),
         np.array([True]),
@@ -355,7 +355,7 @@ def test_round_based_sampling_has_boundary_bias():
     # Old pattern — biased
     old_counts = np.zeros(n, dtype=np.int64)
     for _ in range(100_000):
-        idx = int(round((n - 1) * rng.random()))
+        idx = round((n - 1) * rng.random())
         old_counts[idx] += 1
     # Boundary cells (0 and n-1) should have ~half the hits of interior cells
     assert old_counts[0] < old_counts[2] * 0.7, "Old pattern should show boundary bias"

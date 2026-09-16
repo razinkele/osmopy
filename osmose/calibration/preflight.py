@@ -10,18 +10,18 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
-from SALib.sample import morris as morris_sample  # type: ignore[import-untyped]
 from SALib.analyze import morris as morris_analyze  # type: ignore[import-untyped]
+from SALib.sample import morris as morris_sample  # type: ignore[import-untyped]
 
+from osmose.calibration.problem import FreeParameter, Transform
 from osmose.engine import PythonEngine
 from osmose.results import OsmoseResults
-from osmose.calibration.problem import FreeParameter, Transform
 
 _log = logging.getLogger(__name__)
 
@@ -727,7 +727,7 @@ def make_preflight_eval_fn(
                 osmose_results = OsmoseResults(out_i)
                 row = np.array([float(fn(osmose_results)) for fn in objective_fns])
                 return i, row, None
-            except Exception as exc:  # noqa: BLE001 — preflight is best-effort
+            except Exception as exc:
                 return i, None, exc
 
         def __call__(self, X: np.ndarray) -> np.ndarray:

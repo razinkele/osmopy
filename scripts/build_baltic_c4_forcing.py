@@ -59,7 +59,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import numpy as np
@@ -330,7 +330,7 @@ def _saturated_fraction(map_grid: NDArray[np.float64], w: NDArray[np.float64]) -
     return float(np.mean(w[:, support] == 1.0))
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_stage_map(
     species: str, stage: str, ny: int, nx: int, config_dir: str = str(MAPS_CONFIG_DIR)
 ) -> NDArray[np.float64]:

@@ -38,8 +38,9 @@ def test_vectorized_rates_eec_smoke():
 
 def test_vectorized_rates_correctness():
     """Vectorized rates produce correct values for known inputs."""
-    from osmose.engine.processes.mortality import _precompute_effective_rates
     from types import SimpleNamespace
+
+    from osmose.engine.processes.mortality import _precompute_effective_rates
 
     n = 5
     n_species = 2

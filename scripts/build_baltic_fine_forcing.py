@@ -1,8 +1,10 @@
 from pathlib import Path
+
 import numpy as np
 import xarray as xr
+
 from osmose.forcing.conserve_regrid import split_conserve
-from osmose.forcing.grid import target_coords, regrid, resample_to_24, load_ocean_mask
+from osmose.forcing.grid import load_ocean_mask, regrid, resample_to_24, target_coords
 from scripts.build_baltic_fine_grid import FINE, OUT
 
 SRC = Path("data/baltic")

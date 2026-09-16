@@ -82,9 +82,9 @@ def run_hindcast(seeds=(0, 1, 2, 3, 4)) -> dict:
     obs_win = obs[WINDOW]
     series = {m: [] for m in ("off", "clim", "inter")}
     for seed in seeds:
-        for m in series:
+        for m, vals in series.items():
             raw = {**base, **arm_overrides(m, rv_ref, str(INTER), str(CLIM))}
-            series[m].append(_cod_ssb(raw, seed))
+            vals.append(_cod_ssb(raw, seed))
     means = {m: np.mean(np.stack(v), axis=0) for m, v in series.items()}
     deltas = [
         skill_delta(
@@ -98,4 +98,10 @@ def run_hindcast(seeds=(0, 1, 2, 3, 4)) -> dict:
 
 
 if __name__ == "__main__":
-    sys.exit(0 if run_hindcast() else 0)
+    # NOTE: this was `sys.exit(0 if run_hindcast() else 0)` -- both arms 0, so the
+    # ternary never did anything. run_hindcast() returns a dict of results, not a
+    # success flag, so there is no failure convention to restore here; behaviour is
+    # preserved (always exit 0). If this script should fail on a bad hindcast, that
+    # needs a real predicate on the returned dict.
+    run_hindcast()
+    sys.exit(0)
