@@ -1,6 +1,16 @@
 # Feedback v2 deploy sequence
 
 > **STATUS: EXECUTED 2026-09-15 ~22:45. This deploy is DONE.**
+>
+> **SUPERSEDED 2026-09-17 ~00:10 — prod has since moved on to the `v1.4.0` release.** Prod now runs
+> `ce5d033e` (tag `v1.4.0`, `__version__ = 1.4.0`), deployed with
+> `sudo OSMOSE_DEPLOY_REF=v1.4.0 bash deploy.sh` — pinned to the tag rather than `origin/master`.
+> Verified independently after the fact: prod clone HEAD = `ce5d033e`, `git describe --tags` =
+> `v1.4.0` exactly (no offset), service `active`, `:8838/` → 200, `:8838/feedback/review` → **403**
+> (token gate still live across the upgrade). **Everything below still describes how the feedback-v2
+> state was established and remains the reference for the systemd/env/pyvis carry-overs, which a
+> fresh `checkout --detach` does not touch — but the SHAs in it are historical.**
+>
 > Prod moved `c21349d1` (2026-07-19) -> `54ccac8`, 481 commits. All four steps verified: v1 gone
 > (`feedback_review.py` present, HTTP 200, `NRestarts=0`); token set in a root-owned 0600
 > EnvironmentFile and absent from `systemctl show -p Environment`; `OSMOSE_TRUSTED_PROXY=1`; and a
