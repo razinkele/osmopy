@@ -37,8 +37,8 @@
       "args": ["run", "--directory", "/home/razinka/ices-mcp-server", "server.py"]
     },
     "copernicus-marine": {
-      "command": "/home/razinka/osmose/osmose-python/.venv/bin/python",
-      "args": ["/home/razinka/osmose/osmose-python/mcp_servers/copernicus/server.py"]
+      "command": "/home/razinka/osmopy/.venv/bin/python",
+      "args": ["/home/razinka/osmopy/mcp_servers/copernicus/server.py"]
     }
   }
 }
