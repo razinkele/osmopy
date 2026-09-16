@@ -734,6 +734,21 @@ def _write_readme(
     (out_dir / "README.md").write_text("\n".join(lines) + "\n")
 
 
+def _display_path(p: Path) -> str:
+    """Repo-relative when inside the repo, absolute otherwise.
+
+    `run_baltic(out_dir=...)` accepts any directory, but the completion message used
+    `Path.relative_to(ROOT)` unconditionally -- which RAISES `ValueError` for a path outside the
+    repo. The files were already written by then, so the run had fully succeeded and still
+    exited non-zero: the only documented way to fit without overwriting the committed overlay
+    (regenerating into a scratch dir to diff against it) was the one path that crashed.
+    """
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
+
+
 def run_baltic(out_dir: Path | None = None) -> list[FitResult]:
     """Fit the production Baltic 9-species bioen parameter set (C3 spec Sec.1/3.4, Task 11).
 
@@ -828,8 +843,8 @@ def run_baltic(out_dir: Path | None = None) -> list[FitResult]:
             f"{RMS_PIN_PCT:g}% RMS pin (hard pin under --baltic: a failure raises)."
         )
         print(
-            f"Wrote {bioen_path.relative_to(ROOT)}, {arm_path.relative_to(ROOT)}, and "
-            f"{(out_dir / 'README.md').relative_to(ROOT)}."
+            f"Wrote {_display_path(bioen_path)}, {_display_path(arm_path)}, and "
+            f"{_display_path(out_dir / 'README.md')}."
         )
     return results
 

@@ -3,38 +3,50 @@
 import json
 from pathlib import Path
 
+from osmose import __version__
+
 from shiny import App, reactive, render, ui
+
+from ui.state import AppState
+from ui.components.help_modal import about_modal, changelog_modal, help_modal
+from ui.theme import THEME
+from osmose.plotly_theme import ensure_templates
+
 from shiny_deckgl import head_includes as _deckgl_head
-from starlette.responses import JSONResponse
+
+from ui.components.renderer_badge import renderer_badge_script
+
+from ui.pages.setup import setup_ui, setup_server
+from ui.pages.grid import grid_ui, grid_server
+from ui.pages.forcing import forcing_ui, forcing_server
+from ui.pages.fishing import fishing_ui, fishing_server
+from ui.pages.movement import movement_ui, movement_server
+from ui.pages.run import run_ui, run_server
+from ui.pages.results import results_ui, results_server
+from ui.pages.spatial_results import spatial_results_ui, spatial_results_server
+from ui.pages.calibration import calibration_ui, calibration_server
+from ui.pages.sensitivity_explorer import sensitivity_explorer_ui, sensitivity_explorer_server
+from ui.pages.scenarios import scenarios_ui, scenarios_server
+from ui.pages.advanced import advanced_ui, advanced_server
+from ui.pages.map_viewer import map_viewer_ui, map_viewer_server
+from ui.pages.map_builder import map_builder_ui, map_builder_server
+from ui.pages.genetics import genetics_ui, genetics_server
+from ui.pages.economic import economic_ui, economic_server
+from ui.pages.diagnostics import diagnostics_ui, diagnostics_server
+from ui.pages.fisheries import fisheries_ui, fisheries_server
+
+from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
+
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
-from osmose import __version__
-from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
 from osmose.feedback import check_feedback_token, read_feedback
-from osmose.plotly_theme import ensure_templates
+from osmose.feedback_review import render_review_html
+from osmose.logging import setup_logging
 from ui.components.feedback_modal import feedback_modal, feedback_server
-from ui.components.help_modal import about_modal, changelog_modal, help_modal
-from ui.components.renderer_badge import renderer_badge_script
-from ui.pages.advanced import advanced_server, advanced_ui
-from ui.pages.calibration import calibration_server, calibration_ui
-from ui.pages.diagnostics import diagnostics_server, diagnostics_ui
-from ui.pages.economic import economic_server, economic_ui
-from ui.pages.fisheries import fisheries_server, fisheries_ui
-from ui.pages.fishing import fishing_server, fishing_ui
-from ui.pages.forcing import forcing_server, forcing_ui
-from ui.pages.genetics import genetics_server, genetics_ui
-from ui.pages.grid import grid_server, grid_ui
-from ui.pages.map_builder import map_builder_server, map_builder_ui
-from ui.pages.map_viewer import map_viewer_server, map_viewer_ui
-from ui.pages.movement import movement_server, movement_ui
-from ui.pages.results import results_server, results_ui
-from ui.pages.run import run_server, run_ui
-from ui.pages.scenarios import scenarios_server, scenarios_ui
-from ui.pages.sensitivity_explorer import sensitivity_explorer_server, sensitivity_explorer_ui
-from ui.pages.setup import setup_server, setup_ui
-from ui.pages.spatial_results import spatial_results_server, spatial_results_ui
-from ui.state import AppState
-from ui.theme import THEME
+
+# Project repository — same URL the About modal links to (ui/components/help_modal.py).
+_REPO_URL = "https://github.com/razinkele/osmopy"
 
 
 def _harden_shiny_otel_source_ref() -> None:
@@ -56,7 +68,7 @@ def _harden_shiny_otel_source_ref() -> None:
     """
     try:
         from shiny.session import _session as _sess
-    except Exception:  # older/newer Shiny without this internal
+    except Exception:  # noqa: BLE001 — older/newer Shiny without this internal
         return
     orig = getattr(_sess, "extract_source_ref", None)
     if orig is None or getattr(orig, "_osmose_guarded", False):
@@ -65,13 +77,13 @@ def _harden_shiny_otel_source_ref() -> None:
     def _guarded(func):  # type: ignore[no-untyped-def]
         try:
             return orig(func)
-        except Exception:  # OTel attrs are best-effort, never fatal
+        except Exception:  # noqa: BLE001 — OTel attrs are best-effort, never fatal
             return {}
 
     _guarded._osmose_guarded = True  # type: ignore[attr-defined]
     # setattr (not direct assignment): extract_source_ref is a `from … import`
     # binding on the module, so pyright doesn't treat it as a known attribute.
-    _sess.extract_source_ref = _guarded
+    setattr(_sess, "extract_source_ref", _guarded)
 
 
 # Apply at import time, before any session runs server() / registers renderers.
@@ -164,9 +176,7 @@ app_ui = ui.page_fillable(
             if (tab) tab.classList.toggle('visible', collapsed);
             // Sync ARIA on both nav collapse and expand buttons
             var collapseBtn = document.querySelector('.osm-nav-collapse-btn');
-            if (collapseBtn) {
-                collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-            }
+            if (collapseBtn) collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
             if (tab) tab.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
             localStorage.setItem('osmose-nav-collapsed', collapsed ? '1' : '0');
         }
@@ -185,9 +195,7 @@ app_ui = ui.page_fillable(
             if (tab) tab.classList.toggle('visible', collapsed);
             // Sync ARIA states on both collapse and expand buttons
             var collapseBtn = container.querySelector('.osm-collapse-btn');
-            if (collapseBtn) {
-                collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-            }
+            if (collapseBtn) collapseBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
             if (tab) tab.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
             localStorage.setItem('osmose-panel-collapsed-' + pageId, collapsed ? '1' : '0');
         }
@@ -205,8 +213,7 @@ app_ui = ui.page_fillable(
             if (panelId) {
                 localStorage.setItem('osmose-card-collapsed-' + panelId, collapsed ? '1' : '0');
             }
-            if (panelId === 'run_live_movement' && typeof Shiny !== 'undefined'
-                && Shiny.setInputValue) {
+            if (panelId === 'run_live_movement' && typeof Shiny !== 'undefined' && Shiny.setInputValue) {
                 Shiny.setInputValue('live_view_expanded', !collapsed);
             }
         }
@@ -223,8 +230,7 @@ app_ui = ui.page_fillable(
                 card.classList.toggle('osm-body-collapsed', want);
                 btn.textContent = want ? '»' : '«';
                 btn.setAttribute('aria-expanded', want ? 'false' : 'true');
-                if (panelId === 'run_live_movement' && typeof Shiny !== 'undefined'
-                    && Shiny.setInputValue) {
+                if (panelId === 'run_live_movement' && typeof Shiny !== 'undefined' && Shiny.setInputValue) {
                     Shiny.setInputValue('live_view_expanded', !want);
                 }
             });
@@ -511,8 +517,7 @@ app_ui = ui.page_fillable(
         // ── Popover init via MutationObserver ────────────────────
         function initNewPopovers(root) {
             if (typeof bootstrap === 'undefined' || !bootstrap.Popover) return;
-            var sel = '[data-bs-toggle="popover"]:not([data-osm-init])';
-            var els = (root || document).querySelectorAll(sel);
+            var els = (root || document).querySelectorAll('[data-bs-toggle="popover"]:not([data-osm-init])');
             els.forEach(function(el) {
                 new bootstrap.Popover(el);
                 el.setAttribute('data-osm-init', '1');
@@ -544,6 +549,26 @@ app_ui = ui.page_fillable(
                         pill.classList.remove('osm-disabled');
                     }
                 }
+            });
+        });
+
+        // ── Dismiss a static Bootstrap modal (server-driven) ─────
+        // For modals rendered as static markup and opened client-side by data-bs-toggle,
+        // ui.remove_modal() is a no-op (it only removes ui.modal_show() modals). The
+        // feedback modal's success path sends 'hide-modal' instead.
+        var _hideModalRegistered = false;
+        document.addEventListener('shiny:connected', function() {
+            if (_hideModalRegistered) return;
+            _hideModalRegistered = true;
+            Shiny.addCustomMessageHandler('hide-modal', function(msg) {
+                // Registration is safe without bootstrap, the body is not: the bundle can
+                // load AFTER shiny:connected (see the changelog modal's poll below).
+                if (typeof bootstrap === 'undefined') return;
+                var el = document.getElementById(msg.id);
+                if (!el) return;
+                // getOrCreateInstance, not getInstance: this modal may never have been
+                // instantiated from JS, and getInstance returns null in that case.
+                bootstrap.Modal.getOrCreateInstance(el).hide();
             });
         });
 
@@ -618,28 +643,17 @@ def server(input, output, session):
         if mode in ("java", "python"):
             state.engine_mode.set(mode)
 
-    # M12: the header only needs two derived numbers, not the whole config. An
-    # effect recomputes them on every config change (cheap: one lookup + len),
-    # but reactive.Value.set() is a no-op when the tuple is unchanged, so the
-    # header's DOM round-trip is skipped for the overwhelmingly common case of a
-    # keystroke that edits a value without adding or removing a key.
-    config_stats: reactive.Value[tuple[int, int]] = reactive.Value((0, 0))
-
-    @reactive.effect
-    def _update_config_stats():
-        cfg = state.config.get()
-        try:
-            n_species = int(float(cfg.get("simulation.nspecies", "0")))
-        except (ValueError, TypeError):
-            n_species = 0
-        config_stats.set((n_species, len(cfg)))
-
     @render.ui
     def config_header():
         name = state.config_name.get()
         if not name:
             return ui.div()
-        n_species, n_params = config_stats.get()
+        cfg = state.config.get()
+        try:
+            n_species = int(float(cfg.get("simulation.nspecies", "0")))
+        except (ValueError, TypeError):
+            n_species = 0
+        n_params = len(cfg)
         is_dirty = state.dirty.get()
         return ui.div(
             ui.tags.span(name, class_="osm-config-name"),
@@ -689,15 +703,43 @@ def server(input, output, session):
 app = App(app_ui, server, static_assets=_WWW)
 
 
+# Both feedback routes answer an unauthenticated caller, so neither may disclose why it
+# failed -- Task 5 measured a mutation that let exception text through and found the TOKEN in
+# the response. The detail goes to the server log instead: a 500 that logs nothing is a total,
+# SILENT failure (the whole review page, every card) with no way to find out what broke.
+_log = setup_logging("osmose.app")
+
+
 async def _feedback_endpoint(request):
     try:
         if not check_feedback_token(request.headers.get("x-feedback-token")):
             return JSONResponse({"error": "forbidden"}, status_code=403)
         return JSONResponse(read_feedback())
-    except Exception:  # never leak a traceback to an unauth caller
+    except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+        _log.exception("feedback API failed; returning 500 with no detail to the caller")
         return JSONResponse({"error": "internal"}, status_code=500)
+
+
+async def _feedback_review(request):
+    try:
+        if not check_feedback_token(request.headers.get("x-feedback-token")):
+            return PlainTextResponse("forbidden", status_code=403)
+        # no-store: a token-gated page of user-submitted content must not be retained by a
+        # browser or a shared proxy, which would serve it to callers that never presented
+        # the token. Only the 200 carries it — a cached "forbidden" leaks nothing.
+        return HTMLResponse(
+            render_review_html(read_feedback(), _REPO_URL),
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception:  # noqa: BLE001 — never leak a traceback to an unauth caller
+        # The response stays bare; the traceback goes to the log. Without this the page is
+        # lost in full and nothing anywhere records why -- silent, not loud.
+        _log.exception("feedback review page failed; returning 500 with no detail to the caller")
+        return PlainTextResponse("internal", status_code=500)
 
 
 # Mount the read-only feedback API BEFORE Shiny's catch-all Mount("/") — add_route would
 # append AFTER it and the route would 404. See the feedback-system spec.
 app.starlette_app.routes.insert(0, Route("/api/feedback", _feedback_endpoint, methods=["GET"]))
+# Same reason for the maintainer review page: it must precede the catch-all Mount("/").
+app.starlette_app.routes.insert(0, Route("/feedback/review", _feedback_review, methods=["GET"]))

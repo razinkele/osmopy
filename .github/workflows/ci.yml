@@ -72,10 +72,20 @@ jobs:
 
       - name: Run tests with coverage
         # -n auto parallelizes across the runner's cores (pytest-xdist); --dist
-        # loadfile (from pyproject addopts) keeps each file on one worker. Local
-        # dev on a many-core box should use a bounded count (e.g. -n 12) rather
-        # than auto — auto over-subscribes against the engine's numba parallel
-        # kernels once worker count approaches the core count.
+        # loadfile (from pyproject addopts) keeps each file on one worker.
+        #
+        # This used to warn that local dev on a many-core box should use a bounded
+        # count (e.g. -n 12) rather than auto, because auto over-subscribes against
+        # the engine's numba parallel kernels. That advice is SUPERSEDED: tests/
+        # conftest.py now caps each worker's NUMBA_NUM_THREADS (PR #149), so the
+        # over-subscription is bounded no matter what -n you pass. `-n auto` is a
+        # reasonable local invocation again.
+        #
+        # Why it mattered: xdist counts PHYSICAL cores while numba sizes its pool
+        # from LOGICAL ones, so every worker believed it owned the box — 14 x 28 =
+        # 392 runnable threads on 28 cpus on the dev machine. It starved a ~15s
+        # Java subprocess past a 120s budget (PR #148) and cost the full suite
+        # roughly half its wall time (25:07 -> 11:35 once capped).
         run: pytest -n auto --cov=osmose --cov-report=term-missing --cov-report=html --cov-fail-under=90
 
       - name: Upload coverage report

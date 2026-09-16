@@ -165,3 +165,32 @@ def test_nsga2_process_backend_wired():
     assert "parallel_backend" in handlers and "shutdown_pool" in handlers
     bench = (root / "scripts" / "benchmark_calibration.py").read_text()
     assert "--backend" in bench
+
+
+def test_about_modal_and_issue_links_point_at_the_same_repo():
+    """One repo URL, two places that must agree — pinned because only one had a guard.
+
+    ``app._REPO_URL`` is what every feedback card's "promote to a GitHub issue" link is built
+    from (``osmose.feedback_review.github_issue_url``), and ``ui/components/help_modal.py``
+    hardcodes the same URL in the About modal's markdown. A comment above ``_REPO_URL`` says
+    they are "the same URL" -- a claim nothing enforced. If they drift, maintainers file issues
+    against one repository while users are pointed at another, and neither side is obviously
+    wrong on inspection.
+
+    Matched against the help modal's SOURCE rather than rendered HTML so the failure names the
+    literal to change.
+    """
+    import pathlib
+    import re
+
+    from app import _REPO_URL
+
+    src = (
+        pathlib.Path(__file__).resolve().parent.parent / "ui" / "components" / "help_modal.py"
+    ).read_text(encoding="utf-8")
+    found = re.findall(r"https://github\.com/[\w.-]+/[\w.-]+", src)
+    assert found, "no GitHub URL found in help_modal.py — did the About modal's link move?"
+    assert set(found) == {_REPO_URL}, (
+        f"About modal links {sorted(set(found))} but issue promotion uses {_REPO_URL!r} — "
+        "these must be the same repository"
+    )

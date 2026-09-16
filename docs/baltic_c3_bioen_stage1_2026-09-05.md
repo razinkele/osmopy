@@ -630,6 +630,770 @@ before this branch.
   else) fixes this, which is the signal to re-open the question. Whether the fix belongs in the
   bioen fit, the predation-accessibility matrix, or the growth-rate structure itself was
   explicitly out of scope for both Task 13 and this task to chase.
+
+  - **LOCATED 2026-09-13 — it is the fit's OBJECTIVE, not any of `c_m`, `Imax` or `beta`.**
+    Four measurements on the production Baltic + this overlay, 6–10 yr, seed 42, eliminating one
+    candidate each; then the age curve, which names the cause.
+
+    | candidate | measurement | verdict |
+    |---|---|---|
+    | prey supply / accessibility | realized ingestion ÷ `Imax` cap, per species, pre-collapse: cod_east 0.97, perch 0.95, cod_west 0.95, flounder 0.92, herring 0.77 | **ruled out** — the collapsing stocks eat 92–98 % of everything they are allowed. The relation is *inverted*: the two lowest ratios (pikeperch 0.36, smelt 0.38) are both survivors. |
+    | `c_m` | `m_share = e_maint/e_gross` vs the fitted 0.30 target: cod_east 0.135, cod_west 0.178, flounder 0.290, perch 0.312, herring 0.320 | **ruled out** — collapsing stocks sit *at or below* target; cod has 82–86 % of gross energy free for growth. |
+    | `beta` | `m_share` across weight terciles | **ruled out** — flat (cod_west 0.18/0.18/0.17). Both `e_gross` and `e_maint` scale as `w^beta`, so a mismatch would show as drift with size. |
+    | temperature / the `1/(φT(T̄)(1−m))` inflation | measured `phi_T` vs §3's `φT(T̄)` | **ruled out** — matches within 8–19 %, and mostly *higher* than assumed (cod_west 0.887 vs 0.963; perch 0.304 vs 0.257). The inflation is doing its job. |
+
+    Every input the fit reasons about is as designed, which leaves the objective that chose them.
+    Running `simulate_growth` (`osmose/calibration/bioen_offline.py:100`) with the **committed**
+    parameters against each species' own config vBGF:
+
+    | age | cod_west fit/vBGF | perch | stickleback |
+    |---:|---:|---:|---:|
+    | 1 | **0.58** | **0.49** | 1.01 |
+    | 2 | 1.00 | 0.81 | 0.93 |
+    | 3 | 1.14 | 1.04 | 0.94 |
+    | 4–8 | 1.16–1.17 | 0.88–0.99 | 0.95 |
+
+    **The fit is 42–51 % short at age 1 and then matches or overshoots from age 2 on.** Its RMS
+    runs over the whole ≥1 yr range on *absolute* lengths, so ages 2–8 — where cod_west is 14–17 %
+    **over** target — dominate the residual. That is how §3's 8.33 % RMS coexists with a halved
+    first year, and it is the RMS-pin caveat (§0/§1) biting in a way nobody had quantified.
+
+    This reconciles the rest of the stage rather than competing with it: the budget is healthy
+    (ingestion at the cap, `m_share` at target), so the fish are **not starving** — they start the
+    race at half size and spend an extra year inside the predation window before any size refuge,
+    which is exactly the predation-not-starvation signature Task 13 measured with its bioen-off
+    control. It also explains the `m0` ordering in §8: stickleback (m0 4.5 cm, on target from age 1)
+    survives, while cod (38), pikeperch (40), flounder/cod_east (22) and herring/perch (18) must
+    cross a far larger gap starting from half size.
+
+    **Target for a re-fit:** the juvenile regime, not the global parameters.
+    `simulate_growth` gives larvae their own cap (`imax + (theta−1)·c_rate` while
+    `age_dt < larvae_thres_dt`); weighting early ages in the residual — log-length, or an explicit
+    age-1 constraint — would raise that boost without disturbing the adult curve the present fit
+    already reproduces well. Note the pikeperch caveat from §8 still stands: at 0.47 fit/vBGF at
+    age 1 it is among the worst early-growth cases yet survives, so early growth is not the whole
+    story for every species.
+
+  - **REFUTED BY INTERVENTION, same day.** The growth account above is **wrong as a cause of the
+    collapse**, and it was overturned by doing the thing it implied rather than by further
+    argument. Recorded in full because every step of it was individually sound and it still failed
+    — which is the point.
+
+    The engine already implements a juvenile cap boost that the committed overlay switches off
+    (`theta = 1.0`, `c_rate = 0.0`; `per_fish_ingestion_cap` computes
+    `i_eff = imax + (theta−1)·c_rate` while `age_dt < larvae_thres_dt`), and the fit's forward
+    model does not implement it at all. Activating it as a **third fitted parameter** with a
+    one-year window does exactly what the diagnosis predicted it would:
+
+    | | committed | with juvenile boost |
+    |---|---|---|
+    | cod_west age-1 fit/vBGF | 0.53 | **1.05** |
+    | cod_west RMS | 8.33 % | **0.86 %** |
+    | all nine species, age 1 | 0.53–1.03 | **1.03–1.09** |
+    | all nine species, RMS | 1.84–10.71 % | **0.80–1.65 %** |
+
+    Strictly better on both axes — the whole curve on target, ages 2/3/5/8 at 0.98–1.03. Then the
+    engine test, 8 yr, `population.seeding.year.max = 1`, seed 42, three arms:
+
+    **the same five stocks collapse.** cod_west, cod_east, flounder extinct; perch and herring at
+    zero biomass; herring marginally *worse* than committed. The bioen-off control sustains all
+    nine, as before.
+
+    Two checks confirm this is a real null and not a switched-off knob or a starved one: the
+    mechanism engages (`larvae_thres_dt = 24`, larval `i_eff` ≈ 2× adult, read back from
+    `EngineConfig.from_dict`), and the extra food is genuinely **eaten** — juvenile ingestion/cap
+    on the boost arm is 0.94–0.98 for every collapsing stock, so raising the cap did not merely
+    expose a prey ceiling.
+
+    **Growth is therefore not the binding constraint.** Fix it completely and nothing changes.
+
+  - **The surviving candidate is RECRUITMENT, and it correlates almost perfectly.** Total eggs
+    produced over the same 8 yr stress run, bioen ÷ baseline:
+
+    | survives | ratio | | collapses | ratio |
+    |---|---:|---|---|---:|
+    | stickleback | 1.13 | | cod_west | 0.48 |
+    | smelt | 1.11 | | herring | 0.20 |
+    | sprat | 0.79 | | cod_east | 0.17 |
+    | pikeperch | 0.45 | | perch | 0.12 |
+    | | | | flounder | 0.11 |
+
+    Bioen produces **11–48 %** of baseline egg output for every collapsing stock — a 2–9×
+    recruitment shortfall — while every survivor except pikeperch sits at 0.79–1.13. Under bioen
+    eggs come from gonad energy (`rho`, `e_net`); under classic growth they come from a prescribed
+    relationship. A population that is not replaced cannot persist once seeding stops, and
+    predation then shows up as the *proximate* cause while recruitment is the *ultimate* one —
+    which is exactly the predation-not-starvation signature Task 13 measured, now with a mechanism
+    behind it.
+
+    **Held to the same standard that just cost the growth account:** this is a strong correlation
+    across nine species with one exception (pikeperch, 0.45 and surviving — the same species that
+    breaks the `m0` ordering and has the lowest ingestion/cap). **It has not been tested by
+    intervention.** The growth story had comparable correlational support and failed. Do not treat
+    recruitment as established until someone raises bioen egg output and shows the stocks persist.
+
+    Reproduce all of the above with `scripts/c3_growth_deficit_diagnosis.py`. The boost re-fit has
+    since been committed as an opt-in path (`fit_species(..., juvenile_boost=True)`,
+    `osmose/calibration/bioen_offline.py`, `374bc26`, default-off and bit-identical when off); the
+    egg count was a scratch experiment at the time and has since been **reproduced 9/9** by the
+    committed harness below.
+
+  - **TESTED BY INTERVENTION 2026-09-13 — the hypothesis is ILL-POSED for four of the five stocks,
+    not refuted.** `scripts/c3_recruitment_intervention.py`, committed with its reading
+    pre-registered (`413bce8`) *before* the run. It wraps `regulate_recruitment` — the single
+    shared choke point for both reproduction paths (classic `reproduction.py:344`, bioen
+    `simulate.py:885`) — so it is instrument and intervention at once, with no engine edit. On the
+    bioen arms it swaps the gonad-derived egg count for the baseline path's own
+    `sex_ratio · relative_fecundity · SSB · season · 1e6 · K`, skipping seeded steps (which already
+    use that formula). Growth, maintenance, starvation, the TPC, the Shepherd curve, the RV gate
+    and egg-school creation are all untouched. Four arms at the growth refutation's exact stress
+    (8 yr, `seeding.year.max = 1`, seed 42), so the two tests are directly comparable. **Two runs
+    byte-identical** — deterministic.
+
+    | species | baseline | bioen | bioen_rec (K=1) | bioen_rec10 (K=10) | R = rec10/bioen eggs |
+    |---|---:|---:|---:|---:|---:|
+    | cod_west | 1 454.5 | **0.0 ✗** | **0.0 ✗** | **0.0 ✗** | 1.00 |
+    | cod_east | 108 826.0 | **0.0 ✗** | **0.0 ✗** | **0.0 ✗** | 1.00 |
+    | flounder | 35 684.8 | **0.0 ✗** | **0.0 ✗** | **0.0 ✗** | 1.00 |
+    | perch | 56 511.2 | **0.0 ✗** | 0.0 | **0.0 ✗** | 1.00 |
+    | herring | 2 458 398.6 | 1.2 | 0.7 | **2 026.7** | 2.40 |
+    | sprat | 922 205.4 | 239 248.8 | 424 233.3 | **1 611 006.0** | 11.52 |
+    | pikeperch | 1 545 341.8 | 285 387.4 | 287 005.4 | 371 836.2 | 17.36 |
+    | smelt | 668 519.6 | 416 821.5 | 433 905.9 | 861 009.8 | 9.51 |
+    | stickleback | 91 392.1 | 57 556.1 | 57 392.3 | 153 847.2 | 7.63 |
+
+    Final-year biomass (t); ✗ = zero abundance. The pre-registered rule needed `R ≥ 5` to read a
+    verdict at all, and **no collapsing stock reached it**, so the registered outcome is
+    `INCONCLUSIVE` across the board. That is recorded as-is. But *why* it is inconclusive is the
+    finding, and it is decisive.
+
+    **There is no recruitment to boost.** Decomposing run-total SSB against the year-1 seeding
+    contribution (`24 × population.seeding.biomass`):
+
+    | species | SSB total | seeded part | REAL spawning stock, 168 post-seeding steps |
+    |---|---:|---:|---:|
+    | cod_west | 1 200 000.0 | 1 200 000.0 | **exactly 0.0 t** |
+    | cod_east | 2 400 000.0 | 2 400 000.0 | **exactly 0.0 t** |
+    | flounder | 1 920 168.8 | 1 920 000.0 | 168.8 t (0.0088 %) |
+    | perch | 720 004.4 | 720 000.0 | 4.4 t (0.0006 %) |
+
+    cod_west and cod_east produce **not one gonad-derived egg** in years 2–8; flounder and perch
+    produce a rounding error. The intervention multiplied zero by ten and got zero — `R = 1.00`
+    exactly, on every arm. Confirmed independently by the arithmetic: cod_west's entire bioen egg
+    output is `0.087 × 1.250e13`, and **0.0870 is precisely the Shepherd factor at SSB = 50 000**
+    with `ssb_half = 15 000`, `β = 1.9520` — i.e. 100 % year-1 bootstrap passed through the curve.
+    And by a third, independent field: the seeding-event count. Seeding fires only when SSB == 0,
+    and on bioen **all nine species seed all 24 steps of year 1**, while on baseline herring/sprat/
+    smelt/stickleback/cod_east seed only 16/16/15/18/21 — baseline stocks acquire a spawning stock
+    partway through year 1; bioen stocks never do.
+
+    **The knob is potent — it simply has nothing to turn.** Built-in positive control: where a
+    spawning stock exists the intervention delivered 7.6–17.4× and moved biomass hard (sprat
+    239 k → 1 611 k, *above* its own baseline; smelt 417 k → 861 k; stickleback 58 k → 154 k). So
+    "the wrapper is broken" is excluded by the same run that returns `R = 1.00` elsewhere.
+
+    **Herring is the one genuine partial engagement, and the script's binary mis-sorted it.**
+    `collapsed = abundance ≤ 0` classified herring "not part of the test" because it holds a
+    remnant, but §9 lists it among the collapsing stocks and it is the only one with a real
+    spawning stock that is neither zero nor healthy: 1 355 233 t against baseline's 71 446 734 t,
+    a **52.7× gap**. There `R = 2.40` — below the pre-registered bar, so still formally
+    inconclusive — yet biomass moved **1.2 → 2 026.7 t**. Recruitment is causally potent for
+    herring and still leaves it ~1 200× below baseline, so it is not sufficient on its own either.
+
+    **What this establishes, stated positively.** The earlier 11–48 % egg ratios were **right** —
+    all nine reproduce to two decimals (cod_west 0.478 vs 0.48, herring 0.198 vs 0.20, sprat 0.789
+    vs 0.79, flounder 0.110 vs 0.11, perch 0.124 vs 0.12, pikeperch 0.455 vs 0.45, smelt 1.115 vs
+    1.11, stickleback 1.129 vs 1.13, cod_east 0.171 vs 0.17), which also confirms the recording
+    wrapper is inert. It was the *interpretation* that was wrong, exactly as with the growth
+    account: a shortfall measured against baseline is not evidence of a causal pathway when the
+    pathway carries **zero flux**. A hypothesis about gonad-derived egg production being too weak
+    cannot be tested where that production is identically zero, and cannot have *caused* a collapse
+    that had already removed every spawner. **Recruitment is downstream** of whatever eliminates
+    the pre-maturity cohort. Do not write "refuted" — write ill-posed, with the causal direction
+    now fixed.
+
+    **The next test, named not run.** Growth is refuted by intervention; recruitment is downstream.
+    What remains is Task 13's measured predation wipeout. The test: suppress predation on the
+    juvenile stages of one collapsing stock and ask whether **SSB becomes non-zero** — SSB, not
+    biomass, is the instrument, because SSB is the quantity shown here to be identically zero.
+
+  - > ## 🚨 THE PREDATION VERDICT BELOW IS VOID — the `accALL` arm never removed predation
+    >
+    > Found 2026-09-13 by an adversarial trace, verified in source before this note was written.
+    > **GreySeal (sp15) has no predator COLUMN in `predation-accessibility.csv`** — the header runs
+    > `cod_west … Benthos, Cormorant` and stops. `AccessibilityMatrix.resolve_name("GreySeal")`
+    > returns `None`, so `pred_access_idx == -1` for every seal school. And the production kernel
+    > (`mortality.py:1172-1180`) reads:
+    >
+    > ```
+    > access_coeff = 1.0
+    > if has_access:
+    >     if use_stage_access:
+    >         p_acc = pred_access_idx[p_idx]; q_acc = prey_access_idx[q_idx]
+    >         if p_acc >= 0 and q_acc >= 0:        # <-- -1 SKIPS THE WHOLE BLOCK
+    >             ...
+    >             if access_coeff <= 0: continue   # <-- including this test
+    > ```
+    >
+    > **A `-1` does not mean "inaccessible". It means the default `access_coeff = 1.0` survives —
+    > FULL accessibility.** So in every arm below, including `accALL`, GreySeal ate cod_west at
+    > coefficient **1.0**, twenty times the 0.05 that every *listed* predator was capped at, and
+    > zeroing cod_west's prey row could not touch it because there is no column to zero.
+    >
+    > GreySeal's prey window seals the case: ratio 3–12 on 110 cm and 170 cm bodies gives
+    > **9.2–36.7 cm** and **14.2–56.7 cm** — covering the entire 10–20 cm band where cod_west
+    > disappears, and on past the 38 cm maturity length.
+    >
+    > Consequences: (a) "predation does not prevent cod_west from maturing" is **unsupported** — the
+    > intervention removed four predators at 0.05 and left the biggest one at 1.0; (b) the
+    > "killer not yet enumerated" of the attrition correction is very probably **the seal**; and
+    > (c) because every other cod_west predator IS a column, GreySeal is the only species with
+    > `pred_access_idx == -1`, so **any cod_west predation death in the `accALL` arm is GreySeal by
+    > construction** — one instrumented run settles it.
+    >
+    > This is also a **latent engine/config defect independent of C3**: a background predator
+    > declared in the config but absent from the accessibility matrix is silently granted full
+    > accessibility rather than none, and nothing warns. Everything below is retained as the record
+    > of what was run and concluded; read it knowing the arms were not what they claimed.
+    >
+    > ### ✅ RESOLVED — SEALGATE, same day. The ceiling was the seal.
+    >
+    > `scripts/c3_sealgate_intervention.py`, pre-registered at `a21eeac` before running. The
+    > intervention adds the missing GreySeal COLUMN and sets **exactly one cell**: `[cod_west prey,
+    > GreySeal predator]`. Nothing else moves.
+    >
+    > | arm | GreySeal column | cod_west real SSB | **max occupied size bin** |
+    > |---|---|---:|---:|
+    > | baseline (bioen off) | absent | 129 265.5 | 110 cm |
+    > | bioen | absent (⇒ coeff 1.0) | 0.0 | 15 cm |
+    > | **sham** | **1.0 for every prey** | **0.0** | **15 cm** |
+    > | **treat** | 1.0 except cod_west = **0.0** | 1.0 | **75 cm** |
+    >
+    > **The sham is the load-bearing control and it passed exactly.** Writing 1.0 into a column that
+    > did not exist reproduced `bioen` to the digit on every species — sprat 239 248.8, pikeperch
+    > 285 387.4, smelt 416 821.5, stickleback 57 556.1, herring 1.2 — which is only possible if the
+    > `-1` path already yields 1.0. The defect is not inferred; it is demonstrated by a no-op that
+    > is bit-identical to the production behaviour it replaces.
+    >
+    > **With the seal unable to eat cod_west, the size ceiling goes 15 cm → 75 cm** — straight past
+    > the 38 cm maturity length it had never once reached in any previous arm. The "survival edge"
+    > of the attrition correction, the "killer not yet enumerated", was GreySeal eating cod_west at
+    > an accessibility of 1.0 that no one ever wrote down.
+    >
+    > **What this does NOT show, stated plainly.** cod_west is not restored. Real SSB reaches 1.0 t
+    > against the control's 129 265.5 t, and final biomass is still 0.0 t (below the 0.5 yr output
+    > cutoff) though abundance is now non-zero. **The verdict fired on the size criterion, not the
+    > SSB criterion** — and that exposes a weakness in my own pre-registration: the floor was
+    > disjunctive (`SSB > 1 %` **OR** `size ≥ 38 cm`), so an OR makes a floor far weaker than it
+    > looks. SSB missed its floor by four orders of magnitude. Removing the seal is **necessary to
+    > let cod_west reach maturity at all, and not sufficient to restore the stock.**
+    >
+    > **Scope, untested but strongly implied.** Only cod_west's cell was changed. flounder, perch
+    > and cod_east remain extinct in `treat` — and they are exposed to the identical defect, since
+    > the seal reaches every prey row at 1.0. A realistic GreySeal column (the Cormorant's 0.05
+    > would be the obvious comparator) applied to all prey is the next test, and it is a config
+    > change, not a code change.
+    >
+    > **The headline stands: a large part of the C3 "bioenergetics collapse" is a CONFIG/ENGINE
+    > DEFECT** — one missing matrix column silently promoting a top predator to twenty times the
+    > accessibility of every predator that was written down.
+    >
+    > ### COLUMN REPAIR — the seal caps SIZE, not NUMBERS (`6259abb`)
+    >
+    > SEALGATE changed one cell. `scripts/c3_seal_column_repair.py` repairs the whole column:
+    > `realistic` copies **Cormorant's column verbatim** (cod_west 0.05, herring 0.15, sprat 0.15,
+    > flounder 0.1, perch 0.6, pikeperch 0.4, smelt 0.25, stickleback 0.15, cod_east 0.05,
+    > **resources 0**) as the only in-config example of what a background predator's accessibility
+    > should look like; `sealfree` zeroes it entirely as an upper bound.
+    >
+    > **Max occupied size bin (cm) — the defect is large and real:**
+    >
+    > | species | baseline | bioen | realistic | sealfree |
+    > |---|---:|---:|---:|---:|
+    > | cod_west | 110 | **15** | **75** | 75 |
+    > | cod_east | 110 | **15** | **75** | 75 |
+    > | flounder | 40 | **20** | **40** | 40 |
+    > | perch | 45 | **15** | 30 | 35 |
+    > | pikeperch | 90 | 40 | 45 | 45 |
+    >
+    > Both cods go 15 → 75 cm, **flounder is fully restored to its baseline 40 cm**, perch 15 → 30.
+    > `realistic` ≈ `sealfree` throughout, so the work is done by going from the unwritten **1.0**
+    > down to a sane coefficient — not by removing the seal altogether.
+    >
+    > **But 0 of 4 collapsed stocks recover on the pre-registered criterion** (real SSB > 1 % of its
+    > own baseline real SSB), on either arm. Real SSB does rise — cod_west 0.0 → 1.7 t, flounder
+    > 168.8 → 1 654.9 t, perch 4.4 → 377.0 t, cod_east 0.0 → 123.5 t, factors of 10–100× — and still
+    > sits **three to four orders of magnitude below the floor** (1 292.7 / 31 125.2 / 47 254.3 /
+    > 76 129.7 t). Final biomass stays 0.0 t for all four.
+    >
+    > **So the missing column is a real, material defect that governs SIZE STRUCTURE, and it is NOT
+    > the collapse mechanism.** The collapse is an **abundance** problem, not a size problem: with
+    > the seal sane, these stocks grow to normal adult lengths and there are still almost none of
+    > them. That splits the remaining question cleanly in two, and only the second is still open.
+    >
+    > **Caveat bounding the SSB half.** With `seeding.year.max = 1` exactly ONE cohort ever exists,
+    > so recovery needs that cohort's offspring to mature inside the remaining window — cod_west
+    > matures at ~2.6 yr, so its progeny are only ~1–2 generations deep by year 8. The **size**
+    > result is within-cohort and robust to this; the **SSB** result may be window-limited and must
+    > not be read as "the stock cannot recover". The clean follow-up is the repaired matrix at the
+    > production seeding policy over a longer horizon — which is also what re-running the Stage-1
+    > verdict would require.
+    >
+    > ### ⚖️ RESTAGE AT PRODUCTION SEEDING, 50 YR — **THE STAGE-1 VERDICT STANDS** (`12e52e1`)
+    >
+    > `scripts/c3_repaired_matrix_restage.py`, pre-registered before running. Removes the
+    > single-cohort caveat entirely: **production seeding** (no `seeding.year.max` override — engine
+    > default is per-species `lifespan`, cod_west 20 yr) at the **certifying 50-yr horizon**, so the
+    > final decade sits 21–46 years past every assessed stock's seeding-window closure. Same metric
+    > as Stage 1: final-decade mean biomass.
+    >
+    > | species | baseline | bioen | repaired | floor (1 %) |
+    > |---|---:|---:|---:|---:|
+    > | cod_west | 12 335.9 | **0.0** | **0.0** | 123.4 |
+    > | herring | 2 523 427.1 | **0.0** | **0.0** | 25 234.3 |
+    > | flounder | 32 401.2 | **0.0** | **0.0** | 324.0 |
+    > | cod_east | 66 446.1 | **0.0** | **0.0** | 664.5 |
+    > | perch | 42 554.4 | 0.0 | 0.0 | 425.5 |
+    > | sprat | 1 035 926.7 | 318 726.4 | 313 900.6 | 10 359.3 |
+    > | pikeperch | 1 375 582.1 | 130 829.5 | 125 734.9 | 13 755.8 |
+    > | smelt | 672 269.5 | 320 559.8 | 285 180.0 | 6 722.7 |
+    > | stickleback | 84 954.2 | 69 952.3 | 68 277.8 | 849.5 |
+    >
+    > **E1 passed — the `bioen` arm reproduces the published Stage-1 collapse exactly**, all four
+    > assessed stocks at 0.0 final-decade mean. That is what makes these rows comparable to the
+    > Stage-1 table rather than merely similar to it. E2 and E3 passed too.
+    >
+    > **0 of 4 recover. The missing GreySeal column is NOT what collapses these stocks.** Repairing
+    > it moves nothing at this scale — `repaired` is if anything marginally *lower* than `bioen` for
+    > the survivors (food-web rebalancing, all well inside the noise of a single seed).
+    >
+    > **So the defect and the collapse are two separate things, and both conclusions hold:**
+    > - The missing column is a **real, material defect** that governs **size structure** — cod_west
+    >   and cod_east 15 → 75 cm, flounder fully restored to its baseline 40 cm. Worth fixing on its
+    >   own merits, and now recorded in CLAUDE.md.
+    > - **C3's headline negative is a genuine bioenergetics result, not a config artifact.** It
+    >   survives direct testing against the defect that looked most likely to explain it.
+    >
+    > **The open question is now precisely one thing: what caps ABUNDANCE.** Not growth (intake is
+    >
+    > ### 🎯 ANSWERED — **THE BIRTH SIDE CAPS ABUNDANCE** (`c3_abundance_balance.py`)
+    >
+    > Abundance is an accounting identity, `N(t+1) = N(t) + births − deaths`, so this measured BOTH
+    > sides on the same run rather than measuring one and inferring a mechanism — the error that
+    > failed three times earlier in this investigation. Deaths from `step_observer` (fires after
+    > mortality, before `compact()`, so `state.n_dead` holds that step's deaths across all 8 causes
+    > with zeroed schools still present) as **counts, never rates**; births from
+    > `regulate_recruitment`. Both arms on the **repaired** matrix, 50 yr, production seeding.
+    >
+    > | stock | total per-capita mortality | **births** | fewer eggs |
+    > |---|---:|---:|---:|
+    > | cod_west | 1.00× | **0.050×** | **20×** |
+    > | cod_east | 1.00× | **0.061×** | 16× |
+    > | herring | 1.01× | **0.061×** | 16× |
+    > | flounder | 1.00× | **0.042×** | **24×** |
+    > | **sprat — SURVIVES** | 1.00× | **0.797×** | **1.3×** |
+    >
+    > **Mortality is identical.** Not similar — identical, 1.00–1.01× on every collapsed stock.
+    > `ADDITIONAL` carries 99.4–100 % of all deaths in BOTH arms at the same per-capita rate: it is
+    > the larval mortality the two configs share (`mortality.additional.larva.rate`, applied once per
+    > egg cohort). `STARVATION` is 3.4–7.2× higher under bioen but carries 0.000–0.004 of deaths —
+    > real, and immaterial. `PREDATION` 0.6–1.5×, also immaterial in share.
+    >
+    > **Births are 16–24× lower.** And the survivor contrast is the clean separator the whole
+    > investigation has been missing: sprat, the one assessed stock that survives, is at **0.797×** —
+    > barely down — while every collapsed stock sits at 4–6 %.
+    >
+    > **This VINDICATES the original §9 recruitment intuition and does NOT contradict the
+    > ill-posed verdict** — the distinction is scale, and it matters:
+    > - The earlier recruitment test ran at `seeding.year.max = 1`, where cod_west/cod_east real SSB
+    >   is **exactly 0.0 t**. The pathway carried **zero flux**, so a 10× egg boost multiplied zero by
+    >   ten. That test was ill-posed *because of its stress condition*, and remains correctly labelled.
+    > - At **production seeding** spawners exist for `lifespan` years, the pathway carries real flux,
+    >   and the deficit is measurable: 16–24×.
+    >
+    > So the original candidate was right, and the test first run against it was posed at a scale
+    > where it could not be tested. Worth recording as its own lesson: **an intervention that returns
+    > a null at one scale has not tested the hypothesis at another.**
+    >
+    > **Honest gap:** the docstring pre-registered an E4 (balance-closure check — that the abundance
+    > change tracks births minus deaths on the baseline arm) which was **not implemented**; E1–E3 ran
+    > and passed. The mortality result does not depend on it (the 1.00× ratio is a like-for-like
+    > comparison computed identically on both arms), but the accounting identity itself is asserted
+    > rather than verified here.
+    >
+    > **Next, and it is a decomposition rather than a search:** is the egg deficit fewer SPAWNERS or
+    > fewer eggs PER spawner? Under bioen eggs come from gonad energy (`rho`, `e_net`); under classic
+    > from a prescribed `fecundity × SSB`. Measure final-decade SSB and eggs/SSB per arm — one
+    > instrumented run settles which half of the product is short, and `rho` is the parameter that
+    > would follow.
+    >
+    > ### ➡️ DECOMPOSED — **fewer SPAWNERS, not fewer eggs per spawner** (`c3_gonad_flush_test.py`)
+    >
+    > A candidate mechanism was traced and then **refuted by measurement**. The bioen starvation
+    > substep does compare a PER-SCHOOL deficit against a PER-FISH gonad
+    > (`mortality.py:1366-1391`; self-documented at `bioen_starvation.py:58`), zeroing the gonad
+    > whenever it fires — and a per-step flush predicts an egg-deficit ceiling of exactly
+    > `n_dt/sum(season)` = **24.00×**, against measured deficits of 23.8 / 20.0 / 16.4 / 16.4×.
+    > A near-perfect fit. **It is nonetheless not the mechanism**, on two independent counts:
+    >
+    > | species | frac(e_net < 0) | frac(gonad == 0) | **eggs per unit SSB** | SSB ratio |
+    > |---|---:|---:|---:|---:|
+    > | cod_west | **0.0011** | 0.248 | **1.244** | 1.143 |
+    > | cod_east | **0.0004** | 0.329 | **1.072** | 0.095 |
+    > | herring | 0.1157 | 0.169 | **1.025** | 0.188 |
+    > | flounder | 0.0295 | 0.159 | **1.159** | 0.326 |
+    > | sprat (survives) | 0.1138 | 0.068 | 0.534 | 0.290 |
+    >
+    > 1. **The trigger is far too rare.** The flush requires `e_net < 0`, which for cod_west and
+    >    cod_east happens on **0.04–0.11 %** of mature-school steps — it cannot produce 25–33 %
+    >    zero gonads. And herring (0.1157) and sprat (0.1138) trigger at an *identical* rate while
+    >    one collapses and the other survives, so the trigger does not separate the groups at all.
+    > 2. **Eggs per spawner are NORMAL — 1.02–1.24× baseline.** A gonad flush would appear here as a
+    >    16–24× shortfall in precisely this quantity. It appears as a slight *surplus*.
+    >
+    > The 24× fit was a coincidence. Recorded rather than quietly dropped, because the fit was
+    > compelling and the mechanism genuinely exists in the source — it simply is not the operative
+    > one. **That is the fourth time in this investigation that a number matching a prediction turned
+    > out not to be the cause.**
+    >
+    > **What the run establishes cleanly: the egg deficit is entirely a SPAWNER deficit.** Eggs track
+    > SSB almost exactly — cod_east SSB 0.095× → eggs 0.101×; herring 0.188× → 0.192×; flounder
+    > 0.326× → 0.377×. The reproductive machinery works per unit of spawning biomass; there is simply
+    > far less spawning biomass.
+    >
+    > **My own instrument error, recorded.** E2 was mis-specified: I expected `frac(gonad == 0) ≈ 0`
+    > on the baseline arm as a control, but classic growth never uses `gonad_weight` at all, so it is
+    > **1.0000 by construction** on every species. The check was uninformative rather than failed —
+    > it could not have discriminated anything. The `e_net` and eggs/SSB columns carried the result.
+    >
+    > **So "what caps abundance" resolves one step further: low SSB with normal per-spawner
+    > fecundity.** SSB = Σ(mature abundance × weight), so the remaining question is whether bioen has
+    > *fewer* mature fish or *smaller* ones — cod_west reaches 75 cm under the repaired matrix against
+    > 110 cm on baseline, so the weight term is live, and maturity is length-based (38 cm), which
+    > couples the two. Next is again a measurement, not a search: mature abundance and mean mature
+    > weight, per arm, per species.
+    >
+    > ### ✅ RESOLVED — **A MATURATION BOTTLENECK** (`c3_ssb_decomposition.py`)
+    >
+    > `SSB = N_total × frac_mature × mean_weight_mature` is an identity, so the three bioen/baseline
+    > ratios must multiply back to the SSB ratio. **They do, for every species (E1 passed)** — which
+    > is why this step is not another inference.
+    >
+    > Measured over years 2–6, while all stocks still hold real numbers. (By years 15–19 the four
+    > collapsers sit at 1e-11–1e-45 and their decomposition describes the collapse rather than its
+    > cause — the window matters, and the saved per-year arrays let it be re-cut without re-running.)
+    >
+    > | species | m0 (cm) | SSB | **N_total** | **frac_mature** | mean_w | outcome |
+    > |---|---:|---:|---:|---:|---:|---|
+    > | cod_west | **38** | 0.0000 | **0.790** | **0.0000** | 0.324 | collapse |
+    > | cod_east | 22 | 0.0000 | 0.109 | **0.0032** | 0.118 | collapse |
+    > | flounder | 22 | 0.0011 | 0.177 | **0.0115** | 0.535 | collapse |
+    > | herring | 18 | 0.0356 | 0.077 | 0.5644 | 0.821 | collapse |
+    > | **sprat** | **9** | 0.2386 | **0.839** | **0.5725** | 0.497 | **survives** |
+    >
+    > **cod_west holds 79 % of baseline's fish and essentially ZERO of them mature.** That single row
+    > is the answer: the fish are there, and they do not cross the maturity length. sprat likewise
+    > carries 84 % of baseline's fish with 57 % of the maturation — and survives on it.
+    >
+    > **The chain, every link measured rather than inferred:**
+    > 1. Mortality is identical between arms (1.00–1.01× per-capita).
+    > 2. Births are 16–24× down.
+    > 3. That is a **spawner** deficit, not a fecundity one — eggs per unit SSB are 1.02–1.24×.
+    > 4. The SSB deficit is **`frac_mature`**, with `N_total` largely preserved.
+    > 5. Maturity here is **length-based** (`species.maturity.size`; `species.maturity.age` absent),
+    >    and bioen size-at-age is **0.32–0.82×** baseline — so far fewer fish ever cross `m0`.
+    > 6. No spawners → no eggs → no recruitment → decay to extinction, mortality normal throughout.
+    >
+    > **This vindicates the `m0` ordering noticed at the very start of §9** — stickleback (4.5 cm)
+    > survives, cod (38) and flounder/cod_east (22) collapse — but now as a *measured mechanism*
+    > rather than a nine-point correlation. sprat's `m0 = 9.0 cm` is the smallest of the assessed
+    > stocks and is the survivor. pikeperch (`m0 = 40`) remains the standing exception it has been
+    > throughout, and is still unexplained.
+    >
+    > ### 🐟 THE PIKEPERCH EXCEPTION — it is a **beneficiary of the collapse**, not an exception to it
+    >
+    > pikeperch is **not** exempt from the maturation bottleneck. Its mature fraction is crushed as
+    > hard as any collapser: ratio **0.0888**, absolute 0.0028 against a baseline 0.0313. Its SSB
+    > ratio (0.0340) is *lower* than herring's (0.0356), and herring dies. So neither `m0`,
+    > `frac_mature` nor the SSB ratio explains it.
+    >
+    > **What the year-by-year trajectory shows** (bioen arm, mature abundance):
+    >
+    > | yr | cod_west N | cod_east N | pikeperch N_total | pikeperch N_mature |
+    > |---:|---:|---:|---:|---:|
+    > | 0–2 | 3.5e8 → 3.1e8 | 1.8e9 → 1.4e9 | 1.4e12 → 9.4e11 | **0** |
+    > | 3 | 6.7e7 | 1.7e7 | 3.6e11 | 5e-4 |
+    > | 4 | 1.3e6 | 6.7e4 | 1.2e11 | **1.3e8** |
+    > | 5 | **33** | **430** | **6.0e10** ← floor | 9.5e8 |
+    > | 6 | 0.2 | 0.4 | 2.2e11 | **3.7e9** |
+    > | 8 | ~0 | ~0 | 8.7e11 | 6.8e9 |
+    > | 10 | ~0 | ~0 | **2.8e12** | 2.6e9 |
+    >
+    > **pikeperch holds ZERO mature fish until year 3, then takes off exactly as cod_west and
+    > cod_east go extinct** — and its total abundance rebounds **22×** from a year-5 floor of 6.0e10.
+    > Both cods are listed predators of pikeperch (`cod_west 0.1`, `cod_east 0.05`).
+    >
+    > **The decisive quantity is whether the JUVENILE POOL survives the crash window.** Floors during
+    > years 3–5: pikeperch **6.0e10**; flounder 2.6e7 (then 5e-2 by yr 8); herring 4.0e10 → 9.1e8;
+    > cod_east **430**; cod_west **33**. pikeperch is the only collapsing-profile stock whose pool
+    > never drops below a recoverable level, and it banks those juveniles cheaply:
+    > `mortality.additional.rate` = **0.0137 yr⁻¹**, **92× lower than cod_west's 1.2546**, so its pool
+    > drains ~1.4 % a year while it waits for its predators to disappear.
+    >
+    > **No single factor explains it, and it would be wrong to claim one.** M alone does not separate
+    > the groups — flounder has the *lowest* M (0.006) and still dies. Pool size alone does not —
+    > herring starts largest (1.1e13) and still dies, draining at M = 2.2472, the highest of the nine.
+    > What pikeperch uniquely combines is **a large juvenile pool × a very low drain rate × predators
+    > that die first**.
+    >
+    > > **⚠️ TESTED 2026-09-14 — THE RELEASE STORY IS REFUTED.**
+    > > `scripts/c3_pikeperch_release_test.py` zeroed the `cod_west` and `cod_east` cells of
+    > > pikeperch's prey row (E1: exactly those two cells differ, nothing else). Over **years 0–3,
+    > > while the cods are alive**, `nocod/ref` pikeperch `N_total` = **0.998**. Removing cod
+    > > predation entirely changes nothing. Specificity check passed (years 8–19 ratio 0.897, cods
+    > > extinct on both arms; E2 passed).
+    > >
+    > > **The cods could never have mattered, and it is obvious in hindsight:** pikeperch numbers
+    > > 1.39e12 at year 0 against the two cod stocks' combined 2.18e9 — **630× fewer predators than
+    > > prey**, at accessibility 0.10/0.05. They cannot make a dent. The year-4 takeoff is
+    > > **growth-timed** (vBGF `t(m0)` = 2.97 yr) and the cod-extinction coincidence was exactly a
+    > > coincidence. **Fifth time in this investigation that a compelling correlation was not causal
+    > > — and the first where the named intervention was actually run instead of the correlation
+    > > being left to stand.**
+    > >
+    > > **What actually explains pikeperch is arithmetic:** mature stock = pool × mature fraction.
+    > >
+    > > | species | pool yr0 | frac_mature | → mature | fate |
+    > > |---|---:|---:|---:|---|
+    > > | pikeperch | **1.39e12** | 0.0028 | **3.9e9** | survives |
+    > > | sprat | 1.27e12 | 0.4486 | 5.7e11 | survives |
+    > > | flounder | 2.37e9 | 0.0039 | 9.2e6 | dies |
+    > > | cod_east | 1.83e9 | 0.0013 | 2.4e6 | dies |
+    > > | cod_west | 3.46e8 | 0.0000 | **0** | dies |
+    > >
+    > > pikeperch suffers the *same* maturation bottleneck — but a tiny fraction of an enormous pool
+    > > is still ~4e9 spawners, and it drains that pool at only 0.0137 yr⁻¹ (92× below cod_west).
+    > > cod_west has a zero fraction of a pool three orders of magnitude smaller. **Same mechanism,
+    > > different starting stock.** No predation release required, and none present.
+    >
+    > **Status (superseded above): the timing correlation is strong; the causal claim is NOT yet
+    > tested by intervention.** Given how often that distinction has mattered here, it is labelled rather than
+    > asserted. The test: suppress cod predation on pikeperch from year 0 and ask whether its mature
+    > stock rises *earlier* than year 4; or hold the cods alive and ask whether pikeperch still
+    > recovers.
+    >
+    > **Also worth recording — perch rebounds too.** Its pool bottoms at 7.1e-9 in year 9 and returns
+    > to 1.3e9 by year 12, despite reading 0.0 in the 50-yr final decade. So the collapse is not
+    > uniformly monotonic, and a final-decade mean can hide a mid-run recovery that later fails.
+    >
+    > **Correcting my own earlier reading.** I wrote that realized growth was "entirely healthy" on
+    > the strength of `dw/w` at 12–33 % per step with intake at 90–100 % of cap. That was **too
+    > strong**: per-step weight *gain* is vigorous, but size-*at-age* is 0.32–0.82× baseline, and for
+    > a length-based maturity threshold it is size-at-age that decides. Both measurements are correct;
+    > the first does not support the conclusion I drew from it.
+    >
+    > **What this means for C3.** The Stage-1 negative stands and is now *explained*: bioen as
+    > parameterised cannot carry these stocks past their maturity lengths. The lever is the growth
+    > trajectory against `m0` — either the bioen parameters that set size-at-age, or `m0` itself — and
+    > that is a calibration question with a named target, not an open search.
+    >
+    > > **⚠️ THE m0 HALF OF THAT LEVER IS REFUTED — TESTED 2026-09-14.**
+    > > `scripts/c3_m0_lever_test.py` lowered `species.maturity.m0` on the four collapsing stocks
+    > > only, as a dose ladder (×1.00 / ×0.50 / ×0.25), leaving the four survivors untouched as an
+    > > internal control. **E1** read the thresholds back per arm, **E2** confirmed the survivors
+    > > unmoved (sprat 0.357/0.353/0.358; pikeperch 0.0020/0.0020/0.0019), **E3** confirmed the knob
+    > > engaged hard — cod_east `frac_mature` **0.0009 → 0.1960 → 0.6700**, a 744× rise.
+    > >
+    > > **0 of 4 recover. Final-decade biomass is 0.0 t at every dose.** Crossing `m0` is
+    > > **NECESSARY BUT NOT SUFFICIENT** — the last link of the chain is not causal on its own.
+    > >
+    > > **Worse, the response is non-monotone, and for the cods lowering m0 is actively HARMFUL:**
+    > >
+    > > | arm | cod_west yr3 | cod_west yr5 | flounder yr11 |
+    > > |---|---:|---:|---:|
+    > > | m0 ×1.00 | 6.7e7 | 3.4e1 | 3.8e-16 |
+    > > | m0 ×0.50 | 7.1e5 | 5.7e-1 | 1.3e2 |
+    > > | m0 ×0.25 | **1.8e3** | **3.0e-2** | **2.6e4** |
+    > >
+    > > flounder decays 20 orders of magnitude more slowly; **both cods collapse FASTER.**
+    > >
+    > > **The mechanism is in the source and is a genuine model trade-off**: `rho` is 0 for immature
+    > > fish and positive once mature (`energy_budget.py:313`), and `dw = (1−rho)·E_net/N` against
+    > > `dg = rho·E_net/N`. **Maturity taxes somatic growth.** Lowering `m0` makes fish mature
+    > > smaller and then grow more slowly — which is exactly the wrong medicine for a stock whose
+    > > problem is already size-at-age.
+    > >
+    > > **So the Stage-2 lever is size-at-age, NOT m0.** Growth raises maturation *and* weight
+    > > together; lowering the threshold buys maturation by taxing the growth that was short in the
+    > > first place. The "or `m0` itself" half of the sentence above is dead.
+    > >
+    > > **And one link still unexplained:** cod_east reaches **67 % maturation** at ×0.25 and still
+    > > reads 0.0 t. With eggs tracking SSB at 1.02–1.24×, more spawners should mean more eggs. That
+    > > they do not translate into biomass points at egg→recruit survival, which no test here has
+    > > yet isolated.
+    > 90–100 % of cap, `m_share` below target), not size (the seal explained that and fixing it
+    > changes no biomass), not recruitment as originally framed (there were never spawners to begin
+    > with), and not the listed predators. Something removes the numbers while leaving the energetics
+    > and — once the seal is sane — the growth trajectory intact.
+    >
+    > **CERTIFIED AT 5 SEEDS** (`c3_repaired_matrix_restage.py`, Stage 1's own
+    > `(42, 123, 7, 999, 2024)` — parsed from `baltic_c3_bioen_ab.py:121` and asserted to match, so a
+    > drifted constant cannot quietly invalidate the comparison). 15 engine runs. **All four
+    > engagement checks pass, E1 on every seed individually.**
+    >
+    > | species | baseline | bioen | repaired | floor (1 %) | seeds clearing floor |
+    > |---|---:|---:|---:|---:|---:|
+    > | cod_west | 12 810.8 | **0.0** | **0.0** | 128.1 | **0/5** |
+    > | cod_east | 65 251.2 | **0.0** | **0.0** | 652.5 | **0/5** |
+    > | herring | 2 539 645.2 | **0.0** | **0.0** | 25 396.5 | **0/5** |
+    > | flounder | 33 063.4 | **0.0** | **0.0** | 330.6 | **0/5** |
+    > | sprat | 1 024 324.0 | 309 994.2 | 309 636.5 | 10 243.2 | — |
+    > | pikeperch | 1 400 081.1 | 128 120.2 | 128 024.1 | 14 000.8 | — |
+    >
+    > Across-seed means; every one of the four reads **exactly 0.0 on all five seeds** in both the
+    > `bioen` and `repaired` arms — deterministic extinction, not noisy near-collapse, exactly the
+    > character Stage 1 reported. The per-seed tables are in the script output and show no seed-level
+    > variation for an average to hide.
+    >
+    > **0 of 4 recover, 0/5 seeds each. The single-seed caveat is now discharged:** this null is held
+    > to the same 5-seed standard as the claim it tests, so it is no longer weaker evidence than a
+    > positive would have been.
+
+  - **PREDATION TESTED BY INTERVENTION 2026-09-13 — and the answer is a SIZE CEILING.**
+    `scripts/c3_predation_intervention.py`, pre-registered at `cd7eea5` before the run. Config-only
+    and surgical: `predation.accessibility.stage.structure = age` and the CSV takes `"name < T"`
+    age labels (`accessibility.py:_parse_label`), with prey ROWS and predator COLUMNS parsed
+    independently — so cod_west's PREY row is split and scaled while its predator COLUMN is left
+    alone. This changes what eats cod_west, never what cod_west eats, and touches no growth,
+    bioenergetics or reproduction parameter. cod_west has only four predators (itself, pikeperch,
+    smelt, Cormorant), all at accessibility 0.05.
+
+    | arm | juv accessibility | cod_west final t | real SSB | juv biomass 1–3 yr | **max size bin** |
+    |---|---|---:|---:|---:|---:|
+    | baseline (bioen off) | 0.05 | 1 454.5 | **129 265.5** | 4 555 | **110 cm** |
+    | bioen | 0.05 | 0.0 ✗ | 0.0 | 11.77 | 15 cm |
+    | acc50 | 0.025 | 0.0 ✗ | 0.0 | 16.44 | 15 cm |
+    | acc10 | 0.005 | 0.0 ✗ | 0.0 | 29.24 | 20 cm |
+    | acc00 | 0.0 (juveniles) | 0.0 ✗ | 0.0 | 36.09 | 15 cm |
+    | **accALL** | **0.0 at EVERY age** | **0.0 ✗** | **0.0** | 36.09 | **15 cm** |
+
+    Size bins are 5 cm wide (`output.distrib.bysize` 0–120 step 5), so "15 cm" means the largest
+    occupied bin is [15, 20). Maturity needs **38 cm** (`species.maturity.m0.sp0`, length-only —
+    `species.maturity.age.sp0` is absent).
+
+    **Predation is real but is NOT the binding constraint.** The dose ladder is clean and monotone
+    — juvenile biomass 11.77 → 16.44 → 29.24 → 36.09 as accessibility falls, a **3.07×** gain under
+    full immunity — so predation genuinely does kill cod_west juveniles, and this knob engages in a
+    way the recruitment knob never could. But **the size ceiling does not move**: at `accALL`, where
+    cod_west is inedible to every predator at every age, it still tops out at 15–20 cm against the
+    38 cm it needs. It cannot mature, so SSB is structurally zero, so there are no eggs. Full
+    immunity also leaves juvenile biomass **126× below** the bioen-off control (36.09 vs 4 555).
+
+    > ### ⚠️ CORRECTION, same day — the paragraph that stood here was WRONG
+    >
+    > It read: *"The binding constraint is realized in-engine growth: a 15–20 cm ceiling."* The
+    > **observation** (max occupied bin 15–20 cm under bioen, 110 cm bioen-off) is correct and
+    > stands. The **causal attribution to growth was refuted within the hour** by
+    > `scripts/c3_growth_ceiling_diagnosis.py` (pre-registered `d18a8fb`), which measured the
+    > energy budget by size class and found growth entirely healthy at the ceiling:
+    >
+    > | length cm | ing/cap | m_share | dw/w per step | mean w g |
+    > |---|---:|---:|---:|---:|
+    > | 0–5 | 0.898 | 0.155 | 0.325 | 0.15 |
+    > | 5–10 | 0.903 | 0.201 | 0.200 | 3.81 |
+    > | 10–15 | 0.924 | 0.184 | 0.158 | 17.27 |
+    > | **15–20** | **0.956** | **0.135** | **0.138** | 38.73 |
+    >
+    > (predation-immune `accALL` arm; the plain `bioen` arm is within a percent of it). cod_west
+    > eats **90–100 % of its allometric cap at every size**, `m_share` is **0.13–0.20 — *below* the
+    > fit's 0.30 target and not rising with size**, and specific growth in the top occupied bin is
+    > **13.8 % of body weight per step**. Nothing is stalling. Fish grow well and then disappear.
+    >
+    > **So the 15–20 cm ceiling is a SURVIVAL EDGE, not a growth ceiling** — case (2) of that
+    > script's pre-registered reading, ATTRITION rather than STALL, returned identically on both
+    > arms.
+    >
+    > **The error is the same class, for the third time in this investigation: inferring a
+    > mechanism from a distribution without measuring the mechanism.** The size distribution showed
+    > a ceiling; I attributed it to growth; growth was fine. Exactly as the 11–48 % egg ratios were
+    > real while the recruitment story built on them was wrong. A distribution tells you *where*
+    > things stop, never *why*.
+
+    **What survives from that paragraph.** The distinction it drew is still worth keeping, because
+    it now applies to the *observation* rather than to a cause: the 15–20 cm vs 110 cm gap is real,
+    is a factor of ~7 in length, and is not the already-refuted offline-fit growth account — that
+    one was about the fit's curve and died when fixing the curve changed nothing. But the gap is
+    produced by mortality, not by slow growth.
+
+    **What now reconciles the earlier results.** SSB is exactly 0 because nothing survives to
+    38 cm — not because nothing grows to 38 cm. Recruitment was ill-posed because there were never
+    any spawners. Fixing the offline fit changed nothing because the fit was never what was broken,
+    and this run confirms why from the other side: realized intake is already at 90–100 % of cap, so
+    the fit's curve was never the limiting input.
+
+    **The open question is now sharp and small: what kills cod_west between 10 and 20 cm?** It is
+    not predation (removed entirely in `accALL`, ceiling unmoved), not starvation (`e_net` is
+    positive and `m_share` is 0.13–0.20), not the offline fit, and not fishing —
+    `fisheries.rate.base.fsh0` is **0.039 yr⁻¹**, negligible, though note
+    `fisheries.selectivity.type.fsh0 = 0` is **knife-edge by AGE at 2.0 yr**, so slow growth buys no
+    protection from whatever fishing there is. Larval additional mortality is enormous
+    (`mortality.additional.larva.rate.sp0` = 243.76 yr⁻¹) but `larva_mortality`
+    (`natural.py:103`) applies it **only to `is_egg` schools, once per cohort**, so it cannot reach
+    a 15 cm fish. That leaves `mortality.additional.rate.sp0` = 1.2546 yr⁻¹ ≈ 5.2 % per step, which
+    is far too small to explain the observed drop between size classes. **Something not yet
+    enumerated is removing them, and the next measurement is deaths BY CAUSE for cod_west resolved
+    by size class — not rates, which are summed per-step and cannot be exponentiated (CLAUDE.md).**
+
+    **Verdict discipline.** The pre-registered rule returns `INCONCLUSIVE (window/growth-limited)`
+    for the predation question, and that is recorded as-is — the test could not reach the question
+    it asked, because the cohort never survives to maturity under any predation regime. What *is*
+    established positively is narrower and stronger than a null: predation does not prevent cod_west
+    from maturing, because removing it entirely leaves the ceiling unchanged. (The branch label
+    "window/growth-limited" is itself now known to be a misnomer — see the correction above: the
+    ceiling is a survival edge, not a growth limit. The branch fired on the right *evidence*, max
+    length below 0.9 × m0, and drew the wrong *inference* from it.)
+
+    **A flaw in this pre-registration that did not bite, recorded anyway.** The rule `real SSB > 0`
+    → PREDATION CONFIRMED carries **no magnitude floor**, so it would have fired on a biologically
+    dead remnant — 0.001 t of spawners would have read as a confirmation. It happened to return
+    exactly 0.0, so nothing turned on it, but the next version of this rule needs a floor expressed
+    as a fraction of the bioen-off control's SSB.
+
+    **Engagement checks all passed**, and they were worth the trouble — four separate instrument
+    defects were caught and fixed before any verdict was read (`71ab3fd`, `4ab46a7`, `a91b7db`),
+    each of which would have produced a confident wrong answer:
+    - E1 the loaded matrix differs per arm, read back from a *constructed* `EngineConfig` rather
+      than from the CSV written — `accALL` resolves to a single all-ages stage with every entry 0.
+    - E2 the bioen-off control sustains all nine species.
+    - E3 juvenile survivorship differs between arms (11.77 → 36.09), so the knob demonstrably bit.
+      E3 was silently NaN on the first two runs because `abundanceByAge` is not produced in-memory
+      and `biomass_by_age` returns LONG format, not wide.
+    - E4 the size-ceiling check, added *because* an adversarial read flagged that an age-based
+      accessibility split need not coincide with a length-based maturity threshold. Without it this
+      run would have read as "predation refuted" instead of "the fish never grew".
+
+    **Next, and this one is now well-posed:** find why realized growth stalls at 15–20 cm. Measure
+    `e_gross`, `e_maint` and `e_net` for cod_west *by size class* over the run, against the offline
+    fit's expectation at the same weights. The specific suspicion worth testing first is that
+    maintenance overtakes intake at small size — `e_net → 0` — which would be a hard ceiling of
+    exactly this shape rather than a slow-growth effect.
+
+  - **The boost's fitted VALUES were checked against the literature** —
+    `docs/validation/juvenile_ingestion_boost_literature_2026-09-13.md` (reproducer:
+    `scripts/c3_juvenile_boost_literature_check.py`). A separate question from whether the boost
+    cures the collapse, which the intervention above settled in the negative. Findings: the
+    **direction is verified** — Morell et al. (2024, *Ecol. Lett.* 27(11),
+    [10.1111/ele.70017](https://doi.org/10.1111/ele.70017)) documents higher mass-specific
+    ingestion in early life stages as a deliberate Bioen-OSMOSE assumption with a stated rationale
+    — but the **1.44–4.64× magnitude is unverified**: no retrievable source gives a larva:adult
+    ingestion ratio for any of the nine species, and both Bioen-OSMOSE papers are abstract-only
+    through scite, so the published `theta`/`c_rate`/`larvaeThresDt` values could not be read.
+    The model's `beta = 0.8` against Kiørboe & Hirst's measured `w^0.75` is **not** what generates
+    the fitted values — that predictor has ~1.2× of dynamic range against a 3.24× spread in `j`.
+    Two independent anchors do bracket the median (2.21× Wuenschel & Werner 2004; 2.5× Kaufmann
+    1990), so **if the boost is ever enabled, a single shared `j` ≈ 2.2–2.5 is defensible where
+    nine free per-species values are not.** Nothing shipped is affected — `c3_bioen_arm.json`
+    still carries `theta = 1.0`, `c_rate = 0.0`.
 - **Length-at-age `NaN` for 8/9 species (§5) — root-caused and fixed in code, not re-run.**
   Cause: `pd.concat` over per-species by-age frames of different widths (`osmose/results.py:351`,
   widths from `osmose/engine/output.py:_build_distribution_dataframes`) NaN-pads every species

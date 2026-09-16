@@ -18,6 +18,7 @@ runner import cycle.)
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -25,9 +26,30 @@ import xarray as xr
 
 # Authored accessibility (prey -> value) for each background PREDATOR, from baltic_param-background.csv
 # diet intent + size-ratio windows (validated in sub-project A).
+# `cod` is the PRE-SPLIT prey row, still used by `data/baltic_ev` and `data/baltic-fine`.
+# Production `data/baltic` split it into `cod_west`/`cod_east` (see the cod E/W disaggregation), and
+# because `augment_accessibility` looks prey up by row name with a `0.0` default, the stale `cod`
+# key silently zeroed seal AND cormorant access to BOTH cod stocks on every Java arm. All three
+# names are carried so the table serves split and unsplit configs alike; `_warn_unmatched_prey`
+# makes any future rename loud instead of silent.
 BG_ACCESS: dict[str, dict[str, float]] = {
-    "GreySeal": {"herring": 0.4, "sprat": 0.4, "cod": 0.3, "flounder": 0.2, "pikeperch": 0.1},
-    "Cormorant": {"perch": 0.4, "herring": 0.3, "sprat": 0.3, "cod": 0.1},
+    "GreySeal": {
+        "herring": 0.4,
+        "sprat": 0.4,
+        "cod": 0.3,
+        "cod_west": 0.3,
+        "cod_east": 0.3,
+        "flounder": 0.2,
+        "pikeperch": 0.1,
+    },
+    "Cormorant": {
+        "perch": 0.4,
+        "herring": 0.3,
+        "sprat": 0.3,
+        "cod": 0.1,
+        "cod_west": 0.1,
+        "cod_east": 0.1,
+    },
 }
 
 # Per-predator diet-stage size threshold (cm): juvenile (<thr) / adult (>=thr). 4.4.1 requires
@@ -43,21 +65,58 @@ def inline_biomass_series(nc_path: str | Path, varname: str) -> list[float]:
     return [float(v) for v in np.nan_to_num(a.sum(dim=spatial).values)]
 
 
+def _warn_unmatched_prey(predators: dict[str, dict[str, float]], prey_rows: set[str]) -> None:
+    """Loudly flag authored prey keys that match no row — the silent-`0.0` trap.
+
+    `augment_accessibility` defaults an unmatched prey key to 0.0, so a renamed row (as happened
+    when `cod` became `cod_west`/`cod_east`) silently removes that predator's access instead of
+    failing. A predator whose keys ALL miss is a hard error; partial misses warn, because carrying
+    both split and unsplit names means some keys are legitimately unused per config.
+    """
+    for name, access in predators.items():
+        matched = {k for k in access if k in prey_rows}
+        if access and not matched:
+            raise ValueError(
+                f"background predator {name!r}: none of its authored prey keys "
+                f"{sorted(access)} match any prey row in the accessibility matrix "
+                f"{sorted(prey_rows)}. Staging would silently give it 0.0 access to everything."
+            )
+        unmatched = sorted(set(access) - matched)
+        if unmatched:
+            warnings.warn(
+                f"background predator {name!r}: authored prey keys {unmatched} match no prey row "
+                f"and contribute nothing. Expected when a config predates the cod E/W split; "
+                f"a surprise otherwise.",
+                stacklevel=3,
+            )
+
+
 def augment_accessibility(csv_path: Path, predators: dict[str, dict[str, float]]) -> None:
-    """Add background predators as columns (authored prey access) + apex prey rows (0), in place."""
+    """Add background predators as columns (authored prey access) + apex prey rows (0), in place.
+
+    Idempotent per name: a predator that already has a column is not given a second one, and a
+    predator that already has a prey row is not given a second row. `header += names` unconditionally
+    used to emit a duplicate `Cormorant` column on `data/baltic`, where Cormorant is already a
+    column — leaving Java to pick between two columns for the same predator.
+    """
     lines = [ln for ln in csv_path.read_text().splitlines() if ln.strip()]
     header = lines[0].split(";")
-    names = list(predators)
-    header += names
+    existing_cols = {h.strip() for h in header}
+    prey_rows = {ln.split(";")[0].strip() for ln in lines[1:]}
+    _warn_unmatched_prey(predators, prey_rows)
+
+    names = [p for p in predators if p not in existing_cols]  # only genuinely new columns
+    header = header + names
     rows = [header]
     for ln in lines[1:]:
         cells = ln.split(";")
-        prey = cells[0]
+        prey = cells[0].strip()
         cells += [str(predators[p].get(prey, 0.0)) for p in names]
         rows.append(cells)
     ncol = len(header)
-    for p in names:  # apex prey rows: 0 accessibility to every predator
-        rows.append([p] + ["0"] * (ncol - 1))
+    for p in predators:  # apex prey rows: 0 accessibility to every predator
+        if p not in prey_rows:
+            rows.append([p] + ["0"] * (ncol - 1))
     csv_path.write_text("\n".join(";".join(c) for c in rows) + "\n")
 
 
