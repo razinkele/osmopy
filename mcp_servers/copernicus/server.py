@@ -150,7 +150,9 @@ def _baltic_grid():
 
 
 # Default output directory
-DEFAULT_OUTPUT_DIR = str(Path.home() / "osmose" / "osmose-python" / "data" / "cmems_cache" / "cmems_downloads")
+DEFAULT_OUTPUT_DIR = str(
+    Path(__file__).resolve().parents[2] / "data" / "cmems_cache" / "cmems_downloads"
+)
 
 # ---------------------------------------------------------------------------
 # Server
