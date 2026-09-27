@@ -4,5 +4,7 @@
     "exclude": ["tests"],
     "pythonVersion": "3.12",
     "reportMissingImports": true,
-    "reportMissingTypeStubs": false
+    "reportMissingTypeStubs": false,
+    "venvPath": ".",
+    "venv": ".venv"
 }
