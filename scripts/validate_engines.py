@@ -64,9 +64,51 @@ def run_java(jar_path: Path, output_dir: Path, n_years: int) -> float:
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     elapsed = time.time() - start
     if result.returncode != 0:
-        print(f"  Java FAILED: {result.stderr[-500:]}")
+        print(_java_failure_report(result))
         sys.exit(1)
     return elapsed
+
+
+# Lines that carry no diagnostic value but crowd out the ones that do. The JVM
+# prints JAVA_TOOL_OPTIONS to stderr on every start, and it is long enough on a
+# proxied container to fill a 500-char tail by itself.
+_NOISE_PREFIXES = ("Picked up JAVA_TOOL_OPTIONS", "SLF4J:")
+
+
+def _java_failure_report(result: subprocess.CompletedProcess[str], tail: int = 25) -> str:
+    """Explain a failed Java run, reading BOTH streams.
+
+    This used to be ``result.stderr[-500:]``, which reliably hid the actual cause:
+    OSMOSE logs its own fatal errors (``osmose[severe] ...`` plus the stack trace)
+    to **stdout**, so the stderr tail showed only the JVM's JAVA_TOOL_OPTIONS echo
+    and SLF4J's binder warning while the real message — e.g. "NETCDF_BIOMASS
+    resource forcing is used but parameters are missing" — was never printed.
+    Measured 2026-09-27 against a 4.4.1 jar.
+    """
+    lines: list[str] = []
+    for stream, text in (("stdout", result.stdout), ("stderr", result.stderr)):
+        kept = [
+            ln
+            for ln in (text or "").splitlines()
+            if ln.strip() and not ln.startswith(_NOISE_PREFIXES)
+        ]
+        if kept:
+            lines.append(f"  --- {stream} (last {min(tail, len(kept))} of {len(kept)} lines) ---")
+            lines.extend(f"  {ln}" for ln in kept[-tail:])
+
+    # Surface the engine's own fatal lines first: they may sit above the tail when a
+    # long stack trace follows, and they are the sentence worth reading.
+    severe = [
+        ln
+        for text in (result.stdout, result.stderr)
+        for ln in (text or "").splitlines()
+        if "osmose[severe]" in ln
+    ]
+    header = [f"  Java FAILED (exit {result.returncode})."]
+    if severe:
+        header.append("  Engine reported:")
+        header.extend(f"    {ln.strip()}" for ln in severe[:5])
+    return "\n".join(header + lines)
 
 
 def run_python(output_dir: Path, n_years: int, seed: int) -> float:
