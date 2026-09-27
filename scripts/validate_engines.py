@@ -183,6 +183,19 @@ def compare_mortality(java_dir: Path, python_dir: Path, species: list[str]) -> N
 
 
 def main() -> None:
+    """Run both engines on the bundled config and print a per-species comparison.
+
+    Prerequisites are checked before anything runs, and the resolved jar path is
+    printed, because ``resolve_jar`` globs ``osmose-java/`` and may pick a different
+    version than the caller assumed.
+
+    NOTE: this script cannot currently run against a Java 4.4.x jar. It hands Java the
+    bundled ``data/examples`` config unmodified, and for NETCDF_BIOMASS forcing 4.4.x
+    reads ``species.biomass.file.spN`` while that config supplies the 4.3.x
+    ``species.file.spN`` — so the run dies in ``ResourceForcing.init()`` before the
+    first timestep. ``scripts/cross_engine_parity_440.py`` stages the keys and is the
+    working cross-engine comparison; see docs/java_cross_check_2026-09-27.md.
+    """
     parser = argparse.ArgumentParser(description="Validate Python vs Java OSMOSE engine")
     parser.add_argument("--years", type=int, default=5, help="Simulation years (default: 5)")
     parser.add_argument("--seed", type=int, default=42, help="Python RNG seed (default: 42)")

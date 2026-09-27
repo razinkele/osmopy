@@ -37,6 +37,11 @@ def _no_ambient_jar(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _touch_jar(directory: Path, name: str) -> Path:
+    """Create an empty file with a ``.jar`` name and return its path.
+
+    Empty is faithful: ``resolve_jar`` does path resolution only and never opens the
+    archive, so a zero-byte file exercises it exactly as a real 24 MB jar would.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     jar = directory / name
     jar.touch()
@@ -69,6 +74,11 @@ def test_env_wins_over_glob(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_glob_used_when_nothing_else_given(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The last resort in the chain: glob ``JAR_DIR`` when no --jar and no env var.
+
+    This is the path a developer who simply drops a jar into ``osmose-java/`` takes,
+    and the only one that works with no arguments and no environment setup.
+    """
     jar = _touch_jar(tmp_path / "dir", "osmose-4.4.1-jar-with-dependencies.jar")
     monkeypatch.setattr(ve, "JAR_DIR", tmp_path / "dir")
 

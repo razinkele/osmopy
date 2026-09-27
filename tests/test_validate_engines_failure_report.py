@@ -42,6 +42,11 @@ _REAL_STDOUT = (
 
 
 def _result(stdout: str = "", stderr: str = "", returncode: int = 1):
+    """Build a ``CompletedProcess`` standing in for a finished ``java -jar`` run.
+
+    Defaults to ``returncode=1`` because the function under test is only ever called
+    on a failure, so that is the state worth having to opt out of rather than into.
+    """
     return subprocess.CompletedProcess(
         args=["java", "-jar", "osmose.jar"], returncode=returncode, stdout=stdout, stderr=stderr
     )
@@ -70,6 +75,12 @@ def test_old_stderr_tail_would_have_missed_it() -> None:
 
 
 def test_filters_jvm_and_slf4j_noise() -> None:
+    """Both noise sources are dropped, since they are what hid the cause before.
+
+    These two are not merely verbose — the JVM line is long enough to fill a tail on
+    its own, and SLF4J's three lines are what the old implementation actually printed
+    in place of a diagnosis.
+    """
     report = _java_failure_report(_result(stdout=_REAL_STDOUT, stderr=_JVM_NOISE))
 
     assert "Picked up JAVA_TOOL_OPTIONS" not in report
@@ -87,6 +98,12 @@ def test_reads_stderr_too_when_that_is_where_the_error_is() -> None:
 
 
 def test_includes_exit_code() -> None:
+    """The exit code is reported, and it carries information the log may not.
+
+    137 is the case that motivates this: SIGKILL, typically the OOM killer against
+    ``-Xmx2g``, which produces no ``osmose[severe]`` line at all. Without the code
+    in the report, that is indistinguishable from a configuration error.
+    """
     assert "exit 137" in _java_failure_report(_result(stdout="boom", returncode=137))
 
 
@@ -116,6 +133,12 @@ def test_tail_is_bounded() -> None:
 
 
 def test_multiple_severe_lines_are_capped() -> None:
+    """The promoted header stays short, and keeps the FIRST failures.
+
+    A cascade can emit one severe line per species; promoting all of them would push
+    the stream tails off the terminal. First-n rather than last-n because the earliest
+    failure is usually the cause and the rest are consequences.
+    """
     many_severe = "\n".join(f"osmose[severe] failure {i}" for i in range(20))
     report = _java_failure_report(_result(stdout=many_severe))
 

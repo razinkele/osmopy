@@ -97,7 +97,7 @@ conclude anything. Separating those two cases is the whole interpretation:
 | biomass | lesserSpottedDogfish | +0.45 | 2.82× | 0.57 | 0.48 | real, marginal |
 | biomass | mackerel | +0.36 | 2.29× | 0.53 | 0.48 | real, marginal |
 | yield | mackerel | +0.34 | 2.19× | 0.51 | 0.48 | real, marginal |
-| mean_weight | whiting | −0.15 | 0.71× | 0.17 | 0.176 | real, borderline (Python *lower*) |
+| mean_weight | whiting | −0.15 | 0.71× | 0.17 | 0.176 | effect *inside* Δ; bound not (see below) |
 | biomass | sardine | +0.27 | 1.86× | 0.64 | 0.48 | underpowered (ci ±0.37 > d) |
 | yield | sardine | +0.25 | 1.78× | 0.62 | 0.48 | underpowered (ci ±0.37 > d) |
 | abundance | sardine | +0.19 | 1.55× | 0.57 | 0.48 | underpowered (ci ±0.38 > d) |
@@ -109,8 +109,15 @@ So the 11 reduce to:
   yield 3.3×, mean_weight 2.0×) and `mackerel` (biomass 2.3×, yield 2.2×,
   abundance 3.0×), Python higher in every case. These are the ones worth
   investigating.
-- **`whiting` mean_weight** is a small, tight, real effect in the *opposite*
-  direction (Python 0.71× of Java) that just crosses the tighter 1.5× margin.
+- **`whiting` mean_weight** fails equivalence without its *effect* being over the
+  margin. The point estimate, 0.71× (a 1.41× reduction, Python *lower* — the only
+  one of the eleven in that direction), sits **inside** the 1.5× margin; what lands
+  past Δ is the equivalence *bound* |d|+ci90. Its ci90 of ±0.02 is the tightest of
+  the eleven, so unlike the four below this is a well-measured small effect rather
+  than an unresolved one. Note the printed 2dp values (0.15 + 0.02 = 0.17) appear
+  inside Δ = 0.176: the `eq=n` verdict comes from the harness's unrounded
+  arithmetic, and the table as printed cannot be used to re-derive it. Do not read
+  this row as "Python's whiting are 1.5× off".
 - **Four are verdicts about statistical power, not about the engines.**
   `sardine` (all three) and `horseMackerel` mean_weight have confidence intervals
   wider than their effects — `sardine`'s ±0.37–0.38 and `horseMackerel`'s ±0.16–0.31
@@ -157,8 +164,8 @@ The jar is gitignored (`.gitignore:70`) and the clone is outside the repo, so
 neither is committed. To redo this from scratch:
 
 ```
-GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/osmose-model/osmose /tmp/osmose-src
-git -C /tmp/osmose-src fetch --depth=1000 origin HEAD
+GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/osmose-model/osmose /tmp/osmose-src
+git -C /tmp/osmose-src checkout --detach 008f74b
 git -C /tmp/osmose-src checkout 65e3a0ce -- java/local/ml/options/options/1.0.0/options-1.0.0.jar
 rm -rf ~/.m2/repository/ml/options/options/1.0.0
 mvn -B -DskipTests -f /tmp/osmose-src/pom.xml package
@@ -167,6 +174,19 @@ PYTHONPATH=. .venv/bin/python scripts/cross_engine_parity_440.py \
   --engines python,4.4.1 --n 16 --years 10 --spinup-years 2
 ```
 
-Note the third line is load-bearing and the fourth is too: without the history
-checkout the build dies on the LFS pointer, and without clearing `~/.m2` it keeps
-dying after the pointer is replaced.
+Every line above the build is load-bearing, and three of them are easy to get wrong:
+
+- **Line 2 pins the source.** The original run cloned the default branch, where
+  `008f74b` merely happened to be HEAD on 2026-09-27. Omit this and a later reader
+  builds whatever the branch has advanced to, against provenance that claims
+  `008f74b` — silently comparing the Python engine to a different Java engine than
+  the one these numbers came from.
+- **The clone is deliberately not `--depth 1`.** Both pinned commits must be
+  reachable, and a shallow clone of a moving branch may contain neither.
+- **Line 3 restores one FILE, not a tree**, and must come after line 2. It is
+  `checkout <commit> -- <path>`, which leaves HEAD at `008f74b` (verified: HEAD
+  reads `008f74ba` afterwards). Dropping it does not "avoid building a different
+  revision" — it makes the build fail outright on the LFS pointer.
+- **Line 4 is not optional.** Maven caches the corrupt pointer under `~/.m2` on the
+  first failed attempt, so the build keeps failing with the same `ZipException`
+  after the working tree is already correct.
