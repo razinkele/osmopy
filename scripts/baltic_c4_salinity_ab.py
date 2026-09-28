@@ -357,7 +357,17 @@ def run_c4(seeds=SEEDS) -> dict:
     # --- gate 4: three-way load-through, per arm ---
     load_through: dict[str, bool] = {}
     for name, arm_def in arm_defs.items():
-        _enabled, _mask, _s_low, _s_high, field = _load_salinity_gate(all_arm_cfgs[name], n_sp)
+        _enabled, _mask, s_low, s_high, field = _load_salinity_gate(all_arm_cfgs[name], n_sp)
+        # The builder's ramp_w (and every w-based metric it reports) uses its own S_LOW/S_HIGH
+        # constants; the engine uses the config's movement.salinity.gate.s.* values. Gate 5
+        # would survive a mismatch (the ramp is monotone either way) while the reported
+        # TV/exclusion numbers silently described a different ramp -- so refuse to run.
+        if (s_low, s_high) != (_c4.S_LOW, _c4.S_HIGH):
+            raise AssertionError(
+                f"C4 harness BLOCKED (gate 4, arm={name}): config ramp bounds "
+                f"({s_low}, {s_high}) != builder S_LOW/S_HIGH ({_c4.S_LOW}, {_c4.S_HIGH}). "
+                "Update scripts/build_baltic_c4_forcing.py to match the production config."
+            )
         if field is None or field._data is None:
             raise AssertionError(
                 f"C4 harness BLOCKED (gate 4, arm={name}): _load_salinity_gate returned no "

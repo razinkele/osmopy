@@ -247,6 +247,18 @@ def test_write_arm_dir_prey_overlap_computed_per_named_stage(tmp_path, monkeypat
 # ---------------------------------------------------------------------------
 
 
+def test_ramp_bounds_match_production_config():
+    """S_LOW/S_HIGH are a second copy of movement.salinity.gate.s.low/.s.high. The harness
+    also refuses to run on a mismatch (scripts/baltic_c4_salinity_ab.py, gate 4); this pins
+    it without an engine run, so a production retune fails here first."""
+    from osmose.config import OsmoseConfigReader
+
+    root = Path(__file__).resolve().parent.parent
+    cfg = OsmoseConfigReader().read(str(root / "data" / "baltic" / "baltic_all-parameters.csv"))
+    assert float(cfg["movement.salinity.gate.s.low"]) == m.S_LOW
+    assert float(cfg["movement.salinity.gate.s.high"]) == m.S_HIGH
+
+
 def test_orientation_pin_real_cod_map_vs_grid_mask():
     grid_mask = m.load_grid_mask(m.DEFAULT_GRID_PATH)
     ny, nx = grid_mask.shape
