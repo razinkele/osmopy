@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.5.0] - 2026-09-28
+
+### Bug Fixes
+
+- **c4:** assert the builder's salinity ramp bounds match the production config (c6ca9d7)
+- **runner:** block Java runs of configs using the thermal or salinity gate (38985c8)
+- **ui:** light mode painted table cells with the dark Bootstrap body background (#160) (d61eb6c)
+
+### Chores
+
+- **mcp:** verify the fastmcp>=2,<5 bound end to end and keep the probe (b0d8846)
+
+### Documentation
+
+- mark the feedback-v2 deploy doc superseded by the v1.4.0 release (5bf7148)
+
+### Other
+
+- Merge pull request #173 from razinkele/chore/c4-ramp-bound-seam (66a87ba)
+- Merge pull request #172 from razinkele/chore/java-block-thermal-salinity (d68d9d5)
+- Merge pull request #171 from razinkele/chore/verify-fastmcp-bound (45ec8ac)
+- Merge pull request #170 from razinkele/fix/light-table-bg-160 (11f4952)
+- Merge pull request #168 from razinkele/docs/prod-v140-deploy-pointer (b4fb04a)
+
+### Tests
+
+- **visual:** re-bless advanced + setup baselines after the light-mode table fix (#160) (b8ca80c)
+
 ## [1.4.0] - 2026-09-16
 
 ### Features
