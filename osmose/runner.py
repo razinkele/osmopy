@@ -48,6 +48,22 @@ def java_engine_block_reason(config, jar_version: str | None = None) -> str | No
             "The Southern Benguela demo is a Python-engine example (merged resource forcing and "
             "converted movement maps have no Java-side equivalent). Run it on the Python engine."
         )
+    # Ordered AFTER the entries above on purpose: the function returns the first match, and the
+    # demo tests assert the reason names THEIR feature (depensation / depletable) on configs
+    # that also carry the production salinity gate.
+    if str(config.get("reproduction.thermal.gate.enabled", "")).strip().lower() == "true":
+        return (
+            "This configuration uses the percid recruitment thermal gate "
+            "(reproduction.thermal.gate.enabled), a Python-engine feature the Java engine "
+            "would silently ignore. Run it on the Python engine."
+        )
+    if str(config.get("movement.salinity.gate.enabled", "")).strip().lower() == "true":
+        return (
+            "This configuration uses the salinity movement gate "
+            "(movement.salinity.gate.enabled), a Python-engine feature the Java engine "
+            "would silently ignore (Java reads no movement.salinity.* key). "
+            "Run it on the Python engine."
+        )
     try:
         n_bg = int(float(str(config.get("simulation.nbackground", 0) or 0)))
     except (TypeError, ValueError):

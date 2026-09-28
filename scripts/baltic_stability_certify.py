@@ -112,9 +112,16 @@ CERT_SEEDS = (42, 123, 7, 999, 2024)
 # ltl.oxygen.benthos.enabled (spec Phase 2a, adopted 2026-08-09): the O2->benthos
 # carrying-capacity coupling is Python-only. Java DOES read the oxygen.* forcing keys
 # (bioenergetics f_o2), so those are NOT pinned here — only the coupling flag is.
+# reproduction.thermal.gate.enabled (C1, 2026-08-25) and movement.salinity.gate.enabled
+# (C4, 2026-08-30): Java reads neither key family, so pinning them changes NO Java output —
+# it keeps the arm past runner.java_engine_block_reason (which now blocks both, so a direct
+# Java run fails loudly instead of silently dropping the gate) and makes the printed
+# "pinned off" label honest. The production Baltic config ships the salinity gate ON.
 JAVA_INCOMPATIBLE_PINS = {
     "ltl.depletable.enabled": "false",
     "ltl.oxygen.benthos.enabled": "false",
+    "reproduction.thermal.gate.enabled": "false",
+    "movement.salinity.gate.enabled": "false",
 }
 
 

@@ -49,6 +49,38 @@ def test_java_engine_block_reason_blocks_oxygen_benthos_coupling():
     assert java_engine_block_reason({}) is None
 
 
+def test_java_engine_block_reason_blocks_thermal_gate():
+    """C1 percid recruitment thermal gate: Java has no thermal gate and would silently ignore
+    the keys (docs/baltic_c1_knob_ab_2026-08-25.md, "Deferred item"). Only THIS flag is set, so
+    the reason must be this entry's, not an earlier clause's."""
+    reason = java_engine_block_reason({"reproduction.thermal.gate.enabled": "true"})
+    assert reason is not None
+    assert "thermal" in reason.lower() and "java" in reason.lower()
+    assert java_engine_block_reason({"reproduction.thermal.gate.enabled": "false"}) is None
+
+
+def test_java_engine_block_reason_blocks_salinity_gate():
+    """C4 salinity movement gate: Java reads no movement.salinity.* key (C4 spec §labels). The
+    production Baltic config ships this ON, so the certify script's JAVA_INCOMPATIBLE_PINS must
+    carry it too — tests/test_certify_java_pinning.py enforces that side."""
+    reason = java_engine_block_reason({"movement.salinity.gate.enabled": "true"})
+    assert reason is not None
+    assert "salinity" in reason.lower() and "java" in reason.lower()
+    assert java_engine_block_reason({"movement.salinity.gate.enabled": "false"}) is None
+
+
+def test_java_engine_block_reason_gate_entries_do_not_shadow_demo_reasons():
+    """Order is load-bearing: the first match wins, and the depensation / A2 demo tests assert
+    the reason names THEIR feature on configs that also carry the salinity gate."""
+    both = {
+        "reproduction.depensation.gate.enabled": "true",
+        "movement.salinity.gate.enabled": "true",
+    }
+    assert "depensation" in java_engine_block_reason(both).lower()
+    both = {"ltl.depletable.enabled": "true", "movement.salinity.gate.enabled": "true"}
+    assert "depletable" in java_engine_block_reason(both).lower()
+
+
 # ---------------------------------------------------------------------------
 # Test helper: a runner subclass that calls Python scripts directly.
 # In production the command is ``java [opts] -jar <jar> <config> [flags]``.
