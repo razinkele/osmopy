@@ -55,10 +55,12 @@ forcing = ["rasterio>=1.3"]
 # copernicusmarine: the <3 ceiling is the point of this entry, not decoration -- the
 #   v1->v2 rename is the break it exists to catch. VERIFIED against 2.4.1, the version
 #   `tests/test_copernicus_mcp_api_signatures.py` checks the server's kwargs against.
-# fastmcp: UNVERIFIED ceiling. fastmcp is not installed in this dev env (the MCP env
-#   tests skip on its absence), so the working major is untested from here; latest on
-#   PyPI is 4.x. `<5` is a TRIPWIRE so the next major is a deliberate upgrade, not a
-#   silent one -- narrow it once someone confirms which majors the server runs on.
+# fastmcp: VERIFIED range (2026-09-28). The server was driven over stdio JSON-RPC
+#   (initialize, tools/list, tools/call list_datasets) under fastmcp 2.0.0, 2.14.7,
+#   3.4.7 and 4.0.10 -- both ends of `>=2,<5` -- with identical results; see
+#   `scripts/probe_copernicus_mcp_stdio.py`, which is how to re-verify before lifting
+#   `<5` when fastmcp 5 lands. fastmcp is still not in this dev env (the MCP env tests
+#   skip on its absence), so the probe runs against a throwaway venv, not `.venv`.
 # python-dotenv: already required by [dev] for scripts/make_baltic_oxygen_forcing.py;
 #   repeated here because server.py imports it at module scope and [mcp] must stand alone.
 mcp = [
