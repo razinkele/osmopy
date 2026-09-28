@@ -176,6 +176,13 @@ list must not touch or stage user-dirty files. Follow-up: add the block-reason
 entry once `osmose/runner.py` is committed by its owner or the dirty state is
 otherwise resolved.
 
+**Resolved 2026-09-28.** The owner's `runner.py` changes landed as PR #158, and the
+block-reason entries for `reproduction.thermal.gate.enabled` and (C4's)
+`movement.salinity.gate.enabled` were added together, with matching entries in
+`scripts/baltic_stability_certify.py:JAVA_INCOMPATIBLE_PINS` so the Java
+cross-check arm stays runnable on the production config (which ships the salinity
+gate on). A test now asserts the two stores cover the same flags.
+
 ## B2 interface
 
 The series-file format is the entire future scenario hookup: swapping

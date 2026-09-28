@@ -12,6 +12,9 @@ def _baltic():
     # concern, so pin the coupling off here — same pattern the certification script's
     # JAVA_INCOMPATIBLE_PINS uses to keep a Java arm runnable despite other Python-only features.
     cfg["ltl.oxygen.benthos.enabled"] = "false"
+    # Same for the C4 salinity movement gate, which production also ships ON and which the
+    # runner now blocks for Java (Java silently ignores movement.salinity.*).
+    cfg["movement.salinity.gate.enabled"] = "false"
     return cfg
 
 
