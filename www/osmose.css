@@ -1026,6 +1026,13 @@ hr {
 /* ── Light: Tables ───────────────────────────────────────────────── */
 [data-theme="light"] .table {
   color: var(--osm-text-primary) !important;
+  /* Bootstrap 5.3 paints EVERY cell with `background-color: var(--bs-table-bg)`
+     (= --bs-body-bg, the superhero DARK #0f2537 -- the light theme overrides no
+     --bs-* variable) and draws striping as an inset box-shadow, not a background.
+     So the `td { background: ... !important }` rules below reach only the rows they
+     name; every other cell stays dark under light text (#160, 1.08:1 measured).
+     Clearing the variable here lets all cells sit on the light card surface. */
+  --bs-table-bg: transparent;
 }
 
 [data-theme="light"] .table thead th {
