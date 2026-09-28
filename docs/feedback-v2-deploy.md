@@ -2,11 +2,11 @@
 
 > **STATUS: EXECUTED 2026-09-15 ~22:45. This deploy is DONE.**
 >
-> **SUPERSEDED 2026-09-17 ~00:10 — prod has since moved on to the `v1.4.0` release.** Prod now runs
-> `ce5d033e` (tag `v1.4.0`, `__version__ = 1.4.0`), deployed with
-> `sudo OSMOSE_DEPLOY_REF=v1.4.0 bash deploy.sh` — pinned to the tag rather than `origin/master`.
-> Verified independently after the fact: prod clone HEAD = `ce5d033e`, `git describe --tags` =
-> `v1.4.0` exactly (no offset), service `active`, `:8838/` → 200, `:8838/feedback/review` → **403**
+> **SUPERSEDED — prod has moved on to later tagged releases** (`v1.4.0` on 2026-09-17, `v1.5.0` on
+> 2026-09-28, each deployed with `sudo OSMOSE_DEPLOY_REF=<tag> bash deploy.sh`). This header
+> deliberately names no "current" SHA, because one goes stale at the next release. Read the live
+> state from the prod clone instead: `git -C /srv/shiny-server/osmose-src describe --tags` (must be
+> the tag exactly, no offset), plus `:8838/` → 200 and `:8838/feedback/review` → **403**
 > (token gate still live across the upgrade). **Everything below still describes how the feedback-v2
 > state was established and remains the reference for the systemd/env/pyvis carry-overs, which a
 > fresh `checkout --detach` does not touch — but the SHAs in it are historical.**
