@@ -13,12 +13,14 @@ import argparse
 
 import pandas as pd
 
-_PREY = "cod"
+# The bistability harness's subject stock. Was the aggregate "cod" row before the cod E/W split;
+# that label no longer exists in the matrix, so every --chunk-c-strength run raised KeyError (#130).
+_PREY = "cod_east"
 _PREDATORS = ("herring", "sprat")
 
 
 def write_chunkc_matrix(deployed_csv: str, strength: float, out_path: str) -> str:
-    """cod->herring and cod->sprat set to `strength`; all other cells identical to deployed."""
+    """cod_east->herring and cod_east->sprat set to `strength`; all other cells identical to deployed."""
     df = pd.read_csv(deployed_csv, sep=";", index_col=0)
     if _PREY not in df.index:
         raise KeyError(f"prey row {_PREY!r} not in accessibility matrix {deployed_csv}")
