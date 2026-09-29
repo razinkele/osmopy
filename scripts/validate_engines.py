@@ -64,9 +64,51 @@ def run_java(jar_path: Path, output_dir: Path, n_years: int) -> float:
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     elapsed = time.time() - start
     if result.returncode != 0:
-        print(f"  Java FAILED: {result.stderr[-500:]}")
+        print(_java_failure_report(result))
         sys.exit(1)
     return elapsed
+
+
+# Lines that carry no diagnostic value but crowd out the ones that do. The JVM
+# prints JAVA_TOOL_OPTIONS to stderr on every start, and it is long enough on a
+# proxied container to fill a 500-char tail by itself.
+_NOISE_PREFIXES = ("Picked up JAVA_TOOL_OPTIONS", "SLF4J:")
+
+
+def _java_failure_report(result: subprocess.CompletedProcess[str], tail: int = 25) -> str:
+    """Explain a failed Java run, reading BOTH streams.
+
+    This used to be ``result.stderr[-500:]``, which reliably hid the actual cause:
+    OSMOSE logs its own fatal errors (``osmose[severe] ...`` plus the stack trace)
+    to **stdout**, so the stderr tail showed only the JVM's JAVA_TOOL_OPTIONS echo
+    and SLF4J's binder warning while the real message — e.g. "NETCDF_BIOMASS
+    resource forcing is used but parameters are missing" — was never printed.
+    Measured 2026-09-27 against a 4.4.1 jar.
+    """
+    lines: list[str] = []
+    for stream, text in (("stdout", result.stdout), ("stderr", result.stderr)):
+        kept = [
+            ln
+            for ln in (text or "").splitlines()
+            if ln.strip() and not ln.startswith(_NOISE_PREFIXES)
+        ]
+        if kept:
+            lines.append(f"  --- {stream} (last {min(tail, len(kept))} of {len(kept)} lines) ---")
+            lines.extend(f"  {ln}" for ln in kept[-tail:])
+
+    # Surface the engine's own fatal lines first: they may sit above the tail when a
+    # long stack trace follows, and they are the sentence worth reading.
+    severe = [
+        ln
+        for text in (result.stdout, result.stderr)
+        for ln in (text or "").splitlines()
+        if "osmose[severe]" in ln
+    ]
+    header = [f"  Java FAILED (exit {result.returncode})."]
+    if severe:
+        header.append("  Engine reported:")
+        header.extend(f"    {ln.strip()}" for ln in severe[:5])
+    return "\n".join(header + lines)
 
 
 def run_python(output_dir: Path, n_years: int, seed: int) -> float:
@@ -141,6 +183,19 @@ def compare_mortality(java_dir: Path, python_dir: Path, species: list[str]) -> N
 
 
 def main() -> None:
+    """Run both engines on the bundled config and print a per-species comparison.
+
+    Prerequisites are checked before anything runs, and the resolved jar path is
+    printed, because ``resolve_jar`` globs ``osmose-java/`` and may pick a different
+    version than the caller assumed.
+
+    NOTE: this script cannot currently run against a Java 4.4.x jar. It hands Java the
+    bundled ``data/examples`` config unmodified, and for NETCDF_BIOMASS forcing 4.4.x
+    reads ``species.biomass.file.spN`` while that config supplies the 4.3.x
+    ``species.file.spN`` — so the run dies in ``ResourceForcing.init()`` before the
+    first timestep. ``scripts/cross_engine_parity_440.py`` stages the keys and is the
+    working cross-engine comparison; see docs/java_cross_check_2026-09-27.md.
+    """
     parser = argparse.ArgumentParser(description="Validate Python vs Java OSMOSE engine")
     parser.add_argument("--years", type=int, default=5, help="Simulation years (default: 5)")
     parser.add_argument("--seed", type=int, default=42, help="Python RNG seed (default: 42)")
