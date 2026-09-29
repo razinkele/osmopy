@@ -2,6 +2,8 @@ import sys
 from collections import namedtuple
 from pathlib import Path
 
+import pytest
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPTS = _PROJECT_ROOT / "scripts"
 if str(_SCRIPTS) not in sys.path:
@@ -266,6 +268,29 @@ def test_loaders():
     }
 
 
+def test_harness_larva_lever_reaches_the_subject_stock_on_the_real_config():
+    # #130: the sweep's community-wide larval lever covered sp0-7 only, but the cod E/W split
+    # appended the subject cod_east as sp8. Synthetic tests pass base_rates explicitly, so only
+    # the real config can catch that drift.
+    cfg = c0.read_base_config()
+    rates = c0.harness_larva_rates(cfg)
+    subject = next(i for i in range(9) if cfg.get(f"species.name.sp{i}") == "cod_east")
+    assert subject in rates
+    assert len(rates) == int(float(cfg["simulation.nspecies"]))
+
+
+def test_harness_larva_rates_raises_when_lever_misses_subject():
+    cfg = {
+        "simulation.nspecies": "2",
+        "species.name.sp0": "herring",
+        "species.name.sp1": "sprat",
+        "mortality.additional.larva.rate.sp0": "1",
+        "mortality.additional.larva.rate.sp1": "2",
+    }
+    with pytest.raises(ValueError, match="does not reach the subject stock"):
+        c0.harness_larva_rates(cfg)
+
+
 # ---------------------------------------------------------------- Task 1 (warm-start)
 def test_warmstart_override():
     assert c0.warmstart_override(False) == {}
@@ -523,7 +548,7 @@ def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
         Tgt("sprat", 1_500_000, 800_000, 2_500_000),
     ]
     monkeypatch.setattr(c0, "read_base_config", dict)
-    monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
+    monkeypatch.setattr(c0, "harness_larva_rates", lambda cfg: {0: 15.0})
     monkeypatch.setattr(c0, "_load_targets", lambda: tgts)
     monkeypatch.setattr(c0, "_default_runner", _runner_regime)
     monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
@@ -535,7 +560,7 @@ def test_cli_warmstart_writes_both_contrasts(tmp_path, monkeypatch):
 
 def test_cli_preflight(tmp_path, monkeypatch):
     monkeypatch.setattr(c0, "read_base_config", dict)
-    monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
+    monkeypatch.setattr(c0, "harness_larva_rates", lambda cfg: {0: 15.0})
     monkeypatch.setattr(c0, "_load_targets", lambda: [Tgt("cod_east", 120_000, 60_000, 250_000)])
     monkeypatch.setattr(c0, "_default_runner", _runner_regime)
     monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
@@ -572,8 +597,8 @@ def test_cli_chunk_c_writes_variant_and_runs_sweep(tmp_path, monkeypatch):
 
     dep = tmp_path / "predation-accessibility.csv"
     dep.write_text(
-        "v Prey / Predator >;cod;herring;sprat;smelt\n"
-        "cod;0.05;0;0;0.05\n"
+        "v Prey / Predator >;cod_east;herring;sprat;smelt\n"
+        "cod_east;0.05;0;0;0.05\n"
         "herring;0.4;0;0;0\n"
         "sprat;0.4;0;0;0\n"
         "smelt;0.1;0.2;0.2;0\n"
@@ -594,7 +619,7 @@ def test_cli_chunk_c_writes_variant_and_runs_sweep(tmp_path, monkeypatch):
         "read_base_config",
         lambda: {"predation.accessibility.file": str(dep), "_osmose.config.dir": str(tmp_path)},
     )
-    monkeypatch.setattr(c0, "read_base_larva_rates", lambda cfg, n_focal=8: {0: 15.0})
+    monkeypatch.setattr(c0, "harness_larva_rates", lambda cfg: {0: 15.0})
     monkeypatch.setattr(c0, "_load_targets", lambda: tgts)
     monkeypatch.setattr(c0, "_default_runner", fake_runner)
     monkeypatch.setattr(c0, "_DIAG_DIR", tmp_path)
@@ -604,7 +629,7 @@ def test_cli_chunk_c_writes_variant_and_runs_sweep(tmp_path, monkeypatch):
     variant = tmp_path / "predation-accessibility-chunkc-s0.2.csv"
     assert variant.exists()
     v = pd.read_csv(str(variant), sep=";", index_col=0)
-    assert v.loc["cod", "herring"] == 0.2 and v.loc["cod", "sprat"] == 0.2
+    assert v.loc["cod_east", "herring"] == 0.2 and v.loc["cod_east", "sprat"] == 0.2
     # the sweep ran against the variant matrix, not the deployed one
     assert captured["accessibility_file"] == str(variant.resolve())
     assert (tmp_path / c0.chunkc_output_name(0.2)).exists()

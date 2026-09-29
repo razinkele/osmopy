@@ -608,6 +608,30 @@ def read_base_larva_rates(base_config: dict, n_focal: int = 8) -> dict:
     return rates
 
 
+def harness_larva_rates(base_config: dict) -> dict:
+    """Base larval-mortality rates for EVERY focal species, as the bistability sweep's lever.
+
+    `larva_scale_override` scales all of these by one common factor. The default
+    `read_base_larva_rates(n_focal=8)` predates the cod E/W split, which appended `cod_east` as
+    sp8 -- so the community-wide lever silently skipped exactly the stock this harness measures
+    (#130). The count comes from `simulation.nspecies` here, at the harness's own call site
+    only: `read_base_larva_rates` keeps its default because the depensation calibration and
+    hysteresis scripts import it, and changing it would silently change what those completed
+    experiments compute on a rerun.
+    """
+    n_focal = int(float(base_config["simulation.nspecies"]))
+    rates = read_base_larva_rates(base_config, n_focal=n_focal)
+    subject = next(
+        (i for i in range(n_focal) if base_config.get(f"species.name.sp{i}") == _COD_STOCK), None
+    )
+    if subject is None or subject not in rates:
+        raise ValueError(
+            f"bistability larval lever does not reach the subject stock {_COD_STOCK!r} "
+            f"(species index {subject}, lever covers {sorted(rates)})"
+        )
+    return rates
+
+
 def read_cod_bands(targets) -> dict:
     t = next(x for x in targets if x.species == _COD_STOCK)
     return {"target": float(t.target), "lower": float(t.lower), "upper": float(t.upper)}
@@ -708,7 +732,7 @@ def main(argv=None) -> int:
     years = 3 if args.smoke else args.years
 
     base_config = read_base_config()
-    base_rates = read_base_larva_rates(base_config)
+    base_rates = harness_larva_rates(base_config)
     targets = _load_targets()
     cod_bands = read_cod_bands(targets)
     _DIAG_DIR.mkdir(parents=True, exist_ok=True)
