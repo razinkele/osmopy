@@ -68,10 +68,10 @@ difference in `Mpred`, with fishing and adult/juvenile `Madd` matching almost ex
 (CLAUDE.md) — `exp(-rate)` is not survival. They are used here only to compare like
 with like between engines, never converted to a survival fraction.
 
-## 3. The open question — cause or effect?
+## 3. Cause or effect? (answered in §5 — effect)
 
-**This is not yet root-caused, and the `Mpred` gap above does not by itself establish
-causation.** Mortality rates are per-capita: if Java holds ~3× fewer mackerel and
+**The `Mpred` gap above does not by itself establish causation.** Mortality rates are
+per-capita: if Java holds ~3× fewer mackerel and
 absolute predation is similar, the *rate* mechanically reads ~3× higher. So the gap
 may be a **consequence** of the abundance difference rather than its cause.
 
@@ -111,16 +111,57 @@ Worth recording because it looks alarming and is not:
 Do not "fix" either swap in isolation: they are load-bearing in opposite directions,
 and aligning one without the other would break the agreement that currently holds.
 
-## 5. Next step
+## 5. RESOLVED: the `Mpred` gap is an effect, not the cause
 
-Aggregate Java's size-class-staged predator-pressure output up to species level and
-compare **absolute biomass eaten** against Python's. If Java's predators remove more
-mackerel biomass in absolute terms, the predation difference is causal; if absolute
-removal is similar and only the per-capita rate differs, it is an effect of the
-abundance gap and the cause lies upstream (recruitment or growth).
+Done by aggregating Java's size-staged `predatorPressure` to species level (summing
+its 3 predator stages and 3 prey stages) and comparing **absolute biomass eaten**.
+Both engines divide the accumulation by `output.recordfrequency.ndt` (= 24 here) —
+Java at `PredatorPressureOutput.java:167`, Python at `osmose/engine/output.py:666` —
+so both report mean tons eaten **per simulation step** and the comparison is
+apples-to-apples.
 
-This is blocked on the incomparability in §6.2 and is resolved by aggregation, not by
-a code change.
+The result **reverses** what the rates implied:
+
+| prey | Python eats | Java eats | jv/py |
+|---|---|---|---|
+| **mackerel** | 9,441 t | 312 t | **0.033** |
+| lesserSpottedDogfish | 48.1 t | 17.5 t | 0.36 |
+| cod | 65.2 t | 25.5 t | 0.39 |
+| the other 11 focal prey | — | — | 0.28 – 0.65 |
+
+**Java removes ~30× LESS mackerel biomass in absolute terms while showing a 6.4×
+HIGHER per-capita `Mpred` rate.** That is exactly the per-capita artifact §3 warned
+about: Java holds far fewer mackerel, so a much smaller absolute removal still yields
+a much higher rate. The rate gap is therefore an **effect** of the abundance
+difference and carries no causal information. Any future reading of these mortality
+series must not treat a rate difference as evidence of predation intensity.
+
+### The systemic finding this exposes
+
+The interesting number is not mackerel's outlier but the **near-uniformity of the
+rest**: Java removes 0.28–0.65× of Python's absolute predation for 13 of 14 species.
+**Python's food web moves roughly 3× more biomass through predation than Java's,
+across essentially the whole community.**
+
+That is self-consistent with the biomass difference rather than contradicting it: if
+Python's fish ingest ~3× more, they grow faster and support more biomass, and the
+species most dependent on that throughput diverge most. It reframes the original
+question — the thing to explain is not "why are two species high" but "why is
+Python's whole predation throughput ~3× Java's", with dogfish and mackerel simply the
+most sensitive indicators.
+
+A near-uniform multiplicative factor across unrelated species is the signature of a
+normalisation difference, not of ecology. The specific suspect is the per-step
+ingestion cap: Python computes
+`max_eatable = biomass * ingestion_rate / (n_dt_per_year * n_subdt)`
+(`osmose/engine/processes/mortality.py:1141`, and the per-cell oracle at `:470`),
+and EEC sets `mortality.subdt = 10`
+with `ndtperyear = 24`. **Whether Java's cap carries the same two divisors has NOT
+been verified** — that is the next step, and until it is checked this is a suspect,
+not a diagnosis.
+
+Note the factor is ~3, not 10 or 24, so a whole missing divisor is *not* the shape of
+it; do not go looking for one.
 
 ## 6. Two defects found on the way
 
