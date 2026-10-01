@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -94,7 +95,7 @@ def main() -> int:
 
     n_eval = 0
 
-    def run_means_on(rates: dict[str, float | None]) -> dict[str, float]:
+    def run_means_on(rates: Mapping[str, float | None]) -> dict[str, float]:
         nonlocal n_eval
         n_eval += 1
         means = stock_means(sp1_on_config(base, FIELD, larva_rates=rates))
@@ -117,8 +118,11 @@ def main() -> int:
         )
     total_off = sum(baselines.values())
     total_on = sum(res.means.values())
+    for i, h in enumerate(res.sweep_history, 1):
+        print(f"sweep {i} joint rel_err: " + ", ".join(f"{s}={h[s]:.4f}" for s in stocks))
     print(
-        f"\njoint: converged={res.converged} sweeps={res.sweeps} evaluations={res.evaluations}; "
+        f"\njoint (best sweep): converged={res.converged} sweeps={res.sweeps} "
+        f"evaluations={res.evaluations}; "
         + "; ".join(f"{s}: {res.means[s]:.1f} t (rel_err {res.rel_errs[s]:.4f})" for s in stocks)
         + f"; total cod {total_off:.1f} -> {total_on:.1f} t ({total_on / total_off - 1:+.2%})"
     )
@@ -167,6 +171,7 @@ def main() -> int:
             "rel_errs": res.rel_errs,
             "converged": res.converged,
             "sweeps": res.sweeps,
+            "sweep_history": res.sweep_history,
             "evaluations": res.evaluations,
             "total_cod_off": total_off,
             "total_cod_on": total_on,

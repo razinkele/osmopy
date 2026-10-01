@@ -7,6 +7,7 @@ import pytest
 
 from osmose.calibration import larva_recal
 from osmose.calibration.larva_recal import (
+    JOINT_TOL,
     RECAL_RATES,
     SP1_STOCKS,
     StockRecal,
@@ -135,6 +136,35 @@ def test_solve_per_stock_reuses_identical_evaluations():
         tol=0.01,
     )
     assert len(calls) == len(set(calls))
+
+
+def _jittery_model(rates: dict[str, float | None]) -> dict[str, float]:
+    """Like _coupled_model but each stock's cross-term is an oscillation in the OTHER
+    stock's rate (the Baltic shape: cod_east's mean jitters +-2-4% with cod_west's rate).
+    Gauss-Seidel then does not improve monotonically: sweep 2 is best, sweep 3 is worse."""
+    dw = 10.0 if rates.get("cod_west") is None else float(rates["cod_west"])  # type: ignore[arg-type]
+    de = 10.0 if rates.get("cod_east") is None else float(rates["cod_east"])  # type: ignore[arg-type]
+    return {
+        "cod_west": 100.0 - 4.0 * dw + 3.0 * math.sin(13.0 * de),
+        "cod_east": 1000.0 - 40.0 * de + 30.0 * math.sin(13.0 * dw),
+    }
+
+
+def test_solve_per_stock_returns_best_joint_state_across_sweeps():
+    r = solve_per_stock(
+        {"cod_west": 70.0, "cod_east": 700.0},
+        _jittery_model,
+        order=("cod_east", "cod_west"),
+        grids={"cod_west": [0.0, 5.0, 10.0], "cod_east": [0.0, 5.0, 10.0]},
+        tol=0.005,
+        max_sweeps=3,
+    )
+    assert not r.converged and r.sweeps == 3
+    assert len(r.sweep_history) == 3  # joint rel_errs after each sweep
+    worst = [max(h.values()) for h in r.sweep_history]
+    assert worst[1] < worst[0] and worst[1] < worst[2]  # the model does what the docstring says
+    assert max(r.rel_errs.values()) == min(worst)  # returned state = best sweep, not last
+    assert r.means == _jittery_model(r.rates)  # rates/means/rel_errs are one consistent state
 
 
 SP_FIELD = "data/baltic/forcing/baltic_rv_field.nc"
@@ -332,6 +362,15 @@ def _baltic_15yr():
     "mean-neutrality where they were solved. The fast solver unit tests cover the mechanism.",
 )
 def test_sp1b_mean_neutral_drift_guard():
+    """Two assertions per solved stock, on one fresh off-run and one fresh on-run:
+
+    (a) REPRODUCTION — the frozen baseline/mean_on are reproduced to 1e-6 relative. This is
+        the drift detector proper: any engine, field or config change that moves the solution
+        trips it, and it is tight because the solve's noise check proved bit-identity.
+    (b) NEUTRALITY — each stock within JOINT_TOL of its own baseline. JOINT_TOL is the band
+        the joint state was accepted at (see larva_recal.JOINT_TOL and the diagnostic for why
+        it is not the 1-D solver's tol).
+    """
     active = {n: e for n, e in RECAL_RATES.items() if e.rate is not None}
     if not active:
         pytest.skip("SP1b: no solved per-stock rate (see docs/diagnostics/sp1b_recalibration.md)")
@@ -339,6 +378,9 @@ def test_sp1b_mean_neutral_drift_guard():
     base = _baltic_15yr()
     off = stock_means(with_determinism(base))
     on = stock_means(sp1_on_config(base, SP_FIELD))  # default -> RECAL_RATES, d0-checked
-    for name in active:
+    for name, entry in active.items():
         assert name in off, f"{name} is not a focal species of the config"
-        assert abs(on[name] - off[name]) / off[name] <= 0.02, name
+        assert entry.baseline is not None and entry.mean_on is not None
+        assert off[name] == pytest.approx(entry.baseline, rel=1e-6), f"{name} baseline drifted"
+        assert on[name] == pytest.approx(entry.mean_on, rel=1e-6), f"{name} SP1-on mean drifted"
+        assert abs(on[name] - off[name]) / off[name] <= JOINT_TOL, f"{name} not neutral"

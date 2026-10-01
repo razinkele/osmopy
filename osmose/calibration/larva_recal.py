@@ -130,13 +130,14 @@ MeansFn = Callable[[Mapping[str, float | None]], Mapping[str, float]]
 
 @dataclass
 class PerStockResult:
-    rates: RateMap  # final rate per stock (None = infeasible, key omitted -> d0 stands)
+    rates: RateMap  # best-sweep rate per stock (None = infeasible, key omitted -> d0 stands)
     means: dict[str, float]  # per-stock means at `rates` (joint evaluation)
     rel_errs: dict[str, float]  # |means - baseline| / baseline per stock
-    per_stock: dict[str, RecalResult]  # last 1-D solve per stock
+    per_stock: dict[str, RecalResult]  # 1-D solve per stock from the best sweep
     converged: bool  # every stock feasible AND within tol at the joint evaluation
-    sweeps: int
+    sweeps: int  # sweeps run
     evaluations: int  # distinct engine evaluations actually run
+    sweep_history: list[dict[str, float]] = field(default_factory=list)  # joint rel_errs/sweep
 
 
 def solve_per_stock(
@@ -156,6 +157,12 @@ def solve_per_stock(
     rates is checked; if every feasible stock is within `tol` the sweep stops. Evaluations
     are memoised on the full rate set, so the joint check reuses the last solve's run and a
     deterministic evaluator is never called twice for one rate set.
+
+    The returned state is the BEST sweep (smallest worst-stock joint rel_err), not the last:
+    when a stock's mean jitters with the other stock's rate (the Baltic cods, +-2-4%), the
+    sweeps do not improve monotonically. The pick keeps the record honest; what makes a
+    freeze robust is a joint band (JOINT_TOL) wide enough to sit above that jitter, which the
+    best pick does not create.
     """
     cache: dict[tuple[tuple[str, float | None], ...], dict[str, float]] = {}
 
@@ -165,8 +172,14 @@ def solve_per_stock(
             cache[key] = dict(run_means_on(dict(rates)))
         return cache[key]
 
+    def joint_errs(rates: Mapping[str, float | None]) -> dict[str, float]:
+        joint = evaluate(rates)
+        return {n: abs(joint[n] - baselines[n]) / baselines[n] for n in order}
+
     current: RateMap = {name: float(max(grids[name])) for name in order}
     per_stock: dict[str, RecalResult] = {}
+    history: list[dict[str, float]] = []
+    best: tuple[float, RateMap, dict[str, RecalResult]] | None = None
     sweeps = 0
     converged = False
     while sweeps < max_sweeps and not converged:
@@ -181,19 +194,24 @@ def solve_per_stock(
             )
             per_stock[name] = res
             current[name] = res.rate if res.feasible else None
-        joint = evaluate(current)
-        rel_errs = {n: abs(joint[n] - baselines[n]) / baselines[n] for n in order}
+        rel_errs = joint_errs(current)
+        history.append(rel_errs)
+        worst = max(rel_errs.values())
+        if best is None or worst < best[0]:
+            best = (worst, dict(current), dict(per_stock))
         converged = all(per_stock[n].feasible and rel_errs[n] <= tol for n in order)
-    joint = evaluate(current)
-    rel_errs = {n: abs(joint[n] - baselines[n]) / baselines[n] for n in order}
+    assert best is not None  # max_sweeps >= 1
+    _, best_rates, best_per_stock = best
+    joint = evaluate(best_rates)
     return PerStockResult(
-        rates=dict(current),
+        rates=best_rates,
         means={n: joint[n] for n in order},
-        rel_errs=rel_errs,
-        per_stock=per_stock,
+        rel_errs=joint_errs(best_rates),
+        per_stock=best_per_stock,
         converged=converged,
         sweeps=sweeps,
         evaluations=len(cache),
+        sweep_history=history,
     )
 
 
@@ -325,6 +343,13 @@ class StockRecal:
     rel_err: float | None = None
     note: str = field(default="")  # solve date / message
 
+
+# Band each solved stock must sit within of its own SP1-off mean at the JOINT state (both
+# rates applied). Distinct from the 1-D solver's `tol` (0.02, each stock on its own axis):
+# the joint state also carries each stock's response to the OTHER stock's rate, which for the
+# Baltic cods is a +-2-4% jitter (docs/diagnostics/sp1b_recalibration.md). The value is a
+# criterion the maintainer sets, not a fit output.
+JOINT_TOL: float = 0.02
 
 # Filled by hand from `scripts/recalibrate_sp1b.py` output. Empty = no solved rate (the
 # aggregate-cod solve of 2026-07-02, RECAL_RATE=14.655 at d0=15.0, is retired: see
