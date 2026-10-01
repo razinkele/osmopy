@@ -230,6 +230,20 @@ def stock_means_from_biomass(bio: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def stock_overshoot_from_biomass(bio: pd.DataFrame) -> dict[str, float]:
+    """max/mean per species column over years [3, 15) — the boom/bust index the SP1b
+    diagnostic records (measured, never gated)."""
+    mask = _window_mask(bio)
+    out: dict[str, float] = {}
+    for c in bio.columns:
+        if str(c) in _NON_STOCK_COLUMNS:
+            continue
+        w = np.asarray(bio[c], dtype=float)[mask]
+        w = w[np.isfinite(w) & (w > 0)]
+        out[str(c)] = float(w.max() / w.mean()) if w.size else float("nan")
+    return out
+
+
 def mean_cod_from_biomass(bio: pd.DataFrame) -> float:
     """Total cod = cod_west + cod_east (aggregate 'cod' fallback for undisaggregated configs)."""
     mask = _window_mask(bio)

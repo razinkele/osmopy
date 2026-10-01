@@ -297,6 +297,14 @@ def test_mean_cod_from_biomass_sums_the_two_stocks_and_falls_back_to_aggregate()
     assert larva_recal.mean_cod_from_biomass(agg) == pytest.approx(5.0)
 
 
+def test_stock_overshoot_from_biomass_is_window_max_over_mean():
+    west = [1.0] * 20
+    west[10] = 13.0  # inside the window: mean over 3..14 = (11*1 + 13)/12 = 2.0, max 13
+    west[0] = 1000.0  # outside the window, ignored
+    o = larva_recal.stock_overshoot_from_biomass(_frame(cod_west=west))
+    assert o["cod_west"] == pytest.approx(13.0 / 2.0)
+
+
 MINIMAL = "data/minimal/osm_all-parameters.csv"
 
 

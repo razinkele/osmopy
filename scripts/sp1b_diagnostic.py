@@ -1,7 +1,11 @@
 #!/usr/bin/env python
-"""SP1b diagnostic: records the recalibrated rate, achieved rel-err, and the cod overshoot
-ratio SP1-on-recalibrated vs SP1-off (measured, not gated — does mean-neutral spatial
-egg-survival damp the boom/bust?)."""
+"""SP1b diagnostic: per stock, the recalibrated rate (with the d0 it was solved against),
+achieved rel-err, and the overshoot ratio SP1-on-recalibrated vs SP1-off (measured, not
+gated — does mean-neutral spatial egg-survival damp the boom/bust?).
+
+Usage: PYTHONPATH=. .venv/bin/python scripts/sp1b_diagnostic.py   (two 15-yr Baltic runs)
+Writes docs/diagnostics/sp1b_recalibration.md.
+"""
 
 from __future__ import annotations
 
@@ -9,63 +13,103 @@ import sys
 from pathlib import Path
 
 import numba
-import numpy as np
 
-from osmose.calibration.larva_recal import RECAL_RATE, mean_cod, sp1_on_config, with_determinism
+from osmose.calibration.larva_recal import (
+    RECAL_RATES,
+    SP1_STOCKS,
+    mean_cod_from_biomass,
+    resolved_d0,
+    sp1_on_config,
+    species_index,
+    stock_means_from_biomass,
+    stock_overshoot_from_biomass,
+    with_determinism,
+)
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 FIELD = ROOT / "data" / "baltic" / "forcing" / "baltic_rv_field.nc"
-
-
-def _overshoot(cfg) -> float:
-    b = PythonEngine().run_in_memory(cfg, seed=0).biomass()["cod"].to_numpy()[3:15]
-    b = b[np.isfinite(b) & (b > 0)]
-    return float(b.max() / b.mean()) if b.size and b.mean() > 0 else float("nan")
+OUT = ROOT / "docs" / "diagnostics" / "sp1b_recalibration.md"
 
 
 def main() -> int:
     numba.set_num_threads(1)
     base = dict(OsmoseConfigReader().read(CONFIG))
     base["simulation.time.nyear"] = "15"
-    off = with_determinism(base)
+    stocks = [s for s in SP1_STOCKS if species_index(base, s) is not None]
 
-    baseline = mean_cod(off)
-    over_off = _overshoot(off)
-    if RECAL_RATE is None:
-        lines = [
-            "# SP1b recalibration diagnostic",
-            "",
-            "RESULT: INFEASIBLE — mean-neutrality not achievable via the cod larva rate alone.",
-            f"SP1-off baseline mean cod = {baseline:.1f}; overshoot(off) = {over_off:.2f}",
-            "RECAL_RATE = None. See the solve grid in the recalibrate_sp1b commit.",
+    bio_off = PythonEngine().run_in_memory(with_determinism(base), seed=0).biomass()
+    off = stock_means_from_biomass(bio_off)
+    over_off = stock_overshoot_from_biomass(bio_off)
+    total_off = mean_cod_from_biomass(bio_off)
+
+    lines = ["# SP1b recalibration diagnostic", ""]
+    active = {s: e for s, e in RECAL_RATES.items() if e.rate is not None}
+    if not active:
+        lines += [
+            "RESULT: no solved per-stock rate (RECAL_RATES is empty / all infeasible).",
+            "SP1-off baselines: "
+            + ", ".join(f"{s}={off[s]:.1f} t (overshoot {over_off[s]:.2f})" for s in stocks),
+            "See docs/diagnostics/sp1b_solve.json for the solve grids.",
         ]
     else:
-        on = sp1_on_config(base, FIELD)
-        mean_on = mean_cod(on)
-        over_on = _overshoot(on)
-        lines = [
-            "# SP1b recalibration diagnostic",
+        bio_on = PythonEngine().run_in_memory(sp1_on_config(base, FIELD), seed=0).biomass()
+        on = stock_means_from_biomass(bio_on)
+        over_on = stock_overshoot_from_biomass(bio_on)
+        total_on = mean_cod_from_biomass(bio_on)
+        lines += [
+            "SP1 (spatial RV egg-survival clip) enabled on: " + ", ".join(stocks) + ".",
+            "Each stock's larval rate (resolved per-cohort) is solved so its own SP1-on mean "
+            "matches its SP1-off mean (target rel_err <= 0.02). Rates are frozen with the d0 "
+            "they were solved against; `sp1_on_config` refuses a config whose d0 has moved.",
             "",
-            f"RECAL_RATE = {RECAL_RATE:.4f}  (cod larval mortality, resolved per-cohort; d0=15.0)",
-            (
-                f"mean cod: off={baseline:.1f}  on_recal={mean_on:.1f}  "
-                f"rel_err={abs(mean_on / baseline - 1):.3f}  (target <= 0.02)"
-            ),
+            "| stock | d0 | rate | baseline (t) | on_recal (t) | rel_err | overshoot off | "
+            "overshoot on |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for s in stocks:
+            e = RECAL_RATES.get(s)
+            rate = "— (d0 stands)" if e is None or e.rate is None else f"{e.rate:.4f}"
+            lines.append(
+                f"| {s} | {resolved_d0(base, s):.4f} | {rate} | {off[s]:.1f} | {on[s]:.1f} | "
+                f"{abs(on[s] / off[s] - 1):.4f} | {over_off[s]:.2f} | {over_on[s]:.2f} |"
+            )
+        lines += [
+            "",
+            f"total cod: off={total_off:.1f}  on_recal={total_on:.1f}  "
+            f"drift={total_on / total_off - 1:+.2%} (measured, not gated)",
             "",
             "## Overshoot (max/mean over years 3-14) — measured, NOT gated",
-            (
-                f"off={over_off:.2f}  on_recal={over_on:.2f}  "
-                f"ratio={over_on / over_off:.2f}  "
-                f"({'damps' if over_on < over_off else 'does not damp'} the boom/bust)"
-            ),
         ]
+        for s in stocks:
+            verdict = "damps" if over_on[s] < over_off[s] else "does not damp"
+            lines.append(
+                f"{s}: off={over_off[s]:.2f}  on_recal={over_on[s]:.2f}  "
+                f"ratio={over_on[s] / over_off[s]:.2f}  ({verdict} the boom/bust)"
+            )
+        lines += [
+            "",
+            "## Caveat: stacked RV terms on cod_east",
+            "cod_east carries the temporal RV gate (`reproduction.rv.gate.*`, its dominant "
+            "control) AND, under this overlay, the spatial RV clip. The two have not been A/B "
+            "gated against each other; the per-stock neutrality above holds for the stacked "
+            "pair as a whole, not for either term alone.",
+        ]
+    lines += [
+        "",
+        "## History",
+        "The 2026-07-02 solve (`RECAL_RATE = 14.6551`, aggregate cod, d0=15.0) was retired on "
+        "2026-10-01: the Baltic baseline was recalibrated on 2026-07-24 (sp0 larva rate 360 -> "
+        "243.76 per year, resolved d0 15.0 -> 10.157), so the frozen constant had silently become "
+        "a larval-mortality INCREASE; stacked on the spatial clip it drove cod_west extinct under "
+        "SP1 (6432 -> 1 t). Issue #131 attributed this to the 2026-07-25 cod E/W split; the split "
+        "only made it visible. Rates now carry their d0 so this cannot recur silently.",
+    ]
     print("\n".join(lines))
-    out = ROOT / "docs" / "diagnostics" / "sp1b_recalibration.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text("\n".join(lines) + "\n")
     return 0
 
 
