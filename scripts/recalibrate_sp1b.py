@@ -48,7 +48,7 @@ def _base_cfg() -> dict[str, str]:
     return cfg
 
 
-def _fmt_rates(rates: dict[str, float | None]) -> str:
+def _fmt_rates(rates: Mapping[str, float | None]) -> str:
     return ", ".join(f"{k}={'d0' if v is None else f'{v:.4f}'}" for k, v in sorted(rates.items()))
 
 
