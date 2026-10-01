@@ -61,12 +61,16 @@ def main() -> int:
         total_on = mean_cod_from_biomass(bio_on)
         lines += [
             "SP1 (spatial RV egg-survival clip) enabled on: " + ", ".join(stocks) + ".",
-            "Each stock's larval rate (resolved per-cohort) is solved so its own SP1-on mean "
-            "matches its SP1-off mean (target rel_err <= 0.02). Rates are frozen with the d0 "
-            "they were solved against; `sp1_on_config` refuses a config whose d0 has moved.",
+            (
+                "Each stock's larval rate (resolved per-cohort) is solved so its own SP1-on mean "
+                "matches its SP1-off mean (target rel_err <= 0.02). Rates are frozen with the d0 "
+                "they were solved against; `sp1_on_config` refuses a config whose d0 has moved."
+            ),
             "",
-            "| stock | d0 | rate | baseline (t) | on_recal (t) | rel_err | overshoot off | "
-            "overshoot on |",
+            (
+                "| stock | d0 | rate | baseline (t) | on_recal (t) | rel_err | overshoot off | "
+                "overshoot on |"
+            ),
             "|---|---|---|---|---|---|---|---|",
         ]
         for s in stocks:
@@ -78,8 +82,10 @@ def main() -> int:
             )
         lines += [
             "",
-            f"total cod: off={total_off:.1f}  on_recal={total_on:.1f}  "
-            f"drift={total_on / total_off - 1:+.2%} (measured, not gated)",
+            (
+                f"total cod: off={total_off:.1f}  on_recal={total_on:.1f}  "
+                f"drift={total_on / total_off - 1:+.2%} (measured, not gated)"
+            ),
             "",
             "## Overshoot (max/mean over years 3-14) — measured, NOT gated",
         ]
@@ -92,20 +98,25 @@ def main() -> int:
         lines += [
             "",
             "## Caveat: stacked RV terms on cod_east",
-            "cod_east carries the temporal RV gate (`reproduction.rv.gate.*`, its dominant "
-            "control) AND, under this overlay, the spatial RV clip. The two have not been A/B "
-            "gated against each other; the per-stock neutrality above holds for the stacked "
-            "pair as a whole, not for either term alone.",
+            (
+                "cod_east carries the temporal RV gate (`reproduction.rv.gate.*`, its dominant "
+                "control) AND, under this overlay, the spatial RV clip. The two have not been A/B "
+                "gated against each other; the per-stock neutrality above holds for the stacked "
+                "pair as a whole, not for either term alone."
+            ),
         ]
     lines += [
         "",
         "## History",
-        "The 2026-07-02 solve (`RECAL_RATE = 14.6551`, aggregate cod, d0=15.0) was retired on "
-        "2026-10-01: the Baltic baseline was recalibrated on 2026-07-24 (sp0 larva rate 360 -> "
-        "243.76 per year, resolved d0 15.0 -> 10.157), so the frozen constant had silently become "
-        "a larval-mortality INCREASE; stacked on the spatial clip it drove cod_west extinct under "
-        "SP1 (6432 -> 1 t). Issue #131 attributed this to the 2026-07-25 cod E/W split; the split "
-        "only made it visible. Rates now carry their d0 so this cannot recur silently.",
+        (
+            "The 2026-07-02 solve (`RECAL_RATE = 14.6551`, aggregate cod, d0=15.0) was retired "
+            "on 2026-10-01: the Baltic baseline was recalibrated on 2026-07-24 (sp0 larva rate "
+            "360 -> 243.76 per year, resolved d0 15.0 -> 10.157), so the frozen constant had "
+            "silently become a larval-mortality INCREASE; stacked on the spatial clip it drove "
+            "cod_west extinct under SP1 (6432 -> 1 t). Issue #131 attributed this to the "
+            "2026-07-25 cod E/W split; the split only made it visible. Rates now carry their d0 "
+            "so this cannot recur silently."
+        ),
     ]
     print("\n".join(lines))
     OUT.parent.mkdir(parents=True, exist_ok=True)

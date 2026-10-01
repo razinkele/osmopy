@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import sys
 import time
-from datetime import date
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numba
@@ -123,7 +123,7 @@ def main() -> int:
         + f"; total cod {total_off:.1f} -> {total_on:.1f} t ({total_on / total_off - 1:+.2%})"
     )
 
-    today = date.today().isoformat()
+    today = datetime.now(tz=UTC).date().isoformat()
     lines = ["RECAL_RATES: dict[str, StockRecal] = {"]
     for s in stocks:
         r = res.per_stock[s]
