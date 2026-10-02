@@ -29,7 +29,17 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Opened → #134] Optional fish-mediated carbon-flux diagnostic in output.py
+## [Resolved 2026-10-02] Optional fish-mediated carbon-flux diagnostic in output.py
+
+> **✅ Shipped 2026-10-02** (issue #134). Opt-in via `output.carbon.enabled` (+ `.netcdf.enabled`):
+> two per-species flows per step, tonnes C, following the source's two pathways — faecal pellets
+> (eaten biomass incl. plankton × `carbon.unassimilated.fraction.sp{i}` × `carbon.pellet.cfactor.sp{i}`)
+> and carcasses (starvation + additional + foraging + aging deaths × weight ×
+> `carbon.carcass.cfactor.sp{i}`); respiration/DOC/depth attenuation excluded as in the source.
+> Defaults are the Irish Sea teleost values (U 0.2; factors 0.10); Baltic species-specific values are
+> NOT derived. Summed over the recording window like yield. Outputs `carbonFaecal`/`carbonCarcass`
+> (CSV + NetCDF), `ResultSet.carbon_flux(pathway=, source=)`, Results-tab chart choices. Under bioen
+> the config warns once (faecal basis = post-survival ingestion, not raw consumption). Draft below.
 
 > **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/134 (label: enhancement).
 
