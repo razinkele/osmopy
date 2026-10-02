@@ -78,6 +78,22 @@ def test_config_parses_carbon_coefficients_per_species():
     assert cfg.carbon_carcass_cfactor.tolist() == [0.10, 0.12]
 
 
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("carbon.unassimilated.fraction.sp0", "-0.1"),
+        ("carbon.unassimilated.fraction.sp0", "1.5"),
+        ("carbon.pellet.cfactor.sp0", "2.0"),
+        ("carbon.carcass.cfactor.sp0", "-1"),
+    ],
+)
+def test_config_rejects_out_of_range_carbon_coefficients(key, value):
+    # The schema bounds every coefficient to [0, 1]; the parser enforces it, as sexratio does,
+    # instead of letting a negative or >1 value produce impossible fluxes silently.
+    with pytest.raises(ValueError, match=key.rsplit(".", 1)[0]):
+        EngineConfig.from_dict({**_base_cfg(), key: value})
+
+
 def test_config_warns_when_carbon_and_bioen_both_on():
     # Under bioen the engine rescales eaten biomass to post-survival ingestion before the
     # output sees it, so the faecal basis changes; the config says so once, loudly.

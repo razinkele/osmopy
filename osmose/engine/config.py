@@ -902,6 +902,20 @@ def _merge_focal_background(
         }
 
 
+def _unit_interval_coef(
+    cfg: dict[str, str], pattern: str, n_sp: int, default: float
+) -> NDArray[np.float64]:
+    """Per-species fraction bounded [0, 1] (the schema's min/max for the carbon coefficients);
+    raise on the first out-of-range value, as the sexratio parser does, rather than let a
+    negative or >1 coefficient produce impossible fluxes silently."""
+    vals = _species_float_optional(cfg, pattern, n_sp, default=default)
+    bad = np.where((vals < 0.0) | (vals > 1.0) | ~np.isfinite(vals))[0]
+    if len(bad) > 0:
+        i = int(bad[0])
+        raise ValueError(f"{pattern.format(i=i)} must be in [0, 1], got {float(vals[i])}")
+    return vals
+
+
 def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str, Any]:
     """Parse output recording flags and distribution settings."""
     output_record_freq = int(cfg.get("output.recordfrequency.ndt", "1"))
@@ -948,13 +962,13 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         # (defaults: Silvar-Viladomiu et al. 2026 teleost values, see schema/output.py).
         "output_carbon": _enabled(cfg, "output.carbon.enabled"),
         "output_carbon_netcdf": _enabled(cfg, "output.carbon.netcdf.enabled"),
-        "carbon_unassimilated": _species_float_optional(
+        "carbon_unassimilated": _unit_interval_coef(
             cfg, "carbon.unassimilated.fraction.sp{i}", n_sp, default=0.2
         ),
-        "carbon_pellet_cfactor": _species_float_optional(
+        "carbon_pellet_cfactor": _unit_interval_coef(
             cfg, "carbon.pellet.cfactor.sp{i}", n_sp, default=0.10
         ),
-        "carbon_carcass_cfactor": _species_float_optional(
+        "carbon_carcass_cfactor": _unit_interval_coef(
             cfg, "carbon.carcass.cfactor.sp{i}", n_sp, default=0.10
         ),
         # Five new keys
