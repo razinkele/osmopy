@@ -902,13 +902,15 @@ def _merge_focal_background(
         }
 
 
-def _unit_interval_coef(
-    cfg: dict[str, str], pattern: str, n_sp: int, default: float
-) -> NDArray[np.float64]:
+def _require_unit_interval(vals: NDArray[np.float64], pattern: str) -> NDArray[np.float64]:
     """Per-species fraction bounded [0, 1] (the schema's min/max for the carbon coefficients);
     raise on the first out-of-range value, as the sexratio parser does, rather than let a
-    negative or >1 coefficient produce impossible fluxes silently."""
-    vals = _species_float_optional(cfg, pattern, n_sp, default=default)
+    negative or >1 coefficient produce impossible fluxes silently.
+
+    Takes the ALREADY-READ array: the key literal must stay inside a `_species_float_optional`
+    call at the call site, because config_validation's AST walker only recognises that fixed
+    set of helper names — a new helper taking the pattern hides the key from the validator
+    (tests/test_schema_engine_key_parity.py caught exactly that, 2026-10-02)."""
     bad = np.where((vals < 0.0) | (vals > 1.0) | ~np.isfinite(vals))[0]
     if len(bad) > 0:
         i = int(bad[0])
@@ -962,14 +964,17 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         # (defaults: Silvar-Viladomiu et al. 2026 teleost values, see schema/output.py).
         "output_carbon": _enabled(cfg, "output.carbon.enabled"),
         "output_carbon_netcdf": _enabled(cfg, "output.carbon.netcdf.enabled"),
-        "carbon_unassimilated": _unit_interval_coef(
-            cfg, "carbon.unassimilated.fraction.sp{i}", n_sp, default=0.2
+        "carbon_unassimilated": _require_unit_interval(
+            _species_float_optional(cfg, "carbon.unassimilated.fraction.sp{i}", n_sp, default=0.2),
+            "carbon.unassimilated.fraction.sp{i}",
         ),
-        "carbon_pellet_cfactor": _unit_interval_coef(
-            cfg, "carbon.pellet.cfactor.sp{i}", n_sp, default=0.10
+        "carbon_pellet_cfactor": _require_unit_interval(
+            _species_float_optional(cfg, "carbon.pellet.cfactor.sp{i}", n_sp, default=0.10),
+            "carbon.pellet.cfactor.sp{i}",
         ),
-        "carbon_carcass_cfactor": _unit_interval_coef(
-            cfg, "carbon.carcass.cfactor.sp{i}", n_sp, default=0.10
+        "carbon_carcass_cfactor": _require_unit_interval(
+            _species_float_optional(cfg, "carbon.carcass.cfactor.sp{i}", n_sp, default=0.10),
+            "carbon.carcass.cfactor.sp{i}",
         ),
         # Five new keys
         "output_biomass_byage_netcdf": _enabled(cfg, "output.biomass.byage.netcdf.enabled"),
