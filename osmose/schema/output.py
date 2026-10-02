@@ -100,6 +100,7 @@ _OUTPUT_ENABLE_FLAGS = [
     "output.abundance.enabled",
     "output.abundance.age1.enabled",
     "output.ssb.enabled",
+    "output.carbon.enabled",
     "output.biomass.bysize.enabled",
     "output.biomass.byage.enabled",
     "output.biomass.byweight.enabled",
@@ -157,6 +158,7 @@ _OUTPUT_ENABLE_FLAGS = [
     "output.yield.abundance.netcdf.enabled",
     "output.size.netcdf.enabled",
     "output.ssb.netcdf.enabled",
+    "output.carbon.netcdf.enabled",
     "output.diet.composition.netcdf.enabled",
     "output.diet.pressure.netcdf.enabled",
     "output.nschool.enabled",
@@ -204,6 +206,68 @@ _FLAG_FIELDS: list[OsmoseField] = [
     for flag in _OUTPUT_ENABLE_FLAGS
 ]
 
+# ── Fish-mediated carbon flux coefficients (issue #134) ───────────────────────
+# Opt-in diagnostic after Silvar-Viladomiu, Cavan, Martin et al. (2026), ICES J. Mar.
+# Sci. 83(6), doi:10.1093/icesjms/fsag095: faecal pellets = eaten biomass x unassimilated
+# fraction x pellet carbon factor; carcasses = non-predation, non-fishing deaths x carcass
+# carbon factor. Defaults are that study's teleost values (U = 0.2, sensitivity 0.1-0.3;
+# carbon factors 0.06-0.14 of wet weight). Baltic species-specific values are NOT derived
+# here; override per species. Respiration, dissolved carbon and depth attenuation are
+# excluded, as in the source.
+
+_CARBON_DESC = (
+    "Defaults follow Silvar-Viladomiu et al. (2026, ICES JMS, doi:10.1093/icesjms/fsag095) "
+    "for teleosts; species-specific values are not derived here."
+)
+
+_CARBON_FIELDS: list[OsmoseField] = [
+    OsmoseField(
+        key_pattern="carbon.unassimilated.fraction.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=0.2,
+        min_val=0.0,
+        max_val=1.0,
+        description=(
+            "Unassimilated fraction of consumed biomass egested as faecal pellets "
+            "(carbon-flux diagnostic; 0.1-0.3 explored in the source). " + _CARBON_DESC
+        ),
+        category="output",
+        unit="fraction",
+        indexed=True,
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="carbon.pellet.cfactor.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=0.10,
+        min_val=0.0,
+        max_val=1.0,
+        description=(
+            "Carbon content of egested wet weight for the faecal-pellet carbon flux "
+            "(0.07-0.12 in the source). " + _CARBON_DESC
+        ),
+        category="output",
+        unit="t C / t wet weight",
+        indexed=True,
+        advanced=True,
+    ),
+    OsmoseField(
+        key_pattern="carbon.carcass.cfactor.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=0.10,
+        min_val=0.0,
+        max_val=1.0,
+        description=(
+            "Carbon content of carcass wet weight for the natural-mortality carbon flux "
+            "(0.06-0.14 in the source). " + _CARBON_DESC
+        ),
+        category="output",
+        unit="t C / t wet weight",
+        indexed=True,
+        advanced=True,
+    ),
+]
+
 # ── Combined export ───────────────────────────────────────────────────────────
 
-OUTPUT_FIELDS: list[OsmoseField] = _GENERAL_OUTPUT_FIELDS + _FLAG_FIELDS
+OUTPUT_FIELDS: list[OsmoseField] = _GENERAL_OUTPUT_FIELDS + _FLAG_FIELDS + _CARBON_FIELDS

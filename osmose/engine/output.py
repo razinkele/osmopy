@@ -63,6 +63,7 @@ def write_outputs(
     _write_yieldn_csv(output_dir, prefix, outputs, config)
     _write_meansize_csv(output_dir, prefix, outputs, config)
     _write_ssb_csv(output_dir, prefix, outputs, config)
+    _write_carbon_csv(output_dir, prefix, outputs, config)
     _write_distrib_bysize_community_csvs(output_dir, prefix, outputs, config)
 
     if config.bioen_enabled:
@@ -295,6 +296,41 @@ def _build_ssb_dataframe(
     df = pd.DataFrame(data, columns=list(config.species_names))  # type: ignore[arg-type]
     df.insert(0, "Time", times)
     return {"SSB": df}
+
+
+_CARBON_KEYS = {"carbonFaecal": "carbon_faecal", "carbonCarcass": "carbon_carcass"}
+_CARBON_UNITS = "t C per recording window"
+
+
+def _build_carbon_dataframes(
+    outputs: list[StepOutput], config: EngineConfig
+) -> dict[str, pd.DataFrame]:
+    """Wide Time + per-focal-species carbon flux, one frame per pathway (faecal pellets,
+    carcasses), tonnes C per recording window. Empty when disabled/absent."""
+    if not config.output_carbon:
+        return {}
+    times = np.array([o.step / config.n_dt_per_year for o in outputs])
+    frames: dict[str, pd.DataFrame] = {}
+    for key, attr in _CARBON_KEYS.items():
+        if not any(getattr(o, attr) is not None for o in outputs):
+            continue
+        data = np.array(
+            [
+                getattr(o, attr) if getattr(o, attr) is not None else np.zeros(config.n_species)
+                for o in outputs
+            ]
+        )
+        df = pd.DataFrame(data, columns=list(config.species_names))  # type: ignore[arg-type]
+        df.insert(0, "Time", times)
+        frames[key] = df
+    return frames
+
+
+def _write_carbon_csv(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    for key, df in _build_carbon_dataframes(outputs, config).items():
+        df.to_csv(output_dir / f"{prefix}_{key}_Simu0.csv", index=False)
 
 
 def _write_yieldn_csv(
@@ -904,6 +940,7 @@ def write_outputs_netcdf(
         "meanSize": config.output_mean_size_netcdf
         and any(o.mean_size is not None for o in outputs),
         "SSB": config.output_ssb_netcdf and any(o.ssb is not None for o in outputs),
+        "carbon": config.output_carbon_netcdf and any(o.carbon_faecal is not None for o in outputs),
     }
     if not any(want.values()):
         return
@@ -964,6 +1001,26 @@ def write_outputs_netcdf(
         )
         data_vars["SSB"] = (["time", "focal_species"], ssb_arr)
         coords.setdefault("focal_species", config.species_names[: ssb_arr.shape[1]])
+    if want["carbon"]:
+        for key, attr in _CARBON_KEYS.items():
+            arr = np.array(
+                [
+                    getattr(o, attr)
+                    if getattr(o, attr) is not None
+                    else np.full(config.n_species, np.nan)
+                    for o in outputs
+                ]
+            )
+            data_vars[key] = (
+                ["time", "focal_species"],
+                arr,
+                {
+                    "units": _CARBON_UNITS,
+                    "long_name": f"fish-mediated carbon flux, {attr.split('_')[1]} pathway",
+                    "reference": "Silvar-Viladomiu et al. 2026, doi:10.1093/icesjms/fsag095",
+                },
+            )
+            coords.setdefault("focal_species", config.species_names[: arr.shape[1]])
 
     def _pad(attr: str) -> tuple[np.ndarray, int]:
         max_bins = 0

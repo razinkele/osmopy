@@ -274,6 +274,10 @@ class StepOutput:
     # Abundance-weighted mean length (cm) per focal species, or None if disabled
     mean_size: dict[int, float] | None = None
     ssb: NDArray[np.float64] | None = None  # spawning-stock biomass per species
+    # Fish-mediated carbon flux (#134), tonnes C per focal species; FLOWS, summed over a
+    # recording window like yield. None unless output.carbon[.netcdf].enabled.
+    carbon_faecal: NDArray[np.float64] | None = None
+    carbon_carcass: NDArray[np.float64] | None = None
 
     # Bioenergetics: mean net energy per species, shape (n_species,), or None if bioen disabled
     bioen_e_net_by_species: NDArray[np.float64] | None = None
@@ -1236,6 +1240,51 @@ def _collect_ssb(state: SchoolState, config: EngineConfig) -> NDArray[np.float64
     return ssb
 
 
+# Carcass pathway = the source's EwE "other mortality" M0: deaths that are neither eaten nor
+# landed. OUT left the domain (not a death here); DISCARDS are a fishing component.
+_CARCASS_CAUSES = (
+    int(MortalityCause.STARVATION),
+    int(MortalityCause.ADDITIONAL),
+    int(MortalityCause.FORAGING),
+    int(MortalityCause.AGING),
+)
+
+
+def _collect_carbon(
+    state: SchoolState, config: EngineConfig
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Fish-mediated carbon flux per focal species for this step (tonnes C), after
+    Silvar-Viladomiu et al. (2026, doi:10.1093/icesjms/fsag095):
+
+      faecal  = Σ_schools preyed_biomass            x U_sp x CF_pellet_sp
+      carcass = Σ_schools Σ_{other causes} n_dead x weight x CF_carcass_sp
+
+    `preyed_biomass` is this step's eaten tonnage per predator school (reset each step);
+    under bioen it is already rescaled to post-survival ingestion (config warns once).
+    Background species (species_id >= n_species) are excluded, matching the source's
+    fish-community scope."""
+    n_sp = config.n_species
+    u, cf_pellet, cf_carcass = (
+        config.carbon_unassimilated,
+        config.carbon_pellet_cfactor,
+        config.carbon_carcass_cfactor,
+    )
+    if u is None or cf_pellet is None or cf_carcass is None:
+        raise ValueError("carbon coefficients are unset; EngineConfig.from_dict populates them")
+    faecal = np.zeros(n_sp, dtype=np.float64)
+    carcass = np.zeros(n_sp, dtype=np.float64)
+    if len(state) == 0:
+        return faecal, carcass
+    focal = state.species_id < n_sp
+    sp = state.species_id[focal]
+    np.add.at(faecal, sp, state.preyed_biomass[focal])
+    other_dead = state.n_dead[focal][:, list(_CARCASS_CAUSES)].sum(axis=1)
+    np.add.at(carcass, sp, other_dead * state.weight[focal])
+    faecal *= u * cf_pellet
+    carcass *= cf_carcass
+    return faecal, carcass
+
+
 def _collect_distributions(
     state: SchoolState,
     config: EngineConfig,
@@ -1492,6 +1541,9 @@ def _collect_outputs(
         else None
     )
     ssb = _collect_ssb(state, config) if (config.output_ssb or config.output_ssb_netcdf) else None
+    carbon_faecal = carbon_carcass = None
+    if config.output_carbon or config.output_carbon_netcdf:
+        carbon_faecal, carbon_carcass = _collect_carbon(state, config)
     bioen_e_net, bioen_ingestion, bioen_maint, bioen_rho, bioen_size_inf, bioen_enet_faced = (
         _collect_bioen(state, config)
     )
@@ -1521,6 +1573,8 @@ def _collect_outputs(
         yield_n=yield_n,
         mean_size=mean_size,
         ssb=ssb,
+        carbon_faecal=carbon_faecal,
+        carbon_carcass=carbon_carcass,
         bioen_e_net_by_species=bioen_e_net,
         bioen_ingestion_by_species=bioen_ingestion,
         bioen_maint_by_species=bioen_maint,
@@ -1656,6 +1710,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             yield_n=accumulated[0].yield_n,
             mean_size=accumulated[0].mean_size,
             ssb=accumulated[0].ssb,
+            carbon_faecal=accumulated[0].carbon_faecal,
+            carbon_carcass=accumulated[0].carbon_carcass,
             bioen_e_net_by_species=bioen_e_net_avg,
             bioen_ingestion_by_species=bioen_ingestion_avg,
             bioen_maint_by_species=bioen_maint_avg,
@@ -1693,6 +1749,11 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
     yield_n_sum = np.sum(_yn, axis=0) if _yn else None
     _ssb = [o.ssb for o in accumulated if o.ssb is not None]
     ssb_avg = np.mean(_ssb, axis=0) if _ssb else None
+    # Carbon fluxes are FLOWS (tonnes C per step): summed over the window, like yield.
+    _cf = [o.carbon_faecal for o in accumulated if o.carbon_faecal is not None]
+    carbon_faecal_sum = np.sum(_cf, axis=0) if _cf else None
+    _cc = [o.carbon_carcass for o in accumulated if o.carbon_carcass is not None]
+    carbon_carcass_sum = np.sum(_cc, axis=0) if _cc else None
     # M1: Java parity (verified 2026-05-06 against
     # AbstractDistribOutput.java#write):
     #     array[iClass][cpt++] = values[iSpec][iClass] / getRecordFrequency();
@@ -1746,6 +1807,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         yield_n=yield_n_sum,
         mean_size=_avg_scalar_dict("mean_size"),
         ssb=ssb_avg,
+        carbon_faecal=carbon_faecal_sum,
+        carbon_carcass=carbon_carcass_sum,
         bioen_e_net_by_species=bioen_e_net_avg,
         bioen_ingestion_by_species=bioen_ingestion_avg,
         bioen_maint_by_species=bioen_maint_avg,
