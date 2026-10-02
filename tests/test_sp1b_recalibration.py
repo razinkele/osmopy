@@ -2,15 +2,23 @@ import math
 import os
 
 import numba
+import pandas as pd
 import pytest
 
 from osmose.calibration import larva_recal
 from osmose.calibration.larva_recal import (
-    RECAL_RATE,
+    JOINT_TOL,
+    RECAL_RATES,
+    SP1_STOCKS,
+    StockRecal,
     e_clip_first_guess,
-    mean_cod,
+    resolved_d0,
     solve_larva_rate,
+    solve_per_stock,
     sp1_on_config,
+    species_index,
+    stock_means,
+    stock_means_from_biomass,
     with_determinism,
 )
 from osmose.config import OsmoseConfigReader
@@ -63,21 +71,161 @@ def test_solve_max_iter_not_converged_reports_best():
     assert 5.0 < r.rate < 10.0
 
 
+# ---------------------------------------------------------------------------
+# Per-stock sweep (Gauss-Seidel over coupled stocks; engine injected as run_means_on)
+# ---------------------------------------------------------------------------
+
+
+def _coupled_model(rates: dict[str, float | None]) -> dict[str, float]:
+    """Two stocks, each linear in its own rate with a weak cross-term. d0 = 10 for both.
+
+    west(dw, de) = 100 - 4*dw + 0.5*(10 - de)   east(dw, de) = 1000 - 40*de + 2*(10 - dw)
+    A `None` rate means "key omitted" -> the stock runs at its d0.
+    """
+    dw = 10.0 if rates.get("cod_west") is None else float(rates["cod_west"])  # type: ignore[arg-type]
+    de = 10.0 if rates.get("cod_east") is None else float(rates["cod_east"])  # type: ignore[arg-type]
+    return {
+        "cod_west": 100.0 - 4.0 * dw + 0.5 * (10.0 - de),
+        "cod_east": 1000.0 - 40.0 * de + 2.0 * (10.0 - dw),
+    }
+
+
+def test_solve_per_stock_converges_both_stocks_within_tol():
+    # Baselines sit at the uncoupled roots dw=7.5, de=7.5 (plus their small cross-terms).
+    baselines = {"cod_west": 70.0, "cod_east": 700.0}
+    grids = {"cod_west": [0.0, 5.0, 10.0], "cod_east": [0.0, 5.0, 10.0]}
+    r = solve_per_stock(
+        baselines, _coupled_model, order=("cod_east", "cod_west"), grids=grids, tol=0.01
+    )
+    assert r.converged
+    assert set(r.rates) == {"cod_west", "cod_east"}
+    for name, base in baselines.items():
+        assert abs(r.means[name] - base) / base <= 0.01, name
+    assert r.sweeps >= 1
+
+
+def test_solve_per_stock_reports_infeasible_stock_and_omits_its_rate():
+    # cod_east's baseline is unreachable (above every grid mean) -> infeasible for that stock;
+    # cod_west still solves. converged is False because one stock never reached tol.
+    baselines = {"cod_west": 70.0, "cod_east": 5000.0}
+    grids = {"cod_west": [0.0, 5.0, 10.0], "cod_east": [0.0, 5.0, 10.0]}
+    r = solve_per_stock(
+        baselines, _coupled_model, order=("cod_east", "cod_west"), grids=grids, tol=0.01
+    )
+    assert not r.converged
+    assert r.rates["cod_east"] is None
+    assert not r.per_stock["cod_east"].feasible
+    assert r.rates["cod_west"] is not None
+    assert abs(r.means["cod_west"] - 70.0) / 70.0 <= 0.01
+
+
+def test_solve_per_stock_reuses_identical_evaluations():
+    # The joint check after a sweep is the same rate set the last solve ended on; a
+    # deterministic evaluator must not be called twice for one rate set.
+    calls: list[tuple] = []
+
+    def counted(rates):
+        calls.append(tuple(sorted(rates.items())))
+        return _coupled_model(rates)
+
+    solve_per_stock(
+        {"cod_west": 70.0, "cod_east": 700.0},
+        counted,
+        order=("cod_east", "cod_west"),
+        grids={"cod_west": [0.0, 5.0, 10.0], "cod_east": [0.0, 5.0, 10.0]},
+        tol=0.01,
+    )
+    assert len(calls) == len(set(calls))
+
+
+def _jittery_model(rates: dict[str, float | None]) -> dict[str, float]:
+    """Like _coupled_model but each stock's cross-term is an oscillation in the OTHER
+    stock's rate (the Baltic shape: cod_east's mean jitters +-2-4% with cod_west's rate).
+    Gauss-Seidel then does not improve monotonically: sweep 2 is best, sweep 3 is worse."""
+    dw = 10.0 if rates.get("cod_west") is None else float(rates["cod_west"])  # type: ignore[arg-type]
+    de = 10.0 if rates.get("cod_east") is None else float(rates["cod_east"])  # type: ignore[arg-type]
+    return {
+        "cod_west": 100.0 - 4.0 * dw + 3.0 * math.sin(13.0 * de),
+        "cod_east": 1000.0 - 40.0 * de + 30.0 * math.sin(13.0 * dw),
+    }
+
+
+def test_solve_per_stock_returns_best_joint_state_across_sweeps():
+    r = solve_per_stock(
+        {"cod_west": 70.0, "cod_east": 700.0},
+        _jittery_model,
+        order=("cod_east", "cod_west"),
+        grids={"cod_west": [0.0, 5.0, 10.0], "cod_east": [0.0, 5.0, 10.0]},
+        tol=0.005,
+        max_sweeps=3,
+    )
+    assert not r.converged and r.sweeps == 3
+    assert len(r.sweep_history) == 3  # joint rel_errs after each sweep
+    worst = [max(h.values()) for h in r.sweep_history]
+    assert worst[1] < worst[0] and worst[1] < worst[2]  # the model does what the docstring says
+    assert max(r.rel_errs.values()) == min(worst)  # returned state = best sweep, not last
+    assert r.best_sweep == 2  # 1-based index of that sweep, for the solve record
+    assert r.means == _jittery_model(r.rates)  # rates/means/rel_errs are one consistent state
+
+
 SP_FIELD = "data/baltic/forcing/baltic_rv_field.nc"
-SPAWN = "data/baltic/maps/cod_spawning.csv"
+SPAWN_WEST = "data/baltic/maps/cod_west_spawning.csv"
+SPAWN_EAST = "data/baltic/maps/cod_east_spawning.csv"
 
 
 def test_e_clip_first_guess_bounds():
-    d1, e_clip = e_clip_first_guess(SP_FIELD, SPAWN, d0=15.0)
-    assert 0.0 < e_clip < 1.0  # some but not all viable
-    assert 0.0 <= d1 <= 15.0  # a valid rate inside the bracket
-    # d1 = d0 + ln(e_clip); ln(e_clip) < 0 so d1 < d0
-    assert d1 < 15.0
-    assert abs(d1 - max(0.0, 15.0 + math.log(e_clip))) < 1e-9
+    for spawn in (SPAWN_WEST, SPAWN_EAST):
+        d1, e_clip = e_clip_first_guess(SP_FIELD, spawn, d0=15.0)
+        assert 0.0 < e_clip < 1.0  # some but not all viable
+        assert 0.0 <= d1 <= 15.0  # a valid rate inside the bracket
+        # d1 = d0 + ln(e_clip); ln(e_clip) < 0 so d1 < d0
+        assert d1 < 15.0
+        assert abs(d1 - max(0.0, 15.0 + math.log(e_clip))) < 1e-9
 
 
-RATE_KEY = "mortality.additional.larva.rate.sp0"
+# ---------------------------------------------------------------------------
+# Config helpers: name -> index, resolved d0, overlay assembly
+# ---------------------------------------------------------------------------
+
 DET_KEYS = ("movement.randomseed.fixed", "stochastic.mortality.randomseed.fixed")
+
+
+def _rate_key(i: int) -> str:
+    return f"mortality.additional.larva.rate.sp{i}"
+
+
+def _two_stock_base(d0_west: float = 10.0, d0_east: float = 10.0) -> dict[str, str]:
+    """A config fragment with the two cod stocks at non-adjacent indices plus a bystander."""
+    return {
+        "species.name.sp0": "cod_west",
+        "species.name.sp1": "herring",
+        "species.name.sp8": "cod_east",
+        _rate_key(0): repr(d0_west),
+        _rate_key(1): "4.0",
+        _rate_key(8): repr(d0_east),
+    }
+
+
+def test_species_index_resolves_by_name_and_none_when_absent():
+    base = _two_stock_base()
+    assert species_index(base, "cod_west") == 0
+    assert species_index(base, "cod_east") == 8
+    assert species_index(base, "cod") is None
+
+
+def test_resolved_d0_reads_live_larva_rate_for_stock():
+    base = _two_stock_base(d0_west=10.5, d0_east=9.25)
+    assert resolved_d0(base, "cod_west") == 10.5
+    assert resolved_d0(base, "cod_east") == 9.25
+
+
+def test_resolved_d0_raises_for_absent_stock():
+    with pytest.raises(KeyError):
+        resolved_d0(_two_stock_base(), "cod")
+
+
+def test_sp1_stocks_are_the_two_cod_stocks():
+    assert SP1_STOCKS == ("cod_west", "cod_east")
 
 
 def test_with_determinism_sets_both_keys_without_mutating():
@@ -87,31 +235,116 @@ def test_with_determinism_sets_both_keys_without_mutating():
     assert "a" in out and base == {"a": "1"}  # original untouched
 
 
-def test_sp1_on_config_flags_and_determinism():
-    cfg = sp1_on_config({"x": "y"}, SP_FIELD, larva_rate=None)
+def test_sp1_on_config_enables_every_sp1_stock_by_name():
+    cfg = sp1_on_config(_two_stock_base(), SP_FIELD, larva_rates=None)
     assert cfg["reproduction.rv.spatial.enabled"] == "true"
     assert cfg["reproduction.rv.spatial.field.file"] == SP_FIELD
     assert cfg["reproduction.rv.spatial.species.enabled.sp0"] == "true"
+    assert cfg["reproduction.rv.spatial.species.enabled.sp8"] == "true"
+    assert "reproduction.rv.spatial.species.enabled.sp1" not in cfg  # herring untouched
     assert all(cfg[k] == "true" for k in DET_KEYS)
 
 
-def test_sp1_on_config_none_omits_rate_key():
-    cfg = sp1_on_config({}, SP_FIELD, larva_rate=None)
-    assert RATE_KEY not in cfg  # infeasible path: base d0 stands
+def test_sp1_on_config_none_omits_all_rate_keys_and_keeps_base_d0():
+    base = _two_stock_base(d0_west=10.0, d0_east=9.0)
+    cfg = sp1_on_config(base, SP_FIELD, larva_rates=None)
+    assert cfg[_rate_key(0)] == "10.0" and cfg[_rate_key(8)] == "9.0"  # infeasible path
 
 
-def test_sp1_on_config_value_sets_rate_key():
-    cfg = sp1_on_config({}, SP_FIELD, larva_rate=12.5)
-    assert float(cfg[RATE_KEY]) == 12.5
+def test_sp1_on_config_explicit_mapping_sets_rate_keys_per_stock():
+    base = _two_stock_base()
+    cfg = sp1_on_config(base, SP_FIELD, larva_rates={"cod_west": 8.0, "cod_east": None})
+    assert float(cfg[_rate_key(0)]) == 8.0
+    assert cfg[_rate_key(8)] == base[_rate_key(8)]  # None -> this stock's d0 stands
+    assert cfg[_rate_key(1)] == "4.0"  # bystander untouched
 
 
-def test_sp1_on_config_default_reads_current_recal_rate(monkeypatch):
-    monkeypatch.setattr(larva_recal, "RECAL_RATE", 9.0)
-    cfg = sp1_on_config({}, SP_FIELD)  # default -> current module RECAL_RATE
-    assert float(cfg[RATE_KEY]) == 9.0
-    monkeypatch.setattr(larva_recal, "RECAL_RATE", None)
-    cfg2 = sp1_on_config({}, SP_FIELD)
-    assert RATE_KEY not in cfg2
+def test_sp1_on_config_default_reads_module_rates(monkeypatch):
+    base = _two_stock_base(d0_west=10.0, d0_east=10.0)
+    monkeypatch.setattr(
+        larva_recal,
+        "RECAL_RATES",
+        {"cod_west": StockRecal(rate=8.0, d0=10.0), "cod_east": StockRecal(rate=9.5, d0=10.0)},
+    )
+    cfg = sp1_on_config(base, SP_FIELD)
+    assert float(cfg[_rate_key(0)]) == 8.0
+    assert float(cfg[_rate_key(8)]) == 9.5
+    monkeypatch.setattr(larva_recal, "RECAL_RATES", {})
+    cfg2 = sp1_on_config(base, SP_FIELD)
+    assert cfg2[_rate_key(0)] == "10.0" and cfg2[_rate_key(8)] == "10.0"
+
+
+def test_sp1_on_config_raises_when_live_d0_drifted_from_solved(monkeypatch):
+    # The 2026-07 trap: the rate was solved against d0=15, the baseline was later
+    # recalibrated to ~10.16, and the frozen constant silently became an INCREASE.
+    base = _two_stock_base(d0_west=10.15686139, d0_east=10.15686139)
+    monkeypatch.setattr(larva_recal, "RECAL_RATES", {"cod_west": StockRecal(rate=14.655, d0=15.0)})
+    with pytest.raises(ValueError, match="cod_west.*15\\.0.*10\\.157"):
+        sp1_on_config(base, SP_FIELD)
+
+
+def test_sp1_on_config_default_skips_stocks_absent_from_config(monkeypatch):
+    # A solved entry for a stock the config does not declare is ignored, not an error.
+    base = {"species.name.sp0": "cod", _rate_key(0): "15.0"}
+    monkeypatch.setattr(larva_recal, "RECAL_RATES", {"cod_west": StockRecal(rate=8.0, d0=10.0)})
+    cfg = sp1_on_config(base, SP_FIELD)
+    assert cfg[_rate_key(0)] == "15.0"
+    assert "reproduction.rv.spatial.species.enabled.sp0" not in cfg
+
+
+# ---------------------------------------------------------------------------
+# Means: pure window helper on a biomass frame, then the engine-backed wrapper
+# ---------------------------------------------------------------------------
+
+
+def _frame(**cols: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(cols)
+
+
+def test_stock_means_from_biomass_windows_years_3_to_14_finite_positive():
+    years = list(range(20))
+    west = [float(y) for y in years]  # mean over [3:15] = mean(3..14) = 8.5
+    east = [100.0] * 20
+    east[5] = float("nan")  # dropped
+    east[7] = 0.0  # dropped (>0 filter)
+    m = stock_means_from_biomass(_frame(cod_west=west, cod_east=east))
+    assert m["cod_west"] == pytest.approx(8.5)
+    assert m["cod_east"] == pytest.approx(100.0)
+
+
+def test_stock_means_from_biomass_windows_by_time_column_when_recorded_per_step():
+    # 24 records per year: rows with 3 <= Time < 15 are the window, not row index [3:15].
+    n = 24 * 20
+    time = [i / 24 for i in range(n)]
+    west = [1.0 if 3.0 <= t < 15.0 else 1000.0 for t in time]
+    m = stock_means_from_biomass(_frame(Time=time, cod_west=west, species=["all"] * n))
+    assert m == {"cod_west": pytest.approx(1.0)}  # Time/species columns are not stocks
+
+
+def test_mean_cod_from_biomass_sums_the_two_stocks_and_falls_back_to_aggregate():
+    split = _frame(cod_west=[1.0] * 20, cod_east=[2.0] * 20)
+    assert larva_recal.mean_cod_from_biomass(split) == pytest.approx(3.0)
+    agg = _frame(cod=[5.0] * 20)
+    assert larva_recal.mean_cod_from_biomass(agg) == pytest.approx(5.0)
+
+
+def test_stock_overshoot_from_biomass_is_window_max_over_mean():
+    west = [1.0] * 20
+    west[10] = 13.0  # inside the window: mean over 3..14 = (11*1 + 13)/12 = 2.0, max 13
+    west[0] = 1000.0  # outside the window, ignored
+    o = larva_recal.stock_overshoot_from_biomass(_frame(cod_west=west))
+    assert o["cod_west"] == pytest.approx(13.0 / 2.0)
+
+
+MINIMAL = "data/minimal/osm_all-parameters.csv"
+
+
+def test_stock_means_runs_engine_and_returns_every_focal_column(numba_warmup):
+    cfg = dict(OsmoseConfigReader().read(MINIMAL))
+    cfg["simulation.time.nyear"] = "5"
+    m = stock_means(with_determinism(cfg))
+    assert set(m) == {"Anchovy", "Hake"}
+    assert all(math.isfinite(v) and v > 0 for v in m.values())
 
 
 BALTIC = "data/baltic/baltic_all-parameters.csv"
@@ -125,27 +358,30 @@ def _baltic_15yr():
 
 @pytest.mark.skipif(
     os.environ.get("CI") == "true",
-    reason="RECAL_RATE is solved on the maintainer's host; the 15-yr Baltic sim is not "
-    "bit-reproducible across dependency/hardware environments, so the frozen rate only hits "
-    "mean-neutrality where it was solved. The fast solver unit tests cover the mechanism.",
+    reason="RECAL_RATES are solved on the maintainer's host; the 15-yr Baltic sim is not "
+    "bit-reproducible across dependency/hardware environments, so the frozen rates only hit "
+    "mean-neutrality where they were solved. The fast solver unit tests cover the mechanism.",
 )
 def test_sp1b_mean_neutral_drift_guard():
+    """Two assertions per solved stock, on one fresh off-run and one fresh on-run:
+
+    (a) REPRODUCTION — the frozen baseline/mean_on are reproduced to 1e-6 relative. This is
+        the drift detector proper: any engine, field or config change that moves the solution
+        trips it, and it is tight because the solve's noise check proved bit-identity.
+    (b) NEUTRALITY — each stock within JOINT_TOL of its own baseline. JOINT_TOL is the band
+        the joint state was accepted at (see larva_recal.JOINT_TOL and the diagnostic for why
+        it is not the 1-D solver's tol).
+    """
+    active = {n: e for n, e in RECAL_RATES.items() if e.rate is not None}
+    if not active:
+        pytest.skip("SP1b: no solved per-stock rate (see docs/diagnostics/sp1b_recalibration.md)")
     numba.set_num_threads(1)  # runtime determinism pin (config keys added by the helpers)
-    if RECAL_RATE is None:
-        pytest.skip(
-            "SP1b infeasible: RECAL_RATE is None (see docs/diagnostics/sp1b_recalibration.md)"
-        )
     base = _baltic_15yr()
-    species = {v for k, v in base.items() if k.startswith("species.name.sp")}
-    if "cod" not in species:
-        pytest.skip(
-            "SP1b's larval recalibration was solved for the AGGREGATE cod stock. RECAL_RATE "
-            "does not transfer to the disaggregated cod_west/cod_east config: applied here it "
-            "drives the small western stock extinct (cod_west 6432 -> 1 t under SP1) while cod_east "
-            "barely moves, so total-cod drifts ~9% and the mean-neutrality premise is structurally "
-            "false. Re-solving RECAL_RATE per stock is a separate recalibration task. See "
-            "docs/diagnostics/sp1b_recalibration.md."
-        )
-    baseline = mean_cod(with_determinism(base))
-    on = mean_cod(sp1_on_config(base, SP_FIELD))  # default larva_rate -> RECAL_RATE
-    assert abs(on - baseline) / baseline <= 0.02
+    off = stock_means(with_determinism(base))
+    on = stock_means(sp1_on_config(base, SP_FIELD))  # default -> RECAL_RATES, d0-checked
+    for name, entry in active.items():
+        assert name in off, f"{name} is not a focal species of the config"
+        assert entry.baseline is not None and entry.mean_on is not None
+        assert off[name] == pytest.approx(entry.baseline, rel=1e-6), f"{name} baseline drifted"
+        assert on[name] == pytest.approx(entry.mean_on, rel=1e-6), f"{name} SP1-on mean drifted"
+        assert abs(on[name] - off[name]) / off[name] <= JOINT_TOL, f"{name} not neutral"

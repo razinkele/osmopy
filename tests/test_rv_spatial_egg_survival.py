@@ -215,7 +215,7 @@ def test_spatial_off_bit_identical():
 
 def test_spatial_on_changes_cod():
     off = total_cod(PythonEngine().run_in_memory(_baltic_cfg(), seed=0).biomass())
-    on_cfg = sp1_on_config(_baltic_cfg(), SP_FIELD, larva_rate=None)  # SP1 on, no recal
+    on_cfg = sp1_on_config(_baltic_cfg(), SP_FIELD, larva_rates=None)  # SP1 on, no recal
     on = total_cod(PythonEngine().run_in_memory(on_cfg, seed=0).biomass())
     assert not np.allclose(off, on)  # the spatial term changes cod
 

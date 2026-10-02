@@ -1,0 +1,168 @@
+{
+  "note": "Written by scripts/recalibrate_sp1b.py; each run REPLACES this file (a new solve is new provenance; prior solves live in git history). 'joint' is the BEST sweep (smallest worst-stock rel_err), 'per_stock' the 1-D solves of the LAST sweep as this run recorded them, 'sweep_history' the joint rel_errs after every sweep. HISTORY OF THIS RECORD: the 2026-10-01 run predated best-sweep selection and stored the last sweep (2) as 'joint'; the joint block below was realigned by hand on 2026-10-02 to sweep 1, its means re-evaluated once from the bisection floats replayed bit-exactly from sp1b_solve.log. Frozen values in osmose/calibration/larva_recal.py are pasted from this block.",
+  "date": "2026-10-02",
+  "config": "data/baltic/baltic_all-parameters.csv",
+  "field": "data/baltic/forcing/baltic_rv_field.nc",
+  "tol": 0.02,
+  "order": [
+    "cod_east",
+    "cod_west"
+  ],
+  "baselines": {
+    "cod_east": 105120.44210318821,
+    "cod_west": 5990.8253860997675
+  },
+  "d0": {
+    "cod_east": 10.15686139,
+    "cod_west": 10.15686139
+  },
+  "first_guess": {
+    "cod_east": {
+      "e_clip": 0.1599725916774631,
+      "d1_analytical": 8.324108609561968
+    },
+    "cod_west": {
+      "e_clip": 0.2143603319357981,
+      "d1_analytical": 8.616764504140225
+    }
+  },
+  "grids": {
+    "cod_east": [
+      0.0,
+      2.5392153475,
+      5.078430695,
+      7.6176460425,
+      8.324108609561968,
+      10.15686139
+    ],
+    "cod_west": [
+      0.0,
+      2.5392153475,
+      5.078430695,
+      7.6176460425,
+      8.616764504140225,
+      10.15686139
+    ]
+  },
+  "per_stock": {
+    "cod_east": {
+      "rate": 9.054346045517747,
+      "feasible": true,
+      "converged": true,
+      "mean_on": 105888.04571390693,
+      "rel_err": 0.0073021345359757,
+      "iters": 7,
+      "message": "converged",
+      "grid": [
+        [
+          0.0,
+          2205224.0732047292
+        ],
+        [
+          2.5392153475,
+          1199837.9223325422
+        ],
+        [
+          5.078430695,
+          674720.3436102348
+        ],
+        [
+          7.6176460425,
+          308711.0432742143
+        ],
+        [
+          8.324108609561968,
+          200601.9930083973
+        ],
+        [
+          10.15686139,
+          13151.77880685256
+        ]
+      ]
+    },
+    "cod_west": {
+      "rate": 9.061948760209066,
+      "feasible": true,
+      "converged": true,
+      "mean_on": 6046.809280488788,
+      "rel_err": 0.00934493843184241,
+      "iters": 7,
+      "message": "converged",
+      "grid": [
+        [
+          0.0,
+          997413.7962293058
+        ],
+        [
+          2.5392153475,
+          478219.24854764406
+        ],
+        [
+          5.078430695,
+          158331.5925778571
+        ],
+        [
+          7.6176460425,
+          31592.439448798075
+        ],
+        [
+          8.616764504140225,
+          11976.900186186804
+        ],
+        [
+          10.15686139,
+          331.3336763682298
+        ]
+      ]
+    }
+  },
+  "sweep_history": [
+    {
+      "cod_east": 0.029097176339746955,
+      "cod_west": 0.011741971135296847
+    },
+    {
+      "cod_east": 0.040286183926399904,
+      "cod_west": 0.00934493843184241
+    }
+  ],
+  "joint": {
+    "best_sweep": 1,
+    "joint_tol": 0.05,
+    "rates": {
+      "cod_east": 9.068664426614918,
+      "cod_west": 9.025852739446727
+    },
+    "means": {
+      "cod_east": 102061.73406239958,
+      "cod_west": 6061.1694848599545
+    },
+    "rel_errs": {
+      "cod_east": 0.029097176339746955,
+      "cod_west": 0.011741971135296847
+    },
+    "converged": false,
+    "sweeps": 2,
+    "evaluations": 47,
+    "total_cod_off": 111111.26748928797,
+    "total_cod_on": 108122.90354725954,
+    "cross_sensitivity_half_range": {
+      "cod_east_vs_cod_west_rate": 0.021,
+      "cod_west_vs_cod_east_rate": 0.038
+    },
+    "last_sweep_superseded": {
+      "rates": {
+        "cod_east": 9.054346045517747,
+        "cod_west": 9.061948760209066
+      },
+      "means": {
+        "cod_east": 109355.34356818172,
+        "cod_west": 6046.809280488788
+      },
+      "rel_errs": {
+        "cod_east": 0.040286183926399904,
+        "cod_west": 0.00934493843184241
+      }
+    }
+  }
+}
