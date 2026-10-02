@@ -133,5 +133,36 @@
     "evaluations": 47,
     "total_cod_off": 111111.26748928797,
     "total_cod_on": 115402.1528486705
+  },
+  "note": "Written by the solve run of 2026-10-01 BEFORE best-sweep selection existed: 'joint' is the LAST sweep (2). The frozen state is sweep 1 (see 'frozen'); its means were re-evaluated 2026-10-02 from the bit-exact bisection floats. Full evaluation log: sp1b_solve.log.",
+  "sweep_history": [
+    {
+      "cod_east": 0.029097176339746955,
+      "cod_west": 0.011741971135296847
+    },
+    {
+      "cod_east": 0.040286183926399904,
+      "cod_west": 0.00934493843184241
+    }
+  ],
+  "frozen": {
+    "sweep": 1,
+    "joint_tol": 0.05,
+    "rates": {
+      "cod_east": 9.068664426614918,
+      "cod_west": 9.025852739446727
+    },
+    "means": {
+      "cod_east": 102061.73406239958,
+      "cod_west": 6061.1694848599545
+    },
+    "rel_errs": {
+      "cod_east": 0.029097176339746955,
+      "cod_west": 0.011741971135296847
+    },
+    "cross_sensitivity_half_range": {
+      "cod_east_vs_cod_west_rate": 0.021,
+      "cod_west_vs_cod_east_rate": 0.038
+    }
   }
 }

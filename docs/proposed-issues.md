@@ -227,9 +227,21 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Opened → #131] SP1b larval recalibration is aggregate-cod-specific — re-solve RECAL_RATE per stock
+## [Resolved 2026-10-02] SP1b larval recalibration is aggregate-cod-specific — re-solve RECAL_RATE per stock
 
-> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/131 (label: bug). Draft retained below.
+> **✅ Fixed 2026-10-02** (issue #131). The split was the symptom, not the cause: `RECAL_RATE = 14.66`
+> was solved against a resolved d0 of 15.0, and the Baltic baseline was recalibrated on 2026-07-24
+> (sp0 larva rate 360 → 243.76 per year, resolved d0 15.0 → 10.157) — so the frozen constant had become
+> a larval-mortality *increase*, and stacked on the spatial clip (E[clip] ≈ 0.21 on the western map) it
+> left ~0.2% of baseline egg survival. Fix: `RECAL_RATES` is now per stock (`cod_west`, `cod_east`), each
+> entry frozen **with the d0 it was solved against**, and `sp1_on_config` raises if the live d0 differs.
+> Solved 2026-10-01 (47 evaluations): both stocks converge on their own axis (1.2% / 1.5%) but the joint
+> state does not reach 2% because each stock's mean jitters ±2–4% with the *other* stock's rate; the
+> maintainer set a separate `JOINT_TOL = 0.05` above that jitter and the sweep-1 state is frozen
+> (cod_east −2.9%, cod_west +1.2%). Drift guard restored: reproduction to 1e-6 plus the joint band.
+> `docs/diagnostics/sp1b_recalibration.md`, `sp1b_solve.json`, `sp1b_solve.log`. Draft retained below.
+
+> **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/131 (label: bug).
 
 **Source:** 2026-07-29; `test_sp1b_mean_neutral_drift_guard` now skips on disaggregated configs (commit 5811575). Already documented at `docs/diagnostics/sp1b_recalibration.md`; filed here for tracking.
 

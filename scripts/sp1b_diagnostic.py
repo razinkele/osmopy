@@ -15,6 +15,7 @@ from pathlib import Path
 import numba
 
 from osmose.calibration.larva_recal import (
+    JOINT_TOL,
     RECAL_RATES,
     SP1_STOCKS,
     mean_cod_from_biomass,
@@ -63,8 +64,10 @@ def main() -> int:
             "SP1 (spatial RV egg-survival clip) enabled on: " + ", ".join(stocks) + ".",
             (
                 "Each stock's larval rate (resolved per-cohort) is solved so its own SP1-on mean "
-                "matches its SP1-off mean (target rel_err <= 0.02). Rates are frozen with the d0 "
-                "they were solved against; `sp1_on_config` refuses a config whose d0 has moved."
+                "matches its SP1-off mean: 1-D solver tol 0.02 on the stock's own axis, joint "
+                f"band JOINT_TOL = {JOINT_TOL} on the pair (see 'Coupling' below). Rates are "
+                "frozen with the d0 they were solved against; `sp1_on_config` refuses a config "
+                "whose d0 has moved."
             ),
             "",
             (
@@ -96,6 +99,20 @@ def main() -> int:
                 f"ratio={over_on[s] / over_off[s]:.2f}  ({verdict} the boom/bust)"
             )
         lines += [
+            "",
+            "## Coupling: why the joint band is wider than the 1-D tol",
+            (
+                "With its own rate fixed at the root, each stock's mean still moves with the OTHER "
+                "stock's rate, and not smoothly: on the 2026-10-01 solve (47 evaluations, two "
+                "Gauss-Seidel sweeps, docs/diagnostics/sp1b_solve.log) the half-range within "
+                "+-0.1 of the roots was 2.0-2.1% for cod_east across cod_west's rate and 3.8% for "
+                "cod_west across cod_east's rate. Sweep 1 ended cod_east -2.9% / cod_west +1.2%, "
+                "sweep 2 +4.0% / +0.9%; neither sweep put both inside 2%, and the jitter is as "
+                "wide as that band, so a joint 2% is below the coupling's resolution. The frozen "
+                "state is the best sweep (1) and the joint band is set above the jitter. A third "
+                "sweep could land inside 2% by chance, which would make the drift guard trip on "
+                "trajectory sensitivity rather than drift."
+            ),
             "",
             "## Caveat: stacked RV terms on cod_east",
             (

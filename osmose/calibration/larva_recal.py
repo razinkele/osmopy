@@ -346,15 +346,37 @@ class StockRecal:
 
 # Band each solved stock must sit within of its own SP1-off mean at the JOINT state (both
 # rates applied). Distinct from the 1-D solver's `tol` (0.02, each stock on its own axis):
-# the joint state also carries each stock's response to the OTHER stock's rate, which for the
-# Baltic cods is a +-2-4% jitter (docs/diagnostics/sp1b_recalibration.md). The value is a
-# criterion the maintainer sets, not a fit output.
-JOINT_TOL: float = 0.02
+# the joint state also carries each stock's response to the OTHER stock's rate, measured on
+# the 2026-10-01 solve as a half-range of 2.0-2.1% (cod_east across cod_west's rate) and 3.8%
+# (cod_west across cod_east's rate) within +-0.1 of the roots — as wide as a 2% band, so a
+# joint 2% is below the coupling's resolution (47 evaluations, two sweeps, neither inside).
+# 0.05 sits above that jitter. Set by the maintainer 2026-10-02 (issue #131); it is a
+# criterion, not a fit output. docs/diagnostics/sp1b_recalibration.md, sp1b_solve.log.
+JOINT_TOL: float = 0.05
 
-# Filled by hand from `scripts/recalibrate_sp1b.py` output. Empty = no solved rate (the
-# aggregate-cod solve of 2026-07-02, RECAL_RATE=14.655 at d0=15.0, is retired: see
-# docs/diagnostics/sp1b_recalibration.md).
-RECAL_RATES: dict[str, StockRecal] = {}
+# Filled by hand from `scripts/recalibrate_sp1b.py` output (the aggregate-cod solve of
+# 2026-07-02, RECAL_RATE=14.655 at d0=15.0, is retired: docs/diagnostics/sp1b_recalibration.md).
+# 2026-10-01 solve, best (first) sweep of two; rates are the solver's bisection floats
+# bit-exactly (replayed from docs/diagnostics/sp1b_solve.log), means from one evaluation of
+# the pair. Within JOINT_TOL, not within the 1-D tol — see JOINT_TOL above.
+RECAL_RATES: dict[str, StockRecal] = {
+    "cod_east": StockRecal(
+        rate=9.068664426614918,
+        d0=10.15686139,
+        baseline=105120.44210318821,
+        mean_on=102061.73406239958,
+        rel_err=0.029097176339746955,
+        note="solved 2026-10-01 sweep 1: converged (1-D 1.5%); joint -2.9% within JOINT_TOL",
+    ),
+    "cod_west": StockRecal(
+        rate=9.025852739446727,
+        d0=10.15686139,
+        baseline=5990.8253860997675,
+        mean_on=6061.1694848599545,
+        rel_err=0.011741971135296847,
+        note="solved 2026-10-01 sweep 1: converged (1-D 1.2%); joint +1.2% within JOINT_TOL",
+    ),
+}
 
 
 class _UseRecal:
