@@ -280,6 +280,8 @@ _CROSS_SPECIES_OUTPUT_TYPES = {
     "yieldN",
     "meanSize",
     "SSB",
+    "carbonFaecal",
+    "carbonCarcass",
 }
 
 
@@ -306,6 +308,7 @@ def _build_dataframes_from_outputs(
     # osmose.engine.__init__, which imports OsmoseResults from this module.
     from osmose.engine.output import (
         _build_bioen_dataframes,
+        _build_carbon_dataframes,
         _build_diet_dataframe,
         _build_distrib_bysize_community_dataframes,
         _build_distribution_dataframes,
@@ -329,6 +332,7 @@ def _build_dataframes_from_outputs(
     disk_shape.update(_build_yieldn_dataframes(outputs, config))
     disk_shape.update(_build_meansize_dataframe(outputs, config))
     disk_shape.update(_build_ssb_dataframe(outputs, config))
+    disk_shape.update(_build_carbon_dataframes(outputs, config))
     if config.bioen_enabled:
         disk_shape.update(_build_bioen_dataframes(outputs, config))
     if config.diet_output_enabled:
@@ -492,6 +496,27 @@ class OsmoseResults:
     def ssb(self, species: str | None = None) -> pd.DataFrame:
         """Read spawning-stock biomass time series (wide: Time + per-species columns)."""
         return self._read_species_output("SSB", species)
+
+    _CARBON_PATHWAYS: ClassVar[dict[str, str]] = {
+        "faecal": "carbonFaecal",
+        "carcass": "carbonCarcass",
+    }
+
+    def carbon_flux(
+        self, species: str | None = None, *, pathway: str = "faecal", source: str = "csv"
+    ) -> pd.DataFrame:
+        """Fish-mediated carbon flux time series (wide: Time + per-species columns), tonnes C
+        per recording window. pathway='faecal' (pellets) or 'carcass'; source='csv' or
+        'netcdf'. Opt-in via output.carbon.enabled (issue #134)."""
+        key = self._CARBON_PATHWAYS.get(pathway)
+        if key is None:
+            raise ValueError(
+                f"unknown carbon pathway {pathway!r}; expected one of "
+                f"{sorted(self._CARBON_PATHWAYS)}"
+            )
+        if source == "netcdf":
+            return self._read_netcdf_species_var(key, "focal_species", species)
+        return self._read_species_output(key, species)
 
     def mean_trophic_level(self, species: str | None = None) -> pd.DataFrame:
         """Read mean trophic level time series."""
@@ -828,6 +853,8 @@ class OsmoseResults:
         "bioen_ingestion": ("ingestion", "1d"),
         "bioen_maintenance": ("maintenance", "1d"),
         "bioen_net_energy": ("meanEnet", "1d"),
+        "carbon_faecal": ("carbonFaecal", "1d"),
+        "carbon_carcass": ("carbonCarcass", "1d"),
         # 2D types
         "biomass_by_age": ("biomassByAge", "2d"),
         "biomass_by_size": ("biomassBySize", "2d"),

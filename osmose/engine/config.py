@@ -902,6 +902,22 @@ def _merge_focal_background(
         }
 
 
+def _require_unit_interval(vals: NDArray[np.float64], pattern: str) -> NDArray[np.float64]:
+    """Per-species fraction bounded [0, 1] (the schema's min/max for the carbon coefficients);
+    raise on the first out-of-range value, as the sexratio parser does, rather than let a
+    negative or >1 coefficient produce impossible fluxes silently.
+
+    Takes the ALREADY-READ array: the key literal must stay inside a `_species_float_optional`
+    call at the call site, because config_validation's AST walker only recognises that fixed
+    set of helper names — a new helper taking the pattern hides the key from the validator
+    (tests/test_schema_engine_key_parity.py caught exactly that, 2026-10-02)."""
+    bad = np.where((vals < 0.0) | (vals > 1.0) | ~np.isfinite(vals))[0]
+    if len(bad) > 0:
+        i = int(bad[0])
+        raise ValueError(f"{pattern.format(i=i)} must be in [0, 1], got {float(vals[i])}")
+    return vals
+
+
 def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str, Any]:
     """Parse output recording flags and distribution settings."""
     output_record_freq = int(cfg.get("output.recordfrequency.ndt", "1"))
@@ -944,6 +960,22 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_mean_size_netcdf": _enabled(cfg, "output.size.netcdf.enabled"),
         "output_ssb": _enabled(cfg, "output.ssb.enabled"),
         "output_ssb_netcdf": _enabled(cfg, "output.ssb.netcdf.enabled"),
+        # Fish-mediated carbon flux diagnostic (#134): flags + per-species coefficients
+        # (defaults: Silvar-Viladomiu et al. 2026 teleost values, see schema/output.py).
+        "output_carbon": _enabled(cfg, "output.carbon.enabled"),
+        "output_carbon_netcdf": _enabled(cfg, "output.carbon.netcdf.enabled"),
+        "carbon_unassimilated": _require_unit_interval(
+            _species_float_optional(cfg, "carbon.unassimilated.fraction.sp{i}", n_sp, default=0.2),
+            "carbon.unassimilated.fraction.sp{i}",
+        ),
+        "carbon_pellet_cfactor": _require_unit_interval(
+            _species_float_optional(cfg, "carbon.pellet.cfactor.sp{i}", n_sp, default=0.10),
+            "carbon.pellet.cfactor.sp{i}",
+        ),
+        "carbon_carcass_cfactor": _require_unit_interval(
+            _species_float_optional(cfg, "carbon.carcass.cfactor.sp{i}", n_sp, default=0.10),
+            "carbon.carcass.cfactor.sp{i}",
+        ),
         # Five new keys
         "output_biomass_byage_netcdf": _enabled(cfg, "output.biomass.byage.netcdf.enabled"),
         "output_abundance_byage_netcdf": _enabled(cfg, "output.abundance.byage.netcdf.enabled"),
@@ -1923,6 +1955,12 @@ class EngineConfig:
     output_mean_size_netcdf: bool = False
     output_ssb: bool = False
     output_ssb_netcdf: bool = False
+    # Fish-mediated carbon flux diagnostic (#134); coefficient arrays are per focal species.
+    output_carbon: bool = False
+    output_carbon_netcdf: bool = False
+    carbon_unassimilated: NDArray[np.float64] | None = None
+    carbon_pellet_cfactor: NDArray[np.float64] | None = None
+    carbon_carcass_cfactor: NDArray[np.float64] | None = None
     output_size_min: float = 0.0
     output_size_max: float = 205.0
     output_size_incr: float = 10.0
@@ -2485,6 +2523,14 @@ class EngineConfig:
 
         # Bioenergetic parameters: only parsed when module.bioenergetics.enabled=true
         _bioen_enabled = cfg.get("module.bioenergetics.enabled", "false").lower() == "true"
+        if _bioen_enabled and (_output["output_carbon"] or _output["output_carbon_netcdf"]):
+            warnings.warn(
+                "output.carbon.enabled with bioenergetics on: the faecal-pellet flux is "
+                "computed from state.preyed_biomass, which bioen rescales to post-survival "
+                "INGESTION before outputs are collected (not raw consumption as in the "
+                "non-bioen path). Interpret carbonFaecal on that basis.",
+                stacklevel=2,
+            )
         _bioen_phit_enabled = cfg.get("simulation.bioen.phit.enabled", "true").lower() == "true"
         _bioen_fo2_enabled = cfg.get("simulation.bioen.fo2.enabled", "true").lower() == "true"
         bioen_beta = bioen_zlayer = bioen_assimilation = bioen_c_m = None
@@ -2781,6 +2827,11 @@ class EngineConfig:
             output_mean_size_netcdf=_output["output_mean_size_netcdf"],
             output_ssb=_output["output_ssb"],
             output_ssb_netcdf=_output["output_ssb_netcdf"],
+            output_carbon=_output["output_carbon"],
+            output_carbon_netcdf=_output["output_carbon_netcdf"],
+            carbon_unassimilated=_output["carbon_unassimilated"],
+            carbon_pellet_cfactor=_output["carbon_pellet_cfactor"],
+            carbon_carcass_cfactor=_output["carbon_carcass_cfactor"],
             output_size_min=_output["output_size_min"],
             output_size_max=_output["output_size_max"],
             output_size_incr=_output["output_size_incr"],
