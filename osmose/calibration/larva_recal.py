@@ -138,6 +138,7 @@ class PerStockResult:
     sweeps: int  # sweeps run
     evaluations: int  # distinct engine evaluations actually run
     sweep_history: list[dict[str, float]] = field(default_factory=list)  # joint rel_errs/sweep
+    best_sweep: int = 1  # 1-based index of the sweep whose state is returned
 
 
 def solve_per_stock(
@@ -179,7 +180,7 @@ def solve_per_stock(
     current: RateMap = {name: float(max(grids[name])) for name in order}
     per_stock: dict[str, RecalResult] = {}
     history: list[dict[str, float]] = []
-    best: tuple[float, RateMap, dict[str, RecalResult]] | None = None
+    best: tuple[float, int, RateMap, dict[str, RecalResult]] | None = None
     sweeps = 0
     converged = False
     while sweeps < max_sweeps and not converged:
@@ -198,10 +199,10 @@ def solve_per_stock(
         history.append(rel_errs)
         worst = max(rel_errs.values())
         if best is None or worst < best[0]:
-            best = (worst, dict(current), dict(per_stock))
+            best = (worst, sweeps, dict(current), dict(per_stock))
         converged = all(per_stock[n].feasible and rel_errs[n] <= tol for n in order)
     assert best is not None  # max_sweeps >= 1
-    _, best_rates, best_per_stock = best
+    _, best_sweep, best_rates, best_per_stock = best
     joint = evaluate(best_rates)
     return PerStockResult(
         rates=best_rates,
@@ -212,6 +213,7 @@ def solve_per_stock(
         sweeps=sweeps,
         evaluations=len(cache),
         sweep_history=history,
+        best_sweep=best_sweep,
     )
 
 

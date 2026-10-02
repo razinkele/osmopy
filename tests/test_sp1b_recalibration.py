@@ -164,6 +164,7 @@ def test_solve_per_stock_returns_best_joint_state_across_sweeps():
     worst = [max(h.values()) for h in r.sweep_history]
     assert worst[1] < worst[0] and worst[1] < worst[2]  # the model does what the docstring says
     assert max(r.rel_errs.values()) == min(worst)  # returned state = best sweep, not last
+    assert r.best_sweep == 2  # 1-based index of that sweep, for the solve record
     assert r.means == _jittery_model(r.rates)  # rates/means/rel_errs are one consistent state
 
 

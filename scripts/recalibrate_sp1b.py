@@ -22,6 +22,7 @@ import numba
 import numpy as np
 
 from osmose.calibration.larva_recal import (
+    JOINT_TOL,
     SP1_STOCKS,
     e_clip_first_guess,
     resolved_d0,
@@ -143,6 +144,13 @@ def main() -> int:
         print("\nNOT CONVERGED — record the grids in the diagnostic; leave infeasible stocks None.")
 
     record = {
+        "note": (
+            "Written by scripts/recalibrate_sp1b.py; each run REPLACES this file (a new solve is "
+            "new provenance; prior solves live in git history). 'joint' is the BEST sweep "
+            "(smallest worst-stock rel_err), 'per_stock' the 1-D solves of that sweep, "
+            "'sweep_history' the joint rel_errs after every sweep. Frozen values in "
+            "osmose/calibration/larva_recal.py are pasted from the printed block by hand."
+        ),
         "date": today,
         "config": str(CONFIG.relative_to(ROOT)),
         "field": str(FIELD.relative_to(ROOT)),
@@ -165,13 +173,15 @@ def main() -> int:
             }
             for s, r in res.per_stock.items()
         },
+        "sweep_history": res.sweep_history,
         "joint": {
+            "best_sweep": res.best_sweep,
+            "joint_tol": JOINT_TOL,
             "rates": res.rates,
             "means": res.means,
             "rel_errs": res.rel_errs,
             "converged": res.converged,
             "sweeps": res.sweeps,
-            "sweep_history": res.sweep_history,
             "evaluations": res.evaluations,
             "total_cod_off": total_off,
             "total_cod_on": total_on,
