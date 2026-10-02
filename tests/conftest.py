@@ -269,11 +269,13 @@ def _restore_numba_thread_state():
     """No test may leave Numba's thread count different from how it found it.
 
     Stated as an invariant rather than as a patch at each call site, because the
-    call sites keep growing and one of them leaks in a shape that is easy to miss:
-    ``tests/test_sp1b_recalibration.py`` calls ``set_num_threads(1)`` as its FIRST
-    statement and only then reaches ``pytest.skip()``, so it poisons its worker
-    while REPORTING AS SKIPPED. ``tests/test_jit_determinism.py`` leaks too -- its
-    last test ends at 1 thread.
+    call sites keep growing and one of them leaked in a shape that is easy to miss:
+    until 2026-10-02 ``tests/test_sp1b_recalibration.py``'s drift guard called
+    ``set_num_threads(1)`` as its FIRST statement and only then reached
+    ``pytest.skip()``, so it poisoned its worker while REPORTING AS SKIPPED. The
+    guard now skips before touching the thread count, but it still pins to 1
+    thread whenever it actually runs (host-only, needs frozen rates), and
+    ``tests/test_jit_determinism.py`` leaks too -- its last test ends at 1 thread.
 
     Why it matters under ``pytest -n auto``: ``set_num_threads`` is thread-local,
     and pytest runs every test on the worker's main thread, so "thread-local" means
