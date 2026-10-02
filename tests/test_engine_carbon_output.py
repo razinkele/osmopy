@@ -125,6 +125,23 @@ def test_collect_carbon_carcass_counts_only_other_mortality_in_tonnes():
     assert carcass.tolist() == pytest.approx([200 * 0.01 * 0.1, 20 * 0.05 * 0.12])
 
 
+def test_collect_carbon_carcass_excludes_egg_schools():
+    # larva_mortality books egg-cohort kills under ADDITIONAL; the source's carcass term is
+    # M0 on FISH biomass, so egg schools contribute nothing to the carcass pathway.
+    s = SchoolState.create(n_schools=2, species_id=np.array([0, 0], dtype=np.int32))
+    n_dead = np.zeros((2, len(MortalityCause)))
+    n_dead[:, MortalityCause.ADDITIONAL] = [1e9, 100.0]  # egg cohort, then a juvenile school
+    s = s.replace(
+        n_dead=n_dead,
+        weight=np.array([1e-9, 0.01]),
+        is_egg=np.array([True, False]),
+        preyed_biomass=np.array([0.0, 2.0]),
+    )
+    faecal, carcass = _collect_carbon(s, _Cfg())
+    assert carcass[0] == pytest.approx(100.0 * 0.01 * 0.1)  # juvenile only; eggs would add 0.1
+    assert faecal[0] == pytest.approx(2.0 * 0.2 * 0.1)  # eggs do not eat anyway
+
+
 def test_collect_carbon_ignores_background_species_and_empty_state():
     s = SchoolState.create(n_schools=1, species_id=np.array([2], dtype=np.int32))  # background
     s = s.replace(preyed_biomass=np.array([99.0]))

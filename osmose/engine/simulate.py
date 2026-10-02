@@ -1257,7 +1257,7 @@ def _collect_carbon(
     Silvar-Viladomiu et al. (2026, doi:10.1093/icesjms/fsag095):
 
       faecal  = Σ_schools preyed_biomass            x U_sp x CF_pellet_sp
-      carcass = Σ_schools Σ_{other causes} n_dead x weight x CF_carcass_sp
+      carcass = Σ_{non-egg schools} Σ_{other causes} n_dead x weight x CF_carcass_sp
 
     `preyed_biomass` is this step's eaten tonnage per predator school (reset each step);
     under bioen it is already rescaled to post-survival ingestion (config warns once).
@@ -1276,10 +1276,12 @@ def _collect_carbon(
     if len(state) == 0:
         return faecal, carcass
     focal = state.species_id < n_sp
-    sp = state.species_id[focal]
-    np.add.at(faecal, sp, state.preyed_biomass[focal])
-    other_dead = state.n_dead[focal][:, list(_CARCASS_CAUSES)].sum(axis=1)
-    np.add.at(carcass, sp, other_dead * state.weight[focal])
+    np.add.at(faecal, state.species_id[focal], state.preyed_biomass[focal])
+    # Egg schools are excluded from the carcass term: larva_mortality books egg-cohort kills
+    # under ADDITIONAL, but the source's M0 applies to FISH biomass (EwE carries no egg pool).
+    fish = focal & ~state.is_egg
+    other_dead = state.n_dead[fish][:, list(_CARCASS_CAUSES)].sum(axis=1)
+    np.add.at(carcass, state.species_id[fish], other_dead * state.weight[fish])
     faecal *= u * cf_pellet
     carcass *= cf_carcass
     return faecal, carcass

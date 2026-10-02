@@ -259,7 +259,8 @@ _CARBON_FIELDS: list[OsmoseField] = [
         max_val=1.0,
         description=(
             "Carbon content of carcass wet weight for the natural-mortality carbon flux "
-            "(0.06-0.14 in the source). " + _CARBON_DESC
+            "(0.06-0.14 in the source). Carcasses = starvation + additional + foraging + "
+            "aging deaths of non-egg schools; egg-cohort kills are excluded. " + _CARBON_DESC
         ),
         category="output",
         unit="t C / t wet weight",
