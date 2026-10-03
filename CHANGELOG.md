@@ -4,6 +4,73 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.6.0] - 2026-10-03
+
+### Features
+
+- **validation:** WGSAM SMS cod-predation M2 as a Baltic validation target (#136) (2017007)
+- **output:** opt-in fish-mediated carbon-flux diagnostic (#134) (f86aebb)
+- **sp1b:** freeze per-stock rates (sweep 1) with JOINT_TOL = 0.05; drift guard restored (3e73728)
+- **sp1b:** return the best sweep, not the last; split the drift guard (ce8a0ca)
+- **sp1b:** per-stock solve CLI + diagnostic; overshoot helper (fff8d15)
+
+### Bug Fixes
+
+- **validation:** every consumer of the manifest's cod key follows the split; --report keeps Findings (89147a0)
+- **validation:** review follow-ups for #182 (51a86e1)
+- **validation:** SAG validator follows the cod E/W split (#182) (2ef99eb)
+- **validation:** SMS M2 wording + report-only guard (CodeRabbit on #183) (e68425a)
+- **validation:** numpy conversions where CI's pyright sees looser pandas return types (8baa569)
+- **validation:** close the predation budget — the residual is pikeperch, not the seal (9764075)
+- **validation:** prey biomass denominator must not collide with the prey's predator column (67b2129)
+- **carbon:** keep coefficient key literals inside a walker-recognised helper (e190afe)
+- **carbon:** parser enforces the schema's [0, 1] bounds on the coefficients (24fa12e)
+- **carbon:** carcass pathway excludes egg schools (d5eb34a)
+- **sp1b:** solve record carries best_sweep, sweep_history and a replacement note (dd2aa33)
+- **bistability:** larval lever and chunk-C prey reach cod_east (#130) (db2e7a5)
+- **docs:** address PR #169 review — stale credential rows, whiting wording, pinned repro (e3712e0)
+- **scripts:** make a failed Java run in validate_engines.py report its actual cause (446809b)
+- **pyright:** pin venvPath/venv so a bare pyright resolves the venv; retire two stale concerns (a4d5759)
+
+### Documentation
+
+- first SMS M2 comparison on the production Baltic config; #136 resolved (4be4af6)
+- #134 resolved; data/minimal never predates (gotcha) (3c08e18)
+- **tests:** conftest thread-state fixture cites the drift guard's current shape (27f4902)
+- **sp1b:** per-stock solve record — 47 evaluations, joint NOT converged at 2% (3a3b1ee)
+- the 21 local pyright errors come from pandas-stubs, not the pandas version (fc4325c)
+- pyright 0 errors is CI's result, not a guarantee for every venv (103113f)
+- stop the feedback-v2 deploy doc naming a live prod SHA (26d1604)
+- run the Python-Java cross-check and record the result (59/70 equivalent) (d3ee111)
+- **claude:** sharpen the PYTHONPATH/worktree note with a measurement (43547ca)
+
+### Other
+
+- Merge pull request #184 from razinkele/worktree-fix-sag-validator-cod-split-182 (cf8e52c)
+- Merge pull request #183 from razinkele/worktree-feat-sms-m2-validation-136 (3fd623d)
+- Merge pull request #181 from razinkele/worktree-feat-carbon-flux-134 (d05f7c1)
+- Merge pull request #180 from razinkele/docs/conftest-thread-fixture-docstring (9b48799)
+- Merge pull request #179 from razinkele/worktree-fix-sp1b-per-stock-recal-131 (a2616c9)
+- Merge pull request #178 from razinkele/fix/bistability-harness-cod-east-130 (a6a4f0c)
+- Merge pull request #177 from razinkele/docs/pyright-cause-is-pandas-stubs (aee80e7)
+- Merge pull request #169 from razinkele/claude/deep-app-review-xvuga (276d2a1)
+- Merge pull request #176 from razinkele/fix/jit-determinism-vacuous-113 (428d85e)
+- Merge pull request #175 from razinkele/docs/prod-pointer-no-live-sha (7ef8494)
+
+### Refactoring
+
+- **sp1b:** per-stock recal rates frozen with their solved-against d0 (3a28e37)
+
+### Styling
+
+- **sp1b:** _fmt_rates takes a Mapping (pyright) (efbb875)
+- **sp1b:** satisfy ruff 0.16 (DTZ011, ISC004) in the two scripts (868b39d)
+
+### Tests
+
+- **jit:** make the H9 determinism tests non-vacuous and stop the env leak (#113) (380940c)
+- **scripts:** cover resolve_jar's precedence chain; document the pyright venv trap (7189fce)
+
 ## [1.5.0] - 2026-09-28
 
 ### Bug Fixes
