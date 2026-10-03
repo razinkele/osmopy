@@ -154,6 +154,19 @@ def test_model_cod_attributed_m2_is_annual_cod_consumption_over_prey_biomass():
     assert m2.by_predator == {"cod_west": pytest.approx(0.024), "cod_east": pytest.approx(0.048)}
 
 
+def test_model_cod_attributed_m2_when_prey_name_is_also_a_predator_column():
+    # Real predatorPressure tables carry EVERY focal species as a predator column, so the prey's
+    # own name appears as a (near-zero) predator column; the biomass denominator must not be
+    # confused with it. This is exactly what produced 0.000 / NaN on the first real Baltic run.
+    pressure = _pressure_frame()
+    pressure["sprat"] = 0.0  # sprat as predator (cannibalism column), zero
+    pressure["herring"] = 0.0
+    res = _fake_results(pressure, _biomass_wide(), {})
+    m2 = model_cod_attributed_m2(res, "sprat", predators=("cod_west", "cod_east"), window_years=3)
+    assert m2.mean == pytest.approx(0.072)
+    assert m2.by_predator["cod_east"] == pytest.approx(0.048)
+
+
 def test_model_cod_attributed_m2_ignores_non_cod_predators_and_other_prey():
     res = _fake_results(_pressure_frame(), _biomass_wide(), {})
     m2 = model_cod_attributed_m2(res, "herring", predators=("cod_west",), window_years=5)

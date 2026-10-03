@@ -489,16 +489,21 @@ def model_cod_attributed_m2(
     if bio is None or prey not in getattr(bio, "columns", []):
         raise KeyError(f"no biomass column for prey {prey!r}")
     rows = _trailing_years(rows, window_years)
-    bio = _trailing_years(pd.DataFrame(bio[["Time", prey]]), window_years)
+    # The prey's own name is ALSO a predator column in predatorPressure (every focal species
+    # is), so the biomass denominator travels under a private name — merging on the species
+    # name silently read the (near-zero) cannibalism column instead.
+    bio = _trailing_years(
+        pd.DataFrame(bio[["Time", prey]]).rename(columns={prey: "_prey_biomass"}), window_years
+    )
     # Align per record: both outputs carry one row per recording window at the same Time.
-    merged = rows.merge(bio, on="Time", how="inner", suffixes=("", "_bio"))
+    merged = rows.merge(bio, on="Time", how="inner")
     if merged.empty:
         raise ValueError(
             f"no overlapping Time rows between predatorPressure and biomass for {prey!r}"
         )
     year = np.floor(merged["Time"].to_numpy() - 1e-9).astype(int)
     merged = merged.assign(_year=year)
-    denom = merged.groupby("_year")[prey].mean()
+    denom = merged.groupby("_year")["_prey_biomass"].mean()
     per_pred: dict[str, float] = {}
     total = pd.Series(0.0, index=denom.index)
     for p in predators:
