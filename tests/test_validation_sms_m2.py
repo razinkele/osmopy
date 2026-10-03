@@ -268,7 +268,7 @@ def test_committed_sms_snapshot_loads_and_recent_m2_is_plausible():
     snap = load_sms_m2(REAL_SNAPSHOTS)
     assert snap.meta["commit"] == "f690d4ff"
     assert set(snap.m2["Species"]) == {"Herring", "Sprat"}
-    assert snap.m2["Year"].max() == 2024  # 2025 is the sentinel projection year, dropped
+    assert snap.m2["Year"].max() == 2024  # the annual file ends at 2024 (no sentinel rows)
     for sp in ("Herring", "Sprat"):
         by_year = sms_m2_weighted_by_year(snap, sp, basis="biomass")
         recent = [by_year[y] for y in range(2018, 2023)]

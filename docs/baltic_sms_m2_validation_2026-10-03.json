@@ -1,0 +1,124 @@
+{
+  "snapshot_dir": "/home/razinka/osmopy/.claude/worktrees/feat-sms-m2-validation-136/data/baltic/reference/ices_snapshots",
+  "results_dir": "/tmp/claude-1000/-home-razinka-osmopy/d4cf04a4-5dc1-4d5d-b6ef-b6c51d175470/scratchpad/baltic15",
+  "window_years": 5,
+  "ices_window_start": 2018,
+  "ices_window_end": 2022,
+  "comparisons": [
+    {
+      "species": "herring",
+      "model_mean_tonnes": 2516663.147473701,
+      "ices_min_tonnes": 727424.818597015,
+      "ices_max_tonnes": 812287.285724401,
+      "in_range": false,
+      "magnitude_factor": 3.2739813762760246,
+      "excluded_index_stocks": [
+        "her.27.25-2932"
+      ]
+    },
+    {
+      "species": "sprat",
+      "model_mean_tonnes": 852269.1669636123,
+      "ices_min_tonnes": 892276.0,
+      "ices_max_tonnes": 1126771.0,
+      "in_range": false,
+      "magnitude_factor": 0.8499812404381025,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "flounder",
+      "model_mean_tonnes": 30523.611761187658,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": [
+        "fle.27.2223"
+      ]
+    },
+    {
+      "species": "perch",
+      "model_mean_tonnes": 43585.41455516673,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "pikeperch",
+      "model_mean_tonnes": 1345285.7661513158,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "smelt",
+      "model_mean_tonnes": 698337.4632183684,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "stickleback",
+      "model_mean_tonnes": 85387.33146286968,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    }
+  ],
+  "sms_m2": [
+    {
+      "model_species": "herring",
+      "sms_species": "Herring",
+      "sms_stock": "her.27.25-2932",
+      "sms_m2_mean": 0.06872696340380866,
+      "sms_m2_min": 0.06048923194282648,
+      "sms_m2_max": 0.08304994026690331,
+      "sms_n_years": 5,
+      "model_cod_m2_mean": 0.03478319579498235,
+      "model_cod_m2_min": 0.03182081813538511,
+      "model_cod_m2_max": 0.03631370018022156,
+      "model_n_years": 5,
+      "model_by_predator": {
+        "cod_west": 0.0036085550994781924,
+        "cod_east": 0.03117464069550415
+      },
+      "model_predation_rate_by_stage": {
+        "Juvenil": 0.6121354811207739,
+        "Adult": 0.5667383231812658
+      },
+      "ratio": 0.5061069785756716,
+      "note": ""
+    },
+    {
+      "model_species": "sprat",
+      "sms_species": "Sprat",
+      "sms_stock": "spr.27.22-32",
+      "sms_m2_mean": 0.0868367637283678,
+      "sms_m2_min": 0.07864616577901586,
+      "sms_m2_max": 0.09402761671476406,
+      "sms_n_years": 5,
+      "model_cod_m2_mean": 0.27704844563087483,
+      "model_cod_m2_min": 0.2522746155252891,
+      "model_cod_m2_max": 0.29908077831465907,
+      "model_n_years": 5,
+      "model_by_predator": {
+        "cod_west": 0.00483218226593553,
+        "cod_east": 0.2722162633649393
+      },
+      "model_predation_rate_by_stage": {
+        "Juvenil": 3.1256043375313403,
+        "Adult": 0.6028738120011103
+      },
+      "ratio": 3.190451068599287,
+      "note": ""
+    }
+  ]
+}

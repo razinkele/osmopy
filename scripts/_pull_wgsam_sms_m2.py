@@ -7,7 +7,8 @@ Pulls two artefacts from the public WGSAM repository (``ices-eg/wg_WGSAM``,
 
 - ``wgsam_sms_baltic_2025.m2_annual.csv`` — verbatim ``M2_annu_.csv``: annual cod-predation
   mortality M2 by Year × Species (Herring, Sprat) × Age (0-8), for BOTH the 2022 and the 2025
-  key runs (``scenario`` column). The final projection year carries a ``-1`` sentinel.
+  key runs (``scenario`` column). Ends at 2024; the projection year is absent (it is ``-1``
+  only in the quarterly ``summary.out``).
 - ``wgsam_sms_baltic_2025.weights.csv`` — derived from ``summary.out`` (quarter 1 rows for
   herring and sprat): ``Year, Species, Age, N, west, BIO`` — stock numbers, mean weight and
   biomass at age, used to weight M2 across ages (biomass basis) for comparison with the

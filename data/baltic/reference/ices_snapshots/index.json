@@ -59,7 +59,7 @@
       "2022 Key run",
       "2025 key run"
     ],
-    "sentinel": "-1 marks the final (projection) year; drop rows with value < 0",
+    "sentinel": "the annual file ends at 2024 and carries no sentinel; the projection year (2025) is marked -1 only in the quarterly summary.out \u2014 the loader drops value < 0 defensively",
     "predator": "Cod only \u2014 treated as an external predator with numbers/size from the ICES SS3 assessment (stock annex: keyruns since 2019)",
     "area": "ICES Subdivisions 25-32 excluding the Gulf of Riga (stock annex Summary)",
     "sms_species_to_ices_stocks": {

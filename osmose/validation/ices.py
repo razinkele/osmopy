@@ -399,7 +399,8 @@ class SmsM2Snapshot:
 def load_sms_m2(snapshot_dir: Path, scenario: str | None = None) -> SmsM2Snapshot:
     """Load the SMS M2 snapshot described by ``index.json['sms_m2']``.
 
-    Rows with ``value < 0`` are dropped: SMS writes ``-1`` for the final projection year.
+    Rows with ``value < 0`` are dropped (defensive: the annual file carries none, but the
+    quarterly ``summary.out`` it is derived from marks the projection year with ``-1``).
     ``scenario`` defaults to the manifest's ``scenario_used``.
     """
     snapshot_dir = Path(snapshot_dir)
@@ -480,7 +481,7 @@ def model_cod_attributed_m2(
     if missing:
         raise KeyError(
             f"predator column(s) {missing} not in predatorPressure; have "
-            f"{[c for c in pressure.columns if c not in ('Time', 'Prey')]}"
+            f"{[c for c in pressure.columns if c not in ('Time', 'Prey', 'species')]}"
         )
     rows = pd.DataFrame(pressure[pressure["Prey"] == prey])
     if rows.empty:
@@ -501,7 +502,9 @@ def model_cod_attributed_m2(
         raise ValueError(
             f"no overlapping Time rows between predatorPressure and biomass for {prey!r}"
         )
-    year = np.floor(merged["Time"].to_numpy() - 1e-9).astype(int)
+    # Yearly Baltic stamps are k + 23/24; per-step stamps end at exact integers for the
+    # last step of a year, and plain floor assigns both correctly.
+    year = np.floor(merged["Time"].to_numpy()).astype(int)
     merged = merged.assign(_year=year)
     denom = merged.groupby("_year")["_prey_biomass"].mean()
     per_pred: dict[str, float] = {}

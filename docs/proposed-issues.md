@@ -90,8 +90,9 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 > SMS M2 is cod-only, so the model side is cod-ATTRIBUTED M2 (cod consumption from `predatorPressure`
 > over prey biomass, biomass basis) against biomass-weighted SMS M2; the model's total predation rate
 > per stage sits beside it. Report-only. First result (`docs/baltic_sms_m2_validation_2026-10-03.md`):
-> cod M2 0.5× SMS on herring, 3.2× on sprat; the non-cod residual (percids, un-columned seal) is
-> 10× cod's share. The "review criteria as QA checklist" item was deferred. Draft retained below.
+> cod M2 0.5× SMS on herring, 3.2× on sprat; the focal-predator budget closes (103% / 97% of the
+> adult predation rate) and the residual is **pikeperch** (0.53 of 0.59 yr⁻¹ on herring), the
+> percid overshoot — not cod, and not the un-columned seal. The "review criteria as QA checklist" item was deferred. Draft retained below.
 
 > **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/136 (label: enhancement).
 

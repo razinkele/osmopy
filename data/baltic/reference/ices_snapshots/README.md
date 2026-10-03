@@ -60,8 +60,9 @@ dimensionless across all stocks).
 
 ## WGSAM SMS cod-predation mortality (M2) — `wgsam_sms_baltic_2025.*` (issue #136)
 
-Two files snapshot the ICES WGSAM **Eastern Baltic Sea SMS key run 2025** (Lewy & Vinther
-2004 model; stock assessor Morten Vinther, DTU Aqua), pulled at a pinned commit from the
+Two files snapshot the ICES WGSAM **Eastern Baltic Sea SMS key run 2025** (the SMS model,
+Lewy and Vinther 2004 as cited in the stock annex — an ICES CM paper, not resolved here;
+stock assessor Morten Vinther, DTU Aqua), pulled at a pinned commit from the
 public repository `ices-eg/wg_WGSAM`, folder `Baltic-2025-keyRun`, commit `f690d4ff`
 (2025-10-08, "2025 baltic keyrun"). The WGSAM 2025 report was **not yet in the ICES library**
 when this was taken, so the repository artefact is the primary source; replace the citation
@@ -71,7 +72,9 @@ when the report appears. Pull helper: `scripts/_pull_wgsam_sms_m2.py` (one-shot)
   variable, Age, value`. M2 = annual instantaneous **cod**-predation mortality (per year) on
   Herring and Sprat at ages 0–8, 1974–2024, for BOTH the `2022 Key run` and the `2025 key run`
   (the revision between them is informative; the validator uses `scenario_used` from
-  `index.json`). The final projection year (2025) carries a `-1` sentinel — drop `value < 0`.
+  `index.json`). The annual file ends at 2024; the projection year (2025) is absent from it
+  and marked `-1` only in the quarterly `summary.out`, so the loader's `value < 0` guard is
+  defensive.
 - `wgsam_sms_baltic_2025.weights.csv` — derived from the key run's `summary.out`, quarter-1 rows:
   stock numbers `N`, mean weight `west` and biomass `BIO` at age, used to weight M2 across ages.
   Age 0 has `N = 0` in quarter 1, so a biomass-weighted mean is effectively ages 1+.
