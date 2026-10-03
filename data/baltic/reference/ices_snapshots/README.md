@@ -35,6 +35,15 @@ the MCP server does, and writes one file per stock.
   top-level `advice_year` for stocks on an alternate cycle, e.g.
   `cod.27.22-24` uses 2022).
 
+## Recruitment units (`recruitment_index_stocks`)
+
+The SSB unit does **not** imply the recruitment unit. `her.27.25-2932` has an index
+SSB but reports recruitment as absolute numbers (6–29 million in 2018–2022), while
+`cod.27.24-32` reports recruitment on the same relative scale as its SSB (0.4–1.6).
+`index.json['recruitment_index_stocks']` lists the stocks whose R is relative;
+`scripts/evaluate_calibration_vs_ices.py` skips those in the recruitment comparison
+(the model's R is a count) rather than inferring the unit from `units_by_stock`.
+
 ## Baltic flounder notes
 
 ICES SAG publishes a **single** Baltic flounder stock: `fle.27.2223`

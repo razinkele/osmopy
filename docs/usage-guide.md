@@ -245,7 +245,7 @@ calibration, `OsmoseCalibrationProblem(use_java_engine=True)`. (Full caveat in t
 |---|---|
 | Hands-on: run and perturb a Baltic ecosystem in 30 min | [`tutorials/30-minute-ecosystem.md`](tutorials/30-minute-ecosystem.md) |
 | The Baltic example config and where its parameters come from | [`baltic_example.md`](https://github.com/razinkele/osmopy/blob/master/docs/baltic_example.md) |
-| Model F/biomass vs ICES advice | [`baltic_ices_validation_2026-04-18.md`](https://github.com/razinkele/osmopy/blob/master/docs/baltic_ices_validation_2026-04-18.md) |
+| Model F/biomass vs ICES advice | [`baltic_ices_validation_2026-10-03.md`](https://github.com/razinkele/osmopy/blob/master/docs/baltic_ices_validation_2026-10-03.md) |
 | Python-vs-Java port status | [`parity-roadmap.md`](https://github.com/razinkele/osmopy/blob/master/docs/parity-roadmap.md) |
 | Short API reference (engine, config I/O, results, calibration) | [README → API sketch](https://github.com/razinkele/osmopy/blob/master/README.md#api-sketch) |
 | Per-release change history | [`../CHANGELOG.md`](https://github.com/razinkele/osmopy/blob/master/CHANGELOG.md) |

@@ -92,7 +92,7 @@ The Baltic example is the product of several overlapping threads. In chronologic
 
 7. **Mask rebuild** (2026-04-17). `scripts/rebuild_baltic_mask.py` shrank the mask from 912 to 612 ocean cells by keeping only cells where at least one species map or fishing map had a positive value. The 300 removed cells were "ocean-with-zero" cells in northern Norway/Sweden that had been mirrored from the southern Baltic pattern — no species ever used them. CSV grids rewritten so those cells became `-99` (land).
 
-8. **ICES SAG cross-validation** (2026-04-18 — Front 1 of current work). Eight snapshots of the 2024 advice cycle (plus `cod.27.22-24` from 2022 since its 2024 assessment is category-3) frozen under `data/baltic/reference/ices_snapshots/`. `scripts/validate_baltic_vs_ices_sag.py` compares F rates and biomass envelopes; output at `docs/baltic_ices_validation_2026-04-18.md`.
+8. **ICES SAG cross-validation** (2026-04-18 — Front 1 of current work). Eight snapshots of the 2024 advice cycle (plus `cod.27.22-24` from 2022 since its 2024 assessment is category-3) frozen under `data/baltic/reference/ices_snapshots/`. `scripts/validate_baltic_vs_ices_sag.py` compares F rates and biomass envelopes; output at `docs/baltic_ices_validation_2026-10-03.md`.
 
 ### Scripts (what builds what)
 
@@ -102,7 +102,7 @@ The Baltic example is the product of several overlapping threads. In chronologic
 | `scripts/calibrate_baltic.py`            | `calibration_results/*` (not committed)                    |
 | `scripts/rebuild_baltic_mask.py`         | `grid/baltic_mask.csv`, `baltic_grid.nc`, CSV grids        |
 | `scripts/relabel_baltic_grid_nc.py`      | Metadata pass over `baltic_grid.nc`                        |
-| `scripts/validate_baltic_vs_ices_sag.py` | `docs/baltic_ices_validation_2026-04-18.md`                |
+| `scripts/validate_baltic_vs_ices_sag.py` | `docs/baltic_ices_validation_2026-10-03.md`                |
 | `scripts/compute_mortality_balance.py`   | per-species F/M report (stdout / `--report` / `--json` / `--plot`) |
 | `scripts/compare_runs.py`               | per-species % change between two runs, ranked by magnitude (stdout / `--report` / `--json` / `--plot`) |
 | `mcp_servers/copernicus/server.py`       | `baltic_ltl_biomass.nc` via `generate_osmose_ltl` MCP tool |
@@ -129,7 +129,7 @@ Each subsection below documents the **source** of a parameter family (not the va
 
 ### Species (8 focal species, `baltic_param-species.csv`)
 
-Comments at the top of the CSV list the FishBase cross-references. Growth parameters represent **historical (pre-2015) life history**. Eastern Baltic cod has undergone severe growth impairment since ~2015 (Svedäng et al. 2024, `doi:10.1002/ece3.70382`); current effective Linf is ~60–80 cm vs the configured 110 cm. This is a documented modeling choice — see `docs/baltic_ices_validation_2026-04-18.md` Findings for why we run in the "historical ecosystem" scenario rather than the post-collapse state.
+Comments at the top of the CSV list the FishBase cross-references. Growth parameters represent **historical (pre-2015) life history**. Eastern Baltic cod has undergone severe growth impairment since ~2015 (Svedäng et al. 2024, `doi:10.1002/ece3.70382`); current effective Linf is ~60–80 cm vs the configured 110 cm. This is a documented modeling choice — see `docs/baltic_ices_validation_2026-10-03.md` Findings for why we run in the "historical ecosystem" scenario rather than the post-collapse state.
 
 | sp | name        | Linf (cm) | K    | t0    | a (×10⁻³) | b    | Lifespan | Source                                   |
 |----|-------------|-----------|------|-------|-----------|------|----------|------------------------------------------|
@@ -224,7 +224,7 @@ Species-by-species spawning windows (with DOIs):
 
   | fsh | species      | F base | ICES 2024 advice (weighted, 2018–2022) | Note                          |
   |-----|--------------|--------|-----------------------------------------|-------------------------------|
-  | 0   | cod          | 0.08   | 0.91                                    | Scenario limitation — see docs/baltic_ices_validation_2026-04-18.md |
+  | 0   | cod          | 0.08   | 0.91                                    | Scenario limitation — see docs/baltic_ices_validation_2026-10-03.md |
   | 1   | herring      | 0.15   | 0.21                                    | In [0.5×, 1.5×] tolerance     |
   | 2   | sprat        | 0.32   | 0.37                                    | In tolerance                  |
   | 3   | flounder     | 0.04   | 0.22                                    | Grid-resolution trade-off     |
@@ -273,7 +273,7 @@ OSMOSE re-distributes seeded biomass across age classes via the species life-his
 
 ## Validation and known limitations
 
-- **ICES SAG cross-validation** (`docs/baltic_ices_validation_2026-04-18.md`): F rates and biomass envelopes compared to the 2024 advice cycle (2022 for `cod.27.22-24` which is category-3 in 2024). Cod and flounder F flagged as deliberate scenario limitations; herring and sprat within tolerance. Cod biomass target upper bound (250 kt) flagged by science review as likely historical rather than 2018–2022-era — a future calibration-tuning pass will revisit.
+- **ICES SAG cross-validation** (`docs/baltic_ices_validation_2026-10-03.md`): F rates and biomass envelopes compared to the 2024 advice cycle (2022 for `cod.27.22-24` which is category-3 in 2024). Cod and flounder F flagged as deliberate scenario limitations; herring and sprat within tolerance. Cod biomass target upper bound (250 kt) flagged by science review as likely historical rather than 2018–2022-era — a future calibration-tuning pass will revisit.
 - **F/M fishing-pressure diagnostic** (`scripts/compute_mortality_balance.py`): per-species ratio of fishing mortality to natural mortality on the exploited life stage(s). See below.
 - **Calibration targets** (`data/baltic/reference/biomass_targets.csv`): species × [lower, upper] tonnes + weight + source column. Weights 1.0 (well-assessed pelagics: herring, sprat) down to 0.2 (coarse-grid coastal: perch, pikeperch).
 - **Stickleback biomass** (~200 kt target): Olsson et al. 2019, `doi:10.1093/icesjms/fsz078` — first large-scale biomass assessment. Wide range (50–500 kt) appropriate given boom-bust dynamics.
@@ -413,7 +413,7 @@ Documented limitations that this example **does not currently represent**:
 
 ### Companion docs
 
-- [Baltic ICES SAG Validation Report (2024 advice)](baltic_ices_validation_2026-04-18.md) — drift findings + unit caveats.
+- [Baltic ICES SAG Validation Report (2024 advice)](baltic_ices_validation_2026-10-03.md) — drift findings + unit caveats.
 - [ICES snapshots README](../data/baltic/reference/ices_snapshots/README.md) — how to refresh the advice snapshots.
 - [ICES MCP validation plan](superpowers/plans/2026-04-18-ices-mcp-baltic-validation-plan.md) — how the validator was built.
 - [OSMOSE Python port plan](plans/2026-02-21-osmose-python-port-plan.md) — overall project context.

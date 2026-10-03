@@ -43,6 +43,11 @@ def test_manifest_exists_and_is_readable():
     assert manifest["advice_year"] == 2024
     assert "model_species_to_ices_stocks" in manifest
     assert manifest["model_species_to_ices_stocks"]["sprat"] == ["spr.27.22-32"]
+    # The cod E/W split (2026-07-25) is reflected in the manifest; an aggregate 'cod' key
+    # would silently drop the cod biomass row and leave fsh8 unchecked (#182).
+    assert "cod" not in manifest["model_species_to_ices_stocks"]
+    assert manifest["model_species_to_ices_stocks"]["cod_west"] == ["cod.27.22-24"]
+    assert manifest["model_species_to_ices_stocks"]["cod_east"] == ["cod.27.24-32"]
     assert manifest["units_by_stock"]["spr.27.22-32"] == "tonnes"
     assert manifest["units_by_stock"]["cod.27.24-32"] == "index"
 
@@ -80,22 +85,27 @@ def test_validator_produces_report_for_sprat(report):
 
 # Documented calibration choices that deliberately sit outside the ICES envelope.
 # Bump the corresponding KNOWN_EXCEPTIONS set (and explain why in
-# docs/baltic_ices_validation_2026-04-18.md Findings) when the model changes.
+# docs/baltic_ices_validation_2026-10-03.md Findings) when the model changes.
 F_KNOWN_EXCEPTIONS = {
-    # Baltic cod: model F=0.08 vs ICES ~0.91. Low F is intentional against
-    # very-low post-collapse biomass to prevent extirpation in-model.
-    # See docs/baltic_ices_validation_2026-04-18.md Findings.
-    "cod",
-    # Baltic flounder: model F=0.04 vs ICES ~0.22. Coarse-grid under-resolves
-    # lagoon-concentrated habitat; configured F compensates downward.
+    # Western Baltic cod: model F=0.039 (fsh0) vs ICES ~0.91. Low F is intentional
+    # against very-low post-collapse biomass to prevent extirpation in-model.
+    # See docs/baltic_ices_validation_2026-10-03.md Findings.
+    "cod_west",
+    # Eastern Baltic cod: model F=0.01 (fsh8) vs the index-unit stock's SSB-weighted
+    # F (0.16 over 2018-2022, falling to ~0.03 under the closure). Same rationale;
+    # the stock is under a targeted-fishing closure since 2019.
+    "cod_east",
+    # Baltic flounder: model F=1.368 (fsh3) vs ICES ~0.22 — 6.4x ABOVE, the opposite
+    # sign of the April-2026 note (then 0.04, below). The calibrated base F is a
+    # stability requirement incommensurable with the ICES anchor; flounder is left
+    # unforced in the F hindcast for that reason (docs/baltic_f_hindcast_2026-08-23.md,
+    # decision 5). See docs/baltic_ices_validation_2026-10-03.md Findings.
     "flounder",
 }
-B_KNOWN_EXCEPTIONS = {
-    # Baltic cod: model target is total biomass across both stocks; ICES
-    # envelope here is western SSB alone (eastern is excluded as index-unit).
-    # See biomass_targets.csv:22 — aggregation + SSB/total-biomass mismatch.
-    "cod",
-}
+# Empty since the cod split: cod_west's target [4000, 25000] t overlaps the western SSB
+# envelope and cod_east is index-unit (no envelope). The pre-split aggregate 'cod' exception
+# guarded a row that no longer existed (#182). (A bare `{}` would be a dict — keep `set()`.)
+B_KNOWN_EXCEPTIONS: set[str] = set()
 
 
 def test_no_severe_f_rate_drift(report):
@@ -180,14 +190,30 @@ def test_ices_ssb_envelope_empty_intersection_returns_none(validator_module, mon
     assert validator_module._ices_ssb_envelope(["A", "B"]) == (None, None)
 
 
-def test_cod_f_excludes_eastern_index_stock(report):
-    """Mixed-unit cod must filter to tonnes-only for the weighted F —
-    otherwise the tonnes stock's F (~0.9) is silently presented as 'cod F'
-    while the eastern index-unit stock vanishes into the weighted mean."""
+def test_both_cod_stocks_get_f_rows_from_their_own_fishery(report):
+    """Since the split each cod stock has its own fishery (fsh0 / fsh8) and its own
+    ICES stock. cod_west compares against the tonnes stock with nothing excluded;
+    cod_east has only the index-unit stock, so it takes the index-unit fallback
+    (a dimensionless F is still an F) and excludes nothing."""
     f_rows = {r["species"]: r for r in report["f_rates"]}
-    assert "cod.27.24-32" in f_rows["cod"]["excluded_index_stocks"], (
-        "cod F comparison is silently including the index-unit eastern stock"
-    )
+    assert "cod" not in f_rows
+    assert f_rows["cod_west"]["excluded_index_stocks"] == []
+    assert f_rows["cod_west"]["ices_f_weighted"] is not None
+    assert f_rows["cod_east"]["excluded_index_stocks"] == []
+    assert f_rows["cod_east"]["ices_f_weighted"] is not None
+    assert f_rows["cod_west"]["model_f"] != f_rows["cod_east"]["model_f"]  # fsh0 vs fsh8
+
+
+def test_both_cod_stocks_get_biomass_rows(report):
+    """The aggregate manifest key silently dropped the cod biomass row for ten weeks
+    (#182): biomass_targets.csv had cod_west/cod_east, the manifest had 'cod'.
+    cod_west must now report an envelope; cod_east is index-unit (None, excluded)."""
+    b_rows = {r["species"]: r for r in report["biomass_envelopes"]}
+    assert "cod_west" in b_rows and "cod_east" in b_rows
+    assert b_rows["cod_west"]["ices_min_ssb"] is not None
+    assert b_rows["cod_west"]["envelopes_overlap"] is True
+    assert b_rows["cod_east"]["ices_min_ssb"] is None
+    assert "cod.27.24-32" in b_rows["cod_east"]["excluded_index_stocks"]
 
 
 def test_herring_envelope_excludes_central_baltic_index_stock(report):
@@ -211,6 +237,10 @@ def test_f_known_exceptions_are_actually_outside_tolerance(report):
     [0.25, 4.0], the allowlist has become dead code. Force the author to
     prune the allowlist rather than leave misleading comments in place.
     """
+    present = {r["species"] for r in report["f_rates"]}
+    # An allowlisted species that produces no row guards nothing (#182: the aggregate
+    # 'cod' entry sat on a row the split had removed).
+    assert F_KNOWN_EXCEPTIONS <= present, F_KNOWN_EXCEPTIONS - present
     live_ratios: dict[str, float] = {}
     for r in report["f_rates"]:
         if r["species"] not in F_KNOWN_EXCEPTIONS:
@@ -228,6 +258,8 @@ def test_f_known_exceptions_are_actually_outside_tolerance(report):
 def test_b_known_exceptions_are_actually_non_overlapping(report):
     """Same contract for biomass: an allowlisted species whose envelope
     now overlaps ICES must be pruned."""
+    present = {r["species"] for r in report["biomass_envelopes"]}
+    assert B_KNOWN_EXCEPTIONS <= present, B_KNOWN_EXCEPTIONS - present
     for r in report["biomass_envelopes"]:
         if r["species"] not in B_KNOWN_EXCEPTIONS:
             continue

@@ -559,7 +559,7 @@ the magnitude is modest.
   contains the literature citations behind every growth parameter, the ICES
   reference-point priors used for calibration, and the provenance of the
   spawning distribution maps.
-- **Calibrate Baltic to ICES stock advice:** `docs/baltic_ices_validation_2026-04-18.md`
+- **Calibrate Baltic to ICES stock advice:** `docs/baltic_ices_validation_2026-10-03.md`
   describes the multi-phase calibration workflow; `scripts/calibrate_baltic.py`
   is the entry point (supports `--optimizer {de,cmaes,surrogate-de}`).
 - **Engine internals and Java parity:** `docs/parity-roadmap.md` documents the

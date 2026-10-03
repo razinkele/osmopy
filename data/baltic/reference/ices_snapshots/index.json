@@ -2,9 +2,11 @@
   "advice_year": 2024,
   "created": "2026-04-18",
   "model_species_to_ices_stocks": {
-    "cod": [
-      "cod.27.24-32",
+    "cod_west": [
       "cod.27.22-24"
+    ],
+    "cod_east": [
+      "cod.27.24-32"
     ],
     "herring": [
       "her.27.25-2932",
@@ -33,6 +35,9 @@
     "spr.27.22-32": "tonnes",
     "fle.27.2223": "index"
   },
+  "recruitment_index_stocks": [
+    "cod.27.24-32"
+  ],
   "advice_year_by_stock": {
     "cod.27.24-32": 2024,
     "cod.27.22-24": 2022,
