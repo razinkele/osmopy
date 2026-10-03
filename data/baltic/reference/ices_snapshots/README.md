@@ -35,6 +35,15 @@ the MCP server does, and writes one file per stock.
   top-level `advice_year` for stocks on an alternate cycle, e.g.
   `cod.27.22-24` uses 2022).
 
+## Recruitment units (`recruitment_index_stocks`)
+
+The SSB unit does **not** imply the recruitment unit. `her.27.25-2932` has an index
+SSB but reports recruitment as absolute numbers (6–29 million in 2018–2022), while
+`cod.27.24-32` reports recruitment on the same relative scale as its SSB (0.4–1.6).
+`index.json['recruitment_index_stocks']` lists the stocks whose R is relative;
+`scripts/evaluate_calibration_vs_ices.py` skips those in the recruitment comparison
+(the model's R is a count) rather than inferring the unit from `units_by_stock`.
+
 ## Baltic flounder notes
 
 ICES SAG publishes a **single** Baltic flounder stock: `fle.27.2223`
@@ -122,7 +131,10 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    `get_reference_points` output), and rewrites every `{stock}.assessment.json`
    and `{stock}.reference_points.json` plus `index.json` (`advice_year_by_stock`
    and `units_by_stock` are derived automatically — the latter from Blim
-   magnitude since the ICES `StockSizeUnits` field is unreliable).
+   magnitude since the ICES `StockSizeUnits` field is unreliable). The helper
+   loads the existing `index.json` and rewrites only those two keys, so the
+   hand-maintained blocks (`model_species_to_ices_stocks`,
+   `recruitment_index_stocks`, `sms_m2`) survive a refresh.
 4. Update `index.json`'s top-level `advice_year` and `created` date by hand
    (the helper doesn't touch them).
 5. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**

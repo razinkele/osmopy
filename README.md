@@ -145,7 +145,7 @@ The Baltic example is the newest and most documented. It covers cod, herring, sp
 </table>
 
 - **Full provenance** — every parameter family, every value source, every DOI: [`docs/baltic_example.md`](docs/baltic_example.md).
-- **Validation vs ICES** — F rates and biomass envelopes cross-checked against the 2024 advice cycle: [`docs/baltic_ices_validation_2026-04-18.md`](docs/baltic_ices_validation_2026-04-18.md). Unit-aware (the ICES API mislabels some stocks' SSB units; the validator detects this via Blim magnitude).
+- **Validation vs ICES** — F rates and biomass envelopes cross-checked against the 2024 advice cycle: [`docs/baltic_ices_validation_2026-10-03.md`](docs/baltic_ices_validation_2026-10-03.md). Unit-aware (the ICES API mislabels some stocks' SSB units; the validator detects this via Blim magnitude).
 - **Refresh workflow** — [`data/baltic/reference/ices_snapshots/README.md`](data/baltic/reference/ices_snapshots/README.md).
 - **Calibration driver** — `scripts/calibrate_baltic.py` (phases: larval mortality, adult mortality + F) runs the Python engine directly, no Java needed.
 - **Forcing** — `scripts/rebuild_baltic_mask.py` and `mcp_servers/copernicus/server.py` regenerate the mask + LTL NetCDF from CMEMS data.
@@ -189,7 +189,7 @@ tests/                      2510 tests (schema, config, engine processes, parity
                             UI state, MCP hygiene, Baltic ICES cross-validation)
 docs/
   baltic_example.md                           Baltic example full provenance
-  baltic_ices_validation_2026-04-18.md        ICES cross-validation report (2024 advice)
+  baltic_ices_validation_2026-10-03.md        ICES cross-validation report (2024 advice)
   parity-roadmap.md                           Engine parity roadmap (7 phases)
   osmose-master-java-fixes.patch              Portable patch for upstream osmose-master
   plans/                                      Historical and active implementation plans
@@ -340,7 +340,7 @@ Start here depending on what you want:
 | Script runs, read outputs, compare, and calibrate (Python + CLI) | [`docs/usage-guide.md`](docs/usage-guide.md) |
 | Run an existing example | [Quick start](#quick-start) above |
 | Understand the Baltic example, its parameters, and their sources | [`docs/baltic_example.md`](docs/baltic_example.md) |
-| See where model F and biomass sit vs ICES 2024 advice | [`docs/baltic_ices_validation_2026-04-18.md`](docs/baltic_ices_validation_2026-04-18.md) |
+| See where model F and biomass sit vs ICES 2024 advice | [`docs/baltic_ices_validation_2026-10-03.md`](docs/baltic_ices_validation_2026-10-03.md) |
 | Refresh ICES snapshots when a new advice year lands | [`data/baltic/reference/ices_snapshots/README.md`](data/baltic/reference/ices_snapshots/README.md) |
 | Port progress vs Java (what was fixed, what's next) | [`docs/parity-roadmap.md`](docs/parity-roadmap.md) |
 | Per-release change history | [`CHANGELOG.md`](CHANGELOG.md) |

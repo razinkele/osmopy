@@ -16,7 +16,7 @@ A map of what's in `docs/`. For installation and a feature overview, start at th
 | Doc | What it covers |
 |---|---|
 | [baltic_example.md](baltic_example.md) | The Baltic config, its parameters, and their sources |
-| [baltic_ices_validation_2026-04-18.md](baltic_ices_validation_2026-04-18.md) | Model F / biomass vs ICES 2024 advice |
+| [baltic_ices_validation_2026-10-03.md](baltic_ices_validation_2026-10-03.md) | Model F / biomass vs ICES 2024 advice |
 | [baltic_shepherd_calibration_2026-05-30.md](baltic_shepherd_calibration_2026-05-30.md) | Density-dependent (Shepherd) recruitment calibration |
 | [baltic_fr_calibration_2026-06-02.md](baltic_fr_calibration_2026-06-02.md) | Predator functional-response calibration verdict |
 | [baltic_percid_overshoot_diagnostic_2026-06-03.md](baltic_percid_overshoot_diagnostic_2026-06-03.md) | Why perch/pikeperch overshoot (diagnostic) |

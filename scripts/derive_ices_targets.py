@@ -34,7 +34,7 @@ TARGETS_CSV = REPO / "data" / "baltic" / "reference" / "biomass_targets.csv"
 WINDOW = (2018, 2022)
 K_STD = 1.5
 CATCH_WEIGHT = 0.5
-ASSESSED = ("cod", "herring", "sprat", "flounder")
+ASSESSED = ("cod_west", "cod_east", "herring", "sprat", "flounder")  # per stock since the split
 
 
 def _stock_catch(snapshot_dir: Path, stock: str) -> dict[int, float]:

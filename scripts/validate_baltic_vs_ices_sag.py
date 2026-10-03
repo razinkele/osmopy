@@ -29,7 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SNAPSHOT_DIR = PROJECT_ROOT / "data" / "baltic" / "reference" / "ices_snapshots"
 TARGETS_CSV = PROJECT_ROOT / "data" / "baltic" / "reference" / "biomass_targets.csv"
 FISHING_CSV = PROJECT_ROOT / "data" / "baltic" / "baltic_param-fishing.csv"
-REPORT_MD = PROJECT_ROOT / "docs" / "baltic_ices_validation_2026-04-18.md"
+REPORT_MD = PROJECT_ROOT / "docs" / "baltic_ices_validation_2026-10-03.md"
 
 WINDOW_YEARS = range(2018, 2023)  # 2018..2022 inclusive
 F_TOLERANCE = (0.5, 1.5)  # model F must land within [0.5x, 1.5x] of ICES F
@@ -185,7 +185,8 @@ def _parse_model_targets() -> list[dict]:
 
 # Model species → fsh index (from baltic_param-fishing.csv fisheries.name.fshN rows).
 _SPECIES_FSH_INDEX = {
-    "cod": 0,
+    "cod_west": 0,  # fsh0 trawlcod
+    "cod_east": 8,  # fsh8 trawlcodeast (appended by the 2026-07-25 split)
     "herring": 1,
     "sprat": 2,
     "flounder": 3,
@@ -323,7 +324,21 @@ def run(*, write_report: bool = True) -> dict:
     return report
 
 
+_FINDINGS_HEADING = "## Findings and Recommended Follow-ups"
+
+
+def _retained_findings() -> str:
+    """The hand-written Findings section of the existing report, if any — regeneration
+    rewrites the tables but must not drop the document the allowlists cite."""
+    if not REPORT_MD.exists():
+        return ""
+    text = REPORT_MD.read_text()
+    i = text.find(_FINDINGS_HEADING)
+    return text[i:].rstrip() + "\n" if i >= 0 else ""
+
+
 def _write_markdown_report(report: dict) -> None:
+    findings = _retained_findings()
     lines = [
         "# Baltic OSMOSE vs ICES SAG (2024 advice) — Validation Report",
         "",
@@ -386,7 +401,10 @@ def _write_markdown_report(report: dict) -> None:
         cells = [_format_rp_cell(rp, k) for k in ("blim", "bpa", "fmsy", "msy_btrigger")]
         lines.append(f"| `{stock}` | {unit} | {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} |")
     REPORT_MD.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_MD.write_text("\n".join(lines) + "\n")
+    body = "\n".join(lines).rstrip() + "\n"
+    if findings:
+        body += "\n" + findings
+    REPORT_MD.write_text(body)
 
 
 def _format_rp_cell(rp: dict, key: str) -> str:

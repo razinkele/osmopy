@@ -26,7 +26,8 @@ from evaluate_calibration_vs_ices import (
 def test_recruitment_age_sprat_herring_clean_cod_flounder_none():
     assert _species_recruitment_age("sprat") == "1"
     assert _species_recruitment_age("herring") == "0"
-    assert _species_recruitment_age("cod") is None  # stocks disagree (age 0 vs 1)
+    assert _species_recruitment_age("cod_west") == "1"
+    assert _species_recruitment_age("cod_east") is None  # R is relative (recruitment_index_stocks)
     assert _species_recruitment_age("flounder") is None  # no recruitment_age
 
 
@@ -59,7 +60,8 @@ def test_herring_geomean_sums_four_stocks():
 
 
 def test_no_clean_r_species_return_none():
-    assert _ices_recruitment_geomean("cod") is None
+    assert _ices_recruitment_geomean("cod_east") is None
+    assert _ices_recruitment_geomean("cod_west") is not None
     assert _ices_recruitment_geomean("flounder") is None
 
 
@@ -100,7 +102,7 @@ def test_format_recruitment_section_is_pure():
             "reason": None,
         },
         {
-            "species": "cod",
+            "species": "cod_east",
             "age": None,
             "model_R": None,
             "ices_geomean": None,
@@ -108,7 +110,7 @@ def test_format_recruitment_section_is_pure():
             "ices_max": None,
             "ratio": None,
             "verdict": None,
-            "reason": "no clean ICES R (eastern index + age mismatch 0 vs 1)",
+            "reason": "no clean ICES R (cod.27.24-32 is an index-unit stock: R is relative, not a count)",
         },
         {
             "species": "flounder",
@@ -160,7 +162,7 @@ def test_evaluate_adds_recruitment_rows(monkeypatch):
     # Stub the sim so no engine runs; return biomass + recruitment stats.
     def _fake_run(base_config, overrides, n_years, seed, recruitment_ages=None):
         assert base_config.get("output.abundance.byage.enabled") == "true"
-        assert recruitment_ages == {"sprat": "1", "herring": "0"}
+        assert recruitment_ages == {"sprat": "1", "herring": "0", "cod_west": "1"}
         stats = {f"{sp}_mean": 1000.0 for sp in ev.SPECIES_NAMES}
         stats["sprat_recruitment_mean"] = 6.0e7
         stats["herring_recruitment_mean"] = 2.0e7
@@ -176,6 +178,9 @@ def test_evaluate_adds_recruitment_rows(monkeypatch):
     p.write_text(json.dumps({"parameters": {}}))
     result = ev.evaluate(p, mode="bh", n_years=1, seed=0)
     rec = {r["species"]: r for r in result["recruitment"]}
-    assert set(rec) == {"cod", "herring", "sprat", "flounder"}
+    assert set(rec) == {"cod_west", "cod_east", "herring", "sprat", "flounder"}
     assert rec["sprat"]["verdict"] in ("OK", "FLAG") and rec["sprat"]["ices_geomean"] is not None
-    assert rec["cod"]["ices_geomean"] is None and "no clean ICES R" in rec["cod"]["reason"]
+    assert rec["cod_east"]["ices_geomean"] is None and "index-unit" in rec["cod_east"]["reason"]
+    assert rec["cod_west"]["ices_geomean"] is not None and rec["cod_west"]["reason"] is None
+    # model_R is filled only when the run carries age-1 cod_west abundance; this 1-yr run
+    # does not, so the row renders dashes — the ICES side is what the split restored.

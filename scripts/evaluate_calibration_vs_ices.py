@@ -43,14 +43,22 @@ from validate_baltic_vs_ices_sag import (  # reuse snapshot loaders (dependency-
     _series_by_year,
 )
 
-RECRUITMENT_ASSESSED = ("cod", "herring", "sprat", "flounder")
+RECRUITMENT_ASSESSED = ("cod_west", "cod_east", "herring", "sprat", "flounder")
 
 
 def _species_recruitment_age(species: str) -> str | None:
     """Common ICES recruitment_age (as a string) across a species' mapped stocks, or None if
     the species has no mapped stocks, a stock lacks the age, or the stocks disagree."""
-    stocks = _load_manifest()["model_species_to_ices_stocks"].get(species, [])
+    manifest = _load_manifest()
+    stocks = manifest["model_species_to_ices_stocks"].get(species, [])
     if not stocks:
+        return None
+    # Recruitment units are NOT implied by the SSB unit: her.27.25-2932 has an index SSB
+    # but reports R as absolute numbers (6-29 million, 2018-2022), while cod.27.24-32
+    # reports R on the same relative scale as its SSB (0.4-1.6). The manifest names the
+    # stocks whose R is relative; those cannot be compared with the model's counts.
+    relative_r = set(manifest.get("recruitment_index_stocks", []))
+    if any(st in relative_r for st in stocks):
         return None
     ages = set()
     for st in stocks:
@@ -225,8 +233,8 @@ def evaluate(params_path: Path, mode: str, n_years: int, seed: int) -> dict:
         geo = _ices_recruitment_geomean(sp) if age is not None else None
         if age is None or geo is None:
             reason = (
-                "no clean ICES R (eastern index + age mismatch 0 vs 1)"
-                if sp == "cod"
+                "no clean ICES R (cod.27.24-32 is an index-unit stock: R is relative, not a count)"
+                if sp == "cod_east"
                 else "no clean ICES R (none reported)"
             )
             recruitment.append(
