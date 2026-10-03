@@ -19,7 +19,13 @@ Usage:
         [--ices-window 2018-2022] \\
         [--prefix osm] \\
         [--report path/to/output.md] \\
-        [--json path/to/output.json]
+        [--json path/to/output.json] \\
+        [--sms-m2] [--cod-predators cod_west,cod_east] [--ndt-per-year 24]
+
+``--sms-m2`` adds the WGSAM SMS cod-predation-mortality (M2) comparison (issue #136):
+biomass-weighted SMS M2 for central Baltic herring and sprat over the ICES window beside the
+model's cod-attributed M2 (cod consumption from predatorPressure over prey biomass) over the
+trailing window. Report-only; it never changes the exit code.
 """
 
 from __future__ import annotations
@@ -97,13 +103,34 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Suppress markdown output to stdout",
     )
+    parser.add_argument(
+        "--sms-m2",
+        action="store_true",
+        help="Add the WGSAM SMS cod-predation M2 comparison (needs index.json['sms_m2'] and "
+        "the predatorPressure output; report-only)",
+    )
+    parser.add_argument(
+        "--cod-predators",
+        default="cod_west,cod_east",
+        help="Comma-separated model predator species attributed to 'cod' for the M2 comparison "
+        "(default: cod_west,cod_east)",
+    )
+    parser.add_argument(
+        "--ndt-per-year",
+        type=int,
+        default=24,
+        help="Simulation time steps per year, to turn predatorPressure's per-step mean into "
+        "annual tonnes (default: 24, the Baltic config)",
+    )
     args = parser.parse_args(argv)
 
     # Defer imports so --help works without OSMOSE being installed.
     from osmose.results import OsmoseResults
     from osmose.validation.ices import (
         compare_outputs_to_ices,
+        compare_predation_m2_to_sms,
         format_markdown_report,
+        load_sms_m2,
         load_snapshot,
     )
 
@@ -115,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     snapshot = load_snapshot(args.snapshots_dir)
+    m2_rows = None
     with OsmoseResults(args.results_dir, prefix=args.prefix, strict=False) as results:
         comparisons = compare_outputs_to_ices(
             results,
@@ -122,12 +150,23 @@ def main(argv: list[str] | None = None) -> int:
             window_years=args.window_years,
             ices_window=args.ices_window,
         )
+        if args.sms_m2:
+            sms = load_sms_m2(args.snapshots_dir)
+            m2_rows = compare_predation_m2_to_sms(
+                results,
+                sms,
+                predators=tuple(p.strip() for p in args.cod_predators.split(",") if p.strip()),
+                window_years=args.window_years,
+                ices_window=args.ices_window,
+                n_dt_per_year=args.ndt_per_year,
+            )
 
     md = format_markdown_report(
         comparisons,
         snapshot_dir=args.snapshots_dir,
         window_years=args.window_years,
         ices_window=args.ices_window,
+        m2_comparisons=m2_rows,
     )
     if not args.quiet:
         print(md)
@@ -146,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             "ices_window_start": args.ices_window.start,
             "ices_window_end": args.ices_window.stop - 1,
             "comparisons": [asdict(c) for c in comparisons],
+            "sms_m2": None if m2_rows is None else [asdict(r) for r in m2_rows],
         }
         args.json.write_text(json.dumps(payload, indent=2))
         print(f"Wrote JSON report: {args.json}", file=sys.stderr)
