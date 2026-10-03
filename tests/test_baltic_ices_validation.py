@@ -272,3 +272,21 @@ def test_b_known_exceptions_are_actually_non_overlapping(report):
             f"{r['species']} is allowlisted in B_KNOWN_EXCEPTIONS but its "
             "envelope now overlaps ICES — prune the allowlist."
         )
+
+
+def test_write_report_preserves_hand_written_findings(validator_module, tmp_path, monkeypatch):
+    """`--report` regenerates the tables; a hand-written 'Findings and Recommended
+    Follow-ups' section already in the file must survive the rewrite (it is the document
+    the allowlists cite), appended verbatim after the regenerated tables."""
+    target = tmp_path / "report.md"
+    target.write_text(
+        "# old header\n\n| stale | table |\n\n## Findings and Recommended Follow-ups\n\n"
+        "- keep me: cod_west 0.04x rationale\n"
+    )
+    monkeypatch.setattr(validator_module, "REPORT_MD", target)
+    validator_module._write_markdown_report(validator_module.run(write_report=False))
+    out = target.read_text()
+    assert "stale" not in out  # tables regenerated
+    assert "## Findings and Recommended Follow-ups" in out
+    assert "keep me: cod_west 0.04x rationale" in out
+    assert out.count("## Findings and Recommended Follow-ups") == 1

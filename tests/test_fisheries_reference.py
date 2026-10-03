@@ -12,14 +12,18 @@ ICES = Path("data/baltic/reference/ices_snapshots")
 
 def test_autofill_fmsy_from_primary_tonnes_stock():
     refs, _unmatched = fr.load_reference_points(
-        Path("/nonexistent"), ["sprat", "cod", "perch"], ices_snapshot_dir=ICES
+        Path("/nonexistent"), ["sprat", "cod_west", "cod_east", "perch"], ices_snapshot_dir=ICES
     )
     # sprat: single tonnes stock spr.27.22-32 fmsy=0.34
     assert refs["sprat"].fmsy == pytest.approx(0.34)
     assert refs["sprat"].fmsy_stock == "spr.27.22-32"
     assert refs["sprat"].has_f_axis and not refs["sprat"].has_b_axis
-    # cod: cod.27.22-24 (tonnes) chosen over cod.27.24-32 (index, null fmsy)
-    assert refs["cod"].fmsy_stock == "cod.27.22-24"
+    # cod_west: its single tonnes stock cod.27.22-24 (fmsy 0.26). Before the manifest
+    # followed the 2026-07-25 split, 'cod_west' had NO entry and got no Fmsy at all (#182).
+    assert refs["cod_west"].fmsy_stock == "cod.27.22-24"
+    assert refs["cod_west"].fmsy == pytest.approx(0.26)
+    # cod_east: only the index-unit stock cod.27.24-32 (null fmsy) -> no F-axis
+    assert not refs["cod_east"].has_f_axis
     # perch: empty stock list -> no F-axis
     assert not refs["perch"].has_f_axis
     assert refs["perch"].b_ref_kind == "none"

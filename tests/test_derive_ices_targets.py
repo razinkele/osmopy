@@ -17,7 +17,7 @@ def test_window_is_2018_2022():
 
 def test_catch_targets_for_all_assessed_species():
     rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
-    assert set(rows) == {"cod", "herring", "sprat", "flounder"}
+    assert set(rows) == {"cod_west", "cod_east", "herring", "sprat", "flounder"}
     for r in rows.values():
         assert r["reference_point_type"] == "catch"
         assert float(r["weight"]) == 0.5

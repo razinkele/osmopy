@@ -324,7 +324,21 @@ def run(*, write_report: bool = True) -> dict:
     return report
 
 
+_FINDINGS_HEADING = "## Findings and Recommended Follow-ups"
+
+
+def _retained_findings() -> str:
+    """The hand-written Findings section of the existing report, if any — regeneration
+    rewrites the tables but must not drop the document the allowlists cite."""
+    if not REPORT_MD.exists():
+        return ""
+    text = REPORT_MD.read_text()
+    i = text.find(_FINDINGS_HEADING)
+    return text[i:].rstrip() + "\n" if i >= 0 else ""
+
+
 def _write_markdown_report(report: dict) -> None:
+    findings = _retained_findings()
     lines = [
         "# Baltic OSMOSE vs ICES SAG (2024 advice) — Validation Report",
         "",
@@ -387,7 +401,10 @@ def _write_markdown_report(report: dict) -> None:
         cells = [_format_rp_cell(rp, k) for k in ("blim", "bpa", "fmsy", "msy_btrigger")]
         lines.append(f"| `{stock}` | {unit} | {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} |")
     REPORT_MD.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_MD.write_text("\n".join(lines) + "\n")
+    body = "\n".join(lines).rstrip() + "\n"
+    if findings:
+        body += "\n" + findings
+    REPORT_MD.write_text(body)
 
 
 def _format_rp_cell(rp: dict, key: str) -> str:
