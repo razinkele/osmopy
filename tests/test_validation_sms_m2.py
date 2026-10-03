@@ -276,3 +276,34 @@ def test_committed_sms_snapshot_loads_and_recent_m2_is_plausible():
         # ~0.08-0.11 per year; historical peaks were ~0.5 (herring) / ~0.85 (sprat) in the 1980s.
         assert all(0.03 < v < 0.3 for v in recent), (sp, recent)
         assert max(by_year.values()) > 0.3, sp
+
+
+# ── CLI: report-only promise ──────────────────────────────────────────────────
+
+
+def test_cli_sms_m2_flag_survives_a_missing_sms_block(tmp_path, capsys):
+    """--sms-m2 against a snapshot dir with no 'sms_m2' block must warn, still write the SSB
+    report, and not raise — the section is report-only."""
+    from scripts.validate_outputs_vs_ices import main
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / "index.json").write_text(json.dumps({"model_species_to_ices_stocks": {}}))
+    results = tmp_path / "results"
+    results.mkdir()  # empty: no comparable species -> exit 1 by the existing contract
+    report = tmp_path / "out.md"
+    rc = main(
+        [
+            "--results-dir",
+            str(results),
+            "--snapshots-dir",
+            str(snap),
+            "--sms-m2",
+            "--report",
+            str(report),
+            "--quiet",
+        ]
+    )
+    assert rc == 1
+    assert report.exists() and "Validation Report" in report.read_text()
+    assert "SMS M2 section skipped" in capsys.readouterr().err

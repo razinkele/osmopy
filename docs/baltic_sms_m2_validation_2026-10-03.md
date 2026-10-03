@@ -22,28 +22,32 @@ Model window: last 5 years of run · SMS window: 2018-2022
 
 - **Herring.** Cod-attributed M2 in the model is 0.035 yr⁻¹ against the SMS
   0.069 (ratio 0.51) — half, with cod_east carrying nearly all of it.
-  The model's **total** predation on adult herring is 0.57 yr⁻¹,
-  so cod is ~6% of what eats herring in the model.
+  The model's **total** predation rate on adult herring from `mortalityRate` is 0.57 yr⁻¹ — a
+  stage rate on a different basis (numbers, adults only), so no cod share is read off the pair;
+  the same-basis budget below is what attributes the predation.
 - **Sprat.** Cod-attributed M2 is 0.277 yr⁻¹, **3.2×** the SMS
   0.087, again almost entirely cod_east. Total predation on juvenile sprat is
   3.13 yr⁻¹, an order of magnitude above anything SMS
   attributes to cod.
-- **The residual is pikeperch, and the budget closes.** Summing EVERY focal predator's consumption of
-  each prey over the window and dividing by prey biomass reproduces the `mortalityRate` adult predation
-  rate: 0.585 vs 0.567 yr⁻¹ on herring (103%), 0.582 vs 0.603 on sprat (97%). The shares: herring —
-  pikeperch 0.530, cod_east 0.031, perch 0.020, cod_west 0.004; sprat — pikeperch 0.298, cod_east 0.272,
-  perch 0.007, cod_west 0.005. So the focal predators account for the whole adult predation term, and
+- **The residual is pikeperch.** On the SAME basis as the cod figure — each focal predator's annual
+  consumption of the prey over the prey's mean biomass — the shares are: herring — pikeperch 0.530,
+  cod_east 0.031, perch 0.020, cod_west 0.004 (focal total 0.585 yr⁻¹); sprat — pikeperch 0.298,
+  cod_east 0.272, perch 0.007, cod_west 0.005 (focal total 0.582). As a consistency check only (the
+  bases differ), those focal totals sit close to the adult-stage `mortalityRate` predation rates
+  (0.567 and 0.603 yr⁻¹), which suggests the focal food web accounts for most of the predation on
+  ≥0.5-yr fish, and
   **pikeperch, at 1.35 Mt in this run (the known percid overshoot,
   `docs/baltic_percid_overshoot_conclusion_2026-07-05.md`), is the predator the SMS does not have.**
   The background predators — grey seal (no accessibility column, hence full access; CLAUDE.md gotcha)
-  and cormorant — are absent from `predatorPressure` by construction, but with the focal budget
-  already closed on the ADULT stage their share of adult herring/sprat predation is at most a few
-  percent here. The juvenile sprat term (3.1 yr⁻¹) is not budgeted by this table and is where egg/YOY
-  predation by clupeids, percids and the background species would sit.
-- **What this does and does not say.** The SMS figure is cod-only on an SD 25–32 stock; the model's
-  prey pools differ from ICES (SSB table above: herring 3.3× the ICES envelope, sprat 0.85×), so the cod
-  rates are rates on differently sized prey pools. The biomass-basis vs numbers-at-age difference is
-  small next to these gaps. The comparison does its job: the predation engine's cod term is within a
+  and cormorant — are absent from `predatorPressure` by construction; the consistency check above
+  leaves little room for them on ≥0.5-yr fish, but it is not a stage-matched budget. The juvenile sprat
+  term (3.1 yr⁻¹) is not budgeted by this table and is where egg/YOY predation by clupeids, percids
+  and the background species would sit.
+- **What this does and does not say.** The two rates are not equivalent: they differ through age
+  structure (biomass basis vs numbers at age), through domain (SMS: SD 25–32 excl. Gulf of Riga; the
+  grid also holds the western basin) and through the prey pool each is taken on (SSB table above:
+  herring 3.3× the ICES envelope, sprat 0.85×). Each of those shifts the ratio on its own, so the
+  comparison is indicative, not a like-for-like skill score. The comparison does its job: the predation engine's cod term is within a
   factor 2–3 of SMS on both stocks, and what the validator surfaces is the percid predation the SMS
   food web lacks — a calibration finding already on record, now with a number against an external
   multispecies benchmark.

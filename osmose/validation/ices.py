@@ -645,10 +645,13 @@ def format_m2_section(
             "weighted here across ages by biomass at age from the same key run (effectively ages 1+). "
             "Model = cod-ATTRIBUTED M2 on a biomass basis: annual tonnes of the prey eaten by the cod "
             "stocks (predatorPressure) over the prey's mean biomass (young-of-year excluded by "
-            "output.cutoff.age). The two bases differ only through age structure. The model's TOTAL "
-            "predation rate (all predators, per stage) is shown beside it so the non-cod residual is "
-            "visible. SMS domain: ICES SD 25-32 excl. Gulf of Riga; the model grid also holds the "
-            "western basin."
+            "output.cutoff.age). The two rates are NOT directly equivalent: they differ through age "
+            "structure (biomass basis vs numbers at age), through DOMAIN (SMS: ICES SD 25-32 excl. "
+            "Gulf of Riga; the model grid also holds the western basin) and through the PREY POOL "
+            "each rate is taken on (the model's stock sizes vs the assessed stocks — see the SSB "
+            "table). The model's TOTAL predation rate (all predators, per stage, from "
+            "mortalityRate) is shown beside it as context; it is a stage rate on a different "
+            "basis, so no share is computed from the two."
         ),
         "",
         (

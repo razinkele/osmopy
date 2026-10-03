@@ -143,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
 
     snapshot = load_snapshot(args.snapshots_dir)
     m2_rows = None
+    sms = None
     with OsmoseResults(args.results_dir, prefix=args.prefix, strict=False) as results:
         comparisons = compare_outputs_to_ices(
             results,
@@ -151,7 +152,13 @@ def main(argv: list[str] | None = None) -> int:
             ices_window=args.ices_window,
         )
         if args.sms_m2:
-            sms = load_sms_m2(args.snapshots_dir)
+            try:
+                sms = load_sms_m2(args.snapshots_dir)
+            except (KeyError, FileNotFoundError, ValueError, OSError) as e:
+                # Report-only: a missing/invalid SMS snapshot must not sink the SSB report.
+                print(f"WARN: SMS M2 section skipped — {e}", file=sys.stderr)
+                sms = None
+        if args.sms_m2 and sms is not None:
             m2_rows = compare_predation_m2_to_sms(
                 results,
                 sms,

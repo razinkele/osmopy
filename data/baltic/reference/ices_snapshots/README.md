@@ -92,9 +92,10 @@ SMS M2 is cod-only, at age, numbers basis; OSMOSE's `mortalityRate` Predation ca
 predator (both cods, percids, the background seal and cormorant). So the model quantity is
 **cod-attributed** M2 on a biomass basis — annual tonnes of the prey eaten by `cod_west` + `cod_east`
 (`predatorPressure`, per-step mean × steps per year) over the prey's mean biomass (young-of-year
-excluded by `output.cutoff.age`) — against SMS M2 biomass-weighted across ages. The model's total
-predation rate per stage is reported beside it so the non-cod residual is visible. **Report-only;
-not gated.** Recent SMS values are low (eastern cod collapsed): ~0.08–0.11 yr⁻¹ for both stocks
+excluded by `output.cutoff.age`) — against SMS M2 biomass-weighted across ages. The two rates differ
+through age structure, domain (SD 25–32 vs the whole grid) and the prey pool each is taken on, so
+they are indicative, not equivalent. The model's total predation rate per stage (a different
+basis) is reported beside it as context. **Report-only; not gated.** Recent SMS values are low (eastern cod collapsed): ~0.08–0.11 yr⁻¹ for both stocks
 over 2019–2024, against historical peaks of ~0.5 (herring) and ~0.85 (sprat) in the 1980s.
 
 ## How to Refresh
