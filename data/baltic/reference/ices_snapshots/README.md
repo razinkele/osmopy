@@ -131,7 +131,10 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    `get_reference_points` output), and rewrites every `{stock}.assessment.json`
    and `{stock}.reference_points.json` plus `index.json` (`advice_year_by_stock`
    and `units_by_stock` are derived automatically — the latter from Blim
-   magnitude since the ICES `StockSizeUnits` field is unreliable).
+   magnitude since the ICES `StockSizeUnits` field is unreliable). The helper
+   loads the existing `index.json` and rewrites only those two keys, so the
+   hand-maintained blocks (`model_species_to_ices_stocks`,
+   `recruitment_index_stocks`, `sms_m2`) survive a refresh.
 4. Update `index.json`'s top-level `advice_year` and `created` date by hand
    (the helper doesn't touch them).
 5. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**

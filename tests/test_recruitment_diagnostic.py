@@ -181,4 +181,6 @@ def test_evaluate_adds_recruitment_rows(monkeypatch):
     assert set(rec) == {"cod_west", "cod_east", "herring", "sprat", "flounder"}
     assert rec["sprat"]["verdict"] in ("OK", "FLAG") and rec["sprat"]["ices_geomean"] is not None
     assert rec["cod_east"]["ices_geomean"] is None and "index-unit" in rec["cod_east"]["reason"]
-    assert rec["cod_west"]["ices_geomean"] is not None
+    assert rec["cod_west"]["ices_geomean"] is not None and rec["cod_west"]["reason"] is None
+    # model_R is filled only when the run carries age-1 cod_west abundance; this 1-yr run
+    # does not, so the row renders dashes — the ICES side is what the split restored.

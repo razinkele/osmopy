@@ -190,7 +190,7 @@ def test_ices_ssb_envelope_empty_intersection_returns_none(validator_module, mon
     assert validator_module._ices_ssb_envelope(["A", "B"]) == (None, None)
 
 
-def test_both_cod_stocks_get_f_rows_from_their_own_fishery(report):
+def test_both_cod_stocks_get_f_rows_from_their_own_fishery(report, validator_module):
     """Since the split each cod stock has its own fishery (fsh0 / fsh8) and its own
     ICES stock. cod_west compares against the tonnes stock with nothing excluded;
     cod_east has only the index-unit stock, so it takes the index-unit fallback
@@ -201,7 +201,10 @@ def test_both_cod_stocks_get_f_rows_from_their_own_fishery(report):
     assert f_rows["cod_west"]["ices_f_weighted"] is not None
     assert f_rows["cod_east"]["excluded_index_stocks"] == []
     assert f_rows["cod_east"]["ices_f_weighted"] is not None
-    assert f_rows["cod_west"]["model_f"] != f_rows["cod_east"]["model_f"]  # fsh0 vs fsh8
+    # Each stock reads its OWN fishery (fsh0 vs fsh8) — assert the mapping, not the values,
+    # which could legitimately coincide.
+    idx = validator_module._SPECIES_FSH_INDEX
+    assert (idx["cod_west"], idx["cod_east"]) == (0, 8)
 
 
 def test_both_cod_stocks_get_biomass_rows(report):

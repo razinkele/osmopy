@@ -92,7 +92,7 @@ The Baltic example is the product of several overlapping threads. In chronologic
 
 7. **Mask rebuild** (2026-04-17). `scripts/rebuild_baltic_mask.py` shrank the mask from 912 to 612 ocean cells by keeping only cells where at least one species map or fishing map had a positive value. The 300 removed cells were "ocean-with-zero" cells in northern Norway/Sweden that had been mirrored from the southern Baltic pattern — no species ever used them. CSV grids rewritten so those cells became `-99` (land).
 
-8. **ICES SAG cross-validation** (2026-04-18 — Front 1 of current work). Eight snapshots of the 2024 advice cycle (plus `cod.27.22-24` from 2022 since its 2024 assessment is category-3) frozen under `data/baltic/reference/ices_snapshots/`. `scripts/validate_baltic_vs_ices_sag.py` compares F rates and biomass envelopes; output at `docs/baltic_ices_validation_2026-10-03.md`.
+8. **ICES SAG cross-validation** (2026-04-18; report regenerated 2026-10-03 after the cod split, #182). Eight snapshots of the 2024 advice cycle (plus `cod.27.22-24` from 2022 since its 2024 assessment is category-3) frozen under `data/baltic/reference/ices_snapshots/`. `scripts/validate_baltic_vs_ices_sag.py` compares F rates and biomass envelopes; output at `docs/baltic_ices_validation_2026-10-03.md`.
 
 ### Scripts (what builds what)
 
@@ -220,7 +220,11 @@ Species-by-species spawning windows (with DOIs):
 
 - **Structure:** 8 fisheries, one-per-species, knife-edge age selectivity, single fishing period per year, uniform seasonality (1/24 per dt). This is the simplest structurally defensible fishing model for a calibration sandbox.
 - **Selectivity `a50` (age at 50% selectivity):** 1 yr for pelagics (herring, sprat, stickleback), 2 yr for cod/flounder/perch/pikeperch, 3 yr for smelt. Roughly mirrors minimum-landing-size regulations in the respective fisheries.
-- **Base F rates** (year⁻¹), calibrated round 18:
+- **Base F rates** (year⁻¹), calibrated round 18 — **the April-2026 state, kept for history.** The
+  config has since been recalibrated (cod E/W split 2026-07-25 with `fsh8` for cod_east, percid
+  removals, herring/sprat/flounder F); current per-stock verdicts are in
+  `docs/baltic_ices_validation_2026-10-03.md` (cod_west 0.039 / cod_east 0.010 / herring 0.380 /
+  sprat 0.164 / flounder 1.368):
 
   | fsh | species      | F base | ICES 2024 advice (weighted, 2018–2022) | Note                          |
   |-----|--------------|--------|-----------------------------------------|-------------------------------|
