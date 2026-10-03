@@ -432,9 +432,10 @@ def sms_m2_weighted_by_year(
     out: dict[int, float] = {}
     for year in sorted(int(y) for y in merged["Year"].unique()):
         g = merged[merged["Year"] == year]
-        total = float(g[wcol].sum())
+        w_arr = np.asarray(g[wcol], dtype=float)
+        total = float(w_arr.sum())
         if total > 0:
-            out[year] = float((g["value"] * g[wcol]).sum() / total)
+            out[year] = float(np.dot(np.asarray(g["value"], dtype=float), w_arr) / total)
     return out
 
 
@@ -506,7 +507,7 @@ def model_cod_attributed_m2(
     # last step of a year, and plain floor assigns both correctly.
     year = np.floor(merged["Time"].to_numpy()).astype(int)
     merged = merged.assign(_year=year)
-    denom = merged.groupby("_year")["_prey_biomass"].mean()
+    denom = pd.Series(merged.groupby("_year")["_prey_biomass"].mean())
     per_pred: dict[str, float] = {}
     total = pd.Series(0.0, index=denom.index)
     for p in predators:
@@ -553,7 +554,7 @@ def model_predation_rate_by_stage(
         return {}
     tail = _trailing_years(frame, window_years)
     for stage in [c for c in tail.columns if c != "Time"]:
-        stages[str(stage)] = float(tail[stage].mean())
+        stages[str(stage)] = float(np.asarray(tail[stage], dtype=float).mean())
     return stages
 
 
