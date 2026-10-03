@@ -42,5 +42,34 @@
     "her.27.20-24": 2024,
     "spr.27.22-32": 2024,
     "fle.27.2223": 2024
+  },
+  "sms_m2": {
+    "source": "ICES WGSAM Eastern Baltic Sea SMS key run 2025 (GitHub artefact; the WGSAM 2025 report was not yet in the ICES library when snapshotted)",
+    "repo": "ices-eg/wg_WGSAM",
+    "folder": "Baltic-2025-keyRun",
+    "commit": "f690d4ff",
+    "commit_date": "2025-10-08",
+    "author": "Morten Vinther (DTU Aqua), stock assessor per the Eastern Baltic SMS stock annex",
+    "files": {
+      "m2_annual": "wgsam_sms_baltic_2025.m2_annual.csv",
+      "weights": "wgsam_sms_baltic_2025.weights.csv"
+    },
+    "scenario_used": "2025 key run",
+    "scenarios_present": [
+      "2022 Key run",
+      "2025 key run"
+    ],
+    "sentinel": "the annual file ends at 2024 and carries no sentinel; the projection year (2025) is marked -1 only in the quarterly summary.out \u2014 the loader drops value < 0 defensively",
+    "predator": "Cod only \u2014 treated as an external predator with numbers/size from the ICES SS3 assessment (stock annex: keyruns since 2019)",
+    "area": "ICES Subdivisions 25-32 excluding the Gulf of Riga (stock annex Summary)",
+    "sms_species_to_ices_stocks": {
+      "Herring": "her.27.25-2932",
+      "Sprat": "spr.27.22-32"
+    },
+    "sms_species_to_model_species": {
+      "Herring": "herring",
+      "Sprat": "sprat"
+    },
+    "units": "M2 = annual instantaneous cod-predation mortality (per year) at age"
   }
 }

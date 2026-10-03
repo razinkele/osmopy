@@ -58,6 +58,46 @@ envelope comparisons for index-unit stocks (nothing to compare tonnes
 against an index) but still uses them for F-rate comparisons (F is
 dimensionless across all stocks).
 
+## WGSAM SMS cod-predation mortality (M2) — `wgsam_sms_baltic_2025.*` (issue #136)
+
+Two files snapshot the ICES WGSAM **Eastern Baltic Sea SMS key run 2025** (the SMS model,
+Lewy and Vinther 2004 as cited in the stock annex — an ICES CM paper, not resolved here;
+stock assessor Morten Vinther, DTU Aqua), pulled at a pinned commit from the
+public repository `ices-eg/wg_WGSAM`, folder `Baltic-2025-keyRun`, commit `f690d4ff`
+(2025-10-08, "2025 baltic keyrun"). The WGSAM 2025 report was **not yet in the ICES library**
+when this was taken, so the repository artefact is the primary source; replace the citation
+when the report appears. Pull helper: `scripts/_pull_wgsam_sms_m2.py` (one-shot).
+
+- `wgsam_sms_baltic_2025.m2_annual.csv` — verbatim `M2_annu_.csv`: `Year, scenario, Species,
+  variable, Age, value`. M2 = annual instantaneous **cod**-predation mortality (per year) on
+  Herring and Sprat at ages 0–8, 1974–2024, for BOTH the `2022 Key run` and the `2025 key run`
+  (the revision between them is informative; the validator uses `scenario_used` from
+  `index.json`). The annual file ends at 2024; the projection year (2025) is absent from it
+  and marked `-1` only in the quarterly `summary.out`, so the loader's `value < 0` guard is
+  defensive.
+- `wgsam_sms_baltic_2025.weights.csv` — derived from the key run's `summary.out`, quarter-1 rows:
+  stock numbers `N`, mean weight `west` and biomass `BIO` at age, used to weight M2 across ages.
+  Age 0 has `N = 0` in quarter 1, so a biomass-weighted mean is effectively ages 1+.
+
+What the key run is (stock annex, `StockAnnex/Baltic/StockAnnex_ICES_EB_SMS_2022_Configuration.pdf`):
+ICES Subdivisions 25–32 excluding the Gulf of Riga; **cod is the only predator**, treated since the
+2019 key run as an *external* predator whose numbers and size distribution come from the ICES SS3
+assessment (SMS no longer estimates cod internally); prey are central Baltic herring
+(`her.27.25-2932`, SD 25–29+32 excl. Gulf of Riga) and sprat (`spr.27.22-32`). The `index.json`
+block `sms_m2` carries this provenance plus the SMS→model species map (`Herring → herring`,
+`Sprat → sprat`).
+
+How it is compared (`osmose/validation/ices.py`, `scripts/validate_outputs_vs_ices.py --sms-m2`):
+SMS M2 is cod-only, at age, numbers basis; OSMOSE's `mortalityRate` Predation cause lumps every
+predator (both cods, percids, the background seal and cormorant). So the model quantity is
+**cod-attributed** M2 on a biomass basis — annual tonnes of the prey eaten by `cod_west` + `cod_east`
+(`predatorPressure`, per-step mean × steps per year) over the prey's mean biomass (young-of-year
+excluded by `output.cutoff.age`) — against SMS M2 biomass-weighted across ages. The two rates differ
+through age structure, domain (SD 25–32 vs the whole grid) and the prey pool each is taken on, so
+they are indicative, not equivalent. The model's total predation rate per stage (a different
+basis) is reported beside it as context. **Report-only; not gated.** Recent SMS values are low (eastern cod collapsed): ~0.08–0.11 yr⁻¹ for both stocks
+over 2019–2024, against historical peaks of ~0.5 (herring) and ~0.85 (sprat) in the 1980s.
+
 ## How to Refresh
 
 Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year

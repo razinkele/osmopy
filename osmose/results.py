@@ -518,6 +518,12 @@ class OsmoseResults:
             return self._read_netcdf_species_var(key, "focal_species", species)
         return self._read_species_output(key, species)
 
+    def predator_pressure(self) -> pd.DataFrame:
+        """Read predation pressure: long frame ``Time, Prey`` + one column per focal predator,
+        per-step MEAN tonnes of prey eaten over each recording window (Java's convention).
+        Background predators have no column (they are not focal species)."""
+        return self._read_species_output("predatorPressure", None)
+
     def mean_trophic_level(self, species: str | None = None) -> pd.DataFrame:
         """Read mean trophic level time series."""
         return self._read_species_output("meanTL", species)
