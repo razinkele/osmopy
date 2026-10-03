@@ -80,7 +80,18 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 
 ---
 
-## [Opened → #136] Add WGSAM SMS cod-predation-mortality (M) as a Baltic predation validation target
+## [Resolved 2026-10-03] Add WGSAM SMS cod-predation-mortality (M) as a Baltic predation validation target
+
+> **✅ Shipped 2026-10-03** (issue #136). Snapshot of the WGSAM Eastern Baltic SMS key run 2025
+> (`ices-eg/wg_WGSAM` @ `f690d4ff`, M2 at age for herring/sprat + biomass-at-age weights) under
+> `data/baltic/reference/ices_snapshots/wgsam_sms_baltic_2025.*` with provenance in `index.json['sms_m2']`
+> and the README. The comparison lives in the **output-based** validator (`osmose/validation/ices.py`,
+> `scripts/validate_outputs_vs_ices.py --sms-m2`), not the config-only SAG script this draft named:
+> SMS M2 is cod-only, so the model side is cod-ATTRIBUTED M2 (cod consumption from `predatorPressure`
+> over prey biomass, biomass basis) against biomass-weighted SMS M2; the model's total predation rate
+> per stage sits beside it. Report-only. First result (`docs/baltic_sms_m2_validation_2026-10-03.md`):
+> cod M2 0.5× SMS on herring, 3.2× on sprat; the non-cod residual (percids, un-columned seal) is
+> 10× cod's share. The "review criteria as QA checklist" item was deferred. Draft retained below.
 
 > **Opened on GitHub 2026-07-29:** https://github.com/razinkele/osmopy/issues/136 (label: enhancement).
 
