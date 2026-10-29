@@ -64,8 +64,15 @@ Three of the eight stocks report SSB as a **relative biomass index**
 mislabels these as `"tonnes"` in the per-row metadata — the true unit
 is inferred from the `Blim` magnitude. The validator skips biomass
 envelope comparisons for index-unit stocks (nothing to compare tonnes
-against an index) but still uses them for F-rate comparisons (F is
-dimensionless across all stocks).
+against an index).
+
+F is not safe either. It is dimensionless, but not necessarily absolute:
+`her.27.25-2932` (SS3) reports F relative to FMSY (FMSY = 1, Fpa = 1.2;
+2018–2022 values 0.8–1.9), and `fle.27.2223` also lists FMSY = 1. The
+validator therefore uses index-unit F only as a fallback when a species
+has no tonnes-unit stock, and when a species' stocks are only partly
+usable (herring) it reports the ICES F with no verdict
+(`docs/baltic_herring_sprat_f_2026-10-29.md`).
 
 ## WGSAM SMS cod-predation mortality (M2) — `wgsam_sms_baltic_2025.*` (issue #136)
 
