@@ -96,6 +96,14 @@ if [[ ! -f "${SOURCE_DIR}/app.py" ]]; then
     exit 1
 fi
 
+# Deploying FROM the prod clone checks out the new ref and then dies on `cp` copying the JARs
+# onto themselves (set -e) -- before the restart, leaving new code on disk under the old
+# process (2026-10-29). --restart/--uninstall from the clone are fine; a deploy is not.
+if [[ "$SOURCE_DIR" -ef "$PROD_SRC" ]]; then
+    error "Run the deploy from the dev checkout, not the prod clone (${PROD_SRC})."
+    exit 1
+fi
+
 if [[ ! -d "$SHINY_ROOT" ]]; then
     error "Shiny server directory ${SHINY_ROOT} not found."
     exit 1
@@ -199,12 +207,19 @@ fi
 info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl, pyvis)..."
 "${PIP_INSTALL[@]}" --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
 "${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
-# pyvis is a FORK (razinkele/pyvis "Optimized Edition", versioned 4.x); PyPI's pyvis is a
-# different lineage that stops at 0.3.2. So it must be installed from the git URL, and it must
-# NOT be a presence check like pymoo/SALib above: `pip show pyvis` succeeds for the upstream
-# package too, so a presence check would happily leave the WRONG pyvis in place. The floor
-# check below is what distinguishes them -- 0.3.2 < 4.2 fails it loudly.
-"${PIP_INSTALL[@]}" --quiet --upgrade "pyvis @ git+https://github.com/razinkele/pyvis.git@v4.2"
+# pyvis is a FORK (razinkele/pyvis "Optimized Edition", versioned 4.x); PyPI's `pyvis` is a
+# different lineage that stops at 0.3.2. The fork ships under TWO distribution names: `pyvis`
+# on the maintainer's conda channel, and `pyvis-optimized` on PyPI -- both install the same
+# `pyvis` import package. The shared env is used by other apps and may already carry either
+# (2026-10-29: `pyvis-optimized 4.5.0`, and NO `pyvis` dist at all, so the old
+# `version("pyvis")` check aborted the deploy). So: key everything on the IMPORT package's own
+# `__version__`, not a dist name, and only install `pyvis-optimized` when that is missing or
+# below the floor -- never overwrite a conda-managed fork that already satisfies it. A presence
+# check (`pip show`, `import pyvis`) would pass on upstream 0.3.2; the floor is what catches it.
+if ! "$SHINY_PYTHON" -c 'import sys, pyvis; from packaging.version import Version; sys.exit(Version(getattr(pyvis, "__version__", "0")) < Version("4.2"))' 2>/dev/null; then
+    info "pyvis fork missing or below 4.2; installing pyvis-optimized from PyPI..."
+    "${PIP_INSTALL[@]}" --quiet --upgrade "pyvis-optimized>=4.2"
+fi
 
 # Fail loudly if any floor is unmet after install.
 "${PIP_INSTALL[@]}" --quiet "packaging" || true
@@ -213,15 +228,17 @@ import sys
 from importlib.metadata import version
 from packaging.version import Version
 floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.6.3",
-          "shiny_deckgl": "1.9.2", "pyvis": "4.2"}
-bad = []
-for pkg, floor in floors.items():
-    have = version(pkg)
-    if Version(have) < Version(floor):
-        bad.append(f"{pkg} {have} < {floor}")
+          "shiny_deckgl": "1.9.2"}
+have = {k: version(k) for k in floors}
+# pyvis by import-package version: its dist name is `pyvis` or `pyvis-optimized` (see above).
+import pyvis
+floors["pyvis"] = "4.2"
+have["pyvis"] = getattr(pyvis, "__version__", "0")
+bad = [f"{pkg} {have[pkg]} < {floor}" for pkg, floor in floors.items()
+       if Version(have[pkg]) < Version(floor)]
 if bad:
     print("DEPENDENCY FLOOR CHECK FAILED:", "; ".join(bad)); sys.exit(1)
-print("dependency floors OK:", {k: version(k) for k in floors})
+print("dependency floors OK:", have)
 PYCHK
 info "Python dependencies ensured."
 
