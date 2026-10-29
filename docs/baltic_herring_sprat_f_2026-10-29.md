@@ -6,7 +6,8 @@
 [0.5×, 1.5×] band. Re-tune F, or widen the band?
 **Short answer:** neither, for herring — its F comparison is invalid, and the model already
 lands the right catch. For sprat, re-tune F toward ICES: it doubles catch toward the ICES level
-and keeps every species' envelope status unchanged.
+and keeps every species' envelope status unchanged. **The sprat change was adopted the same day
+and certified 5/5 assessed at 50 yr × 5 seeds** (see the final section).
 
 | | herring | sprat |
 |---|---|---|
@@ -107,6 +108,38 @@ reference is preferred over the 2018–2022 realised F). Re-certify with
 Expect sprat near 850 kt and stickleback a few percent higher. If certification fails on the sprat
 floor, the next lever is cod_east predation on sprat (3.2× SMS), not a lower F.
 
+## Adopted 2026-10-29: `fisheries.rate.base.fsh2` 0.1637 → 0.369 — certification
+
+`scripts/baltic_stability_certify.py`, production settings (50 yr, seeds 42/123/7/999/2024,
+config-default seeding), run on the baseline and on the change back to back. Final-decade mean
+range across seeds:
+
+| species | baseline | sprat F = 0.369 | verdict, base / new |
+|---|---|---|:---:|
+| cod_west | 11.9–13.8 kt | 12.3–14.3 kt | PASS / PASS |
+| cod_east | 64.0–66.4 kt | 64.2–66.3 kt | PASS / PASS |
+| herring | 2.49–2.61 Mt | 2.47–2.61 Mt | PASS / PASS |
+| **sprat** | 1013–1036 kt | **905–918 kt** (−10.9%) | PASS / PASS |
+| flounder | 31.8–34.0 kt | 32.6–33.6 kt | PASS / PASS |
+| perch (indicative) | 42.6–44.8 kt | 41.9–42.5 kt | PASS / PASS |
+| pikeperch (indicative) | 1.38–1.46 Mt | 1.35–1.50 Mt | persists / persists |
+| smelt (indicative) | 672–694 kt | 683–687 kt | persists / persists |
+| stickleback (indicative) | 77.1–85.0 kt | 79.2–87.9 kt | PASS / PASS |
+
+**Assessed 5/5 on both; no verdict changes.** At the certification horizon two of the caveats above
+ease: the worst sprat seed sits 13% above the 800 kt floor (not 4%), and sprat's 905–918 kt now
+falls *inside* the ICES SSB window (892–1127 kt), so the biomass-realism trade-off seen in the
+40-yr runs does not appear at 50 yr. The 40-yr `cod_east` excursion above its ceiling is likewise
+a horizon effect: at 50 yr it is in envelope (64–66 kt) in both arms.
+
+Follow-on: `tests/test_tutorial_3species.py::test_headless_fallback_produces_equilibrium` asserted
+a max/min equilibrium spread ≥ 10 across sprat, stickleback and total cod, justified by a stale
+premise ("sprat ~5M t, cod ~1.5K t"). Measured on the tutorial config (seed 42) the spread is
+sprat/stickleback: 11.90 before, 9.51 after. The threshold is now 5 — per-species magnitudes are
+already pinned by `_PYRAMID_BOUNDS`, which still pass. `data/baltic/reference/f_byyear_sp2.csv`
+(the opt-in, closed F1 hindcast series) still embeds the old base F verbatim; regenerate it with
+`scripts/build_baltic_f_byyear.py` before any hindcast re-run.
+
 ## Instrument notes (found during this analysis)
 
 - **`scripts/compute_mortality_balance.py` returns F = 0 and M = 0 for every Python-engine run.**
@@ -125,8 +158,8 @@ floor, the next lever is cod_east predation on sprat (3.2× SMS), not a lower F.
   interval mean or a save-step snapshot was not checked; the yield / B(age ≥ 1) exploitation rate is
   a cross-check on order of magnitude, not a precise F.
 - **Baseline `cod_east` is above its envelope on all three seeds** (92–95 kt vs 85 kt ceiling) at
-  this 40-yr horizon. Not investigated here; check against the certification horizon before reading
-  anything into it.
+  this 40-yr horizon. Resolved by the certification below: at the 50-yr production horizon it is in
+  envelope (64–66 kt).
 
 ## Reproduction
 

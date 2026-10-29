@@ -37,7 +37,9 @@ fisheries.selectivity.a50.fsh7;1.0
 # Base fishing mortality rate (year^-1) — calibrated R18
 fisheries.rate.base.fsh0;0.03901337537354545
 fisheries.rate.base.fsh1;0.3799687566571175
-fisheries.rate.base.fsh2;0.16365437729503968
+# fsh2 (sprat): ICES spr.27.22-32 SSB-weighted F 2018-2022, replacing the phase-13 fitted 0.1637
+# (2026-10-29; docs/baltic_herring_sprat_f_2026-10-29.md). Herring fsh1 deliberately unchanged.
+fisheries.rate.base.fsh2;0.369
 fisheries.rate.base.fsh3;1.367806662643799
 fisheries.rate.base.fsh4;0.40
 fisheries.rate.base.fsh5;0.50
