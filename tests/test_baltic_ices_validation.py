@@ -227,6 +227,19 @@ def test_herring_envelope_excludes_central_baltic_index_stock(report):
     assert "her.27.25-2932" in b_rows["herring"]["excluded_index_stocks"]
 
 
+def test_herring_f_reported_without_verdict_because_coverage_is_partial(report):
+    """her.27.25-2932 publishes F only as F/FMSY, so the herring comparator is the
+    other three stocks (~80% Bothnian). The F is still reported, but no verdict —
+    while sprat, fully covered, keeps one: the rule must not silence every row."""
+    f_rows = {r["species"]: r for r in report["f_rates"]}
+    herring = f_rows["herring"]
+    assert herring["ices_f_weighted"] is not None
+    assert herring["in_tolerance"] is None
+    assert "her.27.25-2932" in herring["no_verdict_reason"]
+    assert f_rows["sprat"]["in_tolerance"] is not None
+    assert f_rows["sprat"]["no_verdict_reason"] is None
+
+
 def test_flounder_envelope_is_none_because_only_stock_is_index(report):
     """Flounder has a single index-unit stock. The envelope must be None,
     not zero and not a silent pass-through of the index values as tonnes."""

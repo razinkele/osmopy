@@ -440,12 +440,14 @@ def test_headless_fallback_produces_equilibrium(baseline_run: pd.DataFrame) -> N
     assert len(means) == 3, f"Expected 3 species in equilibrium summary; got {len(means)}"
     assert means.notna().all(), f"Some equilibrium means are NaN: {means.to_dict()}"
     assert (means > 0).all(), f"Some equilibrium means are zero or negative: {means.to_dict()}"
-    # Spread check: at least 10× separation between max and min.
-    # Baltic's sprat is ~5M tonnes, cod is ~1.5K tonnes -> spread >> 100.
-    # The threshold is set loose (10×) to avoid brittleness but ensures the
-    # food chain has differentiated beyond a single biomass level.
+    # Spread check: the food chain has differentiated beyond a single biomass level.
+    # The original premise ("sprat ~5M t, cod ~1.5K t -> spread >> 100", 2026-05-16) no longer
+    # holds: on the current config the spread is sprat/stickleback, measured 11.90x before and
+    # 9.51x after sprat F moved to the ICES value (seed 42; 2026-10-29,
+    # docs/baltic_herring_sprat_f_2026-10-29.md).
+    # Per-species magnitudes are pinned by _PYRAMID_BOUNDS; this only guards gross collapse.
     spread = means.max() / means.min()
-    assert spread >= 10.0, (
-        f"Equilibrium means are collapsed (max/min = {spread:.2f}, expected >= 10.0): "
+    assert spread >= 5.0, (
+        f"Equilibrium means are collapsed (max/min = {spread:.2f}, expected >= 5.0): "
         f"{means.to_dict()}. Food chain likely has not differentiated."
     )

@@ -42,6 +42,7 @@ class FComparison:
     ices_f_weighted: float | None
     in_tolerance: bool | None
     excluded_index_stocks: list[str]
+    no_verdict_reason: str | None = None
 
 
 @dataclass
@@ -213,6 +214,12 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
       F; only the weighting is unitful.
     - Never mix. Excluded stocks surface in `excluded_index_stocks` so
       the report shows which stocks were dropped.
+    - A species with excluded stocks gets the ICES F reported but NO verdict:
+      the weighted F then describes only part of what the model group
+      represents. Herring is the live case — `her.27.25-2932` (central Baltic,
+      more than half the catch) publishes F only as F/FMSY, so the remaining
+      comparator is ~80% Bothnian herring
+      (docs/baltic_herring_sprat_f_2026-10-29.md).
     """
     units = manifest.get("units_by_stock", {})
     out: list[FComparison] = []
@@ -237,6 +244,10 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
         ices_f = _ssb_weighted_f(weighting_stocks)
         if ices_f is None:
             out.append(FComparison(species, model_f, None, None, excluded))
+            continue
+        if excluded:
+            reason = f"partial coverage: {', '.join(excluded)} excluded (index-unit; no absolute F)"
+            out.append(FComparison(species, model_f, ices_f, None, excluded, reason))
             continue
         lo, hi = F_TOLERANCE
         in_tol = lo * ices_f <= model_f <= hi * ices_f
@@ -363,6 +374,11 @@ def _write_markdown_report(report: dict) -> None:
         lines.append(f"| {r['species']} | {f_model} | {f_ices} | {flag} | {excl} |")
     lines += [
         "",
+        (
+            "A species with an excluded stock gets no verdict (—): its ICES F covers "
+            "only part of what the model group represents."
+        ),
+        "",
         "## Biomass Envelope Overlap (SSB 2018-2022, summed across tonnes-unit stocks)",
         "",
         (
@@ -433,7 +449,11 @@ def main() -> int:
 
     for r in report["f_rates"]:
         ices_f = "—" if r["ices_f_weighted"] is None else f"{r['ices_f_weighted']:.3f}"
-        print(f"F[{r['species']}]: model={r['model_f']:.3f} ices={ices_f} tol={r['in_tolerance']}")
+        why = f" ({r['no_verdict_reason']})" if r["no_verdict_reason"] else ""
+        print(
+            f"F[{r['species']}]: model={r['model_f']:.3f} ices={ices_f} "
+            f"tol={r['in_tolerance']}{why}"
+        )
         if r["species"] in assessed and r["ices_f_weighted"] is None:
             print(
                 f"  WARN: {r['species']} has linked ICES stocks but no F in window "
