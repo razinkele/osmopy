@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.6.2] - 2026-10-29
+
+### Features
+
+- **baltic:** sprat F to the ICES value (0.1637 -> 0.369), certified 5/5 (3d74d57)
+
+### Bug Fixes
+
+- **validation:** report herring F without a verdict (partial ICES coverage) (0daae42)
+
+### Documentation
+
+- **baltic:** herring/sprat F vs ICES — evidence and recommendation (721c391)
+
+### Other
+
+- Merge pull request #188 from razinkele/feat/baltic-sprat-f-ices (6c07e5e)
+
 ## [1.6.1] - 2026-10-29
 
 ### Bug Fixes
