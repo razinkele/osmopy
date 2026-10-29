@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.6.1] - 2026-10-29
+
+### Bug Fixes
+
+- **trophic:** keep the stage-count divisor numeric under pandas 3.1 (5f7f664)
+- **types:** sum via .to_numpy() so pandas 3.1's Series.sum() typing passes pyright (228bcc6)
+- **deploy:** key the pyvis floor on the import package; depend on pyvis-optimized (a3fa576)
+
+### CI/CD
+
+- pin apptainer-smoke to ubuntu-24.04 (e56ed71)
+
+### Other
+
+- Merge pull request #186 from razinkele/fix/deploy-pyvis-optimized (a31a96a)
+
 ## [1.6.0] - 2026-10-03
 
 ### Features
