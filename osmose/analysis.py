@@ -122,10 +122,11 @@ def mean_tl_catch(
     _require_columns(merged, "time", "species", "yield", "tl", context="mean_tl_catch")
 
     def _weighted_tl(group: pd.DataFrame) -> float:
-        total_yield = group["yield"].sum()
+        # .to_numpy(): pandas 3.1 types Series.sum() as possibly a Series, which pyright rejects.
+        total_yield = group["yield"].to_numpy().sum()
         if total_yield == 0:
             return float("nan")
-        return float((group["yield"] * group["tl"]).sum() / total_yield)
+        return float((group["yield"] * group["tl"]).to_numpy().sum() / total_yield)
 
     result = merged.groupby("time").apply(_weighted_tl, include_groups=False).reset_index()
     result.columns = ["time", "mean_tl"]
