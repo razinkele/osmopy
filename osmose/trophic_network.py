@@ -169,7 +169,10 @@ def diet_network_at(
         summed = cast(
             pd.DataFrame, live.groupby(["pred_sp", "prey"], as_index=False)["proportion"].sum()
         )
-        summed["proportion"] = summed["proportion"] / cast(pd.Series, summed["pred_sp"]).map(n_live)
+        # astype: pandas 3.1 keeps an EMPTY str Series' dtype through .map(), so with no live
+        # stages the divisor is str and the division raises (3.0 returned float64).
+        n_stages = cast(pd.Series, summed["pred_sp"]).map(n_live).astype("float64")
+        summed["proportion"] = summed["proportion"] / n_stages
         out = summed.rename(columns={"pred_sp": "predator"})
 
     out = cast(pd.DataFrame, out[out["proportion"] >= threshold])
