@@ -114,7 +114,7 @@ def _fit_slope(midpoints, values, min_size_cm):
     df = pd.DataFrame({"size": midpoints, "abundance": values})
     if min_size_cm is not None:
         df = cast(pd.DataFrame, df[df["size"] >= min_size_cm])
-    n_fit = int(((df["size"] > 0) & (df["abundance"] > 0)).sum())
+    n_fit = int(((df["size"] > 0) & (df["abundance"] > 0)).to_numpy().sum())
     try:
         slope, intercept, r2 = size_spectrum_slope(df)
         return slope, intercept, r2, n_fit

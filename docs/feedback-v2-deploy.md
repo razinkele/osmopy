@@ -185,6 +185,11 @@ dependencies. Consider checking those three still load afterwards.
   passes while leaving the WRONG package installed. The floor check (`pyvis: 4.2`) is what
   distinguishes them, because `0.3.2 < 4.2` fails it. If you ever see `pyvis 0.3.2`, pip resolved
   PyPI instead of the fork; reinstall with `--force-reinstall` from the git URL.
+  **Superseded 2026-10-29:** the fork is on PyPI as `pyvis-optimized` (and on the maintainer's conda
+  channel as `pyvis`), and the shared env now carries `pyvis-optimized 4.5.0` with NO `pyvis` dist —
+  so the old `version("pyvis")` floor check aborted the v1.6.0 deploy. `deploy.sh` now checks the
+  import package's `pyvis.__version__` and installs `pyvis-optimized>=4.2` only when that is missing
+  or below 4.2; the remedy for a stray 0.3.2 is `pip install --force-reinstall "pyvis-optimized>=4.2"`.
 - The env has `shiny==1.7.0` against a declared `shiny>=1.6.3,<1.7`. deploy.sh's floor check only
   tests the LOWER bound, so it passes a check meant to catch exactly this. Pre-dates the deployed
   commit (pin added 2026-06-16, prod deployed 2026-07-19) and prod currently serves 200, so it is
