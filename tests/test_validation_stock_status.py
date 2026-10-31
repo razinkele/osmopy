@@ -112,7 +112,10 @@ def test_exploited_f_reads_python_engine_labels(tmp_path):
     was silently empty. Expected: the Adult column per year, read with the csv module."""
     rows = list(csv.reader(_PY_FIXTURE.open()))
     col = list(zip(rows[1], rows[2])).index(("Fishing", "Adult"))
-    expected = {math.floor(float(r[0])): float(r[col]) for r in rows[3:]}
+    expected: dict[int, float] = {}
+    for r in rows[3:]:  # SUM within a year: rows can be sub-annual (this fixture is annual)
+        year = math.floor(float(r[0]))
+        expected[year] = expected.get(year, 0.0) + float(r[col])
     caveats: list[str] = []
     res = _stage_mortality_dir(tmp_path, _PY_FIXTURE.read_text())
     f_map = ss._exploited_f_by_year(res, "sprat", caveats)
