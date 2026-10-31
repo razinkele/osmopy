@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.6.3] - 2026-10-31
+
+### Bug Fixes
+
+- **validation:** read Python-engine mortality labels (F was silently 0) (632a5ed)
+- **validation:** address review — neutral 'relative' label, blank F-type guard (14eaeea)
+- **validation:** no F verdict where ICES publishes relative F (cod_east, flounder) (897ce5b)
+
+### Other
+
+- Merge pull request #191 from razinkele/fix/mortality-labels-python-engine (ead8330)
+- Merge pull request #190 from razinkele/fix/validator-relative-f (c7dd04d)
+
+### Tests
+
+- **stock_status:** sum expected F within a year (review) (60953a2)
+
 ## [1.6.2] - 2026-10-29
 
 ### Features
