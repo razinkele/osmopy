@@ -151,17 +151,75 @@ Python's whole predation throughput ~3× Java's", with dogfish and mackerel simp
 most sensitive indicators.
 
 A near-uniform multiplicative factor across unrelated species is the signature of a
-normalisation difference, not of ecology. The specific suspect is the per-step
-ingestion cap: Python computes
-`max_eatable = biomass * ingestion_rate / (n_dt_per_year * n_subdt)`
-(`osmose/engine/processes/mortality.py:1141`, and the per-cell oracle at `:470`),
-and EEC sets `mortality.subdt = 10`
-with `ndtperyear = 24`. **Whether Java's cap carries the same two divisors has NOT
-been verified** — that is the next step, and until it is checked this is a suspect,
-not a diagnosis.
+normalisation difference, not of ecology. The first suspect was the per-step ingestion
+cap — **checked and eliminated, see §8.**
 
 Note the factor is ~3, not 10 or 24, so a whole missing divisor is *not* the shape of
 it; do not go looking for one.
+
+## 8. The ingestion-cap suspect is ELIMINATED (2026-10-31)
+
+Checked by reading both engines at the pinned provenance commit `008f74b`. **The two
+caps are algebraically identical**, so the systemic ~3× is not a cap-normalisation
+difference.
+
+Java, `PredationMortality.computePredation` (`:176-177`), with
+`getMaxPredationRate = predationRate[sp] / getNStepYear()` (`:263`):
+
+```java
+maxBiomassToPredate = (rate / nStepYear) * Math.pow(weight * 1e6f, betaBioen) / subdt;
+maxBiomassToPredate *= instantaneousAbundance * 1e-6f;
+```
+
+Python, `osmose/engine/processes/mortality.py:1141` (bioen-off branch):
+
+```python
+max_eatable = (abd * weight) * ingestion_rate / (n_dt_per_year * n_subdt)
+```
+
+With `betaBioen = 1` the `1e6` and `1e-6` cancel and Java reduces to
+`(rate/ndt/subdt) · weight · abundance` — exactly Python's expression. Both divisors
+(`ndt` and `subdt`) are present on both sides.
+
+**`betaBioen` is 1 here**: it comes from `species.beta.sp{i}` and defaults to 1 when
+absent (`Species.java:291-297`); no EEC config file sets that key. Worth stating
+because the key is **not** named `*bioen*` — an earlier grep for "bioen" found nothing
+and would have produced a false clear for the wrong reason.
+
+### Why this was worth checking anyway
+
+Java's non-allometric line is **commented out** (`:174`) in favour of the allometric
+form, with the comment "Same calculation as bioen, but with default beta=1 for
+classical osmose". So Java always takes the `weight^beta` path even with
+bioenergetics off, while Python's bioen-off branch is linear in biomass. They
+coincide *only because* beta is 1.
+
+**This is a latent divergence, not a present one.** Any EEC-like config that sets
+`species.beta.sp{i} != 1` would have Java scaling the cap as `weight^beta` and Python
+as `weight`, and the gap would widen with fish size — which is the exact signature
+(ratio growing with age) seen in §2. If that signature ever reappears on a config
+with a beta set, start here.
+
+### Where the ~3× must therefore come from
+
+Realised predation is `min(cap, accessible biomass)` on both sides, and the caps
+match, so the difference is in **accessible biomass** —
+`Σ accessibility[i] × prey_biomass[i]` (Java `:168-171`). Three candidates remain,
+in the order worth testing:
+
+1. **Snapshot vs instantaneous prey biomass.** Java reads
+   `preys.get(i).getInstantaneousBiomass()` *inside* the predation loop, so prey
+   deplete as predators feed within a sub-step. If Python computes accessible biomass
+   from a step-start snapshot, prey never deplete within the step and total removal is
+   systematically inflated — a mechanism that is multiplicative, community-wide, and
+   grows with predation pressure. Best fit to the evidence; **untested**.
+2. The accessibility coefficients actually applied (a stage-index off-by-one would
+   inflate uniformly). §4 established no species is *missing* from the matrix, which
+   is a different question from which value is looked up.
+3. Sub-step iteration order or count (`subdt = 10` on this config).
+
+Testing (1) needs a rebuilt venv and jar — the container that produced §1–§5 has since
+been recycled; `docs/java_cross_check_2026-09-27.md` §Reproducing has the build.
 
 ## 6. Two defects found on the way
 
