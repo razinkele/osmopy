@@ -204,22 +204,40 @@ with a beta set, start here.
 
 Realised predation is `min(cap, accessible biomass)` on both sides, and the caps
 match, so the difference is in **accessible biomass** —
-`Σ accessibility[i] × prey_biomass[i]` (Java `:168-171`). Three candidates remain,
-in the order worth testing:
+`Σ accessibility[i] × prey_biomass[i]` (Java `:168-171`).
 
-1. **Snapshot vs instantaneous prey biomass.** Java reads
-   `preys.get(i).getInstantaneousBiomass()` *inside* the predation loop, so prey
-   deplete as predators feed within a sub-step. If Python computes accessible biomass
-   from a step-start snapshot, prey never deplete within the step and total removal is
-   systematically inflated — a mechanism that is multiplicative, community-wide, and
-   grows with predation pressure. Best fit to the evidence; **untested**.
-2. The accessibility coefficients actually applied (a stage-index off-by-one would
-   inflate uniformly). §4 established no species is *missing* from the matrix, which
-   is a different question from which value is looked up.
-3. Sub-step iteration order or count (`subdt = 10` on this config).
+Three further candidates were checked by reading and **all three are eliminated**:
 
-Testing (1) needs a rebuilt venv and jar — the container that produced §1–§5 has since
-been recycled; `docs/java_cross_check_2026-09-27.md` §Reproducing has the build.
+| Candidate | Verdict |
+|---|---|
+| **Snapshot vs instantaneous prey biomass** | **Eliminated.** Python is instantaneous too: `_apply_predation_numba` reads `inst_abd[q_idx]` (`mortality.py:1159`) and calls `_consume_numba` per predator, which decrements it in place (`:1051-1052`); resource biomass is decremented in the same loop (`:1290`). Prey deplete as predators feed, exactly as Java's `getInstantaneousBiomass()` does. This was the leading hypothesis and it is wrong. |
+| **A different functional response** | **Eliminated for this config.** Python has a type-I/II/III switch Java's `PredationMortality` lacks (`mortality.py:1244-1256`), but it is opt-in via `predation.functional.response.shape.sp{i}` and defaults to `type1`; EEC sets no such key. Type-I is `min(total_available, max_eatable)` — Java's expression exactly. (Note type-II/III could only ever *reduce* Python's intake, so this candidate had the wrong sign anyway.) |
+| **Accessibility matrix orientation** | **Eliminated.** Python indexes `access_matrix[q_acc, p_acc]` — prey row, predator column — against a `raw_matrix` built as `(n_prey_stages, n_pred_stages)` = (35, 25) from a CSV whose rows are prey and columns predators. Orientation is right, so a transposition is not inflating the coefficients. |
+
+### Leading candidate now: spatial co-occurrence
+
+With the cap, the prey-depletion model, the functional response, the size window
+(§4) and the matrix orientation all matching, what remains to set "how much
+accessible biomass does a predator see" is **which schools share a cell** — i.e. the
+movement subsystem. EEC drives movement from maps, and `fisheries.movement.*` aside,
+nothing in §4 touched species movement.
+
+This fits the evidence's shape better than anything eliminated so far: encounter rate
+is multiplicative, applies community-wide (explaining the near-uniform 0.28–0.65×
+across 13 unrelated species), and would hit hardest the species whose growth is most
+food-limited.
+
+**Untested.** Unlike the three above it cannot be settled by reading — it needs an
+instrumented run reporting, per predator visit, the number of co-occurring eligible
+prey schools and their summed accessible biomass, compared between engines. That
+requires rebuilding the venv and the jar; `docs/java_cross_check_2026-09-27.md`
+§Reproducing has the build.
+
+Two lower-ranked candidates remain if co-occurrence comes back clean: the effective
+number of predation sub-steps actually iterated (`mortality.subdt = 10` — in the
+prey-limited regime the sub-step count changes the total, not just its granularity),
+and the accessibility *values* looked up per stage (orientation is right, but a
+stage-threshold off-by-one would still pick the wrong cell).
 
 ## 6. Two defects found on the way
 
