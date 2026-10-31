@@ -43,6 +43,7 @@ class FComparison:
     in_tolerance: bool | None
     excluded_index_stocks: list[str]
     no_verdict_reason: str | None = None
+    ices_f_relative: bool = False
 
 
 @dataclass
@@ -198,6 +199,20 @@ _SPECIES_FSH_INDEX = {
 }
 
 
+def _f_is_relative(manifest: dict, stock: str) -> bool:
+    """True when ICES publishes this stock's F as a ratio (F/FMSY, "Relative", units
+    "ratio") rather than an absolute instantaneous rate.
+
+    Decided from SAG's own FishingPressureDescription/Units, recorded verbatim in
+    `index.json['f_type_by_stock']`. FMSY = 1 is only a hint. A linked stock with no
+    entry raises: guessing "absolute" is how the 2026-10 F comparisons went wrong.
+    """
+    f_type = manifest.get("f_type_by_stock", {}).get(stock)
+    if f_type is None:
+        raise ValueError(f"{stock}: no f_type_by_stock entry in index.json — re-pull or add it")
+    return f_type["description"].strip() != "F" or f_type["units"].strip().lower() == "ratio"
+
+
 def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FComparison]:
     """Compare model F against ICES SSB-weighted F per species.
 
@@ -210,8 +225,8 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
     - Prefer tonnes-unit stocks if any exist for the species (the common
       case — Baltic herring, cod).
     - Fall back to index-unit stocks only if no tonnes stock is linked
-      (flounder). F from an index-unit stock is still a valid dimensionless
-      F; only the weighting is unitful.
+      (cod_east, flounder). Their F is reported, but in practice both
+      publish it as a relative index — see the last bullet.
     - Never mix. Excluded stocks surface in `excluded_index_stocks` so
       the report shows which stocks were dropped.
     - A species with excluded stocks gets the ICES F reported but NO verdict:
@@ -220,6 +235,11 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
       more than half the catch) publishes F only as F/FMSY, so the remaining
       comparator is ~80% Bothnian herring
       (docs/baltic_herring_sprat_f_2026-10-29.md).
+    - A species whose comparator stocks publish RELATIVE F (`_f_is_relative`)
+      gets no verdict either, and `ices_f_relative=True`: the number is a
+      relative index, so dividing a model F by it means nothing. Live cases:
+      cod_east (`cod.27.24-32`, "Relative" — no FMSY defined, so not F/FMSY)
+      and flounder (`fle.27.2223`, "F/Fmsy").
     """
     units = manifest.get("units_by_stock", {})
     out: list[FComparison] = []
@@ -244,6 +264,11 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
         ices_f = _ssb_weighted_f(weighting_stocks)
         if ices_f is None:
             out.append(FComparison(species, model_f, None, None, excluded))
+            continue
+        relative = [s for s in weighting_stocks if _f_is_relative(manifest, s)]
+        if relative:
+            reason = f"ICES F is relative (an index, not absolute): {', '.join(relative)}"
+            out.append(FComparison(species, model_f, ices_f, None, excluded, reason, True))
             continue
         if excluded:
             reason = f"partial coverage: {', '.join(excluded)} excluded (index-unit; no absolute F)"
@@ -369,14 +394,17 @@ def _write_markdown_report(report: dict) -> None:
     for r in report["f_rates"]:
         f_model = f"{r['model_f']:.3f}"
         f_ices = "—" if r["ices_f_weighted"] is None else f"{r['ices_f_weighted']:.3f}"
+        if r["ices_f_relative"]:
+            f_ices += " (relative)"
         flag = "—" if r["in_tolerance"] is None else ("✓" if r["in_tolerance"] else "✗")
         excl = ", ".join(f"`{s}`" for s in r["excluded_index_stocks"]) or "—"
         lines.append(f"| {r['species']} | {f_model} | {f_ices} | {flag} | {excl} |")
     lines += [
         "",
         (
-            "A species with an excluded stock gets no verdict (—): its ICES F covers "
-            "only part of what the model group represents."
+            "No verdict (—) when ICES publishes the F as a relative index (marked "
+            "'relative'; not comparable with an absolute model F), or when a linked stock is excluded "
+            "(the ICES F then covers only part of what the model group represents)."
         ),
         "",
         "## Biomass Envelope Overlap (SSB 2018-2022, summed across tonnes-unit stocks)",

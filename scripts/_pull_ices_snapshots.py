@@ -104,6 +104,7 @@ def main() -> None:
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     units_by_stock: dict[str, str | None] = {}
     year_by_stock: dict[str, int] = {}
+    f_type_by_stock: dict[str, dict[str, str]] = {}
 
     with httpx.Client(timeout=60.0) as client:
         for stock_key, year in STOCKS:
@@ -156,12 +157,27 @@ def main() -> None:
                 )
             units_by_stock[stock_key] = unit
             year_by_stock[stock_key] = year
+            # Verbatim, so the validator can tell absolute F from F/FMSY-type ratios. This
+            # is the only field that says so — FMSY=1 is a hint, not a guarantee.
+            first = raw_assessment[0]
+            f_desc = (first.get("FishingPressureDescription") or "").strip()
+            if not f_desc:
+                # The validator reads anything but "F" as relative, so a blank would
+                # silently strip an absolute stock of its verdict. Fail like an empty payload.
+                raise RuntimeError(
+                    f"{stock_key} @ {year}: blank FishingPressureDescription in SAG payload"
+                )
+            f_type_by_stock[stock_key] = {
+                "description": f_desc,
+                "units": (first.get("FishingPressureUnits") or "").strip(),
+            }
 
     # Rewrite index.json with units + per-stock advice-year overrides.
     index_path = SNAPSHOT_DIR / "index.json"
     index = json.loads(index_path.read_text())
     index["units_by_stock"] = units_by_stock
     index["advice_year_by_stock"] = year_by_stock
+    index["f_type_by_stock"] = f_type_by_stock
     # Drop fle.27.24-32 (never existed in SAG) — already absent from manifest.
     index_path.write_text(json.dumps(index, indent=2) + "\n")
     print("done; units:", units_by_stock)

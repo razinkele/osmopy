@@ -91,16 +91,11 @@ F_KNOWN_EXCEPTIONS = {
     # against very-low post-collapse biomass to prevent extirpation in-model.
     # See docs/baltic_ices_validation_2026-10-03.md Findings.
     "cod_west",
-    # Eastern Baltic cod: model F=0.01 (fsh8) vs the index-unit stock's SSB-weighted
-    # F (0.16 over 2018-2022, falling to ~0.03 under the closure). Same rationale;
-    # the stock is under a targeted-fishing closure since 2019.
-    "cod_east",
-    # Baltic flounder: model F=1.368 (fsh3) vs ICES ~0.22 — 6.4x ABOVE, the opposite
-    # sign of the April-2026 note (then 0.04, below). The calibrated base F is a
-    # stability requirement incommensurable with the ICES anchor; flounder is left
-    # unforced in the F hindcast for that reason (docs/baltic_f_hindcast_2026-08-23.md,
-    # decision 5). See docs/baltic_ices_validation_2026-10-03.md Findings.
-    "flounder",
+    # cod_east and flounder were here until 2026-10-31 on "0.01 vs 0.16" and "6.4x above".
+    # Both ICES series are RELATIVE (cod.27.24-32 "Fishing pressure: Relative",
+    # fle.27.2223 "F/Fmsy"), so those ratios meant nothing; the validator now gives them
+    # no verdict and the fence skips them. Flounder's real check is catch: model ~24 kt/yr
+    # vs ICES 15.3 kt (2018-2022, all Baltic flounder stocks), ~1.6x.
 }
 # Empty since the cod split: cod_west's target [4000, 25000] t overlaps the western SSB
 # envelope and cod_east is index-unit (no envelope). The pre-split aggregate 'cod' exception
@@ -118,6 +113,9 @@ def test_no_severe_f_rate_drift(report):
     severe = []
     for r in report["f_rates"]:
         if r["ices_f_weighted"] is None or r["species"] in F_KNOWN_EXCEPTIONS:
+            continue
+        if r["ices_f_relative"]:
+            # A relative index: model F / it is not an F ratio, so there is no drift to fence.
             continue
         if r["ices_f_weighted"] <= 0:
             # Moratorium or fishing-ban stock — no ratio to test. Drift fence
@@ -240,6 +238,51 @@ def test_herring_f_reported_without_verdict_because_coverage_is_partial(report):
     assert f_rows["sprat"]["no_verdict_reason"] is None
 
 
+def test_relative_ices_f_gets_no_verdict(report):
+    """cod.27.24-32 and fle.27.2223 publish F as a relative index. Their rows report the
+    value flagged relative with no verdict; absolute-F species keep theirs, so the rule
+    cannot pass by silencing every row."""
+    f_rows = {r["species"]: r for r in report["f_rates"]}
+    for species, stock in (("cod_east", "cod.27.24-32"), ("flounder", "fle.27.2223")):
+        row = f_rows[species]
+        assert row["ices_f_relative"] is True, species
+        assert row["in_tolerance"] is None, species
+        assert stock in row["no_verdict_reason"], species
+    for species in ("cod_west", "sprat"):
+        assert f_rows[species]["ices_f_relative"] is False, species
+        assert f_rows[species]["in_tolerance"] is not None, species
+    # Herring's comparator stocks are absolute; its no-verdict is the partial-coverage one.
+    assert f_rows["herring"]["ices_f_relative"] is False
+
+
+def test_every_linked_stock_has_an_f_type():
+    """`_f_is_relative` raises on a missing entry; pin coverage here so a new stock
+    added to the manifest without its SAG F description fails at the manifest."""
+    manifest = json.loads(MANIFEST.read_text())
+    linked = {s for stocks in manifest["model_species_to_ices_stocks"].values() for s in stocks}
+    assert linked <= set(manifest["f_type_by_stock"]), linked - set(manifest["f_type_by_stock"])
+
+
+@pytest.mark.parametrize(
+    ("description", "units", "relative"),
+    [
+        ("F", "", False),
+        ("F", "ratio", True),  # her.27.25-2932
+        ("F/Fmsy", "", True),  # fle.27.2223
+        ("Fishing pressure: Relative", "", True),  # cod.27.24-32
+        (" F ", " ", False),
+    ],
+)
+def test_f_is_relative_classifies_sag_strings(validator_module, description, units, relative):
+    manifest = {"f_type_by_stock": {"x": {"description": description, "units": units}}}
+    assert validator_module._f_is_relative(manifest, "x") is relative
+
+
+def test_f_is_relative_raises_on_missing_entry(validator_module):
+    with pytest.raises(ValueError, match="f_type_by_stock"):
+        validator_module._f_is_relative({"f_type_by_stock": {}}, "x")
+
+
 def test_flounder_envelope_is_none_because_only_stock_is_index(report):
     """Flounder has a single index-unit stock. The envelope must be None,
     not zero and not a silent pass-through of the index values as tonnes."""
@@ -257,6 +300,9 @@ def test_f_known_exceptions_are_actually_outside_tolerance(report):
     # An allowlisted species that produces no row guards nothing (#182: the aggregate
     # 'cod' entry sat on a row the split had removed).
     assert F_KNOWN_EXCEPTIONS <= present, F_KNOWN_EXCEPTIONS - present
+    # Nor does one whose ICES F is relative: the fence already skips it.
+    relative = {r["species"] for r in report["f_rates"] if r["ices_f_relative"]}
+    assert not F_KNOWN_EXCEPTIONS & relative, F_KNOWN_EXCEPTIONS & relative
     live_ratios: dict[str, float] = {}
     for r in report["f_rates"]:
         if r["species"] not in F_KNOWN_EXCEPTIONS:
