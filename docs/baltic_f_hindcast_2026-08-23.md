@@ -134,6 +134,13 @@ mark scored vs reported-only stocks and annotate r_B. Full run report:
   to 8.8/yr against a flat observed SSB in 1993–2008). Its panel/row here is constant-F vs
   constant-F, i.e. arm A and arm B differ only through shared-seed stochasticity and cross-species
   coupling to the four forced stocks, not through its own forcing.
+  - *Erratum 2026-10-31:* the 0.214 "ICES anchor" is **F/FMSY**, not an F (SAG
+    `FishingPressureDescription` = `F/Fmsy`, SPiCT), so "6.4×" is not an F ratio, and the spec's
+    "absolute ICES F (0.08–1.38)" series is relative too. The decision stands on the extirpation
+    argument, which uses only year-over-mean factors and is unaffected by the scale. For the same
+    reason, the relative series of the forced stocks (`her.27.25-2932` "ratio", `cod.27.24-32`
+    "Relative") were valid factor sources. Also: the SD 24–25 stock does exist in SAG, as
+    `bzq.27.2425`. See `docs/baltic_ices_validation_2026-10-03.md` Findings.
 - **Cod (both stocks) is reported-only**, excluded from scoring by the parent spec pending C2(b).
 - The hindcast is **not a CI gate** — outcome is emergent, seed- and machine-sensitive, per the
   spec's Testing section.
