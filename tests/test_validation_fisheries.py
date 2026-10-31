@@ -144,6 +144,39 @@ def test_compute_balance_excludes_unfished_stage_natural_mortality(tmp_path, mon
     assert b.overexploited is True
 
 
+_PY_FIXTURE = Path(__file__).parent / "fixtures" / "mortalityRate_python_engine_sprat.csv"
+
+
+def test_compute_balance_python_engine_labels(tmp_path):
+    """A REAL Python-engine file (Baltic 40-yr run, seed 0, sprat): causes
+    Predation/.../Fishing, stages Eggs/Juvenil/Adult. Until 2026-10-31 the reader matched only
+    Java-4.3 labels (F/Mpred, Pre-recruits/Recruits) and reported F = 0.000 for every species —
+    in this script and on the UI Fisheries page. Expected values were computed from the raw CSV
+    with the csv module, independently of the code under test."""
+    mort_dir = tmp_path / "Mortality"
+    mort_dir.mkdir()
+    (mort_dir / "osm_mortalityRate-sprat_Simu0.csv").write_bytes(_PY_FIXTURE.read_bytes())
+    (b,) = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["sprat"], steps_per_year=1, window_years=5
+    )
+    assert b.fishing_mortality == pytest.approx(0.213750, abs=2e-6)  # Juvenil + Adult
+    assert b.natural_mortality == pytest.approx(1.716418, abs=2e-6)  # same stages; Eggs excluded
+
+
+def test_compute_balance_skips_file_without_fishing_column(tmp_path, capsys):
+    """No F/Fishing column at all is an unreadable file, not an unfished species: skip with a
+    warning instead of reporting F = 0 (the silent failure above)."""
+    mort_dir = tmp_path / "Mortality"
+    mort_dir.mkdir()
+    text = _PY_FIXTURE.read_text().replace("Fishing", "Mystery")
+    (mort_dir / "osm_mortalityRate-sprat_Simu0.csv").write_text(text)
+    out = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["sprat"], steps_per_year=1, window_years=5
+    )
+    assert out == []
+    assert "no fishing-mortality column" in capsys.readouterr().err
+
+
 def test_compute_balance_skips_missing_species(tmp_path):
     (tmp_path / "Mortality").mkdir()
     out = fz.compute_mortality_balance(

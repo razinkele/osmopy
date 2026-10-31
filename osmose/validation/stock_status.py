@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from osmose.validation import fisheries as fis
 from osmose.validation.fisheries_reference import ReferencePoint
 
-_EXPLOITABLE = ("Pre-recruits", "Recruits")  # Eggs excluded
-
 
 @dataclass
 class StockStatus:
@@ -36,18 +34,29 @@ def _quadrant(b: float | None, f: float | None) -> str | None:
 def _exploited_f_by_year(results, species: str, caveats: list[str]) -> dict[int, float] | None:
     """{absolute_year: annual F} on the exploited stage = the fished stage (Eggs excluded)
     with the largest total annual F. Years come from the mortalityRate Time column."""
-    from osmose.validation.fisheries import _FISHED_TOL, _mortality_path, read_mortality
+    from osmose.validation.fisheries import (
+        _FISHED_TOL,
+        _mortality_path,
+        fishing_stages,
+        read_mortality,
+    )
 
     try:
         df = read_mortality(_mortality_path(results.output_dir, results.prefix, species))
     except (FileNotFoundError, KeyError, ValueError, TypeError) as e:
         print(f"WARN: no mortalityRate for {species!r}: {e}", file=sys.stderr)
         return None
+    try:
+        # Eggs excluded; the other stage labels come from the file (Pre-recruits/Recruits from
+        # Java 4.3, Juvenil/Adult from the Python engine).
+        exploitable = [s for s in fishing_stages(df) if s != "Eggs"]
+    except KeyError as e:
+        caveats.append(f"F unavailable: {e.args[0]}")
+        return None
     time = df.iloc[:, 0]  # first column = Time (fractional sim-year)
     per_stage = {
         s: fis.annual_by_year(df[("F", s)].to_numpy(), time.to_numpy(), how="sum")
-        for s in _EXPLOITABLE
-        if ("F", s) in df.columns
+        for s in exploitable
     }
     fished = {s: d for s, d in per_stage.items() if sum(d.values()) > _FISHED_TOL}
     if not fished:

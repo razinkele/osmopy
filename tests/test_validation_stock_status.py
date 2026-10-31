@@ -1,3 +1,7 @@
+import csv
+import math
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -84,3 +88,44 @@ def test_data_limited_single_axis():
     assert all(v is None for v in s.b_over_bmsy)
     assert s.latest_quadrant is None  # needs both axes
     assert any("Bmsy" in c for c in s.caveats)
+
+
+_PY_FIXTURE = Path(__file__).parent / "fixtures" / "mortalityRate_python_engine_sprat.csv"
+
+
+class _DirResults:
+    prefix = "osm"
+
+    def __init__(self, output_dir):
+        self.output_dir = output_dir
+
+
+def _stage_mortality_dir(tmp_path, text):
+    (tmp_path / "Mortality").mkdir()
+    (tmp_path / "Mortality" / "osm_mortalityRate-sprat_Simu0.csv").write_text(text)
+    return _DirResults(tmp_path)
+
+
+def test_exploited_f_reads_python_engine_labels(tmp_path):
+    """Real Python-engine file (Fishing x Eggs/Juvenil/Adult). Before 2026-10-31 only the
+    Java-4.3 labels (F x Pre-recruits/Recruits) matched, so F came back None and the Kobe F-axis
+    was silently empty. Expected: the Adult column per year, read with the csv module."""
+    rows = list(csv.reader(_PY_FIXTURE.open()))
+    col = list(zip(rows[1], rows[2])).index(("Fishing", "Adult"))
+    expected: dict[int, float] = {}
+    for r in rows[3:]:  # SUM within a year: rows can be sub-annual (this fixture is annual)
+        year = math.floor(float(r[0]))
+        expected[year] = expected.get(year, 0.0) + float(r[col])
+    caveats: list[str] = []
+    res = _stage_mortality_dir(tmp_path, _PY_FIXTURE.read_text())
+    f_map = ss._exploited_f_by_year(res, "sprat", caveats)
+    assert f_map is not None
+    assert f_map == pytest.approx(expected)
+    assert any("'Adult'" in c for c in caveats)  # Juvenil also carries a little F
+
+
+def test_exploited_f_without_fishing_column_is_a_caveat(tmp_path):
+    caveats: list[str] = []
+    res = _stage_mortality_dir(tmp_path, _PY_FIXTURE.read_text().replace("Fishing", "Mystery"))
+    assert ss._exploited_f_by_year(res, "sprat", caveats) is None
+    assert any("no fishing-mortality column" in c for c in caveats)
