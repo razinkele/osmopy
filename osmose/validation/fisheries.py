@@ -20,8 +20,23 @@ import numpy as np
 import pandas as pd
 
 _NATURAL_CAUSES = ("Mpred", "Mstarv", "Madd")
-_STAGES = ("Eggs", "Pre-recruits", "Recruits")
 _FISHED_TOL = 1e-9
+
+# Two label schemes reach this module. Java 4.3-era files write causes Mpred/Mstarv/Madd/F/...
+# and stages Eggs/Pre-recruits/Recruits; the Python engine (like Java's MortalityOutput.getStage)
+# writes Predation/Starvation/Additional/Fishing/... and Eggs/Juvenil/Adult. Causes are mapped to
+# the short labels on read. Stages are NOT renamed — Juvenil/Adult is a maturity split and
+# Pre-recruits/Recruits a recruitment split — so callers take them from the file.
+_CAUSE_ALIASES = {
+    "Predation": "Mpred",
+    "Starvation": "Mstarv",
+    "Additional": "Madd",
+    "Fishing": "F",
+    "Out": "Zout",
+    "Foraging": "Mfor",
+    "Discards": "Mdis",
+    "Aging": "Mage",
+}
 
 
 def annual_rate(per_step: pd.Series, steps_per_year: int, window_years: int) -> float:
@@ -67,10 +82,27 @@ def read_mortality(path: Path) -> pd.DataFrame:
     Delegates to ``osmose.results._read_mortality_rate_csv``, which tolerates Java 4.4.1's ragged
     header (it names 24 data columns while emitting 27). The previous ``header=[0, 1]`` call raised
     ParserError on every genuine Java file — GitHub #141.
+
+    Cause labels are normalised to the short Java names (see ``_CAUSE_ALIASES``).
     """
     from osmose.results import _read_mortality_rate_csv
 
-    return _read_mortality_rate_csv(path)
+    df = _read_mortality_rate_csv(path)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = pd.MultiIndex.from_tuples(
+            [(_CAUSE_ALIASES.get(c, c), s) for c, s in df.columns]
+        )
+    return df
+
+
+def fishing_stages(df: pd.DataFrame) -> list[str]:
+    """Life stages carrying an F column, in file order. Raises KeyError when there is none:
+    an unrecognised layout must not read as an unfished species (F = 0)."""
+    stages = [s for c, s in df.columns if c == "F" and s]
+    if not stages:
+        causes = sorted({c for c, _ in df.columns if c != "Time"})
+        raise KeyError(f"no fishing-mortality column (F/Fishing) among causes {causes}")
+    return stages
 
 
 @dataclass(frozen=True)
@@ -115,11 +147,11 @@ def compute_mortality_balance(
             continue
         try:
             df = read_mortality(path)
+            stages = fishing_stages(df)
             # per-stage windowed annual rates
             f_by_stage = {
                 s: annual_rate(cast(pd.Series, df[("F", s)]), steps_per_year, window_years)
-                for s in _STAGES
-                if ("F", s) in df.columns
+                for s in stages
             }
             m_by_stage = {
                 s: annual_rate(
@@ -127,7 +159,7 @@ def compute_mortality_balance(
                     steps_per_year,
                     window_years,
                 )
-                for s in _STAGES
+                for s in stages
                 if all((c, s) in df.columns for c in _NATURAL_CAUSES)
             }
         except (KeyError, ValueError, pd.errors.ParserError) as e:
@@ -140,7 +172,7 @@ def compute_mortality_balance(
             m = sum(m_by_stage.get(s, 0.0) for s in fished)
         else:
             # unfished: F=0; report M over the post-egg stock for a defined denominator
-            m = sum(m_by_stage.get(s, 0.0) for s in ("Pre-recruits", "Recruits"))
+            m = sum(m_by_stage.get(s, 0.0) for s in stages if s != "Eggs")
         f_over_m = (f / m) if m > 0 else None
         out.append(
             MortalityBalance(
