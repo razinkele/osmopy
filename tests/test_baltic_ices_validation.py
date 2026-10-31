@@ -115,7 +115,7 @@ def test_no_severe_f_rate_drift(report):
         if r["ices_f_weighted"] is None or r["species"] in F_KNOWN_EXCEPTIONS:
             continue
         if r["ices_f_relative"]:
-            # A ratio to FMSY: model F / it is not an F ratio, so there is no drift to fence.
+            # A relative index: model F / it is not an F ratio, so there is no drift to fence.
             continue
         if r["ices_f_weighted"] <= 0:
             # Moratorium or fishing-ban stock — no ratio to test. Drift fence
@@ -239,7 +239,7 @@ def test_herring_f_reported_without_verdict_because_coverage_is_partial(report):
 
 
 def test_relative_ices_f_gets_no_verdict(report):
-    """cod.27.24-32 and fle.27.2223 publish F relative to FMSY. Their rows report the
+    """cod.27.24-32 and fle.27.2223 publish F as a relative index. Their rows report the
     value flagged relative with no verdict; absolute-F species keep theirs, so the rule
     cannot pass by silencing every row."""
     f_rows = {r["species"]: r for r in report["f_rates"]}

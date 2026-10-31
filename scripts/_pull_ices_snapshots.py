@@ -160,8 +160,15 @@ def main() -> None:
             # Verbatim, so the validator can tell absolute F from F/FMSY-type ratios. This
             # is the only field that says so — FMSY=1 is a hint, not a guarantee.
             first = raw_assessment[0]
+            f_desc = (first.get("FishingPressureDescription") or "").strip()
+            if not f_desc:
+                # The validator reads anything but "F" as relative, so a blank would
+                # silently strip an absolute stock of its verdict. Fail like an empty payload.
+                raise RuntimeError(
+                    f"{stock_key} @ {year}: blank FishingPressureDescription in SAG payload"
+                )
             f_type_by_stock[stock_key] = {
-                "description": (first.get("FishingPressureDescription") or "").strip(),
+                "description": f_desc,
                 "units": (first.get("FishingPressureUnits") or "").strip(),
             }
 

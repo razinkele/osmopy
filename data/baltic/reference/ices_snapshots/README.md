@@ -74,12 +74,12 @@ puller now writes them). Three of the eight stocks publish **relative** F:
 | stock | SAG description / units |
 |---|---|
 | `her.27.25-2932` | `F` / `ratio` (SS3, FMSY = 1, Fpa = 1.2) |
-| `cod.27.24-32` | `Fishing pressure: Relative` |
+| `cod.27.24-32` | `Fishing pressure: Relative` (no FMSY defined — a relative index, not F/FMSY) |
 | `fle.27.2223` | `F/Fmsy` (SPiCT; SSB is `B/Bmsy`) |
 
 The validator gives no verdict on a species whose comparator F is relative
 (cod_east, flounder) or only partly covered (herring), and reports the value
-marked `(F/FMSY)` (`docs/baltic_herring_sprat_f_2026-10-29.md`). FMSY = 1
+marked `(relative)` (`docs/baltic_herring_sprat_f_2026-10-29.md`). FMSY = 1
 is a hint, not a test: decide from the description field.
 
 **Baltic flounder beyond `fle.27.2223`.** SAG files the main Baltic flounder
@@ -153,8 +153,10 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    `get_reference_points` output), and rewrites every `{stock}.assessment.json`
    and `{stock}.reference_points.json` plus `index.json` (`advice_year_by_stock`
    and `units_by_stock` are derived automatically — the latter from Blim
-   magnitude since the ICES `StockSizeUnits` field is unreliable). The helper
-   loads the existing `index.json` and rewrites only those two keys, so the
+   magnitude since the ICES `StockSizeUnits` field is unreliable — and
+   `f_type_by_stock`, verbatim from SAG; review its diff, since it decides which
+   F rows get a verdict). The helper loads the existing `index.json` and
+   rewrites only those three keys, so the
    hand-maintained blocks (`model_species_to_ices_stocks`,
    `recruitment_index_stocks`, `sms_m2`) survive a refresh.
 4. Update `index.json`'s top-level `advice_year` and `created` date by hand

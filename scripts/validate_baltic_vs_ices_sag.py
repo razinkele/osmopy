@@ -226,7 +226,7 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
       case — Baltic herring, cod).
     - Fall back to index-unit stocks only if no tonnes stock is linked
       (cod_east, flounder). Their F is reported, but in practice both
-      publish it relative to FMSY — see the last bullet.
+      publish it as a relative index — see the last bullet.
     - Never mix. Excluded stocks surface in `excluded_index_stocks` so
       the report shows which stocks were dropped.
     - A species with excluded stocks gets the ICES F reported but NO verdict:
@@ -236,9 +236,10 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
       comparator is ~80% Bothnian herring
       (docs/baltic_herring_sprat_f_2026-10-29.md).
     - A species whose comparator stocks publish RELATIVE F (`_f_is_relative`)
-      gets no verdict either, and `ices_f_relative=True`: the number is a ratio
-      to FMSY, so dividing a model F by it means nothing. Live cases: cod_east
-      (`cod.27.24-32`, "Relative") and flounder (`fle.27.2223`, "F/Fmsy").
+      gets no verdict either, and `ices_f_relative=True`: the number is a
+      relative index, so dividing a model F by it means nothing. Live cases:
+      cod_east (`cod.27.24-32`, "Relative" — no FMSY defined, so not F/FMSY)
+      and flounder (`fle.27.2223`, "F/Fmsy").
     """
     units = manifest.get("units_by_stock", {})
     out: list[FComparison] = []
@@ -266,7 +267,7 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
             continue
         relative = [s for s in weighting_stocks if _f_is_relative(manifest, s)]
         if relative:
-            reason = f"ICES F is relative (ratio to FMSY): {', '.join(relative)}"
+            reason = f"ICES F is relative (an index, not absolute): {', '.join(relative)}"
             out.append(FComparison(species, model_f, ices_f, None, excluded, reason, True))
             continue
         if excluded:
@@ -394,15 +395,15 @@ def _write_markdown_report(report: dict) -> None:
         f_model = f"{r['model_f']:.3f}"
         f_ices = "—" if r["ices_f_weighted"] is None else f"{r['ices_f_weighted']:.3f}"
         if r["ices_f_relative"]:
-            f_ices += " (F/FMSY)"
+            f_ices += " (relative)"
         flag = "—" if r["in_tolerance"] is None else ("✓" if r["in_tolerance"] else "✗")
         excl = ", ".join(f"`{s}`" for s in r["excluded_index_stocks"]) or "—"
         lines.append(f"| {r['species']} | {f_model} | {f_ices} | {flag} | {excl} |")
     lines += [
         "",
         (
-            "No verdict (—) when ICES publishes the F relative to FMSY (marked F/FMSY; "
-            "not comparable with an absolute model F), or when a linked stock is excluded "
+            "No verdict (—) when ICES publishes the F as a relative index (marked "
+            "'relative'; not comparable with an absolute model F), or when a linked stock is excluded "
             "(the ICES F then covers only part of what the model group represents)."
         ),
         "",
