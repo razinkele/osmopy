@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.6.4] - 2026-11-03
+
+### Bug Fixes
+
+- **validation:** measure F/M on the most-fished stage only (ccc731c)
+
+### Documentation
+
+- **validation:** qualify F/M header and exploited_stage claim (review) (927072d)
+
+### Other
+
+- Merge pull request #193 from razinkele/fix/fm-dominant-stage (eb918c7)
+
 ## [1.6.3] - 2026-10-31
 
 ### Bug Fixes
