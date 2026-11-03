@@ -35,8 +35,8 @@ def _exploited_f_by_year(results, species: str, caveats: list[str]) -> dict[int,
     """{absolute_year: annual F} on the exploited stage = the fished stage (Eggs excluded)
     with the largest total annual F. Years come from the mortalityRate Time column."""
     from osmose.validation.fisheries import (
-        _FISHED_TOL,
         _mortality_path,
+        exploited_stage,
         fishing_stages,
         read_mortality,
     )
@@ -58,13 +58,13 @@ def _exploited_f_by_year(results, species: str, caveats: list[str]) -> dict[int,
         s: fis.annual_by_year(df[("F", s)].to_numpy(), time.to_numpy(), how="sum")
         for s in exploitable
     }
-    fished = {s: d for s, d in per_stage.items() if sum(d.values()) > _FISHED_TOL}
-    if not fished:
+    totals = {s: sum(d.values()) for s, d in per_stage.items()}
+    stage = exploited_stage(totals)
+    if stage is None:
         return None
-    stage = max(fished, key=lambda s: sum(fished[s].values()))
-    if len(fished) > 1:
+    if sum(exploited_stage({s: f}) is not None for s, f in totals.items()) > 1:
         caveats.append(f"F measured on '{stage}'; other fished stages present")
-    return fished[stage]
+    return per_stage[stage]
 
 
 def compute_stock_status(

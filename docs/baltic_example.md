@@ -278,16 +278,17 @@ OSMOSE re-distributes seeded biomass across age classes via the species life-his
 ## Validation and known limitations
 
 - **ICES SAG cross-validation** (`docs/baltic_ices_validation_2026-10-03.md`): F rates and biomass envelopes compared to the 2024 advice cycle (2022 for `cod.27.22-24` which is category-3 in 2024). Per stock since the 2026-10-03 regeneration (#182): cod_west (0.04×) and cod_east (0.06×, closure) F are allowlisted scenario limitations; flounder is 6.4× ABOVE ICES (allowlisted, F hindcast decision 5); herring (1.83×) and sprat (0.44×) sit outside the script's [0.5×, 1.5×] soft band but inside the test's severe fence — reported, not allowlisted. cod_west's biomass target [4, 25] kt overlaps the ICES SSB envelope; the April aggregate-cod upper bound (250 kt) is no longer in use.
-- **F/M fishing-pressure diagnostic** (`scripts/compute_mortality_balance.py`): per-species ratio of fishing mortality to natural mortality on the exploited life stage(s). See below.
+- **F/M fishing-pressure diagnostic** (`scripts/compute_mortality_balance.py`): per-species ratio of fishing mortality to natural mortality on the exploited life stage (the one carrying the most F). See below.
 - **Calibration targets** (`data/baltic/reference/biomass_targets.csv`): species × [lower, upper] tonnes + weight + source column. Weights 1.0 (well-assessed pelagics: herring, sprat) down to 0.2 (coarse-grid coastal: perch, pikeperch).
 - **Stickleback biomass** (~200 kt target): Olsson et al. 2019, `doi:10.1093/icesjms/fsz078` — first large-scale biomass assessment. Wide range (50–500 kt) appropriate given boom-bust dynamics.
 
 ### F/M fishing-pressure diagnostic (`scripts/compute_mortality_balance.py`)
 
 Computes a per-species **F/M ratio** — fishing mortality divided by natural mortality — on the exploited
-life stage(s), i.e. the stages that actually carry fishing in the OSMOSE mortality output. Excluding the
-unfished egg stage's natural mortality from the denominator prevents an artificially small ratio for
-species with very high larval M. F/M > 1 means the exploited cohort is being removed faster by fishing
+life stage, i.e. the stage carrying the most fishing mortality in the OSMOSE mortality output. Excluding
+the natural mortality of unfished or barely-fished stages from the denominator prevents an artificially
+small ratio: the Python engine books a trace F on Juvenil (sprat: 0.09% of Adult's), and counting that
+stage as exploited more than doubled sprat's M. F/M > 1 means the exploited cohort is being removed faster by fishing
 than by all combined natural causes (predation + starvation + additional mortality).
 
 This diagnostic is available for **all 8 species** — no ICES reference points are required.
@@ -313,7 +314,8 @@ simulation.time.ndtPerYear". Pass `--steps-per-year N` explicitly if your model 
 than once per year (e.g. monthly records → `--steps-per-year 24`); getting this wrong scales F and M by
 a constant factor and inverts the ratio.
 
-**Honest limitation.** F is OSMOSE's instantaneous fishing mortality on the Recruits stage, summed to
+**Honest limitation.** F is OSMOSE's instantaneous fishing mortality on the exploited stage (Recruits in Java 4.3 output, Adult
+in Python-engine output), summed to
 an annual rate — it is **not** an ICES Fbar over a validated age range. F/M is a model-internal pressure
 ratio useful for comparing species and tracking calibration progress; it should not be reported as an
 ICES stock-status indicator.

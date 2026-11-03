@@ -2,10 +2,10 @@
 
 Computes per-species F/M (realized fishing mortality vs natural mortality) from a
 finished run — for all species, no ICES reference points. F and M are OSMOSE
-instantaneous mortality rates computed on the exploited life stage(s) — those
-carrying fishing mortality — so that natural mortality of unfished egg/adult stages
-does not swamp the ratio. F is total annual fishing mortality, M = Mpred + Mstarv +
-Madd on the same fished stage(s).
+instantaneous mortality rates computed on the exploited life stage — the one carrying
+the most fishing mortality — so that natural mortality of unfished or barely-fished stages
+does not swamp the ratio. F is annual fishing mortality, M = Mpred + Mstarv + Madd on that
+same stage.
 F/M > 1 means fishing removes more than natural processes (an overexploitation signal).
 """
 
@@ -105,6 +105,18 @@ def fishing_stages(df: pd.DataFrame) -> list[str]:
     return stages
 
 
+def exploited_stage(f_by_stage: dict[str, float]) -> str | None:
+    """The stage carrying the most fishing mortality, or None when no stage is fished.
+
+    One stage, not every stage with F > 0: the Python engine books a trace F on Juvenil (sprat:
+    0.09% of Adult's) and summing that stage's natural M into the denominator more than doubled
+    M. Per-stage rates are per-capita rates on different populations, so summing them is not a
+    rate of anything either. Shared with ``stock_status`` so the F/M table and the Kobe F-axis
+    measure the same stage."""
+    fished = {s: f for s, f in f_by_stage.items() if f > _FISHED_TOL}
+    return max(fished, key=lambda s: fished[s]) if fished else None
+
+
 @dataclass(frozen=True)
 class MortalityBalance:
     species: str
@@ -165,11 +177,11 @@ def compute_mortality_balance(
         except (KeyError, ValueError, pd.errors.ParserError) as e:
             print(f"WARN: skipping {sp!r}: {e}", file=sys.stderr)
             continue
-        fished = [s for s, fv in f_by_stage.items() if fv > _FISHED_TOL]
-        f = sum(f_by_stage.get(s, 0.0) for s in fished)
-        if fished:
-            # natural mortality on the exploited stage(s)
-            m = sum(m_by_stage.get(s, 0.0) for s in fished)
+        stage = exploited_stage(f_by_stage)
+        f = f_by_stage[stage] if stage else 0.0
+        if stage:
+            # natural mortality on the exploited stage
+            m = m_by_stage.get(stage, 0.0)
         else:
             # unfished: F=0; report M over the post-egg stock for a defined denominator
             m = sum(m_by_stage.get(s, 0.0) for s in stages if s != "Eggs")
@@ -193,10 +205,10 @@ def format_mortality_report(balances: list[MortalityBalance], *, window_years: i
         "",
         (
             f"Model window: last {window_years} years. F and M are computed on the "
-            "**exploited life stage(s)** — those carrying fishing mortality (so natural "
-            "mortality of unfished egg/adult stages doesn't swamp the ratio). F = total "
+            "**exploited life stage** — the one carrying the most fishing mortality (so natural "
+            "mortality of unfished or barely-fished stages doesn't swamp the ratio). F = "
             "annual fishing mortality; M = annual natural mortality (Mpred+Mstarv+Madd) on "
-            "the same fished stage(s). F/M > 1 means fishing exceeds natural mortality for "
+            "the same stage. F/M > 1 means fishing exceeds natural mortality for "
             "the exploited cohort."
         ),
         "",

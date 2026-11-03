@@ -55,10 +55,12 @@ def test_compute_balance_real_fixture(tmp_path):
         tmp_path, prefix="osm", species_list=["cod"], steps_per_year=1, window_years=5
     )
     b = {x.species: x for x in out}["cod"]
-    assert b.fishing_mortality >= 0.0 and b.natural_mortality >= 0.0
-    if b.natural_mortality > 0:
-        assert b.f_over_m == pytest.approx(b.fishing_mortality / b.natural_mortality)
-        assert b.overexploited == (b.f_over_m > 1.0)
+    # Pinned to the raw CSV (csv module, last 5 rows): only Recruits is fished. The previous
+    # `F >= 0` assertions also held while every Python-engine F read 0.000 (fixed 2026-10-31).
+    assert b.fishing_mortality == pytest.approx(0.218978, abs=2e-6)
+    assert b.natural_mortality == pytest.approx(0.092724, abs=2e-6)
+    assert b.f_over_m == pytest.approx(b.fishing_mortality / b.natural_mortality)
+    assert b.overexploited is True
 
 
 def test_compute_balance_m_zero_gives_none(tmp_path, monkeypatch):
@@ -77,7 +79,7 @@ def test_compute_balance_m_zero_gives_none(tmp_path, monkeypatch):
     assert b.natural_mortality == 0.0 and b.f_over_m is None and b.overexploited is False
 
 
-def test_compute_balance_sums_fishing_across_stages(tmp_path, monkeypatch):
+def test_compute_balance_finds_fishing_on_any_stage(tmp_path, monkeypatch):
     # F is in Pre-recruits (0.5/step), NOT Recruits; must NOT read as 0.
     def fake_reader(path):
         cols = pd.MultiIndex.from_tuples(
@@ -105,7 +107,7 @@ def test_compute_balance_sums_fishing_across_stages(tmp_path, monkeypatch):
     b = fz.compute_mortality_balance(
         tmp_path, prefix="osm", species_list=["y"], steps_per_year=1, window_years=2
     )[0]
-    assert b.fishing_mortality == pytest.approx(0.5)  # NOT 0 — summed across stages
+    assert b.fishing_mortality == pytest.approx(0.5)  # NOT 0 — read from the fished stage
     assert b.natural_mortality == pytest.approx(0.2)
     assert b.f_over_m == pytest.approx(2.5)
     assert b.overexploited is True
@@ -159,8 +161,41 @@ def test_compute_balance_python_engine_labels(tmp_path):
     (b,) = fz.compute_mortality_balance(
         tmp_path, prefix="osm", species_list=["sprat"], steps_per_year=1, window_years=5
     )
-    assert b.fishing_mortality == pytest.approx(0.213750, abs=2e-6)  # Juvenil + Adult
-    assert b.natural_mortality == pytest.approx(1.716418, abs=2e-6)  # same stages; Eggs excluded
+    assert b.fishing_mortality == pytest.approx(0.213567, abs=2e-6)  # Adult only
+    # Adult only. Juvenil carries a trace F (0.000183, 0.09% of Adult's); counting it as exploited
+    # added its natural M (0.980) and read 1.716 here, more than doubling M (2026-11-03).
+    assert b.natural_mortality == pytest.approx(0.736073, abs=2e-6)
+
+
+def test_compute_balance_trace_f_stage_does_not_enter_m(tmp_path, monkeypatch):
+    # Two fished stages: Juvenil with a trace F and a large natural M, Adult with the real F.
+    # F/M is measured on the most-fished stage alone, so Juvenil's 1.0 must not enter M.
+    def fake_reader(path):
+        cols = pd.MultiIndex.from_tuples(
+            [(c, s) for c in ("F", "Mpred", "Mstarv", "Madd") for s in ("Juvenil", "Adult")]
+        )
+        row = {c: 0.0 for c in cols}
+        row[("F", "Juvenil")] = 0.0002
+        row[("Mpred", "Juvenil")] = 1.0
+        row[("F", "Adult")] = 0.2
+        row[("Mpred", "Adult")] = 0.7
+        return pd.DataFrame([[row[c] for c in cols]] * 2, columns=cols)
+
+    monkeypatch.setattr(fz, "read_mortality", fake_reader)
+    (tmp_path / "Mortality").mkdir()
+    (tmp_path / "Mortality" / "osm_mortalityRate-s_Simu0.csv").write_text("stub")
+    (b,) = fz.compute_mortality_balance(
+        tmp_path, prefix="osm", species_list=["s"], steps_per_year=1, window_years=2
+    )
+    assert b.fishing_mortality == pytest.approx(0.2)
+    assert b.natural_mortality == pytest.approx(0.7)
+    assert b.f_over_m == pytest.approx(0.2 / 0.7)
+
+
+def test_exploited_stage_picks_most_fished():
+    assert fz.exploited_stage({"Eggs": 0.0, "Juvenil": 0.0002, "Adult": 0.2}) == "Adult"
+    assert fz.exploited_stage({"Eggs": 0.0, "Adult": 0.0}) is None
+    assert fz.exploited_stage({}) is None
 
 
 def test_compute_balance_skips_file_without_fishing_column(tmp_path, capsys):
