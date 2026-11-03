@@ -111,8 +111,9 @@ def exploited_stage(f_by_stage: dict[str, float]) -> str | None:
     One stage, not every stage with F > 0: the Python engine books a trace F on Juvenil (sprat:
     0.09% of Adult's) and summing that stage's natural M into the denominator more than doubled
     M. Per-stage rates are per-capita rates on different populations, so summing them is not a
-    rate of anything either. Shared with ``stock_status`` so the F/M table and the Kobe F-axis
-    measure the same stage."""
+    rate of anything either. Shared with ``stock_status`` so the F/M table and the Kobe F-axis apply
+    the same rule. Each applies it over its own period (F/M: the trailing window; Kobe: the whole
+    run), so they can pick different stages if fishing shifts stage partway through a run."""
     fished = {s: f for s, f in f_by_stage.items() if f > _FISHED_TOL}
     return max(fished, key=lambda s: fished[s]) if fished else None
 
@@ -209,7 +210,8 @@ def format_mortality_report(balances: list[MortalityBalance], *, window_years: i
             "mortality of unfished or barely-fished stages doesn't swamp the ratio). F = "
             "annual fishing mortality; M = annual natural mortality (Mpred+Mstarv+Madd) on "
             "the same stage. F/M > 1 means fishing exceeds natural mortality for "
-            "the exploited cohort."
+            "the exploited cohort. A species with no fished stage shows F = 0 and M summed "
+            "over its non-egg stages."
         ),
         "",
         "| species | F | M | F/M | overexploited |",
