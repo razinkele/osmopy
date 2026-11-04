@@ -19,8 +19,11 @@ Run ALL of these from `/home/razinka/osmopy`. If any fail, stop and report:
    ```
    git -C /home/razinka/osmopy branch --show-current
    git -C /home/razinka/osmopy status --short --untracked-files=no
+   git -C /home/razinka/osmopy fetch origin master
+   git -C /home/razinka/osmopy rev-list --left-right --count origin/master...master
    ```
-   Branch must be `master`. Status must be empty (untracked files are fine).
+   Branch must be `master`. Status must be empty (untracked files are fine). Both `rev-list`
+   counts must be `0`, or the release would be cut from a stale master.
 
 2. **Master's own CI is green on the commit being released.** A release tag permanently stamps a
    version on one commit; don't stamp an unverified one. PR checks are not the same evidence:
@@ -36,7 +39,9 @@ git -C /home/razinka/osmopy switch -c release/v{version}
 .venv/bin/python scripts/release.py {bump}
 ```
 
-If dry-run=yes, append `--dry-run` to the release.py command and stop there.
+If dry-run=yes, skip the `switch` (stay on master), run only
+`.venv/bin/python scripts/release.py {bump} --dry-run`, and stop there. A dry run exits 1 whenever
+the real bump would.
 
 `release.py` inserts only the new `## [X.Y.Z]` section and leaves released sections untouched.
 Check that anyway, because it is the property that broke before (2026-11):
@@ -52,7 +57,14 @@ the whole file from git and rewrites released history.
    PR. Ask the user before pushing.
 2. When the PR's CI is green, merge it pinned to the head you checked
    (`gh pr merge N --merge --match-head-commit <sha>`).
-3. Tag the **merge commit** (what master and prod carry, not the branch tip), annotated:
+3. Tag the **merge commit** (what master and prod carry, not the branch tip), annotated.
+   The PR's CI ran on GitHub's merge ref, which is the same tree as the merge commit **only if master
+   did not move** between that CI run and the merge. If it moved, wait until master's own CI
+   succeeds on the merge commit before tagging:
+   ```
+   gh run list --repo razinkele/osmopy --branch master --workflow CI --commit <merge-commit> --status success
+   ```
+   An empty result means the run hasn't finished or didn't succeed. Do not tag yet.
    ```
    git -C /home/razinka/osmopy tag -a v{version} <merge-commit> -m v{version}
    git -C /home/razinka/osmopy push origin v{version}

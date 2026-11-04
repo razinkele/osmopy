@@ -25,6 +25,7 @@ import subprocess
 import sys
 from datetime import date
 from pathlib import Path
+from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "osmose" / "__version__.py"
@@ -168,10 +169,16 @@ def splice_section(existing: str, section: str) -> str:
     """Insert ``section`` above the newest release heading, leaving the rest of ``existing`` as is.
 
     With no release heading yet, the section is appended after the header. Raises ValueError if
-    ``section``'s heading is already present: re-running a bump must not duplicate it."""
+    ``section``'s heading is already present (re-running a bump must not duplicate it), or if an
+    ``## [Unreleased]`` section exists: the new release would land above it and orphan its
+    hand-written notes, which the in-app "What's new" falls back to (``osmose/docs_content.py``)."""
     heading = section.split(" - ", 1)[0]
     if f"\n{heading} - " in existing or existing.startswith(f"{heading} - "):
         raise ValueError(f"{heading} is already in the changelog")
+    if re.search(r"^##\s*\[Unreleased\]", existing, re.MULTILINE):
+        raise ValueError(
+            "CHANGELOG.md has an [Unreleased] section; fold its notes into the release by hand"
+        )
     at = existing.find("\n## [")
     if at == -1:
         return existing.rstrip("\n") + "\n\n" + section
@@ -240,6 +247,26 @@ def generate_changelog() -> str:
     return "\n".join(sections)
 
 
+def _fail(msg: str) -> NoReturn:
+    print(f"ERROR: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def planned_changelog(version: str) -> str:
+    """The CHANGELOG text a bump to ``version`` would write; exits 1 on any refusal.
+
+    Used by both the real bump and ``--dry-run``, so a preview fails exactly when the bump would."""
+    if not CHANGELOG_FILE.exists():
+        _fail(f"{CHANGELOG_FILE.name} is missing; restore it before releasing")
+    section = new_release_section(version)
+    if section is None:
+        _fail("no commits since the last tag; nothing to release")
+    try:
+        return splice_section(CHANGELOG_FILE.read_text(), section)
+    except ValueError as e:
+        _fail(str(e))
+
+
 def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Bump version and generate changelog")
     parser.add_argument(
@@ -272,6 +299,9 @@ def main(argv: list[str] | None = None):
         new_version = bump_version(current, args.part)
         print(f"Bumping version: {current} -> {new_version}")
 
+    # Plan the changelog first: if it refuses, nothing is written (the version file included).
+    changelog = None if args.changelog_only else planned_changelog(new_version)
+
     if args.dry_run:
         print("\n[DRY RUN] Would update:")
         print(f"  {VERSION_FILE} -> {new_version}")
@@ -286,17 +316,7 @@ def main(argv: list[str] | None = None):
         print(f"  Rebuilt {CHANGELOG_FILE.name} from git (released sections included)")
         return
 
-    # Changelog first: if it refuses (no commits, section already present) nothing is written.
-    section = new_release_section(new_version)
-    if section is None:
-        print("ERROR: no commits since the last tag; nothing to release", file=sys.stderr)
-        sys.exit(1)
-    existing = CHANGELOG_FILE.read_text() if CHANGELOG_FILE.exists() else ""
-    try:
-        changelog = splice_section(existing, section)
-    except ValueError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+    assert changelog is not None
     write_version(new_version)
     print(f"  Updated {VERSION_FILE.name}")
     CHANGELOG_FILE.write_text(changelog)

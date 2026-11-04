@@ -72,3 +72,29 @@ def test_rerun_refuses_and_writes_nothing(staged):
         release.main(["patch"])
     assert changelog.read_text() == before
     assert '"1.0.1"' in version.read_text()
+
+
+def test_splice_section_refuses_when_an_unreleased_section_exists():
+    existing = _HEADER + "\n## [Unreleased]\n\n- hand-written note\n\n" + _RELEASED
+    with pytest.raises(ValueError, match="Unreleased"):
+        release.splice_section(existing, _NEW)
+
+
+def test_dry_run_refuses_whenever_the_real_bump_would(staged, capsys):
+    version, changelog = staged
+    release.main(["patch"])
+    version.write_text('__version__ = "1.0.1"\n')
+    before = changelog.read_text()
+    with pytest.raises(SystemExit):
+        release.main(["patch", "--dry-run"])
+    assert "already in the changelog" in capsys.readouterr().err
+    assert changelog.read_text() == before
+
+
+def test_missing_changelog_refuses_and_writes_nothing(staged):
+    version, changelog = staged
+    changelog.unlink()
+    with pytest.raises(SystemExit):
+        release.main(["patch"])
+    assert not changelog.exists()
+    assert '"1.0.1"' in version.read_text()
