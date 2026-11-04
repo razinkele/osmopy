@@ -149,11 +149,15 @@ def test_every_committed_catch_row_matches_the_derivation():
     import csv
 
     with open(SNAP.parent / "biomass_targets.csv") as f:
-        committed = {
-            r["species"]: r
+        rows = [
+            r
             for r in csv.DictReader(ln for ln in f if not ln.startswith("#"))
             if r["reference_point_type"] == "catch"
-        }
+        ]
+    # A dict would keep only the last of two rows for a species; the calibration loader reads both.
+    species = [r["species"] for r in rows]
+    assert len(species) == len(set(species)), f"duplicate catch rows: {species}"
+    committed = {r["species"]: r for r in rows}
     derived = {r["species"]: r for r in derive_catch_targets(SNAP)}
     assert set(committed) == set(derived)
     for sp, row in derived.items():
