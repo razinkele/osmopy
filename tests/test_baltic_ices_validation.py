@@ -298,12 +298,18 @@ def test_f_is_relative_raises_on_missing_entry(validator_module):
         validator_module._f_is_relative({"f_type_by_stock": {}}, "x")
 
 
-def test_flounder_envelope_is_none_because_only_stock_is_index(report):
+def test_flounder_envelope_is_none_because_all_stocks_are_index(report):
     """Flounder's four stocks are all index-unit. The envelope must be None,
-    not zero and not a silent pass-through of the index values as tonnes."""
+    not zero and not a silent pass-through of the index values as tonnes,
+    and the report must name every excluded stock."""
     b_rows = {r["species"]: r for r in report["biomass_envelopes"]}
     assert b_rows["flounder"]["ices_min_ssb"] is None
-    assert "fle.27.2223" in b_rows["flounder"]["excluded_index_stocks"]
+    assert sorted(b_rows["flounder"]["excluded_index_stocks"]) == [
+        "bwp.27.2729-32",
+        "bzq.27.2425",
+        "bzq.27.2628",
+        "fle.27.2223",
+    ]
 
 
 def test_f_known_exceptions_are_actually_outside_tolerance(report):

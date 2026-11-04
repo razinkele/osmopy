@@ -52,11 +52,18 @@ other species codes, so searching `fle.27` finds only one:
 | stock | area | 2018–2022 mean catch | SSB / F as published |
 |---|---|---:|---|
 | `bzq.27.2425` | SD 24–25 (*Platichthys* spp.) | 11 966 t | survey index (`tonnes/h`) / **no F at all** |
-| `bzq.27.2628` | SD 26, 28 (*Platichthys* spp.) | 2 363 t | `B/Bmsy` / `F/Fmsy` |
+| `bzq.27.2628` | SD 26, 28 (*Platichthys* spp.) | 2 764 t | `B/Bmsy` / `F/Fmsy` |
 | `fle.27.2223` | SD 22–23 (*P. flesus*) | 834 t | `B/Bmsy` / `F/Fmsy` |
 | `bwp.27.2729-32` | SD 27, 29–32 (*P. solemdali*) | 119 t | kg per gillnet station / **no F values** |
 
-Total 15.3 kt; `fle.27.3a4` is North Sea and excluded. All four are mapped to
+Total 15.7 kt; `fle.27.3a4` is North Sea and excluded.
+
+**`bzq.27.2628` publishes `Catches` and `Landings` the wrong way round.** In 2015–2020
+its `landings − catches` equals `discards` exactly, and catches = landings + discards for
+every other stock. The snapshot keeps SAG's columns verbatim. `index.json`
+`catch_landings_swapped_stocks` lists the stock, and `derive_ices_targets.py` swaps the
+columns on read (the 2018–2022 mean is 2 764 t, not 2 363 t). A test fails if any stock
+shows catches below landings without being listed, or is listed without needing it. All four are mapped to
 `flounder` (since 2026-11-04). Before that only `fle.27.2223` was, so the
 flounder **catch target** was 834 t, ~5% of the Baltic total, and any calibration
 scoring yield would have pulled flounder catch ~18× too low. There is still no
@@ -186,7 +193,7 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    F rows get a verdict). The helper loads the existing `index.json` and
    rewrites only those three keys, so the
    hand-maintained blocks (`model_species_to_ices_stocks`,
-   `recruitment_index_stocks`, `sms_m2`) survive a refresh.
+   `recruitment_index_stocks`, `catch_landings_swapped_stocks`, `sms_m2`) survive a refresh.
 4. Update `index.json`'s top-level `advice_year` and `created` date by hand
    (the helper doesn't touch them).
 5. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**

@@ -64,7 +64,11 @@ def _flounder_catch_mean() -> float:
     for stock in _FLOUNDER_STOCKS:
         with open(SNAP / f"{stock}.assessment.json") as f:
             for r in json.load(f):
-                v = r["catches"] or r["landings"]
+                # bzq.27.2628's SAG columns are swapped: its "landings" is the total catch.
+                if stock == "bzq.27.2628":
+                    v = r["landings"] or r["catches"]
+                else:
+                    v = r["catches"] or r["landings"]
                 if v and 2018 <= int(r["year"]) <= 2022:
                     per_year[int(r["year"])] = per_year.get(int(r["year"]), 0.0) + float(v)
     assert sorted(per_year) == [2018, 2019, 2020, 2021, 2022]
@@ -96,3 +100,42 @@ def test_version_bump_increments_rather_than_resetting():
 
     assert _bump_minor("#! version: 1.4") == "#! version: 1.5"
     assert _bump_minor("#! version: 2.19") == "#! version: 2.20"
+
+
+def _snapshot_rows(stock: str) -> list[dict]:
+    import json
+
+    with open(SNAP / f"{stock}.assessment.json") as f:
+        return json.load(f)
+
+
+def _swapped() -> set[str]:
+    import json
+
+    return set(
+        json.loads((SNAP / "index.json").read_text()).get("catch_landings_swapped_stocks", [])
+    )
+
+
+def test_catches_are_never_below_landings_after_corrections():
+    # Catches = landings + discards, so a year with catches < landings means SAG published the
+    # two columns the other way round (bzq.27.2628, 2015-2020: landings - catches == discards).
+    # The derivation prefers `catches`, so an unlisted swap silently drops the discards.
+    for path in sorted(SNAP.glob("*.assessment.json")):
+        stock = path.name.removesuffix(".assessment.json")
+        first, second = ("landings", "catches") if stock in _swapped() else ("catches", "landings")
+        for r in _snapshot_rows(stock):
+            c, la = r[first], r[second]
+            if c not in (None, "") and la not in (None, ""):
+                assert float(c) >= float(la) - 0.5, (stock, r["year"], c, la)
+
+
+def test_every_listed_swap_is_still_needed():
+    # A stale entry would flip a correct stock the wrong way after a refresh.
+    for stock in _swapped():
+        assert any(
+            r["catches"] not in (None, "")
+            and r["landings"] not in (None, "")
+            and float(r["catches"]) < float(r["landings"]) - 0.5
+            for r in _snapshot_rows(stock)
+        ), stock

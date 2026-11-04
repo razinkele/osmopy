@@ -110,8 +110,9 @@ so changing it needs its own certification run.
 to `fle.27.2223` alone, so `biomass_targets.csv`'s flounder catch row was **834 t** (band 373–1 346),
 and any calibration scoring yield would have pulled flounder catch ~18× below what is landed. No
 production fit used it (phase 13 predates the catch targets; the a2r refit that did was not
-adopted). Flounder now maps to all four stocks and the row is **15 282 t (band 9 951–23 136)**. The
-model's ~24 kt sits just above that band, and matches ICES catches of 2015–2018 (23–26 kt); the
+adopted). Flounder now maps to all four stocks and the row is **15 683 t (band 9 951–24 264)**,
+after correcting `bzq.27.2628`, whose SAG `Catches`/`Landings` columns are swapped (see the
+snapshot README). The model's ~24 kt sits at the top of that band, and matches ICES catches of 2015–2018 (23–26 kt); the
 2018–2022 window straddles a steep decline (to 8.2 kt in 2023), and which period to match is a
 calibration choice, not settled here. The F row above now weights `fle.27.2223` and `bzq.27.2628`
 (both `F/Fmsy`); the other two publish no F values. ICES gives no absolute flounder biomass or F

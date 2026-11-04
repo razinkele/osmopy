@@ -44,6 +44,9 @@
   "recruitment_index_stocks": [
     "cod.27.24-32"
   ],
+  "catch_landings_swapped_stocks": [
+    "bzq.27.2628"
+  ],
   "f_type_by_stock": {
     "cod.27.24-32": {
       "description": "Fishing pressure: Relative",
