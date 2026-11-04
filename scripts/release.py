@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Bump version and generate/update CHANGELOG.md from conventional commits.
+"""Bump version and add the new release's section to CHANGELOG.md from conventional commits.
 
 Usage:
     python scripts/release.py patch   # 0.2.0 -> 0.2.1
     python scripts/release.py minor   # 0.2.0 -> 0.3.0
     python scripts/release.py major   # 0.2.0 -> 1.0.0
-    python scripts/release.py --changelog-only  # regenerate changelog without bumping
+    python scripts/release.py --changelog-only  # rebuild the WHOLE changelog from git (rewrites history)
 
 Reads version from osmose/__version__.py (single source of truth).
-Generates CHANGELOG.md from git log using conventional commit prefixes.
+
+A bump inserts ONLY the new section (commits since the last tag) above the previous release and
+leaves every released section byte-for-byte as committed. Until 2026-11 it regenerated the whole
+file from git, which rewrote released history on every release from v1.4.0 to v1.6.4: tag dates
+moved (a section generated before its tag existed got the tag's later date) and release commits
+appeared in old sections. Each time the diff had to be spliced by hand. The CHANGELOG diff of a
+release is now insertions-only by construction.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ import subprocess
 import sys
 from datetime import date
 from pathlib import Path
+from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "osmose" / "__version__.py"
@@ -148,8 +155,40 @@ def format_section(commits: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def new_release_section(version: str) -> str | None:
+    """The ``## [version]`` section for commits since the last tag, or None if there are none."""
+    tags = git_tags()
+    commits = git_log_between(tags[-1] if tags else None, "HEAD")
+    if not commits:
+        return None
+    title = f"## [{version}] - {date.today().isoformat()}"  # noqa: DTZ011 - local report date stamp, not an instant
+    return f"{title}\n\n{format_section(commits)}\n"
+
+
+def splice_section(existing: str, section: str) -> str:
+    """Insert ``section`` above the newest release heading, leaving the rest of ``existing`` as is.
+
+    With no release heading yet, the section is appended after the header. Raises ValueError if
+    ``section``'s heading is already present (re-running a bump must not duplicate it), or if an
+    ``## [Unreleased]`` section exists: the new release would land above it and orphan its
+    hand-written notes, which the in-app "What's new" falls back to (``osmose/docs_content.py``)."""
+    heading = section.split(" - ", 1)[0]
+    if f"\n{heading} - " in existing or existing.startswith(f"{heading} - "):
+        raise ValueError(f"{heading} is already in the changelog")
+    if re.search(r"^##\s*\[Unreleased\]", existing, re.MULTILINE):
+        raise ValueError(
+            "CHANGELOG.md has an [Unreleased] section; fold its notes into the release by hand"
+        )
+    at = existing.find("\n## [")
+    if at == -1:
+        return existing.rstrip("\n") + "\n\n" + section
+    return existing[: at + 1] + section + existing[at + 1 :]
+
+
 def generate_changelog() -> str:
-    """Generate full CHANGELOG.md content from git history."""
+    """Generate full CHANGELOG.md content from git history.
+
+    Rewrites released sections from today's git state; used only by ``--changelog-only``."""
     tags = git_tags()
     current_version = read_version()
 
@@ -208,7 +247,27 @@ def generate_changelog() -> str:
     return "\n".join(sections)
 
 
-def main():
+def _fail(msg: str) -> NoReturn:
+    print(f"ERROR: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def planned_changelog(version: str) -> str:
+    """The CHANGELOG text a bump to ``version`` would write; exits 1 on any refusal.
+
+    Used by both the real bump and ``--dry-run``, so a preview fails exactly when the bump would."""
+    if not CHANGELOG_FILE.exists():
+        _fail(f"{CHANGELOG_FILE.name} is missing; restore it before releasing")
+    section = new_release_section(version)
+    if section is None:
+        _fail("no commits since the last tag; nothing to release")
+    try:
+        return splice_section(CHANGELOG_FILE.read_text(), section)
+    except ValueError as e:
+        _fail(str(e))
+
+
+def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Bump version and generate changelog")
     parser.add_argument(
         "part",
@@ -219,14 +278,14 @@ def main():
     parser.add_argument(
         "--changelog-only",
         action="store_true",
-        help="Only regenerate changelog, don't bump version",
+        help="Rebuild the whole changelog from git without bumping (rewrites released sections)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print what would happen without making changes",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not args.changelog_only and not args.part:
         parser.error("Specify a version part (major/minor/patch) or --changelog-only")
@@ -240,29 +299,37 @@ def main():
         new_version = bump_version(current, args.part)
         print(f"Bumping version: {current} -> {new_version}")
 
+    # Plan the changelog first: if it refuses, nothing is written (the version file included).
+    changelog = None if args.changelog_only else planned_changelog(new_version)
+
     if args.dry_run:
         print("\n[DRY RUN] Would update:")
         print(f"  {VERSION_FILE} -> {new_version}")
-        print(f"  {CHANGELOG_FILE} -> regenerated")
-        print(f"  git tag v{new_version}")
+        if args.changelog_only:
+            print(f"  {CHANGELOG_FILE} -> rebuilt from git")
+        else:
+            print(f"  {CHANGELOG_FILE} -> [{new_version}] section inserted")
         return
 
-    # Write new version
-    if not args.changelog_only:
-        write_version(new_version)
-        print(f"  Updated {VERSION_FILE.relative_to(ROOT)}")
+    if args.changelog_only:
+        CHANGELOG_FILE.write_text(generate_changelog())
+        print(f"  Rebuilt {CHANGELOG_FILE.name} from git (released sections included)")
+        return
 
-    # Generate changelog
-    changelog = generate_changelog()
+    assert changelog is not None
+    write_version(new_version)
+    print(f"  Updated {VERSION_FILE.name}")
     CHANGELOG_FILE.write_text(changelog)
-    print(f"  Generated {CHANGELOG_FILE.relative_to(ROOT)}")
+    print(f"  Inserted [{new_version}] into {CHANGELOG_FILE.name}")
 
     print(f"\nVersion: {new_version}")
-    print("Next steps:")
+    print("Next steps (release PR; the tag goes on the MERGE commit, not this branch):")
+    print(f"  git switch -c release/v{new_version}   # if not already on it")
     print("  git add osmose/__version__.py CHANGELOG.md")
     print(f'  git commit -m "release: v{new_version}"')
-    print(f"  git tag v{new_version}")
-    print("  git push origin master --tags")
+    print("  open a PR; when CI is green, merge it")
+    print(f"  git tag -a v{new_version} <merge-commit> -m v{new_version}")
+    print(f"  git push origin v{new_version}")
 
 
 if __name__ == "__main__":
