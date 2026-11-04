@@ -56,9 +56,8 @@ import numpy as np
 from calibrate_baltic import BALTIC_CONFIG, SPECIES_NAMES
 from evaluate_calibration_vs_ices import FR_PREDATOR_SP, _apply_mode
 
-# Diet matrix width for the diagnostic: 8 focal + 2 background + 6 resources.
-# Production hardwires width = n_species + n_background (=10), dropping the
-# pure-resource columns; we widen so the matrix is complete. We only normalise
+# Diet matrix width for the diagnostic (focal + background + resources). Production's width is
+# n_species + n_resources (#146); we widen so the matrix is complete. We only normalise
 # against the 8 FOCAL prey (which have biomass in results.biomass()).
 _DIET_WIDTH = 16
 _N_BACKGROUND = 2  # GreySeal, Cormorant
@@ -212,7 +211,9 @@ def _run_with_diet(cfg: dict[str, str], n_years: int, seed: int):
         # Per-step per-predator-species diet INCLUDING background slots 8/9.
         step_aggs.append(aggregate_diet_all_predators(dm, sid, n_total=_N_TOTAL))
         result = real_agg(diet_matrix, species_id, n_pred_species)
-        prod_width = n_pred_species + 2  # n_species + n_background
+        # Production width is focal + resources (#146); n_pred_species now also counts the
+        # background rows, so take the focal count from the config.
+        prod_width = int(cfg["simulation.nspecies"]) + int(cfg.get("simulation.nresource", "0"))
         if result.shape[1] > prod_width:
             return result[:, :prod_width]
         return result
