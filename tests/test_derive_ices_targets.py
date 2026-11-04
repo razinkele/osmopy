@@ -139,3 +139,77 @@ def test_every_listed_swap_is_still_needed():
             and float(r["catches"]) < float(r["landings"]) - 0.5
             for r in _snapshot_rows(stock)
         ), stock
+
+
+def test_every_committed_catch_row_matches_the_derivation():
+    # The calibration reads the committed CSV. Until 2026-11 nothing tied it to the snapshots:
+    # cod_west's row came from a different (2023) assessment than the snapshot (2022), flounder's
+    # covered one stock of four, and cod_east's band had been rounded by hand. Every field must
+    # now be exactly what derive_ices_targets.py --write produces.
+    import csv
+
+    with open(SNAP.parent / "biomass_targets.csv") as f:
+        rows = [
+            r
+            for r in csv.DictReader(ln for ln in f if not ln.startswith("#"))
+            if r["reference_point_type"] == "catch"
+        ]
+    # A dict would keep only the last of two rows for a species; the calibration loader reads both.
+    species = [r["species"] for r in rows]
+    assert len(species) == len(set(species)), f"duplicate catch rows: {species}"
+    committed = {r["species"]: r for r in rows}
+    derived = {r["species"]: r for r in derive_catch_targets(SNAP)}
+    assert set(committed) == set(derived)
+    for sp, row in derived.items():
+        for col, val in row.items():
+            assert committed[sp][col] == val, (sp, col, committed[sp][col], val)
+
+
+def test_cod_west_catch_includes_discards_and_the_supplemented_2022():
+    # Independent of the code under test. cod.27.22-24's pinned 2022 assessment has no `catches`
+    # column (landings + discards are separate) and ends at 2021; 2022 (88 t landed + 27 t
+    # discarded) comes from the 2023 assessment via index.json catch_supplements.
+    per_year = {
+        int(r["year"]): float(r["landings"]) + float(r["discards"] or 0)
+        for r in _snapshot_rows("cod.27.22-24")
+        if r["landings"] and 2018 <= int(r["year"]) <= 2022
+    }
+    assert 2022 not in per_year
+    per_year[2022] = 88 + 27
+    rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
+    expected = sum(per_year.values()) / 5
+    assert float(rows["cod_west"]["target_tonnes"]) == pytest.approx(expected, rel=1e-9)
+
+
+def _write_snapshot(tmp_path, rows: list[dict], index_extra: dict | None = None):
+    import json
+
+    (tmp_path / "s.assessment.json").write_text(json.dumps(rows))
+    return tmp_path
+
+
+def test_fallback_adds_discards_to_landings(tmp_path):
+    from scripts.derive_ices_targets import _stock_catch
+
+    snap = _write_snapshot(
+        tmp_path,
+        [
+            {"year": "2020", "catches": "", "landings": "100", "discards": "7"},
+            {"year": "2021", "catches": "", "landings": "50", "discards": ""},
+            {"year": "2022", "catches": "90", "landings": "80", "discards": "10"},
+        ],
+    )
+    assert _stock_catch(snap, "s") == {2020: 107.0, 2021: 50.0, 2022: 90.0}
+
+
+def test_supplement_for_a_year_already_in_the_snapshot_raises(tmp_path):
+    # A refresh that brings the year must not leave the hand-entered value silently in place.
+    from scripts.derive_ices_targets import _stock_catch
+
+    snap = _write_snapshot(
+        tmp_path, [{"year": "2022", "catches": "", "landings": "88", "discards": "27"}]
+    )
+    with pytest.raises(ValueError, match="already in the snapshot"):
+        _stock_catch(
+            snap, "s", supplements={"2022": {"landings": 88, "discards": 27, "source": "x"}}
+        )

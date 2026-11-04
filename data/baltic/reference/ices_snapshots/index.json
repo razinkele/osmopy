@@ -47,6 +47,16 @@
   "catch_landings_swapped_stocks": [
     "bzq.27.2628"
   ],
+  "catch_supplements": {
+    "cod.27.22-24": {
+      "note": "The snapshot stays on the 2022 assessment, the only one with absolute SSB and F (2023 is relative, 2025 a harvest-rate ratio), so it ends at 2021. 2022's catch is identical in the 2023 and 2025 assessments.",
+      "2022": {
+        "landings": 88,
+        "discards": 27,
+        "source": "ICES SAG assessmentKey 17840 (2023 advice)"
+      }
+    }
+  },
   "f_type_by_stock": {
     "cod.27.24-32": {
       "description": "Fishing pressure: Relative",
