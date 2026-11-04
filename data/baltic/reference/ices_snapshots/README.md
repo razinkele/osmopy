@@ -12,7 +12,7 @@ mortality rates). Taken via the `ices` MCP server (same payload shape as
   `blim`, `bpa`, `msy_btrigger`, `f_age_range`, `recruitment_age`,
   optionally `note`.
 
-Advice year: **2024** for seven stocks; **2022** for `cod.27.22-24`
+Advice year: **2024** for ten stocks; **2022** for `cod.27.22-24`
 (western Baltic cod is category-3 in 2024 — no SSB/F time series
 published, so the last full assessment is used). Covers the 2018–2022
 window used for calibration targets in `biomass_targets.csv`.
@@ -46,11 +46,34 @@ SSB but reports recruitment as absolute numbers (6–29 million in 2018–2022),
 
 ## Baltic flounder notes
 
-ICES SAG publishes a **single** Baltic flounder stock: `fle.27.2223`
-(Subdivisions 22–23, western Baltic). There is **no** `fle.27.24-32`
-assessment in SAG — eastern Baltic flounder is data-limited and falls
-under WKBALTIC/WKBFLAT benchmark notes, not routine advice. The plan
-originally listed both; only `fle.27.2223` is pulled.
+Baltic flounder is **four** ICES stocks, and three of them are filed under
+other species codes, so searching `fle.27` finds only one:
+
+| stock | area | 2018–2022 mean catch | SSB / F as published |
+|---|---|---:|---|
+| `bzq.27.2425` | SD 24–25 (*Platichthys* spp.) | 11 966 t | survey index (`tonnes/h`) / **no F at all** |
+| `bzq.27.2628` | SD 26, 28 (*Platichthys* spp.) | 2 764 t | `B/Bmsy` / `F/Fmsy` |
+| `fle.27.2223` | SD 22–23 (*P. flesus*) | 834 t | `B/Bmsy` / `F/Fmsy` |
+| `bwp.27.2729-32` | SD 27, 29–32 (*P. solemdali*) | 119 t | kg per gillnet station / **no F values** |
+
+Total 15.7 kt; `fle.27.3a4` is North Sea and excluded.
+
+**`bzq.27.2628` publishes `Catches` and `Landings` the wrong way round.** In 2015–2020
+its `landings − catches` equals `discards` exactly, and catches = landings + discards for
+every other stock. The snapshot keeps SAG's columns verbatim. `index.json`
+`catch_landings_swapped_stocks` lists the stock, and `derive_ices_targets.py` swaps the
+columns on read (the 2018–2022 mean is 2 764 t, not 2 363 t). A test fails if any stock
+shows catches below landings without being listed, or is listed without needing it. All four are mapped to
+`flounder` (since 2026-11-04). Before that only `fle.27.2223` was, so the
+flounder **catch target** was 834 t, ~5% of the Baltic total, and any calibration
+scoring yield would have pulled flounder catch ~18× too low. There is still no
+absolute flounder biomass or F anywhere in SAG, so flounder gets catch only:
+no SSB envelope, no F verdict.
+
+ICES flounder catch fell steeply across the target window (23.6 kt in 2018 to
+9.9 kt in 2022, 8.2 kt in 2023), so the 2018–2022 band is wide and its mean sits
+well below mid-2010s catches. Which period the model should match is a
+calibration choice; the window is shared with every other catch target.
 
 Baltic flounder is also assessed on a **biennial cycle** (even years):
 2022, 2024, 2026, … Refreshing odd-year advice (2023, 2025) will not
@@ -58,36 +81,42 @@ bring a new flounder snapshot.
 
 ## Unit caveat (important)
 
-Three of the eight stocks report SSB as a **relative biomass index**
-(dimensionless, scaled to O(1)) rather than absolute tonnes:
-`cod.27.24-32`, `her.27.25-2932`, `fle.27.2223`. The ICES SAG API
+Six of the eleven stocks report SSB as a **relative biomass index**
+rather than absolute tonnes: `cod.27.24-32`, `her.27.25-2932` and the four
+flounder stocks. For the first three plus `fle.27.2223` the ICES SAG API
 mislabels these as `"tonnes"` in the per-row metadata — the true unit
-is inferred from the `Blim` magnitude. The validator skips biomass
+is inferred from the `Blim` magnitude. `bzq.27.2425` and `bwp.27.2729-32`
+have no Blim; the puller then reads `StockSizeUnits`, but only to call a
+non-`"tonnes"` unit an index — a bare `"tonnes"` without a Blim stays
+unclassified and the pull fails. The validator skips biomass
 envelope comparisons for index-unit stocks (nothing to compare tonnes
 against an index).
 
 F is not safe either. It is dimensionless, but not necessarily absolute.
 SAG's own `FishingPressureDescription` / `FishingPressureUnits` say which, and
 `index.json['f_type_by_stock']` records them verbatim (added 2026-10-31; the
-puller now writes them). Three of the eight stocks publish **relative** F:
+puller now writes them). Four of the eleven stocks publish **relative** F, and
+two publish none:
 
 | stock | SAG description / units |
 |---|---|
 | `her.27.25-2932` | `F` / `ratio` (SS3, FMSY = 1, Fpa = 1.2) |
 | `cod.27.24-32` | `Fishing pressure: Relative` (no FMSY defined — a relative index, not F/FMSY) |
 | `fle.27.2223` | `F/Fmsy` (SPiCT; SSB is `B/Bmsy`) |
+| `bzq.27.2628` | `F/Fmsy` / `ratio` |
+| `bzq.27.2425` | blank — no F values at all |
+| `bwp.27.2729-32` | `F` / blank, **but no F values**. If a future assessment starts publishing values under this label, they will be read as **absolute** — check them first. |
+
+A blank description is recorded only for a stock with no F values; the puller
+still raises on a blank next to real F values, since the validator would read it
+as relative. Stocks without F values are left out of the validator's relative-F
+reason and contribute nothing to the weighted F.
 
 The validator gives no verdict on a species whose comparator F is relative
 (cod_east, flounder) or only partly covered (herring), and reports the value
 marked `(relative)` (`docs/baltic_herring_sprat_f_2026-10-29.md`). FMSY = 1
 is a hint, not a test: decide from the description field.
 
-**Baltic flounder beyond `fle.27.2223`.** SAG files the main Baltic flounder
-stocks under `bzq` (*Platichthys* spp.), so searching `fle.27` misses them:
-`bzq.27.2425` (SD 24–25, 11 966 t mean catch 2018–2022), `bzq.27.2628`
-(2 363 t, `F/Fmsy`), `bwp.27.2729-32` (*P. solemdali*, 119 t). With
-`fle.27.2223` (834 t) the Baltic total is 15.3 kt; `fle.27.3a4` is North Sea.
-None of these is snapshotted — the figures are for catch comparison only.
 
 ## WGSAM SMS cod-predation mortality (M2) — `wgsam_sms_baltic_2025.*` (issue #136)
 
@@ -148,6 +177,12 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    .venv/bin/python scripts/_pull_ices_snapshots.py
    ```
 
+   To add or refresh **specific** stocks without touching the others, pass
+   `--only STOCK ...`: it pulls just those and merges their entries into the
+   three derived keys. A full pull re-downloads every series, and SAG revises
+   history, so it can move other species' catch targets too. The three non-`fle`
+   flounder stocks were added this way on 2026-11-04.
+
    It hits the ICES SAG REST API directly, applies the same flattening the
    MCP server does (lowercase keys matching `get_stock_assessment` /
    `get_reference_points` output), and rewrites every `{stock}.assessment.json`
@@ -158,7 +193,7 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    F rows get a verdict). The helper loads the existing `index.json` and
    rewrites only those three keys, so the
    hand-maintained blocks (`model_species_to_ices_stocks`,
-   `recruitment_index_stocks`, `sms_m2`) survive a refresh.
+   `recruitment_index_stocks`, `catch_landings_swapped_stocks`, `sms_m2`) survive a refresh.
 4. Update `index.json`'s top-level `advice_year` and `created` date by hand
    (the helper doesn't touch them).
 5. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**

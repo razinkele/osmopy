@@ -37,19 +37,24 @@ CATCH_WEIGHT = 0.5
 ASSESSED = ("cod_west", "cod_east", "herring", "sprat", "flounder")  # per stock since the split
 
 
-def _stock_catch(snapshot_dir: Path, stock: str) -> dict[int, float]:
+def _stock_catch(snapshot_dir: Path, stock: str, *, swapped: bool = False) -> dict[int, float]:
     """year -> catch (tonnes) for a stock, complete years only.
 
     Prefers ICES `catches` (landings + discards, the correct analog to the model's
     total-fished-biomass `yield`); falls back to `landings` for years/stocks where
     `catches` is unreported (empty string or missing).
+
+    ``swapped``: SAG publishes this stock's two columns the other way round (its "catches" are
+    landings), listed in index.json ``catch_landings_swapped_stocks``. The snapshot stays a
+    verbatim SAG copy; the correction lives here so a refresh cannot silently undo it.
     """
     with open(snapshot_dir / f"{stock}.assessment.json") as _f:
         recs = json.load(_f)
+    first, second = ("landings", "catches") if swapped else ("catches", "landings")
     out: dict[int, float] = {}
     for r in recs:
         y = r.get("year")
-        catch = r.get("catches") or r.get("landings")
+        catch = r.get(first) or r.get(second)
         if y and catch not in (None, ""):
             out[int(y)] = float(catch)
     return out
@@ -60,13 +65,14 @@ def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
     with open(snapshot_dir / "index.json") as _f:
         index = json.load(_f)
     mapping = index["model_species_to_ices_stocks"]
+    swapped = set(index.get("catch_landings_swapped_stocks", []))
     lo_y, hi_y = WINDOW
     rows: list[dict] = []
     for sp in ASSESSED:
         # Sum catches across the species' stocks per year (only years present contribute).
         per_year: dict[int, float] = {}
         for stock in mapping[sp]:
-            for y, catch in _stock_catch(snapshot_dir, stock).items():
+            for y, catch in _stock_catch(snapshot_dir, stock, swapped=stock in swapped).items():
                 if lo_y <= y <= hi_y:
                     per_year[y] = per_year.get(y, 0.0) + catch
         vals = np.array([per_year[y] for y in sorted(per_year)], dtype=float)
@@ -99,6 +105,13 @@ def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
     return rows
 
 
+def _bump_minor(version_line: str) -> str:
+    """'#! version: 1.4' -> '#! version: 1.5'. Was a hard-coded '1.2', which DOWNGRADED the file
+    once it had moved past 1.2 (found 2026-11-04 at 1.4)."""
+    major, minor = version_line.split(":", 1)[1].strip().split(".")
+    return f"#! version: {major}.{int(minor) + 1}"
+
+
 def _rewrite_csv(catch_rows: list[dict]) -> None:
     """Preserve comment/header lines + existing biomass data rows; append catch rows; bump version."""
     text = TARGETS_CSV.read_text().splitlines()
@@ -114,7 +127,7 @@ def _rewrite_csv(catch_rows: list[dict]) -> None:
         (
             f"#! last_updated: {today}"
             if ln.startswith("#! last_updated:")
-            else "#! version: 1.2"
+            else _bump_minor(ln)
             if ln.startswith("#! version:")
             else ln
         )

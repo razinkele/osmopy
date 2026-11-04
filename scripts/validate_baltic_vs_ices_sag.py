@@ -239,7 +239,8 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
       gets no verdict either, and `ices_f_relative=True`: the number is a
       relative index, so dividing a model F by it means nothing. Live cases:
       cod_east (`cod.27.24-32`, "Relative" — no FMSY defined, so not F/FMSY)
-      and flounder (`fle.27.2223`, "F/Fmsy").
+      and flounder (`fle.27.2223` and `bzq.27.2628`, "F/Fmsy"; its other two stocks publish
+      no F values and are left out of both the number and the reason).
     """
     units = manifest.get("units_by_stock", {})
     out: list[FComparison] = []
@@ -265,7 +266,10 @@ def _compare_f_rates(manifest: dict, model_fsh: dict[int, float]) -> list[FCompa
         if ices_f is None:
             out.append(FComparison(species, model_f, None, None, excluded))
             continue
-        relative = [s for s in weighting_stocks if _f_is_relative(manifest, s)]
+        # Only stocks that publish F values can call the F relative. bzq.27.2425 publishes none
+        # (blank F type); naming it "relative" would be false, and it adds nothing to ices_f.
+        with_f = [s for s in weighting_stocks if _series_by_year(_load_assessment(s), "f")]
+        relative = [s for s in with_f if _f_is_relative(manifest, s)]
         if relative:
             reason = f"ICES F is relative (an index, not absolute): {', '.join(relative)}"
             out.append(FComparison(species, model_f, ices_f, None, excluded, reason, True))
@@ -427,12 +431,13 @@ def _write_markdown_report(report: dict) -> None:
         flag = "—" if r["envelopes_overlap"] is None else ("✓" if r["envelopes_overlap"] else "✗")
         excl = ", ".join(f"`{s}`" for s in r["excluded_index_stocks"]) or "—"
         lines.append(f"| {r['species']} | {mdl} | {ices} | {flag} | {excl} |")
+    index_stocks = sorted(s for s, u in report.get("units_by_stock", {}).items() if u == "index")
     lines += [
         "",
         "## Reference Points (per ICES stock)",
         "",
         (
-            "Values for index-unit stocks (cod.27.24-32, her.27.25-2932, fle.27.2223) "
+            f"Values for index-unit stocks ({', '.join(index_stocks)}) "
             "are in the same relative scale as their SSB, not tonnes."
         ),
         "",
