@@ -16,6 +16,7 @@ originSessionId: 12d091cb-241b-45e7-82e3-906f4025f88b
 **Release workflow:** `python scripts/release.py patch|minor|major [--changelog-only] [--dry-run]`.
 
 - Auto-generates CHANGELOG.md from conventional commits (`feat:`, `fix:`, `docs:`, `test:`, etc.).
+- Since 2026-11 a bump inserts ONLY the new section; released sections (and any hand-written prose in them) are left untouched. `--changelog-only` still rebuilds the whole file from git.
 - Bumps `osmose/__version__.py`, commits, tags `vX.Y.Z`.
 
 **Why:** Centralized version avoids drift between package metadata, UI display, and git tags — bump once, everything follows.

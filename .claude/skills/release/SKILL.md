@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a new release with version bump, changelog generation, git tag, and push
+description: Cut a new release with version bump, changelog section, release PR, tag on the merge commit, and deploy hand-off
 disable-model-invocation: true
 ---
 
@@ -13,51 +13,65 @@ Cut a new OSMOSE release.
 
 ## Pre-flight Checks
 
-Run ALL of these from `/home/razinka/osmose/osmose-python/` before releasing. If any fail, stop and report:
+Run ALL of these from `/home/razinka/osmopy`. If any fail, stop and report:
 
-1. **Clean working tree**:
+1. **On master, up to date with origin, no tracked changes**:
    ```
-   git -C /home/razinka/osmose/osmose-python status --porcelain
+   git -C /home/razinka/osmopy branch --show-current
+   git -C /home/razinka/osmopy status --short --untracked-files=no
    ```
-   Must be empty. If not, ask user to commit or stash.
+   Branch must be `master`. Status must be empty (untracked files are fine).
 
-2. **Tests pass**:
+2. **Master's own CI is green on the commit being released.** A release tag permanently stamps a
+   version on one commit; don't stamp an unverified one. PR checks are not the same evidence:
+   they ran on a different commit, and master's run includes coverage.
    ```
-   .venv/bin/python -m pytest -x -q
+   gh run list --repo razinkele/osmopy --branch master --commit <HEAD sha>
    ```
-
-3. **Lint clean**:
-   ```
-   .venv/bin/ruff check osmose/ ui/ tests/
-   ```
-
-4. **On main branch**:
-   ```
-   git -C /home/razinka/osmose/osmose-python branch --show-current
-   ```
-   Must be "main". If not, warn and confirm with user.
 
 ## Release
 
-If all checks pass (or dry-run=yes):
-
 ```
+git -C /home/razinka/osmopy switch -c release/v{version}
 .venv/bin/python scripts/release.py {bump}
 ```
 
-If dry-run=yes, append `--dry-run` to the command.
+If dry-run=yes, append `--dry-run` to the release.py command and stop there.
+
+`release.py` inserts only the new `## [X.Y.Z]` section and leaves released sections untouched.
+Check that anyway, because it is the property that broke before (2026-11):
+```
+git -C /home/razinka/osmopy diff --numstat -- CHANGELOG.md
+```
+The second column (deletions) must be `0`. Do NOT use `--changelog-only` for a release; it rebuilds
+the whole file from git and rewrites released history.
 
 ## Post-release
 
-After a successful (non-dry-run) release:
-
-1. Show the new version from `osmose/__version__.py`
-2. Show the latest CHANGELOG.md entry
-3. Ask user: "Push tag and commit to origin? (y/n)"
-4. If yes:
+1. Commit `osmose/__version__.py` + `CHANGELOG.md` as `release: v{version}`, push the branch, open a
+   PR. Ask the user before pushing.
+2. When the PR's CI is green, merge it pinned to the head you checked
+   (`gh pr merge N --merge --match-head-commit <sha>`).
+3. Tag the **merge commit** (what master and prod carry, not the branch tip), annotated:
    ```
-   git -C /home/razinka/osmose/osmose-python push origin main --tags
+   git -C /home/razinka/osmopy tag -a v{version} <merge-commit> -m v{version}
+   git -C /home/razinka/osmopy push origin v{version}
+   git -C /home/razinka/osmopy ls-remote origin "refs/tags/v{version}^{}"
    ```
+   The `^{}` line must print the merge commit.
+4. Deploy is the user's step (needs sudo and a TTY, so it can't go through `!`). Give them the
+   **dev-checkout** path, never the prod clone's copy, and only after the tag is pushed:
+   ```
+   sudo OSMOSE_DEPLOY_REF=v{version} bash /home/razinka/osmopy/deploy.sh
+   ```
+5. Verify from the prod clone `/srv/shiny-server/osmose-src`:
+   - `git describe --tags --exact-match` = v{version}, with no offset.
+   - `osmose/__version__.py` matches.
+   - `.git/FETCH_HEAD` mtime is new.
+   - `systemctl show osmose-shiny -p ActiveEnterTimestamp` is after that fetch.
+   - `GET :8838/` returns 200.
+   - `GET :8838/feedback/review` and `/api/feedback` return **403**. A 200 there means the token
+     gate broke.
 
 ## Rules
 
