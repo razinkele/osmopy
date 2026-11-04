@@ -2,9 +2,12 @@
 """Derive ICES catch-based CATCH calibration targets from the in-repo snapshot.
 
 One-shot: reads data/baltic/reference/ices_snapshots/, sums each model species' stock
-catches (falling back to landings where catches are unreported) over 2018-2022, and emits
-`catch` target rows (band = mean +/- 1.5*std, floored at the window min). Writes
-biomass_targets.csv in place, preserving comment/provenance lines.
+catches (falling back to landings + discards where catches are unreported) over 2018-2022, and
+emits `catch` target rows (band = mean +/- 1.5*std, floored at the window min). Writes
+biomass_targets.csv in place, preserving comment/provenance lines. index.json's
+`catch_landings_swapped_stocks` and `catch_supplements` correct SAG quirks on read. Since
+2026-11 every committed catch row must equal this script's output
+(tests/test_derive_ices_targets.py), so edit the inputs and re-run rather than the CSV.
 
 DESTRUCTIVE: rewrites the tracked data/baltic/reference/biomass_targets.csv in
 place. It therefore requires an explicit --write; any other argv (including
@@ -37,26 +40,53 @@ CATCH_WEIGHT = 0.5
 ASSESSED = ("cod_west", "cod_east", "herring", "sprat", "flounder")  # per stock since the split
 
 
-def _stock_catch(snapshot_dir: Path, stock: str, *, swapped: bool = False) -> dict[int, float]:
+def _num(v) -> float | None:
+    return None if v in (None, "") else float(v)
+
+
+def _stock_catch(
+    snapshot_dir: Path,
+    stock: str,
+    *,
+    swapped: bool = False,
+    supplements: dict[str, dict] | None = None,
+) -> dict[int, float]:
     """year -> catch (tonnes) for a stock, complete years only.
 
     Prefers ICES `catches` (landings + discards, the correct analog to the model's
-    total-fished-biomass `yield`); falls back to `landings` for years/stocks where
-    `catches` is unreported (empty string or missing).
+    total-fished-biomass `yield`). Where `catches` is unreported it uses `landings` PLUS
+    `discards` when those are given: landings alone dropped cod.27.22-24's discards (7.5% of its
+    2018-2021 catch) until 2026-11.
 
     ``swapped``: SAG publishes this stock's two columns the other way round (its "catches" are
     landings), listed in index.json ``catch_landings_swapped_stocks``. The snapshot stays a
     verbatim SAG copy; the correction lives here so a refresh cannot silently undo it.
+
+    ``supplements``: {year: {"landings", "discards", "source"}} from index.json
+    ``catch_supplements``, for years the pinned assessment lacks. Raises if the snapshot already
+    has the year, so a refresh that brings it cannot leave a stale duplicate in place.
     """
     with open(snapshot_dir / f"{stock}.assessment.json") as _f:
         recs = json.load(_f)
-    first, second = ("landings", "catches") if swapped else ("catches", "landings")
+    total_col, landings_col = ("landings", "catches") if swapped else ("catches", "landings")
     out: dict[int, float] = {}
     for r in recs:
         y = r.get("year")
-        catch = r.get(first) or r.get(second)
-        if y and catch not in (None, ""):
-            out[int(y)] = float(catch)
+        if not y:
+            continue
+        total = _num(r.get(total_col))
+        if total is None:
+            landings = _num(r.get(landings_col))
+            if landings is None:
+                continue
+            total = landings + (_num(r.get("discards")) or 0.0)
+        out[int(y)] = total
+    for y_str, sup in (supplements or {}).items():
+        if int(y_str) in out:
+            raise ValueError(
+                f"{stock}: catch_supplements year {y_str} is already in the snapshot; remove it"
+            )
+        out[int(y_str)] = float(sup["landings"]) + float(sup.get("discards", 0.0))
     return out
 
 
@@ -66,13 +96,20 @@ def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
         index = json.load(_f)
     mapping = index["model_species_to_ices_stocks"]
     swapped = set(index.get("catch_landings_swapped_stocks", []))
+    supplements = index.get("catch_supplements", {})
     lo_y, hi_y = WINDOW
     rows: list[dict] = []
     for sp in ASSESSED:
         # Sum catches across the species' stocks per year (only years present contribute).
         per_year: dict[int, float] = {}
         for stock in mapping[sp]:
-            for y, catch in _stock_catch(snapshot_dir, stock, swapped=stock in swapped).items():
+            stock_catch = _stock_catch(
+                snapshot_dir,
+                stock,
+                swapped=stock in swapped,
+                supplements={k: v for k, v in supplements.get(stock, {}).items() if k != "note"},
+            )
+            for y, catch in stock_catch.items():
                 if lo_y <= y <= hi_y:
                     per_year[y] = per_year.get(y, 0.0) + catch
         vals = np.array([per_year[y] for y in sorted(per_year)], dtype=float)
@@ -96,8 +133,13 @@ def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
                 # csv.DictReader downstream — any literal "," here would silently shift
                 # columns. Use "; " (matching the file's existing convention) instead.
                 "source": (
-                    f"ICES catches (fallback landings) {WINDOW[0]}-{WINDOW[1]} summed over "
-                    f"{'; '.join(mapping[sp])}"
+                    f"ICES catches (fallback landings + discards) {WINDOW[0]}-{WINDOW[1]} "
+                    f"summed over {'; '.join(mapping[sp])}"
+                    + "".join(
+                        f"; {st} {y} from {supplements[st][y]['source']}"
+                        for st in mapping[sp]
+                        for y in sorted(k for k in supplements.get(st, {}) if k != "note")
+                    )
                 ),
                 "notes": f"mean+/-{K_STD}sigma; floored at window min ({vals.size} yr)",
             }

@@ -63,7 +63,25 @@ its `landings − catches` equals `discards` exactly, and catches = landings + d
 every other stock. The snapshot keeps SAG's columns verbatim. `index.json`
 `catch_landings_swapped_stocks` lists the stock, and `derive_ices_targets.py` swaps the
 columns on read (the 2018–2022 mean is 2 764 t, not 2 363 t). A test fails if any stock
-shows catches below landings without being listed, or is listed without needing it. All four are mapped to
+shows catches below landings without being listed, or is listed without needing it.
+
+## Catch targets (`derive_ices_targets.py`)
+
+Each assessed species' catch target is the 2018–2022 mean of its stocks' summed catch.
+Where SAG gives no `catches`, landings **plus discards** are used. Landings alone dropped
+`cod.27.22-24`'s discards (7.5% of its 2018–2021 catch) until 2026-11-04. Every committed
+`catch` row in `biomass_targets.csv` must equal the script's output (a test checks every
+field), so change the inputs here and re-run `--write` rather than editing the CSV.
+
+**`catch_supplements`** adds catch years the pinned assessment lacks. `cod.27.22-24` stays
+on its **2022** assessment, the only one with absolute SSB (tonnes) and F: the 2023
+assessment is `Stock Size: Relative` / `Fishing pressure: Relative`, and 2025 is `SSBrel` /
+`HR`. That snapshot ends at 2021, so 2022's catch (88 t landed + 27 t discarded, identical in
+the 2023 and 2025 assessments) is entered here with its SAG assessment key. The derivation
+raises if a supplemented year ever appears in the snapshot, so a refresh cannot leave a
+stale hand-entered value in place. Before this, the committed cod_west row (2 742 t)
+had been computed by hand from the 2023 assessment, landings only, and could not be
+reproduced from the repo. It is now 2 951 t. All four are mapped to
 `flounder` (since 2026-11-04). Before that only `fle.27.2223` was, so the
 flounder **catch target** was 834 t, ~5% of the Baltic total, and any calibration
 scoring yield would have pulled flounder catch ~18× too low. There is still no
@@ -193,7 +211,8 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    F rows get a verdict). The helper loads the existing `index.json` and
    rewrites only those three keys, so the
    hand-maintained blocks (`model_species_to_ices_stocks`,
-   `recruitment_index_stocks`, `catch_landings_swapped_stocks`, `sms_m2`) survive a refresh.
+   `recruitment_index_stocks`, `catch_landings_swapped_stocks`, `catch_supplements`,
+   `sms_m2`) survive a refresh.
 4. Update `index.json`'s top-level `advice_year` and `created` date by hand
    (the helper doesn't touch them).
 5. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**
