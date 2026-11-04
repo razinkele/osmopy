@@ -99,6 +99,13 @@ def derive_catch_targets(snapshot_dir: Path) -> list[dict]:
     return rows
 
 
+def _bump_minor(version_line: str) -> str:
+    """'#! version: 1.4' -> '#! version: 1.5'. Was a hard-coded '1.2', which DOWNGRADED the file
+    once it had moved past 1.2 (found 2026-11-04 at 1.4)."""
+    major, minor = version_line.split(":", 1)[1].strip().split(".")
+    return f"#! version: {major}.{int(minor) + 1}"
+
+
 def _rewrite_csv(catch_rows: list[dict]) -> None:
     """Preserve comment/header lines + existing biomass data rows; append catch rows; bump version."""
     text = TARGETS_CSV.read_text().splitlines()
@@ -114,7 +121,7 @@ def _rewrite_csv(catch_rows: list[dict]) -> None:
         (
             f"#! last_updated: {today}"
             if ln.startswith("#! last_updated:")
-            else "#! version: 1.2"
+            else _bump_minor(ln)
             if ln.startswith("#! version:")
             else ln
         )

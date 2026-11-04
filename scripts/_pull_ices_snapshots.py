@@ -7,10 +7,13 @@ keys) so the validator can read them unchanged.
 
 Run once; the snapshots are committed and then this script is no longer needed
 until the next advice-year refresh (see ices_snapshots/README.md § How to Refresh).
+``--only STOCK ...`` pulls just those stocks and merges them into index.json, leaving every
+other snapshot as committed (SAG revises series, so a full re-pull moves other targets too).
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 
@@ -36,6 +39,10 @@ STOCKS = [
     ("her.27.20-24", 2024),
     ("spr.27.22-32", 2024),
     ("fle.27.2223", 2024),
+    # Baltic flounder is four ICES stocks; fle.27.2223 alone is ~5% of the catch (2026-11).
+    ("bzq.27.2425", 2024),
+    ("bzq.27.2628", 2024),
+    ("bwp.27.2729-32", 2024),
 ]
 
 
@@ -90,9 +97,14 @@ def _unit_for(raw_assessment: list[dict], blim: str | None) -> str:
     (reports "tonnes" even when values are clearly biomass indices in the 0.1-10
     range). Use Blim magnitude as the ground truth: index-scale assessments have
     Blim < 100 (relative to a reference point), tonnes-scale have Blim > 1000.
+
+    Without a Blim the units field is used, asymmetrically: anything but "tonnes" (e.g.
+    "tonnes/h", "Kilograms per gillnet station") is an index, but "tonnes" itself is NOT
+    trusted to mean tonnes (fle.27.2223 says "tonnes" for B/Bmsy), so it stays unknown.
     """
     if blim is None or blim == "":
-        return "unknown"
+        units = (raw_assessment[0].get("StockSizeUnits") or "").strip().lower()
+        return "index" if units and units != "tonnes" else "unknown"
     try:
         b = float(blim)
     except (TypeError, ValueError):
@@ -100,14 +112,39 @@ def _unit_for(raw_assessment: list[dict], blim: str | None) -> str:
     return "index" if b < 100 else "tonnes"
 
 
-def main() -> None:
+def _f_type(stock_key: str, year: int, raw_assessment: list[dict]) -> dict[str, str]:
+    """SAG's FishingPressureDescription/Units, verbatim.
+
+    A blank description raises when the stock publishes F values: the validator reads anything
+    but "F" as relative, so a blank would silently strip an absolute stock of its verdict. A
+    stock with no F values at all (bzq.27.2425) has no verdict to lose; its blank is recorded."""
+    first = raw_assessment[0]
+    f_desc = (first.get("FishingPressureDescription") or "").strip()
+    has_f = any(r.get("FishingPressure") not in (None, "") for r in raw_assessment)
+    if not f_desc and has_f:
+        raise RuntimeError(f"{stock_key} @ {year}: blank FishingPressureDescription in SAG payload")
+    return {"description": f_desc, "units": (first.get("FishingPressureUnits") or "").strip()}
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Pull ICES SAG snapshots for Baltic stocks.")
+    parser.add_argument("--only", nargs="+", metavar="STOCK", help="pull only these stocks")
+    args = parser.parse_args(argv)
+    stocks = STOCKS
+    if args.only:
+        known = dict(STOCKS)
+        unknown = sorted(set(args.only) - set(known))
+        if unknown:
+            parser.error(f"not in STOCKS: {', '.join(unknown)}")
+        stocks = [(s, known[s]) for s in args.only]
+
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     units_by_stock: dict[str, str | None] = {}
     year_by_stock: dict[str, int] = {}
     f_type_by_stock: dict[str, dict[str, str]] = {}
 
     with httpx.Client(timeout=60.0) as client:
-        for stock_key, year in STOCKS:
+        for stock_key, year in stocks:
             print(f"pulling {stock_key} @ {year} ...", flush=True)
             ak = _resolve_key(client, stock_key, year)
 
@@ -128,7 +165,7 @@ def main() -> None:
             r_rp.raise_for_status()
             raw_rp = r_rp.json()
             rp_entry = raw_rp[0] if isinstance(raw_rp, list) and raw_rp else raw_rp
-            if not rp_entry:
+            if not isinstance(rp_entry, dict) or not rp_entry:
                 raise RuntimeError(
                     f"{stock_key} @ {year}: empty reference-points payload from ICES SAG"
                 )
@@ -159,25 +196,18 @@ def main() -> None:
             year_by_stock[stock_key] = year
             # Verbatim, so the validator can tell absolute F from F/FMSY-type ratios. This
             # is the only field that says so — FMSY=1 is a hint, not a guarantee.
-            first = raw_assessment[0]
-            f_desc = (first.get("FishingPressureDescription") or "").strip()
-            if not f_desc:
-                # The validator reads anything but "F" as relative, so a blank would
-                # silently strip an absolute stock of its verdict. Fail like an empty payload.
-                raise RuntimeError(
-                    f"{stock_key} @ {year}: blank FishingPressureDescription in SAG payload"
-                )
-            f_type_by_stock[stock_key] = {
-                "description": f_desc,
-                "units": (first.get("FishingPressureUnits") or "").strip(),
-            }
+            f_type_by_stock[stock_key] = _f_type(stock_key, year, raw_assessment)
 
-    # Rewrite index.json with units + per-stock advice-year overrides.
+    # Merge units + per-stock advice years + F types into index.json. A full pull rewrites every
+    # stock's entry; --only leaves the other stocks' entries as committed.
     index_path = SNAPSHOT_DIR / "index.json"
     index = json.loads(index_path.read_text())
-    index["units_by_stock"] = units_by_stock
-    index["advice_year_by_stock"] = year_by_stock
-    index["f_type_by_stock"] = f_type_by_stock
+    for key, pulled in (
+        ("units_by_stock", units_by_stock),
+        ("advice_year_by_stock", year_by_stock),
+        ("f_type_by_stock", f_type_by_stock),
+    ):
+        index[key] = {**index.get(key, {}), **pulled} if args.only else pulled
     # Drop fle.27.24-32 (never existed in SAG) — already absent from manifest.
     index_path.write_text(json.dumps(index, indent=2) + "\n")
     print("done; units:", units_by_stock)

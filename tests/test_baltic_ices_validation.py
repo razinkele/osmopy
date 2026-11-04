@@ -50,6 +50,13 @@ def test_manifest_exists_and_is_readable():
     assert manifest["model_species_to_ices_stocks"]["cod_east"] == ["cod.27.24-32"]
     assert manifest["units_by_stock"]["spr.27.22-32"] == "tonnes"
     assert manifest["units_by_stock"]["cod.27.24-32"] == "index"
+    # Baltic flounder is four ICES stocks; fle.27.2223 alone is ~5% of the catch (2026-11).
+    assert sorted(manifest["model_species_to_ices_stocks"]["flounder"]) == [
+        "bwp.27.2729-32",
+        "bzq.27.2425",
+        "bzq.27.2628",
+        "fle.27.2223",
+    ]
 
 
 def test_every_assessed_species_has_snapshot_files():
@@ -243,11 +250,18 @@ def test_relative_ices_f_gets_no_verdict(report):
     value flagged relative with no verdict; absolute-F species keep theirs, so the rule
     cannot pass by silencing every row."""
     f_rows = {r["species"]: r for r in report["f_rates"]}
-    for species, stock in (("cod_east", "cod.27.24-32"), ("flounder", "fle.27.2223")):
+    for species, stock in (
+        ("cod_east", "cod.27.24-32"),
+        ("flounder", "fle.27.2223"),
+        ("flounder", "bzq.27.2628"),
+    ):
         row = f_rows[species]
         assert row["ices_f_relative"] is True, species
         assert row["in_tolerance"] is None, species
         assert stock in row["no_verdict_reason"], species
+    # bzq.27.2425 and bwp.27.2729-32 publish no F values: they must not be called "relative".
+    for stock in ("bzq.27.2425", "bwp.27.2729-32"):
+        assert stock not in f_rows["flounder"]["no_verdict_reason"]
     for species in ("cod_west", "sprat"):
         assert f_rows[species]["ices_f_relative"] is False, species
         assert f_rows[species]["in_tolerance"] is not None, species
@@ -271,6 +285,7 @@ def test_every_linked_stock_has_an_f_type():
         ("F/Fmsy", "", True),  # fle.27.2223
         ("Fishing pressure: Relative", "", True),  # cod.27.24-32
         (" F ", " ", False),
+        ("", "", True),  # bzq.27.2425; no verdict either way, it publishes no F values
     ],
 )
 def test_f_is_relative_classifies_sag_strings(validator_module, description, units, relative):
@@ -284,7 +299,7 @@ def test_f_is_relative_raises_on_missing_entry(validator_module):
 
 
 def test_flounder_envelope_is_none_because_only_stock_is_index(report):
-    """Flounder has a single index-unit stock. The envelope must be None,
+    """Flounder's four stocks are all index-unit. The envelope must be None,
     not zero and not a silent pass-through of the index values as tonnes."""
     b_rows = {r["species"]: r for r in report["biomass_envelopes"]}
     assert b_rows["flounder"]["ices_min_ssb"] is None

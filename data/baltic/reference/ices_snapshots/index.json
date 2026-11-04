@@ -18,7 +18,10 @@
       "spr.27.22-32"
     ],
     "flounder": [
-      "fle.27.2223"
+      "fle.27.2223",
+      "bzq.27.2425",
+      "bzq.27.2628",
+      "bwp.27.2729-32"
     ],
     "perch": [],
     "pikeperch": [],
@@ -33,20 +36,59 @@
     "her.27.3031": "tonnes",
     "her.27.20-24": "tonnes",
     "spr.27.22-32": "tonnes",
-    "fle.27.2223": "index"
+    "fle.27.2223": "index",
+    "bzq.27.2425": "index",
+    "bzq.27.2628": "index",
+    "bwp.27.2729-32": "index"
   },
   "recruitment_index_stocks": [
     "cod.27.24-32"
   ],
   "f_type_by_stock": {
-    "cod.27.24-32": {"description": "Fishing pressure: Relative", "units": ""},
-    "cod.27.22-24": {"description": "F", "units": ""},
-    "her.27.25-2932": {"description": "F", "units": "ratio"},
-    "her.27.28": {"description": "F", "units": ""},
-    "her.27.3031": {"description": "F", "units": ""},
-    "her.27.20-24": {"description": "F", "units": ""},
-    "spr.27.22-32": {"description": "F", "units": ""},
-    "fle.27.2223": {"description": "F/Fmsy", "units": ""}
+    "cod.27.24-32": {
+      "description": "Fishing pressure: Relative",
+      "units": ""
+    },
+    "cod.27.22-24": {
+      "description": "F",
+      "units": ""
+    },
+    "her.27.25-2932": {
+      "description": "F",
+      "units": "ratio"
+    },
+    "her.27.28": {
+      "description": "F",
+      "units": ""
+    },
+    "her.27.3031": {
+      "description": "F",
+      "units": ""
+    },
+    "her.27.20-24": {
+      "description": "F",
+      "units": ""
+    },
+    "spr.27.22-32": {
+      "description": "F",
+      "units": ""
+    },
+    "fle.27.2223": {
+      "description": "F/Fmsy",
+      "units": ""
+    },
+    "bzq.27.2425": {
+      "description": "",
+      "units": ""
+    },
+    "bzq.27.2628": {
+      "description": "F/Fmsy",
+      "units": "ratio"
+    },
+    "bwp.27.2729-32": {
+      "description": "F",
+      "units": ""
+    }
   },
   "advice_year_by_stock": {
     "cod.27.24-32": 2024,
@@ -56,7 +98,10 @@
     "her.27.3031": 2024,
     "her.27.20-24": 2024,
     "spr.27.22-32": 2024,
-    "fle.27.2223": 2024
+    "fle.27.2223": 2024,
+    "bzq.27.2425": 2024,
+    "bzq.27.2628": 2024,
+    "bwp.27.2729-32": 2024
   },
   "sms_m2": {
     "source": "ICES WGSAM Eastern Baltic Sea SMS key run 2025 (GitHub artefact; the WGSAM 2025 report was not yet in the ICES library when snapshotted)",
