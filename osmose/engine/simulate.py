@@ -290,6 +290,9 @@ class StepOutput:
 
     # Diet: per-species diet composition, shape (n_predators, n_prey), or None if diet disabled
     diet_by_species: NDArray[np.float64] | None = None
+    # Steps folded into this output by _average_step_outputs. diet_by_species is a SUM over them,
+    # and the end-of-run flush can be shorter than output.recordfrequency.ndt.
+    window_steps: int = 1
 
     # Genetic trait statistics: trait_name -> species_id -> TraitStats,
     # or None if genetics disabled. Populated by _collect_outputs from
@@ -1721,6 +1724,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             bioen_size_inf_by_species=bioen_size_inf_avg,
             bioen_enet_faced_by_species=bioen_enet_faced_avg,
             diet_by_species=diet_summed,
+            window_steps=len(accumulated),
             spatial_biomass=spatial_b_agg,
             spatial_abundance=spatial_a_agg,
             spatial_yield=spatial_y_agg,
@@ -1818,6 +1822,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         bioen_size_inf_by_species=bioen_size_inf_avg,
         bioen_enet_faced_by_species=bioen_enet_faced_avg,
         diet_by_species=diet_summed,
+        window_steps=len(accumulated),
         spatial_biomass=spatial_b_agg,
         spatial_abundance=spatial_a_agg,
         spatial_yield=spatial_y_agg,
