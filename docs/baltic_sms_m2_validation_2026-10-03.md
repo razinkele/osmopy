@@ -39,9 +39,9 @@ Model window: last 5 years of run · SMS window: 2018-2022
   **pikeperch, at 1.35 Mt in this run (the known percid overshoot,
   `docs/baltic_percid_overshoot_conclusion_2026-07-05.md`), is the predator the SMS does not have.**
   The background predators — grey seal (no accessibility column, hence full access; CLAUDE.md gotcha)
-  and cormorant — are absent from `predatorPressure` by construction (*2026-11-04: no longer —
-  `predatorPressure` now carries `GreySeal` and `Cormorant` columns, so this budget can be closed
-  with them; not yet re-run*); the consistency check above
+  and cormorant — are absent from `predatorPressure` by construction (*no longer since #198 —
+  closed with them in the 2026-11-05 addendum below: together 2.5% of the herring budget and 7% of
+  sprat's*); the consistency check above
   leaves little room for them on ≥0.5-yr fish, but it is not a stage-matched budget. The juvenile sprat
   term (3.1 yr⁻¹) is not budgeted by this table and is where egg/YOY predation by clupeids, percids
   and the background species would sit.
@@ -58,6 +58,34 @@ Model window: last 5 years of run · SMS window: 2018-2022
 
 1. Re-run after any percid or seal-matrix recalibration — this comparison is the cheap external check
    for both (the seal column fix is a recalibration decision: one cell moved cod_west 15 → 75 cm).
-2. If the JUVENILE term needs attributing, extend predatorPressure (or a sibling output) to background
-   predators via `aggregate_diet_all_predators`, which already exists for diagnostics.
+2. ~~If the JUVENILE term needs attributing, extend predatorPressure to background predators.~~
+   Done in #198; budget closed in the addendum below. predatorPressure is tonnes, so it still
+   cannot attribute egg/YOY predation by NUMBERS — that needs an age-resolved instrument.
 3. The SAG config validator is stale after the cod split — issue #182.
+
+## Addendum 2026-11-05 — the budget with the background predators
+
+`predatorPressure` gained `GreySeal` and `Cormorant` columns in #198, so the same-basis budget above
+can now include them. Fresh run: production config at master `a862a064` (which includes the sprat
+F change 0.1637 → 0.369 of 2026-10-29, so these are not the October run's numbers), 15 yr, seed 0,
+determinism keys on, diet output on; same trailing 5-yr window.
+
+Each entry is that predator's annual consumption of the prey over the prey's mean biomass (yr⁻¹):
+
+| prey | pikeperch | cod_east | Cormorant | GreySeal | perch | cod_west | all 11 predators | adult predation rate (`mortalityRate`) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| herring | 0.560 | 0.033 | 0.010 | 0.006 | 0.020 | 0.004 | 0.632 | 0.566 |
+| sprat | 0.297 | 0.292 | 0.028 | 0.018 | 0.008 | 0.005 | 0.648 | 0.620 |
+
+- **The background predators are minor on ≥0.5-yr herring and sprat.** Seal + cormorant take
+  0.016 yr⁻¹ of herring (2.5% of the budget) and 0.046 of sprat (7%). The October reading stands:
+  the residual against SMS is **pikeperch**, not the seal.
+- **The all-predator budget slightly exceeds the adult stage rate** (112% herring, 105% sprat). The
+  two are on different bases (biomass vs numbers; the numerator counts every eaten tonne, including
+  young-of-year, while the denominator excludes them by `output.cutoff.age`), so this is the same
+  consistency check as above, not a closure to the percent.
+- **Cod against SMS on this run:** herring 0.036 vs 0.069 (0.53×), sprat 0.298 vs 0.087 (3.43×) —
+  unchanged in kind from October.
+- **Juvenile sprat total predation is now 0.97 yr⁻¹** (October: 3.13). The sprat F change is the
+  only production-config change in between, but the October run's seed was not recorded, so seed
+  differences are not ruled out. The cause of that drop is not investigated here.
