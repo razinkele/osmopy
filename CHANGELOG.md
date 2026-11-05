@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.7.0] - 2026-11-05
+
+### Features
+
+- **output:** background predators in predatorPressure (0d11fdd)
+
+### Bug Fixes
+
+- **sp1b:** re-solve per-stock larval rates after the sprat F change (1aef6ce)
+- **output:** predatorPressure's last window divides by its own length (b834f1b)
+- **baltic:** cod_west catch target from landings + discards incl. 2022; pin every catch row to the derivation (ffe3b98)
+- **baltic:** correct bzq.27.2628's swapped catch columns; assert all flounder exclusions (review) (963e103)
+- **baltic:** flounder catch target covers all four ICES stocks (468849f)
+- **release:** refuse in dry-run, on [Unreleased] or a missing CHANGELOG (review) (03ed2a3)
+- **release:** insert only the new CHANGELOG section on a bump (36ef09a)
+
+### Documentation
+
+- **sms-m2:** close the predation budget with seal and cormorant (f098476)
+
+### Other
+
+- Merge pull request #201 from razinkele/docs/sms-m2-background-budget (a4b6adc)
+- Merge pull request #200 from razinkele/fix/pressure-partial-window (76c646a)
+- Merge pull request #199 from razinkele/fix/sp1b-resolve-after-sprat-f (99eb703)
+- Merge pull request #198 from razinkele/feat/predator-pressure-background (a862a06)
+- Merge pull request #197 from razinkele/fix/cod-west-catch-target (a12d082)
+- Merge pull request #196 from razinkele/fix/flounder-catch-all-stocks (12dad5b)
+- Merge pull request #195 from razinkele/fix/release-changelog-splice (c070172)
+
+### Tests
+
+- **thermal-gate:** assert pikeperch at age-0 recruitment, not biomass (a763396)
+- **derive:** fail on duplicate committed catch rows (review) (a298853)
+
 ## [1.6.4] - 2026-11-03
 
 ### Bug Fixes
