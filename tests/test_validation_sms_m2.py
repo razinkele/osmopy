@@ -199,6 +199,26 @@ def test_model_predation_rate_by_stage_reads_two_row_header_window_mean():
     assert rates == {"Juvenil": pytest.approx(1.2), "Adult": pytest.approx(0.5)}
 
 
+def test_model_predation_rate_by_stage_median_ignores_one_empty_stage_year():
+    # Shape of the 2026-11-05 Baltic sprat trace: four ordinary years and one whose annual row is
+    # a rate on an empty stage (12.23, from ~1e-18 fish in one step). The median must ignore it;
+    # the mean, kept beside it, must still show it.
+    df = _mortality_two_row(0.6, 0.0)
+    df[("Predation", "Juvenil")] = [0.71, 0.85, 0.81, 1.03, 12.23]
+    res = _fake_results(_pressure_frame(), _biomass_wide(), {"sprat": df})
+    med = model_predation_rate_by_stage(res, "sprat", window_years=5)
+    mean = model_predation_rate_by_stage(res, "sprat", window_years=5, stat="mean")
+    assert med["Juvenil"] == pytest.approx(0.85)
+    assert mean["Juvenil"] == pytest.approx(3.126)
+    assert med["Adult"] == pytest.approx(0.6) and mean["Adult"] == pytest.approx(0.6)
+
+
+def test_model_predation_rate_by_stage_rejects_unknown_stat():
+    res = _fake_results(_pressure_frame(), _biomass_wide(), {"sprat": _mortality_two_row(0.5, 1.2)})
+    with pytest.raises(ValueError, match="stat"):
+        model_predation_rate_by_stage(res, "sprat", stat="max")
+
+
 # ── comparison + report ───────────────────────────────────────────────────────
 
 
@@ -222,6 +242,7 @@ def test_compare_predation_m2_builds_one_row_per_sms_species(tmp_path):
     assert h.model_cod_m2_mean == pytest.approx((0.25 + 0.25) * 24 / 600.0)  # both cods
     assert h.ratio == pytest.approx(h.model_cod_m2_mean / h.sms_m2_mean)
     assert h.model_predation_rate_by_stage["Adult"] == pytest.approx(0.1)
+    assert h.model_predation_rate_by_stage_mean["Adult"] == pytest.approx(0.1)
     s = rows[1]
     assert s.sms_n_years == 1 and s.sms_m2_mean == pytest.approx((0.05 * 1 + 0.15 * 3) / 4)
 
@@ -255,6 +276,26 @@ def test_report_has_m2_section_only_when_given(tmp_path):
     assert "biomass basis" in md  # the basis caveat is stated, not hidden
     assert "Juvenil" in md and "Adult" in md  # total predation rate shown beside the cod share
     assert "report-only" in md.lower() or "not gated" in md.lower()
+
+
+def test_comparison_row_reports_median_and_keeps_the_mean(tmp_path):
+    # Row-level wiring: the table shows the median, the JSON (asdict of the row) keeps the mean.
+    snap = load_sms_m2(_make_sms_snapshot(tmp_path))
+    spiked = _mortality_two_row(0.6, 0.0)
+    spiked[("Predation", "Juvenil")] = [0.71, 0.85, 0.81, 1.03, 12.23]
+    res = _fake_results(
+        _pressure_frame(),
+        _biomass_wide(),
+        {"sprat": spiked, "herring": _mortality_two_row(0.1, 0.2)},
+    )
+    rows = compare_predation_m2_to_sms(res, snap, window_years=5, ices_window=range(2020, 2022))
+    s = rows[1]
+    assert s.model_predation_rate_by_stage["Juvenil"] == pytest.approx(0.85)
+    assert s.model_predation_rate_by_stage_mean["Juvenil"] == pytest.approx(3.126)
+    md = format_markdown_report(
+        [], window_years=5, ices_window=range(2020, 2022), m2_comparisons=rows
+    )
+    assert "0.850 / 0.600" in md and "3.126" not in md
 
 
 # ── the committed snapshot ────────────────────────────────────────────────────

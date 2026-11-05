@@ -528,11 +528,20 @@ def model_cod_attributed_m2(
 
 
 def model_predation_rate_by_stage(
-    results: OsmoseResults, species: str, *, window_years: int = 5
+    results: OsmoseResults, species: str, *, window_years: int = 5, stat: str = "median"
 ) -> dict[str, float]:
-    """Window-mean of the model's TOTAL predation rate (all predators) per life stage from the
-    ``mortalityRate`` output — context for the non-cod residual. Returns {} when the output is
-    absent or carries no stage split."""
+    """Window statistic (``"median"`` or ``"mean"``) over the annual rows of the model's TOTAL
+    predation rate (all predators) per life stage from the ``mortalityRate`` output — context for
+    the non-cod residual. Returns {} when the output is absent or carries no stage split.
+
+    Median by default because one annual row can be meaningless: the row SUMS per-step rates, and a
+    step in which a stage holds only numerical-residue schools (all real fish just matured, the next
+    cohort still eggs) gives -ln(N_end/N_start) on ~1e-18 fish. Traced 2026-11-05: Baltic sprat
+    Juvenil read 12.23 in one year, 11.36 of it from a single step on 7e-19 fish, against 0.7-1.15 in
+    every other year. Java's ``MortalityOutput`` uses the same formula, so the output is left as is.
+    """
+    if stat not in ("median", "mean"):
+        raise ValueError(f"stat must be 'median' or 'mean', got {stat!r}")
     try:
         df = results.mortality_rate(species)
     except (KeyError, FileNotFoundError, ValueError):
@@ -554,7 +563,8 @@ def model_predation_rate_by_stage(
         return {}
     tail = _trailing_years(frame, window_years)
     for stage in [c for c in tail.columns if c != "Time"]:
-        stages[str(stage)] = float(np.asarray(tail[stage], dtype=float).mean())
+        vals = np.asarray(tail[stage], dtype=float)
+        stages[str(stage)] = float(np.median(vals) if stat == "median" else vals.mean())
     return stages
 
 
@@ -574,7 +584,8 @@ class PredationM2Comparison:
     model_cod_m2_max: float | None = None
     model_n_years: int = 0
     model_by_predator: dict[str, float] = field(default_factory=dict)
-    model_predation_rate_by_stage: dict[str, float] = field(default_factory=dict)
+    model_predation_rate_by_stage: dict[str, float] = field(default_factory=dict)  # annual median
+    model_predation_rate_by_stage_mean: dict[str, float] = field(default_factory=dict)
     ratio: float | None = None  # model cod-attributed / SMS
     note: str = ""
 
@@ -627,6 +638,9 @@ def compare_predation_m2_to_sms(
         row.model_predation_rate_by_stage = model_predation_rate_by_stage(
             results, model_sp, window_years=window_years
         )
+        row.model_predation_rate_by_stage_mean = model_predation_rate_by_stage(
+            results, model_sp, window_years=window_years, stat="mean"
+        )
         if row.sms_m2_mean and row.sms_m2_mean > 0:
             row.ratio = m.mean / row.sms_m2_mean
         out.append(row)
@@ -650,8 +664,9 @@ def format_m2_section(
             "Gulf of Riga; the model grid also holds the western basin) and through the PREY POOL "
             "each rate is taken on (the model's stock sizes vs the assessed stocks — see the SSB "
             "table). The model's TOTAL predation rate (all predators, per stage, from "
-            "mortalityRate) is shown beside it as context; it is a stage rate on a different "
-            "basis, so no share is computed from the two."
+            "mortalityRate; MEDIAN of the annual rows, since one row can be a rate on an empty "
+            "stage — the mean is in the JSON) is shown beside it as context; it is a stage rate "
+            "on a different basis, so no share is computed from the two."
         ),
         "",
         (
@@ -661,7 +676,7 @@ def format_m2_section(
         "",
         (
             "| prey | SMS stock | SMS M2 mean [min, max] | model cod M2 mean [min, max] | model/SMS | "
-            "by cod stock | model total predation (Juvenil / Adult) | note |"
+            "by cod stock | model total predation, annual median (Juvenil / Adult) | note |"
         ),
         "|---|---|---:|---:|---:|---|---|---|",
     ]
