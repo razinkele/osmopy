@@ -28,7 +28,8 @@ Model window: last 5 years of run · SMS window: 2018-2022
 - **Sprat.** Cod-attributed M2 is 0.277 yr⁻¹, **3.2×** the SMS
   0.087, again almost entirely cod_east. Total predation on juvenile sprat is
   3.13 yr⁻¹, an order of magnitude above anything SMS
-  attributes to cod.
+  attributes to cod. (*2026-11-05: that mean is one year — see the correction at the end. The
+  annual series is 0.71, 0.85, 0.81, 1.03, **12.23**; without the final year it is ~0.85 yr⁻¹.*)
 - **The residual is pikeperch.** On the SAME basis as the cod figure — each focal predator's annual
   consumption of the prey over the prey's mean biomass — the shares are: herring — pikeperch 0.530,
   cod_east 0.031, perch 0.020, cod_west 0.004 (focal total 0.585 yr⁻¹); sprat — pikeperch 0.298,
@@ -44,7 +45,8 @@ Model window: last 5 years of run · SMS window: 2018-2022
   sprat's*); the consistency check above
   leaves little room for them on ≥0.5-yr fish, but it is not a stage-matched budget. The juvenile sprat
   term (3.1 yr⁻¹) is not budgeted by this table and is where egg/YOY predation by clupeids, percids
-  and the background species would sit.
+  and the background species would sit. (*2026-11-05: the 3.1 is a single-year spike, not a
+  standing juvenile term — see the correction at the end.*)
 - **What this does and does not say.** The two rates are not equivalent: they differ through age
   structure (biomass basis vs numbers at age), through domain (SMS: SD 25–32 excl. Gulf of Riga; the
   grid also holds the western basin) and through the prey pool each is taken on (SSB table above:
@@ -88,4 +90,30 @@ Each entry is that predator's annual consumption of the prey over the prey's mea
   unchanged in kind from October.
 - **Juvenile sprat total predation is now 0.97 yr⁻¹** (October: 3.13). The sprat F change is the
   only production-config change in between, but the October run's seed was not recorded, so seed
-  differences are not ruled out. The cause of that drop is not investigated here.
+  differences are not ruled out. The cause of that drop is not investigated here. (*Resolved the
+  same day — next section.*)
+
+## Correction 2026-11-05 — the October juvenile sprat rate was one year
+
+Re-running current master with ONLY `fisheries.rate.base.fsh2` set back to 0.16365… (seed 0,
+15 yr, determinism keys on) reproduces every October stage rate exactly: sprat 3.126 / 0.603,
+herring 0.612 / 0.567. So the October run was seed 0, and seed is ruled out. But the annual
+`mortalityRate` series shows the 3.13 is not a level:
+
+| arm | sprat juvenile predation, model years 11–15 (yr⁻¹) | 5-yr mean |
+|---|---|---:|
+| sprat F 0.1637 (= October) | 0.71, 0.85, 0.81, 1.03, **12.23** | 3.13 |
+| sprat F 0.369 (current) | 0.83, 0.92, 1.13, 1.07, 0.88 | 0.97 |
+
+From model year 6 on, every year sits at 0.71–1.15 yr⁻¹ in **both** arms except the October arm's
+final year; the October mean is carried by that one year alone. Sprat age-0 standing stock is the same in both arms (by-age bin 0, last
+5 yr: 227 kt vs 233 kt). So:
+
+- **There was no 3× drop in juvenile predation.** The sprat F change perturbed the trajectory and
+  the one-year spike did not recur. Juvenile sprat predation is ~0.8–1.0 yr⁻¹ on either config.
+- **The October readings built on 3.1 are withdrawn**: it is not "an order of magnitude above"
+  cod's attributed M2 as a standing term, and it does not mark a large unbudgeted juvenile
+  pathway. (A sum of per-step rates can spike when a stage holds few fish in some step — CLAUDE.md
+  on mortality-rate outputs; the spike's step-level cause is not traced here.)
+- **For the validator:** a 5-yr *mean* of an annual stage rate is not robust to one spike year. The
+  cod-attributed M2 and the adult rates in this note are steady year to year and unaffected.
