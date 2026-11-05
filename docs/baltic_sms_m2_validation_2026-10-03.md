@@ -114,6 +114,11 @@ final year; the October mean is carried by that one year alone. Sprat age-0 stan
 - **The October readings built on 3.1 are withdrawn**: it is not "an order of magnitude above"
   cod's attributed M2 as a standing term, and it does not mark a large unbudgeted juvenile
   pathway. (A sum of per-step rates can spike when a stage holds few fish in some step — CLAUDE.md
-  on mortality-rate outputs; the spike's step-level cause is not traced here.)
+  on mortality-rate outputs; the spike's step-level cause is not traced here.) (*Traced later the
+  same day: 11.36 of the 12.23 is ONE step, t = 14.25, in which sprat's Juvenil stage held 7×10⁻¹⁹
+  fish — every real juvenile had just matured and the new cohort was still eggs — so the rate is
+  taken on an empty stage. Java's `MortalityOutput` uses the same formula; the validator now
+  reports the annual median for these stage rates (October run: 0.85, current config: 0.92), with
+  the mean kept in the JSON.*)
 - **For the validator:** a 5-yr *mean* of an annual stage rate is not robust to one spike year. The
   cod-attributed M2 and the adult rates in this note are steady year to year and unaffected.
