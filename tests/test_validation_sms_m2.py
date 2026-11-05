@@ -348,3 +348,48 @@ def test_cli_sms_m2_flag_survives_a_missing_sms_block(tmp_path, capsys):
     assert rc == 1
     assert report.exists() and "Validation Report" in report.read_text()
     assert "SMS M2 section skipped" in capsys.readouterr().err
+
+
+def test_cli_json_keeps_the_stage_rate_mean_beside_the_median(tmp_path, monkeypatch):
+    """The --json payload must carry both stage-rate fields: the table shows the median, the JSON
+    is where the mean (and so any empty-stage spike) stays visible. Stubs the SMS side so the
+    test exercises the script's own serializer, not a fixture of OSMOSE outputs."""
+    import scripts.validate_outputs_vs_ices as cli
+
+    row = PredationM2Comparison(
+        model_species="sprat",
+        sms_species="Sprat",
+        sms_stock="spr.27.22-32",
+        sms_m2_mean=0.087,
+        sms_m2_min=0.079,
+        sms_m2_max=0.094,
+        sms_n_years=5,
+        model_predation_rate_by_stage={"Juvenil": 0.85, "Adult": 0.6},
+        model_predation_rate_by_stage_mean={"Juvenil": 3.126, "Adult": 0.6},
+    )
+    import osmose.validation.ices as ices_mod
+
+    # main() imports these from osmose.validation.ices at call time, so patch them there.
+    monkeypatch.setattr(ices_mod, "load_sms_m2", lambda _d: object())
+    monkeypatch.setattr(ices_mod, "compare_predation_m2_to_sms", lambda *a, **k: [row])
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / "index.json").write_text(json.dumps({"model_species_to_ices_stocks": {}}))
+    results = tmp_path / "results"
+    results.mkdir()
+    out = tmp_path / "out.json"
+    cli.main(
+        [
+            "--results-dir",
+            str(results),
+            "--snapshots-dir",
+            str(snap),
+            "--sms-m2",
+            "--json",
+            str(out),
+            "--quiet",
+        ]
+    )
+    (entry,) = json.loads(out.read_text())["sms_m2"]
+    assert entry["model_predation_rate_by_stage"]["Juvenil"] == pytest.approx(0.85)
+    assert entry["model_predation_rate_by_stage_mean"]["Juvenil"] == pytest.approx(3.126)
