@@ -28,21 +28,22 @@ SNAPSHOT_DIR = (
     / "ices_snapshots"
 )
 
-# 7 stocks have a 2024 advice; cod.27.22-24 is category-3 in 2024 (no SSB/F
-# time series), so fall back to its last full 2022 assessment.
+# Nine stocks have a 2026 assessment in SAG (checked 2026-11-06). cod.27.22-24 stays on its
+# 2022 assessment, the last with absolute SSB and F (2025 is a harvest-rate ratio), and
+# fle.27.2223 on 2024, its latest (no 2025 or 2026 entry).
 STOCKS = [
-    ("cod.27.24-32", 2024),
+    ("cod.27.24-32", 2026),
     ("cod.27.22-24", 2022),
-    ("her.27.25-2932", 2024),
-    ("her.27.28", 2024),
-    ("her.27.3031", 2024),
-    ("her.27.20-24", 2024),
-    ("spr.27.22-32", 2024),
+    ("her.27.25-2932", 2026),
+    ("her.27.28", 2026),
+    ("her.27.3031", 2026),
+    ("her.27.20-24", 2026),
+    ("spr.27.22-32", 2026),
     ("fle.27.2223", 2024),
     # Baltic flounder is four ICES stocks; fle.27.2223 alone is ~5% of the catch (2026-11).
-    ("bzq.27.2425", 2024),
-    ("bzq.27.2628", 2024),
-    ("bwp.27.2729-32", 2024),
+    ("bzq.27.2425", 2026),
+    ("bzq.27.2628", 2026),
+    ("bwp.27.2729-32", 2026),
 ]
 
 
@@ -88,6 +89,16 @@ def _flatten_ref_points(raw: dict) -> dict:
     if null_f:
         result["note"] = f"{', '.join(k.upper() for k in null_f)} not defined for this stock"
     return result
+
+
+# Stocks whose SAG unit label is wrong AND that have no Blim to correct it, keyed by
+# (stock, assessment year). Each entry needs the evidence; the guard stays strict for the rest.
+UNIT_OVERRIDES = {
+    # 2026: labelled "SSB, tonnes" but reads 113-207 against 2.7-20 kt of catch a year,
+    # impossible as tonnes; no Blim, no F values, "FMSY proxy" 1. Its 2024 entry was a
+    # tonnes/h biomass index.
+    ("bzq.27.2425", 2026): "index",
+}
 
 
 def _unit_for(raw_assessment: list[dict], blim: str | None) -> str:
@@ -180,7 +191,9 @@ def main(argv: list[str] | None = None) -> None:
                 json.dumps(flat_rp, indent=2) + "\n"
             )
 
-            unit = _unit_for(raw_assessment, flat_rp.get("blim"))
+            unit = UNIT_OVERRIDES.get((stock_key, year)) or _unit_for(
+                raw_assessment, flat_rp.get("blim")
+            )
             if unit == "unknown":
                 # Every snapshotted stock must be classifiable — either the Blim
                 # is missing from the ref-points payload (surprising, worth
