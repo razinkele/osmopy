@@ -2076,9 +2076,13 @@ def simulate(
         if ctx.diet_tracking_enabled and ctx.diet_matrix is not None:
             from osmose.engine.output import aggregate_diet_by_species
 
+            # Rows for background predators too (runtime slots n_species..), so predatorPressure
+            # can attribute what the seal and cormorant eat; dietMatrix slices them back off.
             n_active = ctx._diet_active_rows
             step_diet = aggregate_diet_by_species(
-                ctx.diet_matrix[:n_active], state.species_id[:n_active], config.n_species
+                ctx.diet_matrix[:n_active],
+                state.species_id[:n_active],
+                config.n_species + config.n_background,
             )
             from osmose.engine.processes.predation import disable_diet_tracking
 

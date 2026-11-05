@@ -39,7 +39,9 @@ Model window: last 5 years of run · SMS window: 2018-2022
   **pikeperch, at 1.35 Mt in this run (the known percid overshoot,
   `docs/baltic_percid_overshoot_conclusion_2026-07-05.md`), is the predator the SMS does not have.**
   The background predators — grey seal (no accessibility column, hence full access; CLAUDE.md gotcha)
-  and cormorant — are absent from `predatorPressure` by construction; the consistency check above
+  and cormorant — are absent from `predatorPressure` by construction (*2026-11-04: no longer —
+  `predatorPressure` now carries `GreySeal` and `Cormorant` columns, so this budget can be closed
+  with them; not yet re-run*); the consistency check above
   leaves little room for them on ≥0.5-yr fish, but it is not a stage-matched budget. The juvenile sprat
   term (3.1 yr⁻¹) is not budgeted by this table and is where egg/YOY predation by clupeids, percids
   and the background species would sit.

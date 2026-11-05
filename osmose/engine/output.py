@@ -81,7 +81,7 @@ def write_outputs(
                 step_times.append(o.step / config.n_dt_per_year)
         write_diet_csv(
             path=output_dir / f"{prefix}_dietMatrix_Simu0.csv",
-            step_diet_matrices=step_matrices,
+            step_diet_matrices=[m[: config.n_species] for m in step_matrices],
             step_times=step_times,
             predator_names=config.species_names,
             prey_names=diet_prey_names(config),
@@ -93,7 +93,7 @@ def write_outputs(
             path=trophic / f"{prefix}_predatorPressure_Simu0.csv",
             step_diet_matrices=step_matrices,
             step_times=step_times,
-            predator_names=config.species_names,
+            predator_names=pressure_predator_names(config),
             prey_names=diet_prey_names(config),
             steps_per_record=max(1, int(config.output_record_frequency)),
         )
@@ -524,6 +524,17 @@ def diet_prey_names(config) -> list[str]:
     return [*config.species_names, *config.resource_names]
 
 
+def pressure_predator_names(config) -> list[str]:
+    """PREDATOR axis for ``predatorPressure``: focal species, then background species.
+
+    Matches the runtime slots the engine aggregates diet into (background predators at
+    ``n_species + b``). Java's own predatorPressure HEADER has the same columns, but its writer
+    prints values for focal predators only, leaving the background columns empty; this engine
+    writes them. ``dietMatrix`` keeps the focal axis (``config.species_names``).
+    """
+    return list(config.all_species_names[: config.n_species + config.n_background])
+
+
 def aggregate_diet_by_species(
     diet_matrix: NDArray[np.float64],
     species_id: NDArray[np.int32],
@@ -534,14 +545,16 @@ def aggregate_diet_by_species(
     Args:
         diet_matrix: shape (n_schools, n_prey_columns) — biomass eaten per prey.
         species_id: species index for each school.
-        n_pred_species: number of predator species (focal).
+        n_pred_species: predator rows to keep; schools with a runtime species id at or above it
+            are dropped. The engine passes ``n_species + n_background`` so background predators
+            keep their rows (for ``predatorPressure``); pass ``n_species`` for focal only.
 
     Returns:
         Array of shape (n_pred_species, n_prey_columns) with summed biomass.
     """
     n_prey_cols = diet_matrix.shape[1]
     result = np.zeros((n_pred_species, n_prey_cols), dtype=np.float64)
-    # Filter to focal species only (exclude background species)
+    # Drop schools past the requested predator rows
     focal_mask = species_id < n_pred_species
     if focal_mask.any():
         # Per-column np.bincount instead of the slow np.add.at. bincount sums the
@@ -595,7 +608,8 @@ def _build_diet_dataframe(
     step_times: list[float] = []
     for o in outputs:
         if o.diet_by_species is not None:
-            step_matrices.append(o.diet_by_species)
+            # Focal predators only — background rows go to predatorPressure alone.
+            step_matrices.append(o.diet_by_species[: config.n_species])
             step_times.append(o.step / config.n_dt_per_year)
     if not step_matrices:
         return {}
@@ -720,9 +734,13 @@ def _build_predator_pressure_dataframe(
     # all_species_names here (the #146 defect, missed in e121c6d's first pass) dropped every
     # resource prey row past the second, so planktivores reported impossible consumption:
     # herring came out at Q/B = 0.12 despite feeding 61% on Mesozooplankton.
-    preds, preys = list(config.species_names), diet_prey_names(config)
+    preds, preys = pressure_predator_names(config), diet_prey_names(config)
     rows: list[list[object]] = []
     for mat, t in zip(mats, times, strict=True):
+        if mat.shape != (len(preds), len(preys)):
+            raise ValueError(
+                f"diet matrix shape {mat.shape} != ({len(preds)}, {len(preys)}) at time {t}"
+            )
         scaled = mat / float(per_step)
         for j, prey in enumerate(preys):
             rows.append([t, prey, *scaled[:, j].tolist()])

@@ -1120,7 +1120,9 @@ def _run_baltic_short_with_diet(fr: dict | None = None, width: int = 16):
         # Derived from the config, not hardcoded: this used to read `n_pred_species + 2`
         # (n_species + n_background), which silently encoded the #146 bug and broke the
         # moment production was corrected to n_species + n_resources.
-        prod_width = n_pred_species + int(cfg.get("simulation.nresource", "0"))
+        # n_pred_species now counts background rows too (focal + background), so the focal
+        # half of the width comes from the config, not from it.
+        prod_width = int(cfg["simulation.nspecies"]) + int(cfg.get("simulation.nresource", "0"))
         if result.shape[1] > prod_width:
             return result[:, :prod_width]
         if result.shape[1] < prod_width:
