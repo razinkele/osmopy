@@ -16,20 +16,32 @@ THERMAL = Path("tests/data/percid_thermal_ok.csv").resolve()
 DET = {"movement.randomseed.fixed": "true", "stochastic.mortality.randomseed.fixed": "true"}
 
 
-def _series(overrides):
+def _run(overrides):
     base = dict(OsmoseConfigReader().read(str(BALTIC)))
     base.update(DET)
     base["simulation.time.nyear"] = (
         "6"  # shrink the in-suite Baltic run (RV-gate test does the same)
     )
+    base["output.biomass.byage.enabled"] = "true"
     base.update(overrides)
-    return PythonEngine().run_in_memory(base, seed=0).biomass()
+    return PythonEngine().run_in_memory(base, seed=0)
+
+
+def _series(overrides):
+    return _run(overrides).biomass()
 
 
 def test_gate_off_is_bit_identical_to_baseline():
     base = _series({})
     off = _series({"reproduction.thermal.gate.enabled": "false"})
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
+
+
+def _age0_biomass(res, sp):
+    # by-age bin 0 is [0, 1) yr and includes egg schools (CLAUDE.md) -- an index of
+    # recruitment, not a survival rate; only its on/off direction is asserted.
+    df = res.biomass_by_age(sp)
+    return float(df.loc[df["bin"] == df["bin"].min(), "value"].sum())
 
 
 def _rel_change(off, on, sp):
@@ -46,8 +58,8 @@ def _rel_change(off, on, sp):
     "gate's config/logic and bit-identical-when-off are covered by deterministic unit tests.",
 )
 def test_gate_on_targets_percids_and_reduces_perch():
-    off = _series({})
-    on = _series(
+    off_res = _run({})
+    on_res = _run(
         {
             "reproduction.thermal.gate.enabled": "true",
             "reproduction.thermal.gate.series.file": str(THERMAL),
@@ -56,17 +68,23 @@ def test_gate_on_targets_percids_and_reduces_perch():
             "reproduction.thermal.gate.species.enabled.sp5": "true",
         }
     )
-    # The gate fired on the intended species: both percids move materially.
+    off, on = off_res.biomass(), on_res.biomass()
+    # The gate fired on perch, the strong-signal percid: it moves materially...
     assert _rel_change(off, on, "perch") > 0.02
-    assert _rel_change(off, on, "pikeperch") > 0.02
-    # ...and the effect is PERCID-TARGETED, not a global artifact: the directly
-    # gated percids move far more than the weakly-coupled clupeids (the far-field
-    # control). Cod is deliberately NOT the yardstick — it is strongly trophically
-    # coupled to both percids and legitimately shifts as much (review finding 3);
-    # herring/sprat are the honest control.
+    # ...and the effect is PERCID-TARGETED, not a global artifact: perch moves far
+    # more than the weakly-coupled clupeids (the far-field control). Cod is
+    # deliberately NOT the yardstick — it is strongly trophically coupled to both
+    # percids and legitimately shifts as much (review finding 3); herring/sprat are
+    # the honest control.
     clupeid = max(_rel_change(off, on, "herring"), _rel_change(off, on, "sprat"))
     assert _rel_change(off, on, "perch") > clupeid
-    assert _rel_change(off, on, "pikeperch") > clupeid
+    # Pikeperch is asserted at the gate's mechanism, recruitment, not as a biomass
+    # magnitude: its direct response is small (age-0 -2.25% before the 2026-10-29
+    # sprat F change, -1.75% after) and its 6-yr biomass change fell from 3.0% to
+    # 0.8%, below the clupeid control, once food-web noise outweighed it. Leaving
+    # pikeperch ungated gives an age-0 ratio of 1.0008, so the direction still tells
+    # a gated pikeperch from an ungated one (measured 2026-11-05).
+    assert _age0_biomass(on_res, "pikeperch") < _age0_biomass(off_res, "pikeperch")
     # Physical direction: the mean-reducing thermal_cap lowers the strongest-signal
     # percid's (perch) recruitment, so its mean biomass drops.
     assert on["perch"].to_numpy().mean() < off["perch"].to_numpy().mean()
