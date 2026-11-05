@@ -117,7 +117,7 @@ def _two_focal_one_bkg():
     )
     # rows: cod, sprat, GreySeal; prey cols: cod, sprat, zoo
     mat = np.array([[0.0, 3.0, 1.0], [0.0, 0.0, 5.0], [2.0, 7.0, 0.0]])
-    outputs = [SimpleNamespace(step=1, diet_by_species=mat)]
+    outputs = [SimpleNamespace(step=1, diet_by_species=mat, window_steps=1)]
     return cfg, outputs
 
 
@@ -197,3 +197,64 @@ def test_engine_focal_columns_unchanged_by_background_rows(baltic_run):
         booked = sum(float(m[s == slot].sum()) for m, s in raw)
         assert pp[name].sum() * steps == pytest.approx(booked, rel=1e-9), name
     assert not any(c.startswith(("GreySeal_", "Cormorant_")) for c in dm.columns)
+
+
+# --- Partial final window ------------------------------------------------------------------------
+# When n_steps is not a multiple of output.recordfrequency.ndt, the end-of-run flush sums diet over
+# the leftover steps only; dividing that by the configured window understated the last row.
+
+
+def test_per_window_divisor_list(tmp_path):
+    path = tmp_path / "p.csv"
+    write_predator_pressure_csv(
+        path=path,
+        step_diet_matrices=[np.array([[24.0]]), np.array([[8.0]])],
+        step_times=[1.0, 1.5],
+        predator_names=["cod"],
+        prey_names=["sprat"],
+        steps_per_record=[24, 4],
+    )
+    assert pd.read_csv(path)["cod"].tolist() == [1.0, 2.0]
+
+
+def test_in_memory_partial_window_uses_its_own_length():
+    from osmose.engine.output import _build_predator_pressure_dataframe
+
+    cfg, outputs = _two_focal_one_bkg()
+    cfg.output_record_frequency = 10
+    outputs[0].window_steps = 4
+    df = _build_predator_pressure_dataframe(outputs, cfg)["predatorPressure"]
+    assert df[df["Prey"] == "sprat"].iloc[0]["GreySeal"] == 7.0 / 4
+
+
+def test_engine_partial_final_window_is_a_per_step_mean(tmp_path):
+    from unittest import mock
+
+    import osmose.engine.output as _output
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.demo import osmose_demo
+    from osmose.engine import PythonEngine
+
+    res = osmose_demo("baltic", tmp_path)
+    cfg = dict(OsmoseConfigReader().read(str(res["config_file"])))
+    cfg["simulation.time.nyear"] = "1"
+    cfg["output.recordfrequency.ndt"] = "10"  # 24 steps -> windows of 10, 10, 4
+    real = _output.aggregate_diet_by_species
+    per_step: list[float] = []
+
+    def _capture(diet_matrix, species_id, n_pred_species):
+        agg = real(diet_matrix, species_id, n_pred_species)
+        per_step.append(float(agg.sum()))
+        return agg
+
+    out = tmp_path / "out"
+    out.mkdir()
+    with mock.patch.object(_output, "aggregate_diet_by_species", _capture):
+        PythonEngine().run(cfg, out, seed=42)
+    assert len(per_step) == 24
+    (pp,) = out.rglob("*predatorPressure_Simu0.csv")
+    df = pd.read_csv(pp)
+    totals = df.groupby("Time", sort=True).sum(numeric_only=True)
+    row_totals = totals.sum(axis=1).to_numpy()
+    expected = [np.mean(per_step[0:10]), np.mean(per_step[10:20]), np.mean(per_step[20:24])]
+    assert row_totals == pytest.approx(expected, rel=1e-9)

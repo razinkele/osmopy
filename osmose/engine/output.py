@@ -6,6 +6,7 @@ OsmoseResults reader works with either engine.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -75,10 +76,12 @@ def write_outputs(
     if config.diet_output_enabled:
         step_matrices: list[NDArray[np.float64]] = []
         step_times: list[float] = []
+        step_windows: list[int] = []
         for o in outputs:
             if o.diet_by_species is not None:
                 step_matrices.append(o.diet_by_species)
                 step_times.append(o.step / config.n_dt_per_year)
+                step_windows.append(o.window_steps)
         write_diet_csv(
             path=output_dir / f"{prefix}_dietMatrix_Simu0.csv",
             step_diet_matrices=[m[: config.n_species] for m in step_matrices],
@@ -95,7 +98,7 @@ def write_outputs(
             step_times=step_times,
             predator_names=pressure_predator_names(config),
             prey_names=diet_prey_names(config),
-            steps_per_record=max(1, int(config.output_record_frequency)),
+            steps_per_record=step_windows,
         )
 
     # Write spatial NetCDF outputs when enabled
@@ -675,12 +678,14 @@ def write_predator_pressure_csv(
     step_times: list[float],
     predator_names: list[str],
     prey_names: list[str],
-    steps_per_record: int = 1,
+    steps_per_record: int | Sequence[int] = 1,
 ) -> None:
     """Write predation pressure — prey biomass eaten per predator-prey pair, in tonnes.
 
-    ``steps_per_record`` is the recording-window length; values are DIVIDED by it so a row is the
-    per-step MEAN over the window, matching Java. Verified empirically 2026-07-30: a Java interval
+    ``steps_per_record`` is the recording-window length — one int, or one per matrix (the engine
+    passes each window's own length, since the end-of-run flush can be shorter than the configured
+    window); values are DIVIDED by it so a row is the per-step MEAN over the window, matching
+    Java. Verified empirically 2026-07-30: a Java interval
     row equals ~1/24 of the sum of its 24 per-step rows (0.025-0.054 across pairs, straddling
     1/24 = 0.042 — Java has no numeric seed, so the two runs are different draws), whereas
     ``diet_by_species`` arrives here already summed over the window. Without the division the two
@@ -708,12 +713,17 @@ def write_predator_pressure_csv(
             f"step_diet_matrices length {len(step_diet_matrices)} "
             f"!= step_times length {len(step_times)}"
         )
+    windows = (
+        [steps_per_record] * len(step_diet_matrices)
+        if isinstance(steps_per_record, int)
+        else list(steps_per_record)
+    )
     n_pred, n_prey = len(predator_names), len(prey_names)
     rows: list[list[object]] = []
-    for mat, t in zip(step_diet_matrices, step_times, strict=True):
+    for mat, t, n in zip(step_diet_matrices, step_times, windows, strict=True):
         if mat.shape != (n_pred, n_prey):
             raise ValueError(f"diet matrix shape {mat.shape} != ({n_pred}, {n_prey}) at time {t}")
-        scaled = mat / float(steps_per_record) if steps_per_record else mat
+        scaled = mat / float(n) if n else mat
         for j, prey in enumerate(prey_names):
             rows.append([t, prey, *scaled[:, j].tolist()])
     df = pd.DataFrame(rows, columns=["Time", "Prey", *predator_names])  # type: ignore[arg-type]
@@ -725,23 +735,28 @@ def _build_predator_pressure_dataframe(
     config: EngineConfig,
 ) -> dict[str, pd.DataFrame]:
     """In-memory twin of ``write_predator_pressure_csv`` — same long layout and per-step mean."""
-    mats = [o.diet_by_species for o in outputs if o.diet_by_species is not None]
-    times = [o.step / config.n_dt_per_year for o in outputs if o.diet_by_species is not None]
+    mats: list[NDArray[np.float64]] = []
+    times: list[float] = []
+    windows: list[int] = []  # each window's own length: the end-of-run flush can be shorter
+    for o in outputs:
+        if o.diet_by_species is not None:
+            mats.append(o.diet_by_species)
+            times.append(o.step / config.n_dt_per_year)
+            windows.append(max(1, int(o.window_steps)))
     if not mats:
         return {}
-    per_step = max(1, int(config.output_record_frequency))
     # Must be the same axis as the disk twin and dietMatrix — see diet_prey_names. Using
     # all_species_names here (the #146 defect, missed in e121c6d's first pass) dropped every
     # resource prey row past the second, so planktivores reported impossible consumption:
     # herring came out at Q/B = 0.12 despite feeding 61% on Mesozooplankton.
     preds, preys = pressure_predator_names(config), diet_prey_names(config)
     rows: list[list[object]] = []
-    for mat, t in zip(mats, times, strict=True):
+    for mat, t, n in zip(mats, times, windows, strict=True):
         if mat.shape != (len(preds), len(preys)):
             raise ValueError(
                 f"diet matrix shape {mat.shape} != ({len(preds)}, {len(preys)}) at time {t}"
             )
-        scaled = mat / float(per_step)
+        scaled = mat / float(n)
         for j, prey in enumerate(preys):
             rows.append([t, prey, *scaled[:, j].tolist()])
     return {
