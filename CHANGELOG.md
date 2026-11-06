@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.0] - 2026-11-06
+
+### Features
+
+- **config:** OSMOSE 4.4.1 forcing-key alignment + parity status doc (#137 phase 1) (462bb09)
+- **output:** background predators in dietMatrix (b9c70b1)
+
+### Bug Fixes
+
+- **validation:** stage predation rate as the annual median, not the mean (b9b2dd3)
+
+### Documentation
+
+- **output:** Java 4.4.1 writes background predators in dietMatrix (3b9359f)
+- **claude:** a stage emptied completely writes inf, not just a large rate (e723ae2)
+- **sms-m2:** the October juvenile sprat rate was a one-year spike (c2c7a2b)
+
+### Other
+
+- Merge pull request #207 from razinkele/feat/diet-background-predators (24808f8)
+- Merge pull request #206 from razinkele/data/ices-2026-refresh (d90a9b7)
+- Merge pull request #205 from razinkele/docs/stage-rate-inf (dfaecb1)
+- Merge pull request #208 from razinkele/feat/osmose-441-phase1 (e88dda4)
+- **baltic:** refresh ICES SAG snapshots to the 2026 advice (#133, #135) (f15cc3a)
+- Merge pull request #204 from razinkele/fix/stage-rate-median (7b8850b)
+- Merge pull request #203 from razinkele/docs/sms-m2-juvenile-spike (1467756)
+
+### Tests
+
+- **config:** add the 4.4.1 Java-only forcing keys to the frozen allowlist snapshot (321d4c6)
+- **validation:** the --json payload keeps the stage-rate mean (review) (6160c3f)
+
 ## [1.7.0] - 2026-11-05
 
 ### Features
