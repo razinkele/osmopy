@@ -1,19 +1,26 @@
 """Unit tests for osmose.java_background_staging (the Baltic Java-4.4.1 staging recipe, C2)."""
 
+import csv
 import hashlib
+import os
 import shutil
+import subprocess
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.java_background_staging import (
     BG_ACCESS,
+    _rescale_background_weights,
     augment_accessibility,
     background_staging_supported,
     inline_biomass_series,
 )
+
+_JAR = os.environ.get("OSMOSE_JAR")
 
 
 def test_inline_biomass_from_nc():
@@ -168,3 +175,124 @@ def test_augment_accessibility_warns_on_partially_unmatched_prey_keys(tmp_path):
     src.write_text("v Prey / Predator >;cod_west\ncod_west;0.05\nherring;0.1\n")
     with pytest.warns(UserWarning, match="match no prey row"):
         augment_accessibility(src, {"GreySeal": {"herring": 0.4, "cod": 0.3}})
+
+
+def _background_indices(cfg: dict) -> set[str]:
+    return {
+        k[len("species.type.sp") :]
+        for k, v in cfg.items()
+        if k.startswith("species.type.sp") and str(v).strip().lower() == "background"
+    }
+
+
+def _condition_factors(master: Path) -> dict[str, list[str]]:
+    """sp index -> every condition-factor value the master defines for it, in file order."""
+    out: dict[str, list[str]] = {}
+    prefix = "species.length2weight.condition.factor.sp"
+    for line in master.read_text().splitlines():
+        key, sep, value = line.partition(";")
+        if sep and key.strip().startswith(prefix):
+            out.setdefault(key.strip()[len(prefix) :], []).append(value.strip())
+    return out
+
+
+def test_java_staging_rescales_only_background_weights_to_tonnes(tmp_path):
+    """REGRESSION: Java 4.4.x keeps background-school weights in GRAMS, so every seal and cormorant
+    school was emptied the first time any mortality cause touched it, and its predation with it.
+
+    Staged through `stage_config_for_java`, the path every Java run takes (reconcile included).
+    Each background factor must appear ONCE — Java reads only the first definition of a key — at
+    1e-6 of its plain-write value. The control arm is a plain `write_temp_config` of the same
+    config: every focal factor must match it byte for byte, which is what catches a rewrite that
+    reaches past the background species.
+    """
+    from ui.pages.run import stage_config_for_java, write_temp_config
+
+    src = Path("data/baltic")
+    raw = dict(OsmoseConfigReader().read(str(src / "baltic_all-parameters.csv")))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the unused pre-split `cod` key warns by design
+        master, _ = stage_config_for_java(raw, tmp_path / "stage", src, target_version="4.4.1")
+    plain = write_temp_config(raw, tmp_path / "plain", source_dir=src, target_version="4.4.1")
+
+    staged, control = _condition_factors(master), _condition_factors(plain)
+    background = _background_indices(raw)
+    assert len(background) == 2 and background <= set(staged)  # GreySeal + Cormorant
+    for idx, values in staged.items():
+        if idx in background:
+            assert len(values) == 1, f"sp{idx} is defined {len(values)}x; Java reads only the first"
+            assert float(values[0]) == pytest.approx(float(control[idx][0]) * 1e-6, rel=1e-9)
+        else:
+            assert values == control[idx], f"focal sp{idx} condition factor was rewritten"
+
+
+def test_rescale_raises_when_a_background_species_has_no_condition_factor():
+    """Java's BackgroundSpecies cannot run without the factor; say which species lacks it."""
+    with pytest.raises(ValueError, match=r"background species \['16'\]"):
+        _rescale_background_weights(
+            "species.length2weight.condition.factor.sp15 ; 0.04\n", ["15", "16"]
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not _JAR,
+    reason="opt-in: set OSMOSE_JAR to a 4.4.x jar (a 2-yr Java run). Run it when changing the Java "
+    "background staging or switching jars: only a real run shows what the jar does with it.",
+)
+def test_java_holds_background_biomass_at_its_forcing(tmp_path):
+    """END-TO-END: on the jar itself, seals and cormorants stay at their forcing every step.
+
+    Before the weight rescale, Java's end-of-step biomass for both fell to zero within a year
+    while the start-of-step biomass still showed the forcing. Nothing eats them (their prey rows
+    are zero), so the per-step output must equal forcing x multiplier exactly.
+    """
+    from osmose.config.aliases import _numeric_version, target_version_for_jar
+    from osmose.demo import osmose_demo
+    from osmose.java_config_reconcile import sanitize_java_name
+    from ui.pages.run import stage_config_for_java
+
+    version = target_version_for_jar(_JAR)
+    if _numeric_version(version) < _numeric_version("4.4.0"):
+        pytest.skip(f"OSMOSE_JAR is a {version} jar; background staging targets 4.4.x")
+    res = osmose_demo("baltic", tmp_path / "demo")
+    cfg = dict(OsmoseConfigReader().read(str(res["config_file"])))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the unused pre-split `cod` key warns by design
+        master, overrides = stage_config_for_java(
+            cfg, tmp_path / "stage", res["config_file"].parent, target_version=version
+        )
+    out = tmp_path / "out"
+    cmd = [
+        "java",
+        "-Xmx2g",
+        "-jar",
+        _JAR,
+        str(master),
+        f"-Poutput.dir.path={out}",
+        "-Psimulation.time.nyear=2",
+        "-Poutput.start.year=0",
+        "-Poutput.recordfrequency.ndt=1",
+        *[f"-P{k}={v}" for k, v in overrides.items()],
+    ]
+    run = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    assert run.returncode == 0, run.stdout[-3000:]
+
+    rows = [
+        ln
+        for ln in next(out.rglob("*biomass_Simu*.csv")).read_text().splitlines()
+        if not ln.lstrip().startswith('"Mean')
+    ]
+    header = [h.strip().strip('"') for h in next(csv.reader([rows[0]]))]
+    data = np.array([[float(c) for c in next(csv.reader([ln]))] for ln in rows[1:]])
+    nc = min(master.parent.glob("*predator*biomass*.nc"))
+    for idx in sorted(_background_indices(cfg)):
+        name = cfg[f"species.name.sp{idx}"]
+        forcing = inline_biomass_series(nc, name)
+        multiplier = float(cfg.get(f"species.biomass.multiplier.sp{idx}", "1"))
+        expected = [forcing[step % len(forcing)] * multiplier for step in range(len(data))]
+        got = data[:, header.index(sanitize_java_name(name))]
+        assert np.allclose(got, expected, rtol=1e-4), (
+            f"{name}: Java's per-step biomass {got[:6]}... departs from its forcing "
+            f"{expected[:6]}... — background schools are being emptied mid-step again"
+        )

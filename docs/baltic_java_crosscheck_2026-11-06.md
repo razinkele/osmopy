@@ -5,14 +5,16 @@ uses **2×** (`species.biomass.multiplier.sp16 = 2.0` never reached Java's `spec
 The question here is whether earlier Java cross-checks involving the background predators have to be
 re-read.
 
-**Answer: no conclusion changes.** The fix moves Java's equilibria by at most about 5%, and only perch
-moves clearly outside run-to-run noise. The Python↔Java divergence recorded on 2026-07-30
+**Answer: no conclusion changes.** The Python↔Java divergence recorded on 2026-07-30
 (`docs/baltic_java_crossengine_fidelity_2026-07-30.md`) is still there and essentially unchanged:
-Java drives sprat extinct and runs most other species 5–100× above Python. The Cormorant defect was
-real but does not explain that divergence.
+Java drives sprat extinct and runs most other species 5–100× above Python.
 
-One new open finding is in §3: Java's *reported* background-predator biomass collapses within each
-step even though nothing in the staged config kills or fishes them.
+Chasing why Java's seal and cormorant biomass collapsed (§3) uncovered a second, larger defect: a
+**units bug in Java 4.4.x itself** that empties every background school mid-step and with it most of
+their predation. The staging now works around it. Both background-predator fixes together — the
+multiplier and the units bug — move Java's equilibria by at most 17% (cod_west). Neither explains the
+divergence. *(Updated 2026-11-07: §3 was first published as an open finding; §2's A/B ran under the
+units bug.)*
 
 Jar: `osmose-java/osmose-4.4.1-jar-with-dependencies.jar`. Config: the production `data/baltic` at
 `125a0143` (v1.8.0), `--params current`, 50 yr. The Java arm pins off the two Python-only features it
@@ -82,41 +84,98 @@ With 2–3 runs per arm these are effect sizes, not significance tests.
 about 5% at most, against a cross-engine gap of 5–100×. None of the July conclusions depends on the
 multiplier.
 
-## 3. Open finding: Java's reported background biomass collapses within each step
+**Caveat, found afterwards (§3):** every run in this table carried the Java units bug, which empties
+background schools mid-step and switches off most of their predation. The table therefore measured
+the multiplier with most cormorant predation already gone, and understates it. §3's combined
+comparison replaces its verdict; the conclusion does not change.
+
+## 3. Root cause: Java 4.4.x keeps background-school weights in grams
+
+### Symptom
 
 Java's annual biomass output shows GreySeal and Cormorant at about 1–3% of their forcing after the
-first year. The forcing is 4,500 t and 500 t ×2 = 1,000 t. The Python engine reports a constant
-4,500 / 1,000 t.
-
-A 2-yr Java run with per-step output (`output.recordfrequency.ndt=1`) shows:
+first year. The forcing is 4,500 t and 500 t ×2 = 1,000 t, and the Python engine reports a constant
+4,500 / 1,000 t. A 2-yr Java run with per-step output (`output.recordfrequency.ndt=1`) shows:
 
 - **The forcing is applied.** `biomassPredPreyIni` (start of step, before mortality) is exactly
   4,500 / 1,000 t at every step.
-- **They do eat.** Their `dietMatrix` columns sum to 100% at every step from t = 0.54 yr on. They
-  are all-NaN before that, which may be when Java's diet output starts recording rather than when
-  they start eating.
-- **But the end-of-step biomass in `biomass_Simu0.csv` falls.** It holds 4,500 / 1,000 t for three
-  steps, then drops in whole-school chunks (multiples of 292.5 t for the seal). By year 2 it is zero
-  in most steps.
+- **The end-of-step biomass falls.** It holds 4,500 / 1,000 t for three steps, then drops in
+  whole-school chunks (multiples of 292.5 t for the seal). By year 2 it is zero in most steps.
+- **Nothing is configured to kill them.** Their prey rows in the accessibility matrix are zero,
+  focal predators ate 0 t of either in every step, both have zero catchability, discards and yield,
+  and v4.4.1's `MortalityProcess` skips background schools for starvation and additional mortality.
 
-Ruled out from the staged config:
+### Mechanism (read from the v4.4.1 source)
 
-- **Predation:** the GreySeal and Cormorant *prey* rows of the accessibility matrix are all zero.
-- **Fishing:** both species have all-zero catchability and discard rows, and Java's yield output for
-  them is zero.
-- **Starvation and additional mortality:** v4.4.1's `MortalityProcess` skips background schools for
-  both (`if (seq >= ns) break`).
+- `BackgroundSchool.getWeight()` returns `BackgroundSpecies.computeWeight(length)`, documented as
+  "the weight in gram". A focal `School` converts the same quantity to tonnes (`School.java:564`),
+  and every consumer of `getWeight()` assumes tonnes: `biom2abd`/`abd2biom`, and the ingestion cap
+  `rate × (getWeight() × 1e6)^β × N × 1e-6` in `PredationMortality.java:176`.
+- So `biom2abd` gives a background school a million times too few animals: a 292.5 t seal school
+  holds 0.0055 seals. At the start of each step `setBiomass()` writes the biomass directly, which is
+  why the start-of-step figure looks right.
+- The fishery module runs its FISHING case for background schools too, and calls `incrementNdead`
+  even at zero catch. That sets `abundanceHasChanged`, so the next read recomputes the school
+  (`updateBiomAndAbd`): 0.0055 − 0 animals, floored to 0 below one animal. The school's biomass
+  **and its ingestion cap** are zero for the rest of the step.
+- With β = 1 (both species here) the gram/tonne error cancels inside the cap, so a school eats
+  correctly until that first recompute, and nothing after it.
 
-One possible mechanism is that the reported end-of-step figure is computed per cell. v4.4.1 creates
-background schools per cell on demand (`getBackgroundSchool(cell)`), so cells the mortality loop
-never visits may drop out of the total. **That is not verified.** What is measured is that Java's
-end-of-step background biomass output does not track the forcing, while start-of-step biomass and
-diet do.
+The background condition factor feeds nothing but `computeWeight`, and `BackgroundSchool.getWeight()`
+is its only caller. The same code is in v4.4.0 and on upstream `master` as of its 2026-06-30 push.
 
-**Why it matters:** any reading of Java's background biomass output, or anything derived from it,
-will be wrong. Whether the predation the background predators actually exert in Java is also reduced
-is not settled. Java's `predatorPressure` omits background predator columns, so this run cannot
-measure their consumption in tonnes.
+### Proof by intervention (2-yr Java runs, fishing on unless stated)
+
+| Run | Seals and cormorants (end of step) |
+|---|---|
+| Staging as shipped before this fix | collapse within a year |
+| Fishing switched off (`simulation.fishing.mortality.enabled=false`) | exactly the forcing, every step |
+| Every catchability set to 0 (override verified: focal yield 0 everywhere) | still collapse |
+| Background condition factor ×10⁻⁶ (weights become tonnes) | exactly the forcing, every step |
+
+The second and third rows locate the trigger in the fishery branch's bookkeeping, not in any
+fishing rate. The fourth is the fix.
+
+### Effect on Java's food web (50 yr, final-decade means, kt)
+
+Workaround (2 runs) against the staging with the bug (3 runs, all with Cormorant at 2×):
+
+| species | bug | bug fixed | change |
+|---|---|---|---|
+| cod_west | 353, 385, 362 | 298, 323 | **−15%**, separated |
+| cod_east | 898, 904, 895 | 901, 864 | −2%, overlaps |
+| herring | 1,888, 1,875, 1,838 | 1,946, 1,912 | **+3%**, separated |
+| sprat | 0, 0, 0 | 0, 0 | extinct in both |
+| flounder | 3,111, 3,121, 3,181 | 3,334, 3,400 | **+7%**, separated |
+| perch | 2,174, 2,109, 2,270 | 2,090, 2,169 | −3%, overlaps |
+| pikeperch | 8,490, 8,359, 8,532 | 8,338, 8,564 | 0%, overlaps |
+| smelt | 4,091, 4,089, 4,179 | 4,293, 4,121 | +2%, overlaps |
+| stickleback | 4,828, 4,817, 4,554 | 4,559, 4,649 | −3%, overlaps |
+
+Both background-predator fixes together (units bug and Cormorant 2×) against Java exactly as it ran
+before #208 (bug and 1×, the §2 runs): cod_west **−17%**, perch **−7%**, herring **+7%** and
+stickleback −3%, all separated; the rest overlap. That is the total correction to earlier Java cross-checks. The flounder
+rise is measured, its mechanism is not.
+
+Java still drives sprat extinct and runs cod_west about 23× above Python. Restoring the seals and
+cormorants does not close the gap.
+
+### The fix in the staging
+
+`stage_background_for_java` (`osmose/java_background_staging.py`) now scales each background
+species' `species.length2weight.condition.factor` by 10⁻⁶, which makes the "gram" weight numerically
+tonnes. It rewrites the master's line **in place**: Java keeps the first definition of a key and
+ignores later ones (`Configuration.java:921-929`), so an appended corrected line is dead. A mutation
+test confirmed this on the jar — with the corrected lines appended instead of rewritten, the bug
+reappears unchanged.
+
+The 2-yr probes and 50-yr runs above applied the factor as `-P` overrides; the PR ships an in-place
+edit of the master. `tests/test_java_background_staging.py::test_java_holds_background_biomass_at_its_forcing`
+runs the shipped path on the jar (opt-in: set `OSMOSE_JAR` to a 4.4.x jar) and asserts both species
+stay at their forcing every step.
+
+Remove the workaround once a jar returns tonnes. With β = 1 a doubled correction is invisible in
+biomass and predation, so no test can detect that it has outlived the bug.
 
 ## Reproduce
 
@@ -127,7 +186,13 @@ PYTHONPATH=. .venv/bin/python scripts/baltic_stability_certify.py --params curre
 
 The A/B and per-step probes were one-off scratch scripts. Each stages through `_prepare_java_cfg` +
 `stage_config_for_java` (the same path `certify_java` uses). The A/B adds `-Pspecies.multiplier.sp16=1`
-for the 1× arm. The probe adds `-Psimulation.time.nyear=2 -Poutput.recordfrequency.ndt=1`.
+for the 1× arm. The probe adds `-Psimulation.time.nyear=2 -Poutput.recordfrequency.ndt=1`. The §3
+interventions add `-Psimulation.fishing.mortality.enabled=false`, an all-zero
+`-Pfisheries.catchability.file=…`, or `-Pspecies.length2weight.condition.factor.sp15=4e-8` and
+`…sp16=4e-9`. The §3 bug-fixed arm is the 50-yr A/B script with only the condition-factor overrides.
+
+On a checkout with this fix, the condition factors are already rescaled in the staged master; the
+opt-in end-to-end test above is the one-command check.
 
 ## Appendix — generated certification output
 

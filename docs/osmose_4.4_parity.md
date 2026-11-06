@@ -53,6 +53,13 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 | Ragged 4.4.1 mortality header | done | #141 |
 | NetCDF chunking default | N/A | Writer-side Java detail |
 
+## Java-side defects worked around in staging
+
+| Defect | Versions | Workaround |
+|---|---|---|
+| `BackgroundSchool.getWeight()` returns grams where every consumer expects tonnes, so a background school holds 10⁶× too few animals and is emptied (biomass and predation) the first time anything increments its deaths; the fishery module does so every step | v4.4.0, v4.4.1, upstream `master` as of 2026-06-30 | `stage_background_for_java` scales the background `species.length2weight.condition.factor` ×10⁻⁶ in place. Remove it when a jar returns tonnes. Details: `docs/baltic_java_crosscheck_2026-11-06.md` §3 |
+| A key defined twice keeps its FIRST value (`Configuration.java:921-929`) | all | Staging rewrites keys in place or passes `-P`; an appended correction is ignored |
+
 ## Phase plan (from the issue)
 
 - **Phase 1** (config alignment, low risk): this document; the resource-forcing and background
@@ -65,4 +72,7 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 
 Any Java cross-check involving the Baltic background predators (`certify_java`, the UI Java path,
 `scripts/baltic_440_smoke.py`) that ran before 2026-11-06 had Cormorant at half the Python engine's
-biomass. Re-run before comparing seal and cormorant effects across engines.
+biomass, and any that ran before 2026-11-07 had its seal and cormorant schools emptied mid-step by
+the weight-units defect above. The combined correction is at most 17% on any species
+(`docs/baltic_java_crosscheck_2026-11-06.md` §3); re-run before comparing seal and cormorant
+effects across engines.
