@@ -136,6 +136,15 @@ class TestParseBackgroundSpecies:
         assert bkg.multiplier == pytest.approx(2.5)
         assert bkg.offset == pytest.approx(100.0)
 
+    def test_multiplier_from_java_441_key(self):
+        """Java 4.4.1 names the background multiplier species.multiplier.spN (#137). It is read
+        when the legacy key is absent; the legacy key wins when both are set."""
+        cfg = {**_make_base_config(), **_make_bkg_config(file_idx=10)}
+        cfg["species.multiplier.sp10"] = "3.0"
+        assert parse_background_species(cfg, n_focal=1, n_dt_per_year=24)[0].multiplier == 3.0
+        cfg["species.biomass.multiplier.sp10"] = "2.5"
+        assert parse_background_species(cfg, n_focal=1, n_dt_per_year=24)[0].multiplier == 2.5
+
     def test_forcing_nsteps_per_species_override(self):
         """forcing_nsteps_year is read from per-species key when present."""
         cfg = {**_make_base_config(), **_make_bkg_config(file_idx=10)}

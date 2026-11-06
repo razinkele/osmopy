@@ -232,7 +232,12 @@ def parse_background_species(
         else:
             fr_halfsat = _FR_HALFSAT_SENTINEL
 
-        multiplier = float(cfg.get(f"species.biomass.multiplier.sp{i}", "1.0"))
+        # Java 4.4.1's BackgroundSpecies reads species.multiplier.spN; accept it when the legacy
+        # Python key is absent.
+        multiplier = float(
+            cfg.get(f"species.biomass.multiplier.sp{i}")
+            or cfg.get(f"species.multiplier.sp{i}", "1.0")
+        )
         offset = float(cfg.get(f"species.biomass.offset.sp{i}", "0.0"))
 
         # Per-species override, then global fallback, then n_dt_per_year

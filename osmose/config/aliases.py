@@ -152,6 +152,9 @@ def _emit_background_species_keys(cfg: dict[str, str]) -> dict[str, str]:
     For each ``species.type.spN == "background"`` species, emit ``species.multiplier.spN`` (a
     scalar — 4.4.x reads it via getFloat; no per-class form) and ``species.beta.spN`` (the
     predation allometric exponent; legacy default 1). Only fills absent keys (never overwrites).
+    The multiplier defaults to the Python engine's ``species.biomass.multiplier.spN`` when set:
+    the staged inline biomass is the raw NetCDF series, so defaulting to 1 ran Baltic's Cormorant
+    (multiplier 2.0) at half the Python engine's biomass on every Java arm.
     The inline ``species.biomass.spN`` array is NOT emitted here — it needs the predator NetCDF,
     materialized at staging time (see scripts/baltic_440_smoke.py); ``species.biomass.{mode,file,
     varname}`` are the *resource* contract and are NOT used by background species.
@@ -161,7 +164,9 @@ def _emit_background_species_keys(cfg: dict[str, str]) -> dict[str, str]:
         if not key.startswith("species.type.sp") or str(val).strip().lower() != "background":
             continue
         idx = key[len("species.type.sp") :]
-        result.setdefault(f"species.multiplier.sp{idx}", "1")
+        result.setdefault(
+            f"species.multiplier.sp{idx}", cfg.get(f"species.biomass.multiplier.sp{idx}", "1")
+        )
         result.setdefault(f"species.beta.sp{idx}", "1")
     return result
 

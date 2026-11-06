@@ -213,8 +213,11 @@ class ResourceState:
             self._forcing_var_names.append(name)
 
             # Per-species NetCDF file (EEC: all point to the same file)
+            # 4.4.1 renamed the key to species.biomass.file.spN (ResourceForcing.java); accept both.
             if not nc_file:
-                nc_file = cfg.get(f"species.file.sp{fi}", "")
+                nc_file = cfg.get(f"species.file.sp{fi}", "") or cfg.get(
+                    f"species.biomass.file.sp{fi}", ""
+                )
 
         # Temporal resolution from config
         self._n_forcing_steps = int(
