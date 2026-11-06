@@ -164,8 +164,12 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "simulation.restart.recordfrequency.ndt",
         "simulation.restart.spinup.nyear",
         "species.age.sp{idx}",
+        "species.biomass.constant.sp{idx}",  # 4.4.1 forcing keys, Java-only (#137)
+        "species.biomass.mode.sp{idx}",
         "species.biomass.nsteps.year",
+        "species.biomass.sp{idx}",
         "species.biomass.total.sp{idx}",
+        "species.biomass.varname.sp{idx}",
         "species.conversion2tons.sp{idx}",
         "species.first.feeding.age.sp{idx}",
         "species.length.sp{idx}",
