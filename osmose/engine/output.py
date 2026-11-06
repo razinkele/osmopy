@@ -531,10 +531,11 @@ def pressure_predator_names(config) -> list[str]:
     """PREDATOR axis for ``predatorPressure`` and ``dietMatrix``: focal, then background species.
 
     Matches the runtime slots the engine aggregates diet into (background predators at
-    ``n_species + b``). Java's predatorPressure and DietOutput (``DietOutput.java`` loops over
-    ``getNSpecies() + getNBkgSpecies()``) carry the same predator columns, but Java fills them only
-    for schools in ``getPresentSchools()``, so its background columns read empty/NaN; this engine
-    writes what the background predators ate.
+    ``n_species + b``). Java 4.4.1's ``DietOutput`` writes these background predator columns with
+    values (``update()`` also iterates ``getBkgSchoolSet()``). Its ``PredatorPressureOutput``
+    accumulates them too but prints only the focal predator columns, leaving the background ones
+    empty; this engine writes them in both. (Before 4.4.0, background schools were not
+    ``School`` objects and neither output saw them.)
     """
     return list(config.all_species_names[: config.n_species + config.n_background])
 
