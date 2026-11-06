@@ -80,6 +80,16 @@ def test_diet_distance_shape_mismatch():
     assert diet_distance(sim, obs) == float("inf")
 
 
+def test_diet_distance_ignores_predator_columns_the_observed_matrix_lacks():
+    """dietMatrix gained background-predator columns (2026-11); an observed matrix written
+    without them must still compare on the shared columns, not return inf."""
+    sim = pd.DataFrame(
+        {"Time": [1.0], "cod_sprat": [75.0], "cod_zoo": [25.0], "GreySeal_sprat": [100.0]}
+    )
+    obs = pd.DataFrame({"Time": [1.0], "cod_sprat": [70.0], "cod_zoo": [30.0]})
+    assert diet_distance(sim, obs) == pytest.approx(np.sqrt(50.0))
+
+
 def test_normalized_rmse():
     sim = np.array([100, 110, 90])
     obs = np.array([100, 100, 100])

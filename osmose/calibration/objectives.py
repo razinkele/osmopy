@@ -56,9 +56,17 @@ def diet_distance(simulated: pd.DataFrame, observed: pd.DataFrame) -> float:
     """Frobenius norm distance between diet composition matrices.
 
     Both DataFrames should be square matrices with predator rows and prey columns.
+
+    When every numeric column of ``observed`` is also a column of ``simulated``, the simulated
+    frame is cut to those columns first, so an observed matrix without the background-predator
+    columns ``dietMatrix`` gained in 2026-11 still compares on the shared predators.
     """
-    sim_vals = simulated.select_dtypes(include=[np.number]).values
-    obs_vals = observed.select_dtypes(include=[np.number]).values
+    obs_num = observed.select_dtypes(include=[np.number])
+    sim_num = simulated.select_dtypes(include=[np.number])
+    if set(obs_num.columns) < set(sim_num.columns):
+        sim_num = sim_num[list(obs_num.columns)]
+    sim_vals = sim_num.values
+    obs_vals = obs_num.values
 
     if sim_vals.shape != obs_vals.shape:
         return float("inf")
