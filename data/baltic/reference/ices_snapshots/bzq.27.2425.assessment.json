@@ -559,5 +559,27 @@
     "discards": "534.634634091398",
     "low_ssb": "",
     "high_ssb": ""
+  },
+  {
+    "year": "2024",
+    "ssb": "113.4315763",
+    "recruitment": "",
+    "f": "",
+    "catches": "4073.65759663174",
+    "landings": "3711.1242",
+    "discards": "362.533396631741",
+    "low_ssb": "",
+    "high_ssb": ""
+  },
+  {
+    "year": "2025",
+    "ssb": "134.0602286",
+    "recruitment": "",
+    "f": "",
+    "catches": "2733.14192750904",
+    "landings": "2374.0661",
+    "discards": "359.075827509045",
+    "low_ssb": "",
+    "high_ssb": ""
   }
 ]

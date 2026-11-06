@@ -1,6 +1,6 @@
 {
-  "advice_year": 2024,
-  "created": "2026-04-18",
+  "advice_year": 2026,
+  "created": "2026-11-06",
   "model_species_to_ices_stocks": {
     "cod_west": [
       "cod.27.22-24"
@@ -59,7 +59,7 @@
   },
   "f_type_by_stock": {
     "cod.27.24-32": {
-      "description": "Fishing pressure: Relative",
+      "description": "",
       "units": ""
     },
     "cod.27.22-24": {
@@ -67,8 +67,8 @@
       "units": ""
     },
     "her.27.25-2932": {
-      "description": "F",
-      "units": "ratio"
+      "description": "F/Fmsy",
+      "units": ""
     },
     "her.27.28": {
       "description": "F",
@@ -91,7 +91,7 @@
       "units": ""
     },
     "bzq.27.2425": {
-      "description": "",
+      "description": "F",
       "units": ""
     },
     "bzq.27.2628": {
@@ -99,22 +99,22 @@
       "units": "ratio"
     },
     "bwp.27.2729-32": {
-      "description": "F",
-      "units": ""
+      "description": "Lfm/Lmean",
+      "units": "ratio"
     }
   },
   "advice_year_by_stock": {
-    "cod.27.24-32": 2024,
+    "cod.27.24-32": 2026,
     "cod.27.22-24": 2022,
-    "her.27.25-2932": 2024,
-    "her.27.28": 2024,
-    "her.27.3031": 2024,
-    "her.27.20-24": 2024,
-    "spr.27.22-32": 2024,
+    "her.27.25-2932": 2026,
+    "her.27.28": 2026,
+    "her.27.3031": 2026,
+    "her.27.20-24": 2026,
+    "spr.27.22-32": 2026,
     "fle.27.2223": 2024,
-    "bzq.27.2425": 2024,
-    "bzq.27.2628": 2024,
-    "bwp.27.2729-32": 2024
+    "bzq.27.2425": 2026,
+    "bzq.27.2628": 2026,
+    "bwp.27.2729-32": 2026
   },
   "sms_m2": {
     "source": "ICES WGSAM Eastern Baltic Sea SMS key run 2025 (GitHub artefact; the WGSAM 2025 report was not yet in the ICES library when snapshotted)",

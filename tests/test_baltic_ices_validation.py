@@ -40,7 +40,7 @@ def report(validator_module):
 
 def test_manifest_exists_and_is_readable():
     manifest = json.loads(MANIFEST.read_text())
-    assert manifest["advice_year"] == 2024
+    assert manifest["advice_year"] == 2026
     assert "model_species_to_ices_stocks" in manifest
     assert manifest["model_species_to_ices_stocks"]["sprat"] == ["spr.27.22-32"]
     # The cod E/W split (2026-07-25) is reflected in the manifest; an aggregate 'cod' key
@@ -198,14 +198,15 @@ def test_ices_ssb_envelope_empty_intersection_returns_none(validator_module, mon
 def test_both_cod_stocks_get_f_rows_from_their_own_fishery(report, validator_module):
     """Since the split each cod stock has its own fishery (fsh0 / fsh8) and its own
     ICES stock. cod_west compares against the tonnes stock with nothing excluded;
-    cod_east has only the index-unit stock, so it takes the index-unit fallback
-    (a dimensionless F is still an F) and excludes nothing."""
+    cod_east has only the index-unit stock and excludes nothing. Its 2026 assessment
+    publishes no F at all (the 2024 one had a relative F), so it has a row with no ICES F."""
     f_rows = {r["species"]: r for r in report["f_rates"]}
     assert "cod" not in f_rows
     assert f_rows["cod_west"]["excluded_index_stocks"] == []
     assert f_rows["cod_west"]["ices_f_weighted"] is not None
     assert f_rows["cod_east"]["excluded_index_stocks"] == []
-    assert f_rows["cod_east"]["ices_f_weighted"] is not None
+    assert f_rows["cod_east"]["ices_f_weighted"] is None
+    assert f_rows["cod_east"]["in_tolerance"] is None
     # Each stock reads its OWN fishery (fsh0 vs fsh8) — assert the mapping, not the values,
     # which could legitimately coincide.
     idx = validator_module._SPECIES_FSH_INDEX
@@ -246,22 +247,18 @@ def test_herring_f_reported_without_verdict_because_coverage_is_partial(report):
 
 
 def test_relative_ices_f_gets_no_verdict(report):
-    """cod.27.24-32 and fle.27.2223 publish F as a relative index. Their rows report the
-    value flagged relative with no verdict; absolute-F species keep theirs, so the rule
-    cannot pass by silencing every row."""
+    """fle.27.2223 and bzq.27.2628 publish F as F/FMSY, and bwp.27.2729-32 (2026) a
+    length-based Lfm/Lmean ratio in the F column. Their row reports the value flagged
+    relative with no verdict; absolute-F species keep theirs, so the rule cannot pass by
+    silencing every row."""
     f_rows = {r["species"]: r for r in report["f_rates"]}
-    for species, stock in (
-        ("cod_east", "cod.27.24-32"),
-        ("flounder", "fle.27.2223"),
-        ("flounder", "bzq.27.2628"),
-    ):
-        row = f_rows[species]
-        assert row["ices_f_relative"] is True, species
-        assert row["in_tolerance"] is None, species
-        assert stock in row["no_verdict_reason"], species
-    # bzq.27.2425 and bwp.27.2729-32 publish no F values: they must not be called "relative".
-    for stock in ("bzq.27.2425", "bwp.27.2729-32"):
-        assert stock not in f_rows["flounder"]["no_verdict_reason"]
+    for stock in ("fle.27.2223", "bzq.27.2628", "bwp.27.2729-32"):
+        row = f_rows["flounder"]
+        assert row["ices_f_relative"] is True
+        assert row["in_tolerance"] is None
+        assert stock in row["no_verdict_reason"], stock
+    # bzq.27.2425's 2026 entry says "F" but publishes no F values: it must not be listed.
+    assert "bzq.27.2425" not in f_rows["flounder"]["no_verdict_reason"]
     for species in ("cod_west", "sprat"):
         assert f_rows[species]["ices_f_relative"] is False, species
         assert f_rows[species]["in_tolerance"] is not None, species

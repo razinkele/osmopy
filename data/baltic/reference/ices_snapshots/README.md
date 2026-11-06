@@ -12,10 +12,11 @@ mortality rates). Taken via the `ices` MCP server (same payload shape as
   `blim`, `bpa`, `msy_btrigger`, `f_age_range`, `recruitment_age`,
   optionally `note`.
 
-Advice year: **2024** for ten stocks; **2022** for `cod.27.22-24`
-(western Baltic cod is category-3 in 2024 — no SSB/F time series
-published, so the last full assessment is used). Covers the 2018–2022
-window used for calibration targets in `biomass_targets.csv`.
+Advice year (refreshed 2026-11-06): **2026** for nine stocks; **2024** for `fle.27.2223`
+(no 2025 or 2026 entry); **2022** for `cod.27.22-24` (category-3 since — the 2023 entry is
+relative and the 2025 one a harvest-rate ratio — so the last absolute assessment is used, and it
+ends at 2021–22). Covers the 2018–2022 window used for the catch targets in `biomass_targets.csv`
+and the validator's 2020–2024 window.
 
 Pull helper: `scripts/_pull_ices_snapshots.py` (one-shot — not re-run by
 CI). Hits the ICES SAG REST API directly, applies the same flattening
@@ -23,7 +24,7 @@ the MCP server does, and writes one file per stock.
 
 ## `index.json`
 
-- `advice_year` — primary advice year (2024).
+- `advice_year` — primary advice year (2026).
 - `created` — date of the snapshot pull.
 - `model_species_to_ices_stocks` — manifest mapping OSMOSE model species
   to ICES stock keys. Empty list = coastal / data-limited species with
@@ -51,10 +52,10 @@ other species codes, so searching `fle.27` finds only one:
 
 | stock | area | 2018–2022 mean catch | SSB / F as published |
 |---|---|---:|---|
-| `bzq.27.2425` | SD 24–25 (*Platichthys* spp.) | 11 966 t | survey index (`tonnes/h`) / **no F at all** |
+| `bzq.27.2425` | SD 24–25 (*Platichthys* spp.) | 11 966 t | 2024: survey index (`tonnes/h`); 2026: labelled "SSB, tonnes" but index-scale (unit overridden in the pull helper) / **no F values** |
 | `bzq.27.2628` | SD 26, 28 (*Platichthys* spp.) | 2 764 t | `B/Bmsy` / `F/Fmsy` |
 | `fle.27.2223` | SD 22–23 (*P. flesus*) | 834 t | `B/Bmsy` / `F/Fmsy` |
-| `bwp.27.2729-32` | SD 27, 29–32 (*P. solemdali*) | 119 t | kg per gillnet station / **no F values** |
+| `bwp.27.2729-32` | SD 27, 29–32 (*P. solemdali*) | 119 t | kg per gillnet station / 2024: no F values; 2026: `Lfm/Lmean` (a length indicator) in the F column |
 
 Total 15.7 kt; `fle.27.3a4` is North Sea and excluded.
 
@@ -178,7 +179,7 @@ over 2019–2024, against historical peaks of ~0.5 (herring) and ~0.85 (sprat) i
 
 ## How to Refresh
 
-Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
+Snapshots freeze the 2026 ICES advice. When ICES publishes a new advice year
 (typically every May/June), refresh via:
 
 1. Start a Claude Code session in `osmose-python/` so the `ices` MCP server
@@ -213,14 +214,18 @@ Snapshots freeze the 2024 ICES advice. When ICES publishes a new advice year
    hand-maintained blocks (`model_species_to_ices_stocks`,
    `recruitment_index_stocks`, `catch_landings_swapped_stocks`, `catch_supplements`,
    `sms_m2`) survive a refresh.
+   If it stops with `cannot classify SSB unit`, the stock has no Blim and a "tonnes" label
+   the helper does not trust. Check the SSB against the catches. If it is index-scale, add the
+   (stock, year) to `UNIT_OVERRIDES` with the evidence, as for `bzq.27.2425` in 2026; do not
+   loosen `_unit_for`.
 4. Update `index.json`'s top-level `advice_year` and `created` date by hand
    (the helper doesn't touch them).
 5. **Update hardcoded constants in `scripts/validate_baltic_vs_ices_sag.py`:**
-   - `WINDOW_YEARS` (currently `range(2018, 2023)`) — shift to the last five
+   - `WINDOW_YEARS` (currently `range(2020, 2025)`) — shift to the last five
      years covered by the new advice (`range(advice_year - 6, advice_year - 1)`).
-   - `REPORT_MD` filename (contains `2026-04-18`) — update the date stub to
+   - `REPORT_MD` filename (contains `2026-11-06`) — update the date stub to
      the refresh date.
-   - The `"2024 advice"` label in the validator docstring and report header
+   - The `"2026 advice"` label in the validator docstring and report header
      should match the new advice year.
 6. Update the `advice_year` assertion in
    `tests/test_baltic_ices_validation.py::test_manifest_exists_and_is_readable`.
