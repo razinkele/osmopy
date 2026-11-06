@@ -4,8 +4,10 @@ OSMOSE 4.4.1 can run a config with background predators (Baltic: GreySeal, Cormo
 keys the OSMOPY configs don't ship: an inline ``species.biomass.spN`` time-series, the background
 species in the predation-accessibility + catchability/discards matrices, explicit movement maps,
 ``simulation.nschool.spN``, ``output.diet.stage.threshold.spN``, and ``output.cutoff.enabled=false``
-(a 4.4.1 ``OutputRegion.include`` OOB with nbackground>0). This module materialises all of that on a
-STAGED copy of the config (never ``data/``) so the UI Java path can run such configs.
+(a 4.4.1 ``OutputRegion.include`` OOB with nbackground>0). It also rescales each background
+species' length-weight condition factor to work around a 4.4.x units bug that otherwise empties
+every background school mid-step (``_JAVA_BKG_WEIGHT_SCALE``). This module materialises all of that
+on a STAGED copy of the config (never ``data/``) so the UI Java path can run such configs.
 
 Scope is **Baltic-specific**: the accessibility + diet-stage tables are hand-authored for
 GreySeal/Cormorant (validated in sub-project A). ``background_staging_supported`` gates other configs.
@@ -55,6 +57,54 @@ BG_ACCESS: dict[str, dict[str, float]] = {
 # Per-predator diet-stage size threshold (cm): juvenile (<thr) / adult (>=thr). 4.4.1 requires
 # output.diet.stage.threshold.spN for every species in the predation-accessibility universe.
 BG_DIET_STAGE_THRESHOLD: dict[str, int] = {"GreySeal": 90, "Cormorant": 65}
+
+# Java 4.4.x keeps a background school's weight in GRAMS: `BackgroundSchool.getWeight()` returns
+# `BackgroundSpecies.computeWeight(length)` ("weight in gram"), while a focal `School` converts to
+# tonnes (`School.java:564`) and every consumer assumes tonnes — `biom2abd`/`abd2biom` and the
+# ingestion cap in `PredationMortality.java:176`. A 292.5 t seal school therefore holds 0.0055
+# animals. Its biomass is written directly at the start of each step, so it looks right; but the
+# first `incrementNdead` — which the fishery module calls for background schools every step, even
+# at zero catch — recomputes the abundance, floors anything below one animal to 0, and the school
+# and its predation vanish for the rest of the step. Scaling the condition factor by 1e-6 makes the
+# "gram" weight numerically tonnes, which is what every consumer expects; the factor feeds nothing
+# but `computeWeight`.
+#
+# Verified buggy at v4.4.0, v4.4.1 and upstream master as of 2026-06-30. Remove this once a jar
+# returns tonnes: with beta = 1 a doubled correction is invisible in biomass and predation alike,
+# so no test can flag it. Apply it here only, never also in `config/aliases.py`.
+_JAVA_BKG_WEIGHT_SCALE = 1e-6
+_CONDITION_FACTOR_LINE = re.compile(
+    r"^(\s*species\.length2weight\.condition\.factor\.sp(\d+)\s*[;=,:\t]\s*)(\S+)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _rescale_background_weights(master_text: str, bg_indices: list[str]) -> str:
+    """Return *master_text* with every background species' condition factor scaled to tonnes.
+
+    Rewritten in place, every occurrence: Java keeps the FIRST definition of a key and ignores
+    later ones (`Configuration.java:921-929`), so an appended corrected line would be dead.
+    """
+    wanted = set(bg_indices)
+    seen: set[str] = set()
+    out = []
+    for line in master_text.splitlines():
+        m = _CONDITION_FACTOR_LINE.match(line)
+        if m and m.group(2) in wanted:
+            try:
+                value = float(m.group(3))
+            except ValueError as exc:
+                raise ValueError(f"cannot rescale background weight: {line.strip()!r}") from exc
+            line = f"{m.group(1)}{value * _JAVA_BKG_WEIGHT_SCALE:.10g}"
+            seen.add(m.group(2))
+        out.append(line)
+    missing = sorted(wanted - seen, key=int)
+    if missing:
+        raise ValueError(
+            "Java's BackgroundSpecies requires species.length2weight.condition.factor.spN, but the "
+            f"staged master defines none for background species {missing}."
+        )
+    return "\n".join(out) + "\n"
 
 
 def inline_biomass_series(nc_path: str | Path, varname: str) -> list[float]:
@@ -206,8 +256,10 @@ def stage_background_for_java(stage_dir: Path, raw_config: dict) -> dict[str, st
 
     *stage_dir* is the output of ``write_temp_config`` (flat ``osm_all-parameters.csv`` + copied data,
     incl. the predator NetCDF + ``maps/``). Returns the extra ``-P`` overrides the run needs (the
-    cutoff workaround), which the caller passes to ``OsmoseRunner.run(overrides=...)``. Staged-copy
-    only — never touches ``data/``. Requires ``background_staging_supported(raw_config)``.
+    cutoff workaround), which the caller passes to ``OsmoseRunner.run(overrides=...)``. The
+    background weight rescale (``_JAVA_BKG_WEIGHT_SCALE``) is written into the master in place, so
+    it needs no override. Staged-copy only — never touches ``data/``. Requires
+    ``background_staging_supported(raw_config)``.
     """
     stage_dir = Path(stage_dir)
     master = stage_dir / "osm_all-parameters.csv"
@@ -232,7 +284,8 @@ def stage_background_for_java(stage_dir: Path, raw_config: dict) -> dict[str, st
     extra: list[str] = []
     predators: dict[str, dict[str, float]] = {}
     bg_for_maps: list[tuple[str, int]] = []
-    for idx, name in _background_species(raw_config):
+    background = _background_species(raw_config)
+    for idx, name in background:
         nclass = int(float(raw_config.get(f"species.nclass.sp{idx}", "1") or "1"))
         series = inline_biomass_series(nc, name)
         extra.append(f"species.biomass.sp{idx} ; " + ";".join(f"{v:.6g}" for v in series))
@@ -244,10 +297,11 @@ def stage_background_for_java(stage_dir: Path, raw_config: dict) -> dict[str, st
     # ONE movement-map call for ALL background species — the helper computes the next free map
     # index from the master (not updated until after this), so per-species calls would collide.
     extra.extend(_write_background_movement_maps(stage_dir, bg_for_maps, list(range(ndt)), ref_map))
-    extra.append(
-        "output.cutoff.enabled ; false"
-    )  # belt-and-suspenders; the -P override is authoritative
-    master.write_text(master.read_text() + "\n".join(extra) + "\n")
+    # Inert whenever the master already defines the key (Baltic does, as `true`): Java keeps the
+    # first definition. The returned -P override is what actually takes effect.
+    extra.append("output.cutoff.enabled ; false")
+    master_text = _rescale_background_weights(master.read_text(), [idx for idx, _ in background])
+    master.write_text(master_text + "\n".join(extra) + "\n")
     augment_accessibility(stage_dir / "predation-accessibility.csv", predators)
     _augment_catchability_discards(stage_dir, predators)
     return {"output.cutoff.enabled": "false"}
