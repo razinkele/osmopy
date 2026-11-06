@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.1] - 2026-11-07
+
+### Bug Fixes
+
+- **java:** rescale background weights to tonnes when staging for Java 4.4.x (957339f)
+
+### Documentation
+
+- **baltic:** Java 4.4.1 cross-check re-run after the Cormorant multiplier fix (f333895)
+
+### Other
+
+- Merge pull request #211 from razinkele/fix/java-background-weight-units (c560a40)
+- Merge pull request #210 from razinkele/docs/java-crosscheck-2026-11-06 (ca65689)
+
 ## [1.8.0] - 2026-11-06
 
 ### Features
