@@ -99,8 +99,8 @@ def test_values_are_per_step_means_over_the_recording_window(tmp_path):
 # --- Background predators (GreySeal, Cormorant) -------------------------------------------------
 # The kernel has always booked what background schools eat into ctx.diet_matrix; the per-step
 # aggregation then dropped every row past the focal block, so neither output could attribute any
-# predation to the seal or the cormorant. predatorPressure now carries them; dietMatrix stays
-# focal-only (diet_distance returns inf on any shape change, so widening it is a separate call).
+# predation to the seal or the cormorant. Both outputs now carry them (predatorPressure #198,
+# dietMatrix 2026-11-06, with diet_distance aligning a narrower observed matrix by column name).
 
 
 def _two_focal_one_bkg():
@@ -131,13 +131,20 @@ def test_in_memory_predator_pressure_has_background_columns():
     assert sprat["GreySeal"] == 7.0 and sprat["cod"] == 3.0
 
 
-def test_in_memory_diet_matrix_stays_focal_only():
+def test_in_memory_diet_matrix_has_background_predators():
     from osmose.engine.output import _build_diet_dataframe
 
     cfg, outputs = _two_focal_one_bkg()
     df = _build_diet_dataframe(outputs, cfg)["dietMatrix"]
-    assert not any(c.startswith("GreySeal_") for c in df.columns)
-    # cod's row is percentages over its own prey: 3 of 4 tonnes were sprat
+    assert [c for c in df.columns if c.startswith("GreySeal_")] == [
+        "GreySeal_cod",
+        "GreySeal_sprat",
+        "GreySeal_zoo",
+    ]
+    # each predator's row is percentages over its own prey: the seal ate 2 t cod + 7 t sprat
+    assert df.iloc[0]["GreySeal_sprat"] == pytest.approx(700.0 / 9)
+    assert df.iloc[0]["GreySeal_cod"] == pytest.approx(200.0 / 9)
+    # and the focal rows are unchanged by it: 3 of cod's 4 tonnes were sprat
     assert df.iloc[0]["cod_sprat"] == 75.0
 
 
@@ -190,13 +197,30 @@ def test_engine_predator_pressure_attributes_background_predation(baltic_run):
 def test_engine_focal_columns_unchanged_by_background_rows(baltic_run):
     from osmose.engine.config import EngineConfig
 
-    cfg, raw, pp, dm = baltic_run
+    cfg, raw, pp, _ = baltic_run
     ec = EngineConfig.from_dict(cfg)
     steps = max(1, int(ec.output_record_frequency))
     for slot, name in enumerate(ec.species_names):
         booked = sum(float(m[s == slot].sum()) for m, s in raw)
         assert pp[name].sum() * steps == pytest.approx(booked, rel=1e-9), name
-    assert not any(c.startswith(("GreySeal_", "Cormorant_")) for c in dm.columns)
+
+
+def test_engine_diet_matrix_has_background_predator_percentages(baltic_run):
+    """dietMatrix carries the seal and cormorant as predators (as Java's DietOutput header does),
+    each row summing to 100 % in a window where the predator ate — read off the real disk file."""
+    from osmose.engine.config import EngineConfig
+
+    cfg, _, pp, dm = baltic_run
+    ec = EngineConfig.from_dict(cfg)
+    focal = [c for c in dm.columns if c.startswith("herring_")]  # same prey axis for every predator
+    for name in ec.all_species_names[ec.n_species : ec.n_species + ec.n_background]:
+        cols = [c for c in dm.columns if c.startswith(f"{name}_")]
+        assert [c.removeprefix(f"{name}_") for c in cols] == [
+            c.removeprefix("herring_") for c in focal
+        ], name
+        ate = pp.groupby("Time")[name].sum().to_numpy() > 0
+        assert ate.any(), name
+        assert dm[cols].sum(axis=1).to_numpy()[ate] == pytest.approx(100.0), name
 
 
 # --- Partial final window ------------------------------------------------------------------------

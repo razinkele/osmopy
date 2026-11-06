@@ -84,9 +84,9 @@ def write_outputs(
                 step_windows.append(o.window_steps)
         write_diet_csv(
             path=output_dir / f"{prefix}_dietMatrix_Simu0.csv",
-            step_diet_matrices=[m[: config.n_species] for m in step_matrices],
+            step_diet_matrices=step_matrices,
             step_times=step_times,
-            predator_names=config.species_names,
+            predator_names=pressure_predator_names(config),
             prey_names=diet_prey_names(config),
         )
         # Java's predatorPressure counterpart: same absolute biomass, Java's long orientation.
@@ -528,12 +528,13 @@ def diet_prey_names(config) -> list[str]:
 
 
 def pressure_predator_names(config) -> list[str]:
-    """PREDATOR axis for ``predatorPressure``: focal species, then background species.
+    """PREDATOR axis for ``predatorPressure`` and ``dietMatrix``: focal, then background species.
 
     Matches the runtime slots the engine aggregates diet into (background predators at
-    ``n_species + b``). Java's own predatorPressure HEADER has the same columns, but its writer
-    prints values for focal predators only, leaving the background columns empty; this engine
-    writes them. ``dietMatrix`` keeps the focal axis (``config.species_names``).
+    ``n_species + b``). Java's predatorPressure and DietOutput (``DietOutput.java`` loops over
+    ``getNSpecies() + getNBkgSpecies()``) carry the same predator columns, but Java fills them only
+    for schools in ``getPresentSchools()``, so its background columns read empty/NaN; this engine
+    writes what the background predators ate.
     """
     return list(config.all_species_names[: config.n_species + config.n_background])
 
@@ -611,13 +612,13 @@ def _build_diet_dataframe(
     step_times: list[float] = []
     for o in outputs:
         if o.diet_by_species is not None:
-            # Focal predators only — background rows go to predatorPressure alone.
-            step_matrices.append(o.diet_by_species[: config.n_species])
+            # Background predators keep their rows, as on disk (Java's DietOutput has them too).
+            step_matrices.append(o.diet_by_species)
             step_times.append(o.step / config.n_dt_per_year)
     if not step_matrices:
         return {}
 
-    predator_names = config.species_names
+    predator_names = pressure_predator_names(config)
     prey_names = diet_prey_names(config)
     n_pred, n_prey = len(predator_names), len(prey_names)
     columns = [f"{pred}_{prey}" for pred in predator_names for prey in prey_names]
