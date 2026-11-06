@@ -33,6 +33,43 @@ def test_background_species_keys_emitted_for_440():
     assert to_target_keys(cfg2, target_version="4.4.1")["species.multiplier.sp14"] == "2.5"
 
 
+def test_background_multiplier_carried_to_the_java_key():
+    """The staged inline background biomass is the raw NetCDF series, so Java's multiplier must
+    carry the Python engine's species.biomass.multiplier; defaulting it to 1 halved Baltic's
+    Cormorant on every Java arm. An explicit species.multiplier still wins."""
+    cfg = {
+        "osmose.version": "4.3.3",
+        "species.type.sp16": "background",
+        "species.name.sp16": "Cormorant",
+        "species.biomass.multiplier.sp16": "2.0",
+    }
+    assert to_target_keys(dict(cfg), target_version="4.4.1")["species.multiplier.sp16"] == "2.0"
+    cfg["species.multiplier.sp16"] = "1.5"
+    assert to_target_keys(dict(cfg), target_version="4.4.1")["species.multiplier.sp16"] == "1.5"
+
+
+def test_production_baltic_background_multipliers_reach_java():
+    """Against the real config, not a fixture: every background species' Java multiplier equals
+    the one the Python engine uses."""
+    from pathlib import Path
+
+    from osmose.config.reader import OsmoseConfigReader
+
+    root = Path(__file__).resolve().parents[1]
+    cfg = dict(OsmoseConfigReader().read(str(root / "data/baltic/baltic_all-parameters.csv")))
+    out = to_target_keys(dict(cfg), target_version="4.4.1")
+    bkg = [
+        k.rsplit("sp", 1)[1]
+        for k, v in cfg.items()
+        if k.startswith("species.type.sp") and v == "background"
+    ]
+    assert bkg, "no background species in the Baltic config"
+    for i in bkg:
+        expected = float(cfg.get(f"species.biomass.multiplier.sp{i}", "1"))
+        assert float(out[f"species.multiplier.sp{i}"]) == expected, cfg[f"species.name.sp{i}"]
+    assert any(float(cfg.get(f"species.biomass.multiplier.sp{i}", "1")) != 1.0 for i in bkg)
+
+
 def test_background_keys_not_emitted_on_433_path():
     cfg = {
         "osmose.version": "4.3.3",

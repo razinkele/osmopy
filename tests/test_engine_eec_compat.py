@@ -104,6 +104,29 @@ class TestResourceSpeciesTypePattern:
         np.testing.assert_allclose(rs.biomass[0, 0], 2.5, rtol=1e-6)
         rs.close()
 
+    @pytest.mark.parametrize("file_key", ["species.file.sp10", "species.biomass.file.sp10"])
+    def test_resource_netcdf_under_either_file_key(self, tmp_path, file_key):
+        """4.4.1 renamed the resource NetCDF key to species.biomass.file.spN (#137); the engine
+        reads either, and the forced biomass is the same."""
+        grid = Grid.from_dimensions(ny=3, nx=3)
+        data = np.ones((6, 3, 3), dtype=np.float32) * 5.0
+        ds = xr.Dataset({"Plankton": (["time", "lat", "lon"], data)})
+        nc_path = tmp_path / "ltl.nc"
+        ds.to_netcdf(nc_path)
+        ds.close()
+        config = {
+            "simulation.nresource": "1",
+            "simulation.time.ndtperyear": "24",
+            "species.type.sp10": "resource",
+            "species.name.sp10": "Plankton",
+            "species.accessibility2fish.sp10": "0.5",
+            file_key: str(nc_path),
+        }
+        rs = ResourceState(config=config, grid=grid)
+        rs.update(step=0)
+        np.testing.assert_allclose(rs.biomass[0, 0], 2.5, rtol=1e-6)
+        rs.close()
+
     def test_legacy_ltl_pattern_still_works(self):
         """Ensure legacy ltl.*.rsc{i} keys still work."""
         grid = Grid.from_dimensions(ny=3, nx=3)

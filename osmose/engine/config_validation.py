@@ -204,6 +204,13 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "simulation.restart.file",
         "simulation.restart.recordfrequency.ndt",
         "simulation.restart.spinup.nyear",
+        # 4.4.1 resource/background forcing keys the Python engine does not read (#137): a
+        # NetCDF variable name other than species.name, the forcing mode, a constant uniform
+        # biomass, and the inline background series Java needs instead of a NetCDF file.
+        "species.biomass.constant.sp{idx}",
+        "species.biomass.mode.sp{idx}",
+        "species.biomass.sp{idx}",
+        "species.biomass.varname.sp{idx}",
         "species.conversion2tons.sp{idx}",
         "species.first.feeding.age.sp{idx}",
     ]
