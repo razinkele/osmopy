@@ -585,11 +585,12 @@ port** — the port was already isolated and cleared in Step 1.
 ### How much difference is "no difference"
 
 Don't expect bit-equality. `usage-guide.md` §6 documents Python-vs-Java agreeing only **"within
-1 order of magnitude"** (per the parity suite: 14/14 EEC, 8/8 Bay of Biscay) — and that figure is
-for osmopy's own bundled, already-verified configs, not yours. The same section explains why
+1 order of magnitude"**, and not even that everywhere: it holds for 14/14 EEC species but only
+7/8 Bay of Biscay, where Hake is the exception. Those figures are for osmopy's own bundled
+configs, not yours. The same section explains why
 tighter agreement isn't the goal: NumPy's PCG64 and Java's `java.util.Random` (MT19937) are
 different generators that diverge at the first draw, so don't chase seed-level agreement either.
-Full port status, including which configs that 14/14 and 8/8 cover: `docs/parity-roadmap.md`.
+Full port status, including which configs the 14/14 and 7/8 cover: `docs/parity-roadmap.md`.
 
 ### If Step 1 or Step 2 still disagrees
 

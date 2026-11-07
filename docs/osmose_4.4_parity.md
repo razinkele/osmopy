@@ -6,7 +6,9 @@
 > `~/osmose-reference/osmose-master` **predates 4.4.0** (`BackgroundSchool` is not a `School`
 > there, and it still reads `species.file.spN`), so don't use it for 4.4.x questions.
 
-osmopy's engine parity claim (14/14 EEC, 8/8 Bay of Biscay) was measured against Java **4.3.3**.
+osmopy's original engine parity claim (14/14 EEC, 8/8 Bay of Biscay) was measured against Java
+**4.3.3**. Against 4.4.1, EEC still holds at 14/14 within 1 OoM, but the Bay of Biscay is 7/8:
+Hake's biomass runs ~123× Java's (`docs/parity-roadmap.md`).
 Since then the repo has gained 4.4.x *config and staging* support: it can write configs a 4.4.1 jar
 runs, and it reads native 4.4.x configs. The 4.4.0 *process* changes are not ported. This table
 tracks each item.

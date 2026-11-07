@@ -1,6 +1,6 @@
 # OSMOSE Python
 
-Python orchestration layer, simulation engine, and Shiny web interface for the [OSMOSE](https://osmose-model.org/) marine ecosystem simulator. Ships with a pure-Python engine (full Java parity) and a subprocess driver for the original Java engine.
+Python orchestration layer, simulation engine, and Shiny web interface for the [OSMOSE](https://osmose-model.org/) marine ecosystem simulator. Ships with a pure-Python engine (within an order of magnitude of Java on 14/14 Eastern English Channel and 7/8 Bay of Biscay species) and a subprocess driver for the original Java engine.
 
 <sub>**Python 3.12** · **NumPy + Numba** · **Shiny for Python** · **3250+ tests** · **ruff clean** · **MIT**</sub>
 
@@ -10,7 +10,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 
 | Surface | State |
 |---|---|
-| Python engine | Full Java parity on Eastern English Channel (14/14); Bay of Biscay 6/8 (Anchovy/Hake show a pre-existing divergence), within 1 order of magnitude. Faster than Java on every benchmarked config. |
+| Python engine | Within 1 order of magnitude of Java on Eastern English Channel (14/14) and Bay of Biscay (7/8). The exception is Bay of Biscay Hake, whose biomass runs ~123× Java's, a pre-existing gap. Anchovy, ~3× low, is inside 1 OoM but not equivalent at 3×. Faster than Java on every benchmarked config. |
 | Java engine | Async subprocess runner. OSMOSE **4.4.1 JAR by default** (4.3.3 still selectable). Bundled configs are native 4.4.0; background-species configs (e.g. Baltic) stage + run on the 4.4.1 jar from the UI. |
 | Shiny UI | End-to-end UI: Setup · Grid · Forcing · Fishing · Movement · Run · Results (with Scenario Diff & Config Diff) · Spatial Results · Diagnostics · Calibration · **Sensitivity** · Scenarios · Advanced · Map Viewer. Live-during-run movement map; in-app About (README/Changelog) + a per-version startup "what's new" modal. |
 | Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
@@ -58,7 +58,7 @@ Both engines implement the same `Engine` protocol and produce identical output s
 |---|---|---|
 | Implementation | Pure Python (NumPy + Numba JIT) | Java subprocess (OSMOSE 4.4.1 JAR default; 4.3.3 selectable) |
 | Dependencies | Python packages only | Java 17+ and an OSMOSE JAR |
-| Parity | Bay of Biscay 6/8, EEC 14/14 within 1 OoM | Reference implementation |
+| Parity | EEC 14/14, Bay of Biscay 7/8 within 1 OoM | Reference implementation |
 | Speed | 1.2×–5.7× faster than Java (below) | Production-ready |
 | Use case | Production runs, calibration, development | Legacy compatibility, reference |
 

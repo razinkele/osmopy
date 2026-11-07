@@ -153,8 +153,8 @@ table(
         (
             "Engines",
             (
-                "pure-Python (NumPy/Numba, full Java parity: 14/14 EEC, 8/8 Bay of Biscay) "
-                "and Java OSMOSE via subprocess"
+                "pure-Python (NumPy/Numba; within 1 OoM of Java on 14/14 EEC and "
+                "7/8 Bay of Biscay species) and Java OSMOSE via subprocess"
             ),
         ),
         (
