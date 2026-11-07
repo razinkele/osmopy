@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.6] - 2026-11-07
+
+### Bug Fixes
+
+- **scripts:** baltic_440_smoke finds this repo and stages like every Java run (b4799f2)
+- **parity-harness:** stage Java arms through the shared staging (a383709)
+- **calibration:** stage the base config for the jar on the Java path (2f49095)
+- **staging:** don't copy the stage directory into itself (81eaa5f)
+
+### Other
+
+- Merge pull request #223 from razinkele/fix/java-staging-all-paths (9b2c0fb)
+
+### Refactoring
+
+- **staging:** move Java staging into osmose.java_staging (e766aa7)
+
+### Tests
+
+- give the migration test's calibration problem a real base config (8f1fdcb)
+- **calibration:** run the opt-in cross-engine test where it can compare (df32832)
+
 ## [1.8.5] - 2026-11-07
 
 ### Bug Fixes
