@@ -147,9 +147,10 @@ def stage_config_for_java(
     (``cod_west`` -> ``codwest``); applying it to the 4.3.3 jar would corrupt names it resolves
     verbatim. It is a no-op on a config that is already alphanumeric and matrix-consistent.
 
-    Every Java staging path goes through here (the Run tab and
-    scripts/baltic_stability_certify.py) so the two cannot drift apart again — the Run tab
-    skipping the reconcile step was GitHub #138.
+    Every Java staging path goes through here so they cannot drift apart again (the Run tab
+    skipping the reconcile step was GitHub #138): the Run tab, calibration's Java path, and the
+    scripts baltic_stability_certify.py, cross_engine_parity_440.py, validate_engines.py and
+    baltic_440_smoke.py.
 
     Before 4.4.0, the master also gets the global ``species.biomass.nsteps.year`` that 4.3.3's
     resource forcing requires (``emit_433_resource_nsteps``). Without it the 4.3.3 jar exits at
