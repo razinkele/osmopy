@@ -151,57 +151,63 @@ def build_random_patches(
     config: EngineConfig,
     grid: Grid,
     rng: np.random.Generator,
-) -> dict[int, set[tuple[int, int]]]:
-    """Build BFS-connected patches for species with random distribution + ncell constraint.
+) -> dict[int, NDArray[np.int32]]:
+    """Build the placement domain of every species that uses the "random" distribution.
 
-    Java's RandomDistribution builds a connected patch of ncell ocean cells
-    starting from a random ocean cell. The patch constrains INITIAL placement only.
+    Mirrors Java's ``RandomDistribution.createRandomMap`` (4.3.3): when
+    ``movement.distribution.ncell`` is unset, or covers at least every ocean cell, the
+    domain is the WHOLE ocean and no random number is drawn; otherwise it is a
+    BFS-connected patch of ``ncell`` ocean cells grown from a random ocean cell.
 
-    Returns a dict mapping species index -> set of (x, y) patch cells.
+    The domain is where UNLOCATED schools (new eggs) are placed. Located schools
+    random-walk beyond it, as in Java, whose ``getAccessibleCells`` ignores the domain.
+
+    Returns a dict mapping species index -> ``(n_cells, 2)`` int32 array of ``(x, y)``
+    cells. A species is absent only when the grid has no ocean cell at all.
     """
-    patches: dict[int, set[tuple[int, int]]] = {}
-    if config.random_distribution_ncell is None:
-        return patches
-
-    # Build list of ocean cells
-    ocean_cells: list[tuple[int, int]] = []
-    for y in range(grid.ny):
-        for x in range(grid.nx):
-            if grid.ocean_mask[y, x]:
-                ocean_cells.append((x, y))
-
-    n_ocean = len(ocean_cells)
+    domains: dict[int, NDArray[np.int32]] = {}
+    ocean_ys, ocean_xs = np.nonzero(grid.ocean_mask)  # row-major: y outer, x inner
+    n_ocean = len(ocean_xs)
     if n_ocean == 0:
-        return patches
+        return domains
+    whole_ocean = np.column_stack((ocean_xs, ocean_ys)).astype(np.int32)
+    whole_ocean.setflags(write=False)  # one array shared by every whole-domain species
 
     for sp in range(config.n_species):
         if config.movement_method[sp] != "random":
             continue
-        ncell = int(config.random_distribution_ncell[sp])
+        # 0 is the parser's placeholder for an unset key (Java: unset -> whole domain).
+        ncell = (
+            0
+            if config.random_distribution_ncell is None
+            else int(config.random_distribution_ncell[sp])
+        )
         if ncell <= 0 or ncell >= n_ocean:
+            domains[sp] = whole_ocean
             continue
 
         # Pick random starting ocean cell
-        start_idx = rng.integers(0, n_ocean)
-        start_x, start_y = ocean_cells[start_idx]
+        start_idx = int(rng.integers(0, n_ocean))
+        start = (int(ocean_xs[start_idx]), int(ocean_ys[start_idx]))
 
-        # BFS to collect ncell connected ocean cells
-        patch: set[tuple[int, int]] = set()
-        queue: deque[tuple[int, int]] = deque([(start_x, start_y)])
-        patch.add((start_x, start_y))
+        # BFS to collect ncell connected ocean cells (the list keeps insertion order)
+        patch: list[tuple[int, int]] = [start]
+        seen: set[tuple[int, int]] = {start}
+        queue: deque[tuple[int, int]] = deque([start])
 
         while len(patch) < ncell and queue:
             cx, cy = queue.popleft()
             for ny, nx in grid.neighbors(cy, cx):
                 if len(patch) >= ncell:
                     break
-                if grid.ocean_mask[ny, nx] and (nx, ny) not in patch:
-                    patch.add((nx, ny))
+                if grid.ocean_mask[ny, nx] and (nx, ny) not in seen:
+                    seen.add((nx, ny))
+                    patch.append((nx, ny))
                     queue.append((nx, ny))
 
-        patches[sp] = patch
+        domains[sp] = np.array(patch, dtype=np.int32)
 
-    return patches
+    return domains
 
 
 def random_walk(
@@ -212,10 +218,14 @@ def random_walk(
 ) -> SchoolState:
     """Move schools by random displacement within walk_range cells.
 
-    Displacement clamped to grid bounds; land cells avoided.
+    Displacement clamped to grid bounds; land cells avoided. Unlocated schools
+    (``cell_x < 0``) are never moved: they have no position to displace, and
+    clipping ``-1 + dx`` into the grid would drop them in its corner.
     """
     if len(state) == 0:
         return state
+
+    located = (state.cell_x >= 0) & (state.cell_y >= 0)
 
     # Batch RNG: generate max-range displacements, then clip to per-school range
     max_r = int(walk_range.max()) if len(walk_range) > 0 else 0
@@ -229,10 +239,10 @@ def random_walk(
     new_x = np.clip(state.cell_x + dx, 0, grid.nx - 1)
     new_y = np.clip(state.cell_y + dy, 0, grid.ny - 1)
 
-    # Avoid land cells: stay at old position if new is land
-    on_land = ~grid.ocean_mask[new_y, new_x]
-    new_x = np.where(on_land, state.cell_x, new_x)
-    new_y = np.where(on_land, state.cell_y, new_y)
+    # Stay at the old position if unlocated, or if the new cell is land
+    stay = ~located | ~grid.ocean_mask[new_y, new_x]
+    new_x = np.where(stay, state.cell_x, new_x)
+    new_y = np.where(stay, state.cell_y, new_y)
 
     return state.replace(cell_x=new_x, cell_y=new_y)
 
@@ -244,7 +254,7 @@ def movement(
     step: int,
     rng: np.random.Generator,
     map_sets: dict[int, MovementMapSet] | None = None,
-    random_patches: dict[int, set[tuple[int, int]]] | None = None,
+    random_patches: dict[int, NDArray[np.int32]] | None = None,
     species_rngs: list[np.random.Generator] | None = None,
     flat_map_data: tuple[NDArray, NDArray, NDArray, NDArray] | None = None,
     walk_range_i32: NDArray[np.int32] | None = None,
@@ -280,27 +290,30 @@ def movement(
             return species_rngs[sp_id]
         return rng
 
-    # Phase 4: Place unlocated schools on patch cells (before random walk)
+    # Unlocated "random"-method schools (new eggs) are dealt onto a uniformly random cell
+    # of their species' domain (see build_random_patches). As in Java's
+    # RandomDistribution.move(), a school placed this step does not also walk this step.
+    placed = np.zeros(len(state), dtype=np.bool_)
     if random_patches and uses_random.any():
-        new_cx = state.cell_x.copy()
-        new_cy = state.cell_y.copy()
-        changed = False
-        for i in np.where(uses_random)[0]:
-            sp_id = int(sp[i])
-            if sp_id in random_patches and new_cx[i] < 0:
-                # Unlocated school: place on random patch cell
-                patch_cells = list(random_patches[sp_id])
-                _sp_rng = _rng_for(sp_id)
-                idx = _sp_rng.integers(0, len(patch_cells))
-                new_cx[i], new_cy[i] = patch_cells[idx]
-                changed = True
-        if changed:
+        unlocated = uses_random & (state.cell_x < 0)
+        if unlocated.any():
+            new_cx = state.cell_x.copy()
+            new_cy = state.cell_y.copy()
+            for sp_id in np.unique(sp[unlocated]).tolist():
+                domain = random_patches.get(sp_id)
+                if domain is None:
+                    continue  # no domain (the grid has no ocean): the school stays unlocated
+                idx = np.flatnonzero(unlocated & (sp == sp_id))
+                pick = _rng_for(sp_id).integers(0, len(domain), size=len(idx))
+                new_cx[idx] = domain[pick, 0]
+                new_cy[idx] = domain[pick, 1]
+                placed[idx] = True
             state = state.replace(cell_x=new_cx, cell_y=new_cy)
 
-    # Random walk for "random" species (batch vectorized)
+    # Random walk for located "random" species (batch vectorized)
     if uses_random.any():
         walk_range = config.random_walk_range[sp]
-        walk_range_masked = np.where(uses_random, walk_range, 0)
+        walk_range_masked = np.where(uses_random & ~placed, walk_range, 0)
         state = random_walk(state, grid, walk_range_masked, rng)
 
     # Map-based movement for "maps" species
