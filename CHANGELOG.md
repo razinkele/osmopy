@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.5] - 2026-11-07
+
+### Bug Fixes
+
+- **validate_engines:** stage Java's config, find the Python output, compare year means (02a24e9)
+- **staging:** give the 4.3.3 jar the resource step count it requires (1fd2615)
+
+### Other
+
+- Merge pull request #221 from razinkele/fix/java-433-staging-and-validate-engines (feb84f2)
+
 ## [1.8.4] - 2026-11-07
 
 ### Documentation
