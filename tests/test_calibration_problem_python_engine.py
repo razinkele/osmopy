@@ -6,6 +6,7 @@ Spec: docs/superpowers/specs/2026-04-19-calibration-python-engine-design.md
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess as _subprocess
 from pathlib import Path
 from unittest import mock
@@ -39,11 +40,34 @@ def _simple_objective(results) -> float:
     return total
 
 
+def _bob_short_run(tmp_path: Path, nyear: int) -> Path:
+    """The Bay of Biscay config copied under *tmp_path*: *nyear* years, recorded from year 0.
+
+    The demo collapses: total biomass is 5.4e8 t in year 5 but exactly 0 from year 40 on, in both
+    engines (measured 2026-11-07, likely the transposed fish->resource accessibility noted in
+    docs/parity-roadmap.md). At its own 50 years a final-step objective is 0 vs 0 and the ratio
+    is undefined; at 10 years every species is alive. Java also honours BoB's
+    ``output.start.year ; 20`` (the Python engine ignores it), so a short run must record from 0.
+    """
+    dst = tmp_path / "bob"
+    shutil.copytree(EXAMPLE_CONFIG.parent, dst)
+    for name, old, new in (
+        (EXAMPLE_CONFIG.name, "simulation.time.nyear ; 50", f"simulation.time.nyear ; {nyear}"),
+        ("osm_param-output.csv", "output.start.year ; 20", "output.start.year ; 0"),
+    ):
+        path = dst / name
+        text = path.read_text()
+        assert text.count(old) == 1, f"BoB's {old!r} moved out of {name}; update this helper"
+        path.write_text(text.replace(old, new))
+    return dst / EXAMPLE_CONFIG.name
+
+
 def _make_problem(
     tmp_path: Path,
     *,
     use_java_engine: bool = False,
     jar_path: Path | None = None,
+    base_config_path: Path = EXAMPLE_CONFIG,
 ):
     return OsmoseCalibrationProblem(
         free_params=[
@@ -54,7 +78,7 @@ def _make_problem(
                 transform=Transform.LINEAR,
             ),
         ],
-        base_config_path=EXAMPLE_CONFIG,
+        base_config_path=base_config_path,
         objective_fns=[_simple_objective],
         registry=build_registry(),
         work_dir=tmp_path,
@@ -119,8 +143,11 @@ def test_objective_values_match_between_engines(tmp_path):
     values match within 1 OoM (the project's Python/Java parity tolerance).
     """
     jar_path = Path(os.environ["OSMOSE_JAR"])
-    py_problem = _make_problem(tmp_path / "py", use_java_engine=False)
-    java_problem = _make_problem(tmp_path / "java", use_java_engine=True, jar_path=jar_path)
+    base = _bob_short_run(tmp_path, 10)
+    py_problem = _make_problem(tmp_path / "py", use_java_engine=False, base_config_path=base)
+    java_problem = _make_problem(
+        tmp_path / "java", use_java_engine=True, jar_path=jar_path, base_config_path=base
+    )
 
     rng = np.random.default_rng(42)
     X = rng.uniform(0.1, 0.5, size=(3, 1))

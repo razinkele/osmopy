@@ -70,6 +70,17 @@ def test_433_staging_adds_nothing_when_every_resource_has_its_own_count(tmp_path
     assert _KEY not in dict(_master_entries(master))
 
 
+def test_no_key_is_added_when_no_resource_is_forced_from_a_file():
+    from osmose.config.aliases import emit_433_resource_nsteps
+
+    cfg = {
+        "simulation.time.ndtperyear": "24",
+        "species.type.sp1": "resource",  # a resource, but not NetCDF-forced
+        "species.name.sp1": "plankton",
+    }
+    assert emit_433_resource_nsteps(cfg) == cfg
+
+
 def test_44x_staging_is_untouched_by_the_433_rule(tmp_path):
     """4.4.x gets per-species keys from the writer; the 4.3.3 global fallback must not leak in."""
     master, _ = stage_config_for_java(
