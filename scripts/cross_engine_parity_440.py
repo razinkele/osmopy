@@ -37,8 +37,9 @@ from scipy import stats
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.engine import PythonEngine
+from osmose.java_config_reconcile import sanitize_java_name
+from osmose.java_staging import stage_config_for_java
 from osmose.results import OsmoseResults
-from ui.pages.run import write_temp_config
 
 ROOT = Path(__file__).resolve().parent.parent
 JARS = {
@@ -139,35 +140,6 @@ def inject_java_bioen_keys(master: Path, raw: dict[str, str]) -> int:
     return len(lines)
 
 
-def inject_java_resource_nsteps_year(master: Path, raw: dict[str, str]) -> int:
-    """Java 4.3.3's ResourceForcing.init() requires species.biomass.nsteps.year(.spN) for any
-    NetCDF-file-forced resource species (``species.file.spN`` set) when the per-species key is
-    absent; a global (non-indexed) fallback is accepted (see ResourceForcing.java:150-153).
-    NOT bioen-specific — this bites the bioen-OFF control run too.
-
-    data/eec_full's own fixture already carries this key (eec_param-ltl.csv line 77:
-    'species.biomass.nsteps.year;24'), and osmose/config/aliases.py's
-    _emit_resource_biomass_forcing() synthesizes the per-species form for a >=4.4.0 target from
-    the very same source — but data/examples / data/examples_bioen (the Bay-of-Biscay demo) were
-    bundled without it, and nothing synthesizes it on the <4.4.0 (reverse-alias) branch of
-    to_target_keys(). The Python engine never needed it (its own resource loader reads the step
-    count straight off the NetCDF), so this went unnoticed until a direct Java 4.3.3 run of this
-    fixture — Gate B's first. No-op if the key is already present or no resource species is
-    file-forced. Sourced from simulation.time.ndtperyear, matching the NetCDF's own frame count
-    (verified for data/examples_bioen: 24 steps/year in both the config and the .nc file).
-    """
-    if "species.biomass.nsteps.year" in raw:
-        return 0
-    if not any(k.startswith("species.file.sp") for k in raw):
-        return 0
-    ndt = raw.get("simulation.time.ndtperyear")
-    if not ndt:
-        return 0
-    with master.open("a") as fh:
-        fh.write(f"species.biomass.nsteps.year ; {ndt}\n")
-    return 1
-
-
 def comparable_species(
     py_metric: dict[str, np.ndarray], ens: dict, present: list[str], m: str
 ) -> list[str]:
@@ -236,7 +208,16 @@ def python_rep(config: Path, years: int, seed: int, spinup: int) -> dict[str, di
     return out
 
 
-def java_rep(ver: str, master: Path, years: int, odir: Path, spinup: int, prefix: str):
+def java_rep(
+    ver: str,
+    master: Path,
+    years: int,
+    odir: Path,
+    spinup: int,
+    prefix: str,
+    overrides: dict[str, str] | None = None,
+):
+    """One Java replicate on a staged *master*; *overrides* are the staging -P overrides."""
     odir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "java",
@@ -247,10 +228,15 @@ def java_rep(ver: str, master: Path, years: int, odir: Path, spinup: int, prefix
         f"-Poutput.dir.path={odir}",
         f"-Psimulation.time.nyear={years}",
         "-Poutput.start.year=0",
+        *(f"-P{key}={value}" for key, value in (overrides or {}).items()),
     ]
     cp = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     if cp.returncode != 0:
-        print(f"[java {ver}] rep FAILED (exit {cp.returncode}); stderr tail:\n{cp.stderr[-2000:]}")
+        # Java prints its exception to STDOUT; stderr usually holds only the SLF4J banner.
+        print(
+            f"[java {ver}] rep FAILED (exit {cp.returncode}); stdout tail:\n{cp.stdout[-2000:]}\n"
+            f"stderr tail:\n{cp.stderr[-500:]}"
+        )
         return None
     res = OsmoseResults(
         odir, prefix=prefix, strict=False
@@ -268,9 +254,11 @@ def ensemble(engine: str, config: Path, prefix: str, years: int, n: int, spinup:
             reps.append(python_rep(config, years, 1000 + s, spinup))
     else:
         raw = dict(OsmoseConfigReader().read(str(config)))
-        master = tmp / f"stage_{engine}"
-        write_temp_config(raw, master, source_dir=config.parent, target_version=engine)
-        master = master / "osm_all-parameters.csv"
+        # The shared staging every Java run uses (background species, 4.4.x name reconcile,
+        # the 4.3.3 resource step count); only the 4.3.3 .bioen trio is added here.
+        master, stage_overrides = stage_config_for_java(
+            raw, tmp / f"stage_{engine}", config.parent, target_version=engine
+        )
         if engine == "4.3.3":
             n_injected = inject_java_bioen_keys(master, raw)
             if n_injected:
@@ -278,20 +266,33 @@ def ensemble(engine: str, config: Path, prefix: str, years: int, n: int, spinup:
                     f"[stage] {engine}: injected {n_injected} .bioen key line(s) for bioen "
                     "predation (predation.ingestion.rate.max.bioen and friends)"
                 )
-            n_nsteps = inject_java_resource_nsteps_year(master, raw)
-            if n_nsteps:
-                print(
-                    f"[stage] {engine}: injected species.biomass.nsteps.year (not bioen-specific — "
-                    "required by any NetCDF-file-forced resource species on this jar)"
-                )
+        # 4.4.x staging strips "_"/"-" from species names (cod_west -> codwest), and Java reports
+        # them that way; map them back so they meet the Python arm's names. Identity on 4.3.3.
+        back = {
+            sanitize_java_name(name): name
+            for key, name in raw.items()
+            if key.startswith("species.name.sp")
+        }
         for s in range(n):
-            r = java_rep(engine, master, years, tmp / f"out_{engine}_{s}", spinup, prefix)
+            r = java_rep(
+                engine,
+                master,
+                years,
+                tmp / f"out_{engine}_{s}",
+                spinup,
+                prefix,
+                stage_overrides,
+            )
             if r is not None:
-                reps.append(r)
+                reps.append(
+                    {
+                        m: {back.get(sp, sp): v for sp, v in per_sp.items()}
+                        for m, per_sp in r.items()
+                    }
+                )
         if len(reps) != n:
             raise RuntimeError(
-                f"engine {engine}: {len(reps)}/{n} reps succeeded — see stderr of the first "
-                "failure above"
+                f"engine {engine}: {len(reps)}/{n} reps succeeded — see the failure output above"
             )
     out: dict[str, dict[str, np.ndarray]] = {}
     for m in METRICS + OPTIONAL_METRICS:
@@ -501,12 +502,11 @@ def main() -> None:
         args.persist_results.mkdir(parents=True, exist_ok=True)
         for ver in [e for e in engines if e != "python"]:  # only selected java arms
             raw = dict(OsmoseConfigReader().read(str(args.config)))
-            st = tmp / f"persist_stage_{ver}"
-            write_temp_config(raw, st, source_dir=args.config.parent, target_version=ver)
-            master = st / "osm_all-parameters.csv"
+            master, stage_overrides = stage_config_for_java(
+                raw, tmp / f"persist_stage_{ver}", args.config.parent, target_version=ver
+            )
             if ver == "4.3.3":
                 inject_java_bioen_keys(master, raw)
-                inject_java_resource_nsteps_year(master, raw)
             java_rep(
                 ver,
                 master,
@@ -514,6 +514,7 @@ def main() -> None:
                 args.persist_results / f"{prefix}_{ver}",
                 args.spinup_years,
                 prefix,
+                stage_overrides,
             )
         # Python arm is in-memory; Task 12 recomputes it directly (no persist needed).
 

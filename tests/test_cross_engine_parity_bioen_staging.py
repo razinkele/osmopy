@@ -62,33 +62,9 @@ def test_inject_raises_on_missing_imax_for_a_predator(tmp_path):
         xeng.inject_java_bioen_keys(master, raw)
 
 
-def test_inject_resource_nsteps_year_adds_global_fallback_for_file_forced_resource(tmp_path):
-    master = tmp_path / "m.csv"
-    master.write_text("species.file.sp8 ; some.nc\n")
-    raw = {"species.file.sp8": "some.nc", "simulation.time.ndtperyear": "24"}
-    n = xeng.inject_java_resource_nsteps_year(master, raw)
-    assert n == 1
-    assert "species.biomass.nsteps.year ; 24" in master.read_text()
-
-
-def test_inject_resource_nsteps_year_is_noop_when_already_present(tmp_path):
-    master = tmp_path / "m.csv"
-    master.write_text("x ; 1\n")
-    raw = {
-        "species.file.sp8": "some.nc",
-        "simulation.time.ndtperyear": "24",
-        "species.biomass.nsteps.year": "24",
-    }
-    assert xeng.inject_java_resource_nsteps_year(master, raw) == 0
-    assert master.read_text() == "x ; 1\n"
-
-
-def test_inject_resource_nsteps_year_is_noop_without_file_forced_resources(tmp_path):
-    master = tmp_path / "m.csv"
-    master.write_text("x ; 1\n")
-    raw = {"simulation.time.ndtperyear": "24"}
-    assert xeng.inject_java_resource_nsteps_year(master, raw) == 0
-    assert master.read_text() == "x ; 1\n"
+# The 4.3.3 species.biomass.nsteps.year injection that lived here moved into the shared staging
+# (osmose.config.aliases.emit_433_resource_nsteps, called by stage_config_for_java); its tests
+# are in tests/test_java_staging_433.py.
 
 
 def test_nondegenerate_flags_species_collapsed_in_too_many_reps():
