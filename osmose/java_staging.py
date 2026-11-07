@@ -58,6 +58,22 @@ def _inject_random_movement_ncell(config: dict[str, str]) -> dict[str, str]:
     return out
 
 
+def _skip_entries_leading_to(target: Path):
+    """``shutil.copytree`` ignore callback: skip the source entry that is, or contains, *target*.
+
+    Without it, copying a directory into a stage that sits inside that directory never ends:
+    copytree lists each directory when it reaches it, after the stage has been created, so the
+    stage gets copied into itself until the path is too long.
+    """
+    target = target.resolve()
+
+    def ignore(dirpath: str, names: list[str]) -> list[str]:
+        here = Path(dirpath).resolve()
+        return [n for n in names if here / n == target or here / n in target.parents]
+
+    return ignore
+
+
 def write_temp_config(
     config: dict[str, str],
     output_dir: Path,
@@ -76,7 +92,12 @@ def write_temp_config(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     if source_dir and source_dir.is_dir():
-        shutil.copytree(source_dir, output_dir, dirs_exist_ok=True)
+        shutil.copytree(
+            source_dir,
+            output_dir,
+            dirs_exist_ok=True,
+            ignore=_skip_entries_leading_to(output_dir),  # a stage inside the source
+        )
 
     # Work around Java off-by-one bug in RandomDistribution.createRandomMap():
     # when movement.distribution.ncell.spN is absent and method is "random",
