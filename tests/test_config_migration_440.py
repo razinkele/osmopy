@@ -372,10 +372,13 @@ def test_calibration_java_cmd_writes_keys_for_jar_version(tmp_path):
     from unittest.mock import MagicMock, patch
 
     from osmose.calibration.problem import FreeParameter
-    from tests.test_calibration_problem import _make_problem  # reuse the existing helper
+    from tests.test_calibration_problem import MINIMAL, _make_problem  # reuse the existing helper
 
+    # A real base config: the Java path stages it before building the command.
     problem = _make_problem(
-        tmp_path, free_params=[FreeParameter("species.maturity.eta.sp0", 0.1, 0.5)]
+        tmp_path,
+        base_config_path=MINIMAL,
+        free_params=[FreeParameter("species.maturity.eta.sp0", 0.1, 0.5)],
     )
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=1)  # short-circuit after cmd build
