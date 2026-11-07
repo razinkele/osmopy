@@ -227,14 +227,20 @@ def stage_config_for_java(
     Every Java staging path goes through here (the Run tab and
     scripts/baltic_stability_certify.py) so the two cannot drift apart again — the Run tab
     skipping the reconcile step was GitHub #138.
-    """
-    from osmose.config.aliases import _numeric_version
 
+    Before 4.4.0, the master also gets the global ``species.biomass.nsteps.year`` that 4.3.3's
+    resource forcing requires (``emit_433_resource_nsteps``). Without it the 4.3.3 jar exits at
+    init on any config forcing resources from a NetCDF, the bundled Bay of Biscay one included.
+    """
+    from osmose.config.aliases import _numeric_version, emit_433_resource_nsteps
+
+    is_44x = _numeric_version(target_version) >= _numeric_version("4.4.0")
+    if not is_44x:
+        config = emit_433_resource_nsteps(config)
     config_path = write_temp_config(
         config, work_dir, source_dir, key_case_map=key_case_map, target_version=target_version
     )
     overrides: dict[str, str] = {}
-    is_44x = _numeric_version(target_version) >= _numeric_version("4.4.0")
 
     try:
         n_background = int(float(config.get("simulation.nbackground", 0) or 0))
