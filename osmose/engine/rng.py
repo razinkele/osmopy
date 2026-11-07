@@ -8,9 +8,10 @@ bit-equal results. It does NOT produce results bit-equal to the Java
 engine. NumPy's `default_rng` uses PCG64; the Java engine uses MT19937
 (legacy ``java.util.Random``). The streams diverge at the first draw.
 
-Cross-engine numerical equivalence is documented as "within 1 OoM" by
-the parity test suite (14/14 EEC, 8/8 Bay of Biscay), but byte-equivalent
-outputs across engines are impossible without reimplementing the MT19937
+Cross-engine agreement is documented as "within 1 OoM" per species: 14/14
+EEC, but only 7/8 Bay of Biscay (Hake is a pre-existing exception; see
+``docs/parity-roadmap.md``). Byte-equivalent outputs across engines are
+impossible without reimplementing the MT19937
 stream in NumPy — out of scope for this port. If bit-exact reproducibility
 against Java is required, set `OsmoseCalibrationProblem(use_java_engine=True)`
 and run the Java subprocess path.

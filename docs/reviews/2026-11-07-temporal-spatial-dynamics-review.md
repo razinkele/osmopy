@@ -233,13 +233,18 @@ info-level count and nothing else (`config_validation.py:572-575`).
   3) a zero step has probability 1/7 per axis instead of 1/3, so the school stays in its cell with
   probability 1/49 against about 1/9 in Java. Schools pile up on grid edges, and a draw onto land means
   staying put rather than choosing among sea cells.
-- **Affected configs:** `data/examples` (the 8/8 Bay of Biscay parity benchmark), `data/examples_bioen`
+- **Affected configs:** `data/examples` (the Bay of Biscay parity benchmark), `data/examples_bioen`
   (C3 Gate B), `data/examples_433_orig`, `data/eec`, `data/minimal`. Baltic and EEC-full use maps and are
   unaffected.
 - **What it does to the parity claim:** the Bay of Biscay "8/8 within one order of magnitude" was measured
   with every cohort spawning in one corner cell. The tolerance is wide enough to pass anyway; nothing
   tighter has been tested on that config. It may also bear on the unexplained cross-engine mean-size gap
   in `docs/diagnostics/c3_gate_b_cross_engine.md` (hypothesis only).
+  **Status (2026-11-07):** the claim did not hold against Java 4.4.1 in the first place. "8/8" was
+  measured against 4.3.3; against 4.4.1 the Bay of Biscay is 7/8 within 1 OoM (Hake ~123×), before and
+  after the S1 fixes. Tighter testing also existed when this was written: a 16-rep ensemble with a 3×
+  equivalence margin, 6/8 equivalent (`docs/parity-roadmap.md`: the 2026-07-06 Bay of Biscay migration
+  section, and §4.1). The claim is now corrected in CLAUDE.md and the docs.
 - **Test coverage:** none. `tests/test_engine_phase4.py` exercises only the `ncell`-set path, and
   `docs/parity-roadmap.md` lists §4.1 as "SHIPPED".
 

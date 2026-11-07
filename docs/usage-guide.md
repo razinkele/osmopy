@@ -231,9 +231,11 @@ Pass `--help` to any script for its full argument list.
 **Reproducibility.** Setting `simulation.rng.fixed=true` makes a single config + seed
 reproducible **across Python-engine runs**. It does *not* make the Python engine
 bit-equal to the Java engine: NumPy uses PCG64, the Java engine uses MT19937
-(`java.util.Random`), and the streams diverge at the first draw. Cross-engine numerical
-equivalence is "within 1 order of magnitude" per the parity suite (14/14 EEC, 8/8 Bay of
-Biscay). If you need byte-exact reproducibility against Java, run the Java path — for
+(`java.util.Random`), and the streams diverge at the first draw. Cross-engine agreement is
+checked "within 1 order of magnitude" per species. That holds for all 14 EEC species but for
+only 7 of the 8 Bay of Biscay species: Bay of Biscay Hake runs ~123× Java's biomass over 10
+years, a pre-existing gap (`docs/parity-roadmap.md`). If you need byte-exact reproducibility
+against Java, run the Java path — for
 calibration, `OsmoseCalibrationProblem(use_java_engine=True)`. (Full caveat in the
 `osmose/engine/rng.py` module docstring.)
 
