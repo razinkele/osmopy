@@ -146,6 +146,39 @@ def _emit_resource_biomass_forcing(cfg: dict[str, str]) -> dict[str, str]:
     return result
 
 
+def emit_433_resource_nsteps(cfg: dict[str, str]) -> dict[str, str]:
+    """Add the global ``species.biomass.nsteps.year`` that Java 4.3.3 needs, if it is missing.
+
+    4.3.3's ``ResourceForcing.init()`` reads ``species.biomass.nsteps.year.spN``, falling back to
+    the global key, for every resource species forced from a NetCDF file (``species.file.spN``),
+    and exits when neither is set. The Python engine reads the step count off the NetCDF, so the
+    bundled Bay of Biscay config never carried the key.
+
+    The value is ``simulation.time.ndtperyear``: like ``_emit_resource_biomass_forcing`` for
+    4.4.x, this assumes the forcing file holds one frame per time step. An existing global key or
+    per-species keys covering every file-forced resource are left alone.
+
+    Called at Java staging (``ui.pages.run.stage_config_for_java``), NOT from
+    ``to_target_keys``: the bare 4.3.3 write path stays string-faithful for no-jar round trips.
+    """
+    if "species.biomass.nsteps.year" in cfg:
+        return cfg
+    ndt = cfg.get("simulation.time.ndtperyear")
+    if not ndt:
+        return cfg
+    for key, val in cfg.items():
+        if not key.startswith("species.type.sp") or str(val).strip().lower() != "resource":
+            continue
+        idx = key[len("species.type.sp") :]
+        if (
+            idx.isdigit()
+            and f"species.file.sp{idx}" in cfg
+            and f"species.biomass.nsteps.year.sp{idx}" not in cfg
+        ):
+            return {**cfg, "species.biomass.nsteps.year": str(ndt)}
+    return cfg
+
+
 def _emit_background_species_keys(cfg: dict[str, str]) -> dict[str, str]:
     """Emit the source-dir-free 4.4.x keys that BackgroundSpecies.<init> requires.
 

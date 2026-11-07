@@ -138,7 +138,17 @@ tripwire. The two are not in conflict; a reader who knows only the 1-OoM figure
 should not be surprised by this, but also should not assume it implies 3×
 equivalence.
 
-## Not fixed: `scripts/validate_engines.py` cannot run at all on 4.4.1
+## `scripts/validate_engines.py` could not run at all on 4.4.1 (fixed 2026-11-07)
+
+**Status (2026-11-07): fixed.** The script now stages the config through
+`ui.pages.run.stage_config_for_java` for the jar's version, the Run tab's path (option one
+below). That covers 4.3.3 too, now that staging adds the `species.biomass.nsteps.year` 4.3.3
+requires. Two more defects appeared once it ran. It looked for the Python result as
+`osmose_biomass_Simu0.csv`, but the engine writes `osm_biomass_Simu0.csv`, so no comparison was
+ever produced. And it compared a single final step: Bay of Biscay Hake is 0 in both engines at the
+last step of year 5, which it scored as agreement, while the year-5 means are 247 t (Java) and
+41,544 t (Python). It now compares final-year means and reports 7/8 within 1 OoM on both jars.
+The original finding follows.
 
 This was the script the plan named for the cross-check, and it fails before
 simulating. For `NETCDF_BIOMASS` forcing, 4.4.1 reads `species.biomass.file.spN` /

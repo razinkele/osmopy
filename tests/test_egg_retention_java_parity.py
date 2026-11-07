@@ -12,8 +12,8 @@ calibration-problem cross-engine test at tests/test_calibration_problem_python_e
 Java gets the config staged for the jar's version, the way the Run tab stages it
 (``ui.pages.run.stage_config_for_java``, version parsed from the jar's filename). The bundled
 configs are native 4.4.x, and neither jar loads them raw: 4.4.1 needs the ``species.biomass.*``
-resource-forcing keys the writer synthesizes, and 4.3.3 also needs
-``species.biomass.nsteps.year``. Until 2026-11-07 the raw config went to Java and every
+resource-forcing keys the writer synthesizes, and 4.3.3 needs ``species.biomass.nsteps.year``,
+which staging adds for it. Until 2026-11-07 the raw config went to Java and every
 failure became a skip, so both tests skipped on both jars. The BoB test had never run: it also
 read the wrong output prefix (``osm``; BoB writes ``biscay``) and let BoB's
 ``output.start.year ; 20`` suppress all output of a 1-year run.
@@ -35,7 +35,6 @@ from osmose.engine.grid import Grid
 from osmose.engine.simulate import simulate
 from osmose.results import OsmoseResults
 from osmose.runner import OsmoseRunner
-from scripts.cross_engine_parity_440 import inject_java_resource_nsteps_year
 from ui.pages.run import stage_config_for_java
 
 pytestmark = pytest.mark.slow
@@ -115,10 +114,6 @@ def _run_java_engine(
         raw, work_dir / "stage", source_dir=config_path.parent, target_version=target
     )
     is_44x = _numeric_version(target) >= _numeric_version("4.4.0")
-    if not is_44x:
-        # 4.3.3's ResourceForcing requires species.biomass.nsteps.year, which nothing on the
-        # writer's reverse-alias (<4.4.0) branch synthesizes; the parity harness injects it too.
-        inject_java_resource_nsteps_year(master, raw)
     overrides = {
         **overrides,
         **(_JAVA_FIXED_SEED_44X if is_44x else _JAVA_FIXED_SEED_433),
