@@ -56,13 +56,11 @@ def run_java(
     Neither jar loads the bundled native-4.4.x config raw: 4.4.1 needs the
     ``species.biomass.*`` resource keys the writer synthesizes, 4.3.3 needs
     ``species.biomass.nsteps.year``. So the config goes through ``stage_config_for_java``, the
-    Run tab's staging, into a ``<output_dir>_stage`` sibling directory.
+    staging every Java run uses, into a ``<output_dir>_stage`` sibling directory.
     """
-    if str(PROJECT_DIR) not in sys.path:
-        sys.path.insert(0, str(PROJECT_DIR))  # ui/ is not an installed package
     from osmose.config.aliases import target_version_for_jar
     from osmose.config.reader import OsmoseConfigReader
-    from ui.pages.run import stage_config_for_java
+    from osmose.java_staging import stage_config_for_java
 
     output_dir.mkdir(parents=True, exist_ok=True)
     raw = dict(OsmoseConfigReader().read(config_path))

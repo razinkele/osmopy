@@ -1,7 +1,8 @@
 """Stage Baltic for OSMOSE 4.4.1 (background-species adaptation) and validate it loads + runs.
 
-The staging recipe lives in ``osmose.java_background_staging`` (shared with the UI Java run path);
-this script stages Baltic, runs the 4.4.1 jar, and asserts it loads + the predators feed.
+Staging is ``osmose.java_staging.stage_config_for_java``, shared with every other Java run path
+(background species, then the 4.4.x name reconcile that the cod east/west split needs); this
+script stages Baltic, runs the 4.4.1 jar, and asserts it loads + the predators feed.
 """
 
 from __future__ import annotations
@@ -12,9 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from osmose.java_background_staging import stage_background_for_java
-
-ROOT = Path("/home/razinka/osmose/osmose-python")
+ROOT = Path(__file__).resolve().parents[1]
 BALTIC = ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 JAR = ROOT / "osmose-java" / "osmose-4.4.1-jar-with-dependencies.jar"
 
@@ -142,14 +141,13 @@ def stage_and_run(years: int = 3, out: Path | None = None) -> int:
     import tempfile
 
     from osmose.config.reader import OsmoseConfigReader
-    from ui.pages.run import write_temp_config
+    from osmose.java_staging import stage_config_for_java
 
     raw = dict(OsmoseConfigReader().read(str(BALTIC)))
     tmp = Path(out or tempfile.mkdtemp(prefix="baltic440_"))
-    stage = tmp / "stage"
-    write_temp_config(raw, stage, source_dir=BALTIC.parent, target_version="4.4.1")
-    master = stage / "osm_all-parameters.csv"
-    overrides = stage_background_for_java(stage, raw)  # shared staging recipe (osmose module)
+    master, overrides = stage_config_for_java(
+        raw, tmp / "stage", BALTIC.parent, target_version="4.4.1"
+    )
     odir = tmp / "out"
     odir.mkdir(parents=True, exist_ok=True)
     cmd = [
