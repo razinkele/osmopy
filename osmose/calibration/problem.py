@@ -12,6 +12,7 @@ import pickle
 import re
 import subprocess
 import tempfile
+import threading
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
@@ -33,6 +34,10 @@ _OSMOSE_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9._]*$")
 _OSMOSE_VALUE_PATTERN = re.compile(r"^[\w.+\-eE/]+$")
 
 _log = setup_logging("osmose.calibration")
+
+# Serialises Java staging across the thread backend's workers. Module-level rather than on the
+# problem, so the problem object stays free of an unpicklable lock.
+_JAVA_STAGE_LOCK = threading.Lock()
 
 _expected_errors = (
     subprocess.TimeoutExpired,
@@ -186,6 +191,8 @@ class OsmoseCalibrationProblem(Problem):
         self.use_java_engine = bool(use_java_engine)
         self.parallel_backend = parallel_backend
         self._executor: ProcessPoolExecutor | None = None
+        # (pid, staged master, staging -P overrides), filled on the first Java run.
+        self._java_stage: tuple[int, Path, dict[str, str]] | None = None
         # Pre-compute base config hash for cache keys
         self._base_config_hash = ""
         if enable_cache and base_config_path.exists():
@@ -448,22 +455,61 @@ class OsmoseCalibrationProblem(Problem):
             )
             return None
 
+    def _staged_java_config(self) -> tuple[Path, dict[str, str]]:
+        """The base config staged for this problem's jar: (master config, staging -P overrides).
+
+        Neither jar loads the bundled native-4.4.x configs raw, so Java gets the base config
+        through ``osmose.java_staging.stage_config_for_java``, like every other Java run. It is
+        staged once per process, into ``work_dir/java_stage_<pid>``: the process backend rebuilds
+        the problem in each worker, and two workers must not write one directory at once, so each
+        worker holds its own copy of the config directory.
+        """
+        if self.jar_path is None:
+            raise RuntimeError("_staged_java_config called but jar_path is None")
+        pid = os.getpid()
+        with _JAVA_STAGE_LOCK:
+            if self._java_stage is None or self._java_stage[0] != pid:
+                from osmose import java_staging
+                from osmose.config import OsmoseConfigReader
+                from osmose.config.aliases import target_version_for_jar
+
+                master, stage_overrides = java_staging.stage_config_for_java(
+                    dict(OsmoseConfigReader().read(self.base_config_path)),
+                    self.work_dir / f"java_stage_{pid}",
+                    self.base_config_path.parent,
+                    target_version=target_version_for_jar(self.jar_path),
+                )
+                self._java_stage = (pid, master, stage_overrides)
+            return self._java_stage[1], self._java_stage[2]
+
     def _run_java_subprocess(self, overrides: dict[str, str], run_id: int) -> OsmoseResults | None:
         """Run the Java subprocess; return OsmoseResults or None on failure.
 
         Retained as opt-in fallback for cross-engine validation
-        (``use_java_engine=True`` constructor flag). Behavior unchanged from
-        the pre-port ``_run_single`` body.
+        (``use_java_engine=True`` constructor flag). Java gets the base config staged for its
+        jar version (``_staged_java_config``); a staging failure is scored like a failed run.
         """
         if self.jar_path is None:
             raise RuntimeError("_run_java_subprocess called but jar_path is None")
+
+        try:
+            master, stage_overrides = self._staged_java_config()
+        except _expected_errors as exc:
+            _log.warning(
+                "OSMOSE run %d: could not stage %s for Java (%s: %s)",
+                run_id,
+                self.base_config_path,
+                type(exc).__name__,
+                exc,
+            )
+            return None
 
         # Create isolated output directory
         run_dir = self.work_dir / f"run_{run_id}"
         run_dir.mkdir(parents=True, exist_ok=True)
         output_dir = run_dir / "output"
 
-        cmd = [self.java_cmd, "-jar", str(self.jar_path), str(self.base_config_path)]
+        cmd = [self.java_cmd, "-jar", str(self.jar_path), str(master)]
         cmd.append(f"-Poutput.dir.path={output_dir}")
 
         # The internal model uses canonical 4.4.0 keys; write the override keys for the version
@@ -473,9 +519,9 @@ class OsmoseCalibrationProblem(Problem):
         java_overrides = to_target_keys(
             dict(overrides), target_version=target_version_for_jar(self.jar_path)
         )
-        for key, value in java_overrides.items():
-            if key == "osmose.version":  # to_target_keys stamps this; not a real override
-                continue
+        java_overrides.pop("osmose.version", None)  # to_target_keys stamps this; not an override
+        # Staging overrides win, as in the Run tab (e.g. background staging's cutoff fix).
+        for key, value in {**java_overrides, **stage_overrides}.items():
             cmd.append(f"-P{key}={value}")
 
         # check=False: the non-zero path is handled explicitly below (stderr is
@@ -485,19 +531,24 @@ class OsmoseCalibrationProblem(Problem):
         )
 
         if result.returncode != 0:
-            raw_stderr = result.stderr
+            raw_stderr, raw_stdout = result.stderr, result.stdout
             stderr_bytes = raw_stderr if isinstance(raw_stderr, (bytes, bytearray)) else b""
-            stderr_file = run_dir / "stderr.txt"
+            stdout_bytes = raw_stdout if isinstance(raw_stdout, (bytes, bytearray)) else b""
             try:
-                stderr_file.write_bytes(bytes(stderr_bytes))
+                (run_dir / "stderr.txt").write_bytes(bytes(stderr_bytes))
+                (run_dir / "stdout.txt").write_bytes(bytes(stdout_bytes))
             except OSError:
                 pass  # never mask the underlying failure with a disk issue
+            # Java prints its exception to STDOUT; stderr usually holds only the SLF4J banner.
+            stdout_tail = bytes(stdout_bytes).decode(errors="replace")[-500:]
             stderr_msg = bytes(stderr_bytes).decode(errors="replace")[:500]
             _log.warning(
-                "OSMOSE run %d failed (exit %d); full stderr at %s; head: %s",
+                "OSMOSE run %d failed (exit %d); stdout.txt/stderr.txt in %s; "
+                "stdout tail: %s; stderr head: %s",
                 run_id,
                 result.returncode,
-                stderr_file,
+                run_dir,
+                stdout_tail,
                 stderr_msg,
             )
             return None

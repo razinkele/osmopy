@@ -31,10 +31,22 @@ def test_problem_dimensions():
     assert np.array_equal(problem.xu, np.array([0.5, 200]))
 
 
+# A real base config for tests that reach the Java path. That path stages the base config
+# before it starts Java, so a made-up path fails at staging, before any mocked subprocess.
+MINIMAL = Path(__file__).resolve().parents[1] / "data" / "minimal" / "osm_all-parameters.csv"
+
+
 # --- Helper to build a problem for mocked tests ---
 
 
-def _make_problem(tmp_path, objective_fns=None, free_params=None, *, use_java_engine=True):
+def _make_problem(
+    tmp_path,
+    objective_fns=None,
+    free_params=None,
+    *,
+    use_java_engine=True,
+    base_config_path=None,
+):
     if free_params is None:
         free_params = [
             FreeParameter("species.k.sp0", 0.1, 0.5),
@@ -45,7 +57,7 @@ def _make_problem(tmp_path, objective_fns=None, free_params=None, *, use_java_en
     return OsmoseCalibrationProblem(
         free_params=free_params,
         objective_fns=objective_fns,
-        base_config_path=tmp_path / "config",
+        base_config_path=base_config_path or tmp_path / "config",
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path / "work",
         use_java_engine=use_java_engine,
@@ -109,7 +121,9 @@ def test_run_single_success(mock_results_cls, mock_subprocess, tmp_path):
     mock_results_instance = MagicMock()
     mock_results_cls.return_value = mock_results_instance
 
-    problem = _make_problem(tmp_path, objective_fns=[lambda r: 0.5, lambda r: 1.5])
+    problem = _make_problem(
+        tmp_path, base_config_path=MINIMAL, objective_fns=[lambda r: 0.5, lambda r: 1.5]
+    )
     result = problem._run_single({"species.k.sp0": "0.3"}, run_id=0)
 
     assert result == [0.5, 1.5]
@@ -137,7 +151,7 @@ def test_run_single_creates_run_dir(mock_results_cls, mock_subprocess, tmp_path)
     mock_subprocess.return_value = MagicMock(returncode=0)
     mock_results_cls.return_value = MagicMock()
 
-    problem = _make_problem(tmp_path, objective_fns=[lambda r: 0.0])
+    problem = _make_problem(tmp_path, base_config_path=MINIMAL, objective_fns=[lambda r: 0.0])
     problem._run_single({}, run_id=7)
 
     run_dir = tmp_path / "work" / "run_7"
@@ -154,7 +168,7 @@ def test_run_single_passes_output_dir(mock_results_cls, mock_subprocess, tmp_pat
     mock_instance.__enter__ = MagicMock(return_value=mock_instance)
     mock_instance.__exit__ = MagicMock(return_value=False)
 
-    problem = _make_problem(tmp_path, objective_fns=[lambda r: 0.0])
+    problem = _make_problem(tmp_path, base_config_path=MINIMAL, objective_fns=[lambda r: 0.0])
     problem._run_single({}, run_id=3)
 
     cmd = mock_subprocess.call_args[0][0]
@@ -399,7 +413,7 @@ def test_run_single_accepts_valid_override_keys(tmp_path):
     problem = OsmoseCalibrationProblem(
         free_params=[fp],
         objective_fns=[lambda r: 0.5],
-        base_config_path=tmp_path / "config.csv",
+        base_config_path=MINIMAL,
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path,
         use_java_engine=True,
@@ -422,7 +436,7 @@ def test_run_single_logs_subprocess_stderr(tmp_path, caplog):
     problem = OsmoseCalibrationProblem(
         free_params=[fp],
         objective_fns=[lambda r: 1.0],
-        base_config_path=tmp_path / "config.csv",
+        base_config_path=MINIMAL,
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path,
         use_java_engine=True,
@@ -451,7 +465,7 @@ def test_cache_miss_then_hit(mock_results_cls, mock_subprocess, tmp_path):
     problem = OsmoseCalibrationProblem(
         free_params=[fp],
         objective_fns=[lambda r: 0.5],
-        base_config_path=tmp_path / "config.csv",
+        base_config_path=MINIMAL,
         jar_path=tmp_path / "fake.jar",
         work_dir=tmp_path,
         enable_cache=True,
@@ -487,7 +501,7 @@ def test_cache_invalidated_by_jar_change(mock_results_cls, mock_subprocess, tmp_
     problem = OsmoseCalibrationProblem(
         free_params=[fp],
         objective_fns=[lambda r: 0.5],
-        base_config_path=tmp_path / "config.csv",
+        base_config_path=MINIMAL,
         jar_path=jar,
         work_dir=tmp_path,
         enable_cache=True,
@@ -643,7 +657,7 @@ def test_run_single_persists_full_stderr_on_failure(monkeypatch, tmp_path):
     problem = OsmoseCalibrationProblem(
         free_params=[FreeParameter("species.k.sp0", 0.1, 1.0)],
         objective_fns=[lambda r: 0.0],
-        base_config_path=tmp_path / "cfg.csv",
+        base_config_path=MINIMAL,
         jar_path=jar,
         work_dir=tmp_path / "work",
         use_java_engine=True,
@@ -722,7 +736,7 @@ def test_cleanup_after_eval_false_keeps_run_dir(monkeypatch, tmp_path):
     problem = OsmoseCalibrationProblem(
         free_params=[FreeParameter("species.k.sp0", 0.1, 1.0)],
         objective_fns=[lambda r: 0.0],
-        base_config_path=tmp_path / "cfg.csv",
+        base_config_path=MINIMAL,
         jar_path=jar,
         work_dir=tmp_path / "work",
         cleanup_after_eval=False,
