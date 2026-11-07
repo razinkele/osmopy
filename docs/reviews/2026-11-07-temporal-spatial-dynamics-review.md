@@ -222,9 +222,10 @@ info-level count and nothing else (`config_validation.py:572-575`).
   - range-1 species land **200 of 200 in cell (0, 0)** on every seed;
   - range-2 species land only in the 2×2 corner, and range-3 only in the 3×3 corner.
 - **Located schools walk differently too.** The displacement is drawn from ±(the largest range of any
-  species), then clipped to the school's own range (P(stay) = 1/7 for a range-1 species in Bay of Biscay,
-  against about 1/3 in Java). Schools pile up on grid edges, and a draw onto land means staying put rather
-  than choosing among sea cells.
+  species), then clipped to the school's own range. For a range-1 species in Bay of Biscay (largest range
+  3) a zero step has probability 1/7 per axis instead of 1/3, so the school stays in its cell with
+  probability 1/49 against about 1/9 in Java. Schools pile up on grid edges, and a draw onto land means
+  staying put rather than choosing among sea cells.
 - **Affected configs:** `data/examples` (the 8/8 Bay of Biscay parity benchmark), `data/examples_bioen`
   (C3 Gate B), `data/examples_433_orig`, `data/eec`, `data/minimal`. Baltic and EEC-full use maps and are
   unaffected.
