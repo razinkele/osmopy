@@ -47,8 +47,8 @@ triggers it, but it fails silently when one does. *Other configs* = active outsi
   - smaller timing and accounting differences (T4–T7).
 - **One high-severity engine bug outside the Baltic.** With the "random" distribution method and no
   `ncell`, every new cohort is placed in the grid's corner cell (S1, confirmed by test). That covers the
-  Bay of Biscay parity benchmark. Placement has since been fixed (#214). Two bundled grids also load
-  with no ocean at all (S2).
+  Bay of Biscay parity benchmark. Placement and the walk kernel have since been fixed (#214, #216). Two
+  bundled grids also load with no ocean at all (S2).
 - **Two production-input gaps:** 65 of 616 Baltic ocean cells get no plankton or benthos forcing (S3),
   and the Java cross-check arms place seals and cormorants completely differently from Python (S4).
 - **The Baltic parameterization departs from the evidence in nine places.** The largest:
@@ -198,7 +198,7 @@ info-level count and nothing else (`config_validation.py:572-575`).
 
 | # | Deviation | Status | Severity | ✔/◦ |
 |---|---|---|---|---|
-| S1 | "random" method without `ncell`: new cohorts placed in the corner cell | **Placement fixed** (#214); walk kernel still open. Affected other configs (incl. the Bay of Biscay parity benchmark) | **High** | ✔ test |
+| S1 | "random" method without `ncell`: new cohorts placed in the corner cell | **Fixed**: placement (#214), walk kernel (#216). Affected other configs (incl. the Bay of Biscay parity benchmark) | **High** | ✔ test |
 | S2 | `data/minimal` and `data/eec` grids load with zero ocean cells | Other configs (demos and fixtures) | Medium–high | ✔ loaded |
 | S5 | Unresolved LTL or O₂ file silently drops the forcing; only the first resource file is read | Latent | Medium | ✔ partly |
 | S6 | MPAs: no effort redistribution, end year exclusive, fraction ignored | Latent | Medium–low | ◦ |
@@ -212,8 +212,9 @@ info-level count and nothing else (`config_validation.py:572-575`).
 - **Status (2026-11-07): placement fixed in #214.** Unlocated schools are now dealt over the species' whole
   domain, as in Java. Re-measured afterwards, the Bay of Biscay cross-engine verdict against Java 4.4.1 did
   not change: only Hake yield moved (d −1.71 → −0.97). So S1 does **not** explain the Anchovy/Hake
-  divergence. The C3 Gate B mean-size hypothesis below was not tested. The located-walk deviation below is
-  still open (`docs/parity-roadmap.md` §4.1).
+  divergence. The C3 Gate B mean-size hypothesis below was not tested.
+- **Status (2026-11-07): the located-walk deviation below was fixed in #216.** Re-measured, the Bay of
+  Biscay verdict against Java 4.4.1 is again unchanged: every row is within 0.01 of the placement-fix run.
 - **Python:**
   - Eggs are created unlocated at (−1, −1) (`processes/reproduction.py:237-241`).
   - Unlocated schools are placed only by the `ncell` patch block (`processes/movement.py:284`), which is

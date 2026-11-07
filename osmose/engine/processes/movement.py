@@ -216,33 +216,48 @@ def random_walk(
     walk_range: NDArray[np.int32],
     rng: np.random.Generator,
 ) -> SchoolState:
-    """Move schools by random displacement within walk_range cells.
+    """Move each school to a uniformly random accessible cell within its walk range.
 
-    Displacement clamped to grid bounds; land cells avoided. Unlocated schools
-    (``cell_x < 0``) are never moved: they have no position to displace, and
-    clipping ``-1 + dx`` into the grid would drop them in its corner.
+    Mirrors Java's ``RandomDistribution`` (4.3.3 ``getAccessibleCells`` + ``randomDeal``):
+    the candidates are the in-grid cells of the ``(2r+1) x (2r+1)`` square centred on the
+    school, its own cell included, minus land, and one is drawn uniformly. Java's
+    ``randomDeal`` rounds ``(n-1) * U``, which gives the first and last candidate half
+    weight; the ODD says "randomly", and this draws uniformly.
+
+    Schools with range 0, unlocated schools (``cell_x < 0``: no position to walk from)
+    and schools with no accessible cell stay where they are.
     """
     if len(state) == 0:
         return state
 
-    located = (state.cell_x >= 0) & (state.cell_y >= 0)
-
-    # Batch RNG: generate max-range displacements, then clip to per-school range
-    max_r = int(walk_range.max()) if len(walk_range) > 0 else 0
-    if max_r == 0:
+    walkers = (walk_range > 0) & (state.cell_x >= 0) & (state.cell_y >= 0)
+    if not walkers.any():
         return state
-    dx = rng.integers(-max_r, max_r + 1, size=len(state)).astype(np.int32)
-    dy = rng.integers(-max_r, max_r + 1, size=len(state)).astype(np.int32)
-    dx = np.clip(dx, -walk_range, walk_range)
-    dy = np.clip(dy, -walk_range, walk_range)
 
-    new_x = np.clip(state.cell_x + dx, 0, grid.nx - 1)
-    new_y = np.clip(state.cell_y + dy, 0, grid.ny - 1)
-
-    # Stay at the old position if unlocated, or if the new cell is land
-    stay = ~located | ~grid.ocean_mask[new_y, new_x]
-    new_x = np.where(stay, state.cell_x, new_x)
-    new_y = np.where(stay, state.cell_y, new_y)
+    new_x = state.cell_x.copy()
+    new_y = state.cell_y.copy()
+    for r in np.unique(walk_range[walkers]).tolist():
+        idx = np.flatnonzero(walkers & (walk_range == r))
+        # Sea mask padded with r cells of land: out-of-grid candidates read as land, so one
+        # flat lookup covers both the bounds test and the land test.
+        sea = np.pad(grid.ocean_mask, r, constant_values=False).ravel()
+        width = grid.nx + 2 * r
+        # Every offset in the (2r+1)^2 square, x outer and y inner (Java's order)
+        d = np.arange(-r, r + 1, dtype=np.int64)
+        off_x = np.repeat(d, d.size)
+        off_y = np.tile(d, d.size)
+        centre = (state.cell_y[idx].astype(np.int64) + r) * width + (state.cell_x[idx] + r)
+        accessible = sea[centre[:, None] + (off_y * width + off_x)[None, :]]
+        n_accessible = accessible.sum(axis=1)
+        movable = n_accessible > 0
+        if not movable.any():
+            continue
+        # Deal the k-th accessible candidate, k uniform in [0, n_accessible)
+        k = rng.integers(0, n_accessible[movable])
+        col = (np.cumsum(accessible[movable], axis=1) <= k[:, None]).sum(axis=1)
+        rows = idx[movable]
+        new_x[rows] = state.cell_x[rows] + off_x[col]
+        new_y[rows] = state.cell_y[rows] + off_y[col]
 
     return state.replace(cell_x=new_x, cell_y=new_y)
 

@@ -1,5 +1,7 @@
 """Tests for movement process — Tier 1 verification."""
 
+from collections import Counter
+
 import numpy as np
 
 from osmose.engine.config import EngineConfig
@@ -115,6 +117,78 @@ class TestRandomWalk:
         new_state = random_walk(state, grid, walk_range, rng)
         assert (new_state.cell_x[:50] == -1).all()
         assert (new_state.cell_y[:50] == -1).all()
+
+
+def _walk(grid: Grid, cells_x, cells_y, ranges, seed: int = 0):
+    """Walk one school per entry once; return the new (cell_x, cell_y) arrays."""
+    n = len(cells_x)
+    state = SchoolState.create(n_schools=n, species_id=np.zeros(n, dtype=np.int32))
+    state = state.replace(
+        cell_x=np.asarray(cells_x, dtype=np.int32),
+        cell_y=np.asarray(cells_y, dtype=np.int32),
+        abundance=np.ones(n),
+    )
+    rng = np.random.default_rng(seed)
+    out = random_walk(state, grid, np.asarray(ranges, dtype=np.int32), rng)
+    return out.cell_x, out.cell_y
+
+
+class TestRandomWalkKernel:
+    """A located school moves to a uniformly random ACCESSIBLE cell, as in Java.
+
+    Java's RandomDistribution (4.3.3 ``getAccessibleCells`` + ``randomDeal``, :185-209): the
+    candidates are the in-grid cells of the (2r+1) x (2r+1) square centred on the school, its own
+    cell included, minus land; one of them is dealt. The frequencies below are checked against
+    those hand-derived probabilities with a band of about 4 binomial standard deviations.
+    """
+
+    def test_range_1_school_is_uniform_over_its_9_cells_beside_a_longer_range(self):
+        # A range-3 school makes 3 the largest range. The old kernel drew every step from
+        # [-3, 3] and clipped it to the school's own range, so a range-1 school stayed put with
+        # probability 1/49 and took each diagonal with 9/49. Java: 1/9 for each of the 9 cells.
+        grid = Grid.from_dimensions(ny=21, nx=21)
+        n = 9000
+        xs, ys = _walk(grid, [10] * n + [3], [10] * n + [3], [1] * n + [3])
+        cells = Counter(zip((xs[:n] - 10).tolist(), (ys[:n] - 10).tolist(), strict=True))
+        assert set(cells) == {(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
+        for cell, count in cells.items():
+            assert abs(count / n - 1 / 9) < 0.014, (cell, count / n)
+
+    def test_corner_school_is_uniform_over_the_4_cells_inside_the_grid(self):
+        # The old kernel clipped steps that left the grid back onto the edge, so the corner kept
+        # 4/9 of the draws and its diagonal neighbour got 1/9. Java deals only in-grid cells.
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        n = 4000
+        xs, ys = _walk(grid, [0] * n, [0] * n, [1] * n)
+        cells = Counter(zip(xs.tolist(), ys.tolist(), strict=True))
+        assert set(cells) == {(0, 0), (1, 0), (0, 1), (1, 1)}
+        for cell, count in cells.items():
+            assert abs(count / n - 1 / 4) < 0.03, (cell, count / n)
+
+    def test_school_beside_land_is_uniform_over_the_sea_cells_only(self):
+        # Only the school's cell and three neighbours are sea. The old kernel drew among all 9
+        # cells and stayed put on a land draw, so it stayed with probability 6/9. Java deals only
+        # the 4 sea cells, 1/4 each.
+        mask = np.zeros((3, 3), dtype=np.bool_)
+        mask[1, 1] = mask[1, 2] = mask[2, 1] = mask[2, 2] = True  # (x, y) = (1,1) (2,1) (1,2) (2,2)
+        grid = Grid(ny=3, nx=3, ocean_mask=mask)
+        n = 4000
+        xs, ys = _walk(grid, [1] * n, [1] * n, [1] * n)
+        cells = Counter(zip(xs.tolist(), ys.tolist(), strict=True))
+        assert set(cells) == {(1, 1), (2, 1), (1, 2), (2, 2)}
+        for cell, count in cells.items():
+            assert abs(count / n - 1 / 4) < 0.03, (cell, count / n)
+
+    def test_school_with_no_sea_in_range_stays_put(self):
+        # Defensive: a school on land with no sea cell in range has nothing to be dealt (Java
+        # would throw on the empty list). It stays where it is instead of raising. The second
+        # school, on the only sea cell, keeps the draw path exercised.
+        mask = np.zeros((4, 4), dtype=np.bool_)
+        mask[3, 3] = True
+        grid = Grid(ny=4, nx=4, ocean_mask=mask)
+        xs, ys = _walk(grid, [0, 3], [0, 3], [1, 1])
+        assert (int(xs[0]), int(ys[0])) == (0, 0)
+        assert (int(xs[1]), int(ys[1])) == (3, 3)
 
 
 class TestOutMortality:
