@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.4] - 2026-11-07
+
+### Documentation
+
+- correct the remaining "8/8 Bay of Biscay" parity claims (738e961)
+- **claude-md:** Hake's weight and abundance ratios are not factors of its biomass ratio (541a669)
+
+### Other
+
+- Merge pull request #219 from razinkele/docs/parity-claims-7of8 (0ad7dd4)
+- Merge pull request #218 from razinkele/fix/java-parity-test-staging (031fc98)
+
+### Tests
+
+- **parity:** seed the Java arm so the cross-check is repeatable (7496782)
+- **parity:** revive the Python-vs-Java cross-check; correct the 8/8 BoB claim (c4067b1)
+
 ## [1.8.3] - 2026-11-07
 
 ### Bug Fixes
