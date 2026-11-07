@@ -57,6 +57,15 @@ _SEED = 42
 _PARITY_LO = 0.1
 _PARITY_HI = 10.0
 
+# Java seeds its RNG from the clock unless told otherwise, and the config writer maps neither
+# version's switch. Unseeded, BoB Hake's 1-yr Java biomass ranged 6.5k-9.2k t over six runs
+# (py/java 5.2-7.3); seeded, repeat runs are bit-identical on both jars (2026-11-07).
+_JAVA_FIXED_SEED_44X = {"simulation.fixed.seed.enabled": "true"}
+_JAVA_FIXED_SEED_433 = {
+    "movement.randomseed.fixed": "true",
+    "stochastic.mortality.randomseed.fixed": "true",
+}
+
 
 def _run_python_engine(
     config_path: Path, base_dir: Path, n_years: int, seed: int
@@ -105,12 +114,14 @@ def _run_java_engine(
     master, overrides = stage_config_for_java(
         raw, work_dir / "stage", source_dir=config_path.parent, target_version=target
     )
-    if _numeric_version(target) < _numeric_version("4.4.0"):
+    is_44x = _numeric_version(target) >= _numeric_version("4.4.0")
+    if not is_44x:
         # 4.3.3's ResourceForcing requires species.biomass.nsteps.year, which nothing on the
         # writer's reverse-alias (<4.4.0) branch synthesizes; the parity harness injects it too.
         inject_java_resource_nsteps_year(master, raw)
     overrides = {
         **overrides,
+        **(_JAVA_FIXED_SEED_44X if is_44x else _JAVA_FIXED_SEED_433),
         "simulation.time.nyear": str(n_years),
         # BoB starts recording at year 20, which would leave a 1-year run with no output rows.
         "output.start.year": "0",
