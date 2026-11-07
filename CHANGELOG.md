@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.2] - 2026-11-07
+
+### Bug Fixes
+
+- **movement:** place unlocated "random"-method schools over their whole domain (ddcc741)
+
+### Documentation
+
+- **review:** record S1 placement fix (#214) and its measured null (e49c47a)
+- **review:** S1 walk-kernel stay probability is per axis, not per cell (d3f7d85)
+- **review:** temporal and spatial dynamics against ODD, Java 4.3.3 and literature (2a29522)
+
+### Other
+
+- Merge pull request #214 from razinkele/fix/random-distribution-placement (30d46a8)
+- Merge master (#213) into fix/random-distribution-placement (ba5bff6)
+- Merge pull request #213 from razinkele/docs/temporal-spatial-review-2026-11-07 (bf34ef7)
+
 ## [1.8.1] - 2026-11-07
 
 ### Bug Fixes
