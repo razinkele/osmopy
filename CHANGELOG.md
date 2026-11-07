@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.3] - 2026-11-07
+
+### Bug Fixes
+
+- **movement:** random walk deals a uniform accessible cell within range (674b101)
+
+### Other
+
+- Merge pull request #216 from razinkele/fix/random-walk-kernel (562971e)
+
 ## [1.8.2] - 2026-11-07
 
 ### Bug Fixes
