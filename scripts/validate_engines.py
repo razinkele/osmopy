@@ -2,7 +2,8 @@
 """Validate Python OSMOSE engine against Java engine.
 
 Runs both engines on the Bay of Biscay example configuration and
-produces a comparison report.
+produces a comparison report. Java gets the config staged for the jar's
+version, as the Run tab stages it; works with the 4.4.1 and 4.3.3 jars.
 
 Usage:
     .venv/bin/python scripts/validate_engines.py [--years N] [--seed S]
@@ -47,18 +48,40 @@ def resolve_jar(explicit: str | None = None) -> Path | None:
     return found[0] if found else None
 
 
-def run_java(jar_path: Path, output_dir: Path, n_years: int) -> float:
-    """Run Java OSMOSE engine. Returns elapsed seconds."""
+def run_java(
+    jar_path: Path, output_dir: Path, n_years: int, config_path: Path = EXAMPLES_CONFIG
+) -> float:
+    """Run Java OSMOSE on *config_path*, staged for the jar's version. Returns elapsed seconds.
+
+    Neither jar loads the bundled native-4.4.x config raw: 4.4.1 needs the
+    ``species.biomass.*`` resource keys the writer synthesizes, 4.3.3 needs
+    ``species.biomass.nsteps.year``. So the config goes through ``stage_config_for_java``, the
+    Run tab's staging, into a ``<output_dir>_stage`` sibling directory.
+    """
+    if str(PROJECT_DIR) not in sys.path:
+        sys.path.insert(0, str(PROJECT_DIR))  # ui/ is not an installed package
+    from osmose.config.aliases import target_version_for_jar
+    from osmose.config.reader import OsmoseConfigReader
+    from ui.pages.run import stage_config_for_java
+
     output_dir.mkdir(parents=True, exist_ok=True)
+    raw = dict(OsmoseConfigReader().read(config_path))
+    master, stage_overrides = stage_config_for_java(
+        raw,
+        output_dir.with_name(f"{output_dir.name}_stage"),
+        config_path.parent,
+        target_version=target_version_for_jar(jar_path),
+    )
     cmd = [
         "java",
         "-Xmx2g",
         "-jar",
         str(jar_path),
-        str(EXAMPLES_CONFIG),
+        str(master),
         f"-Poutput.dir.path={output_dir}",
         f"-Psimulation.time.nyear={n_years}",
         "-Poutput.start.year=0",
+        *(f"-P{key}={value}" for key, value in stage_overrides.items()),
     ]
     start = time.time()
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -127,37 +150,72 @@ def run_python(output_dir: Path, n_years: int, seed: int) -> float:
     return elapsed
 
 
-def compare_biomass(java_dir: Path, python_dir: Path) -> pd.DataFrame:
-    """Compare biomass time series between engines."""
-    java_file = list(java_dir.glob("*biomass*Simu0.csv"))
-    python_file = python_dir / "osmose_biomass_Simu0.csv"
+def _biomass_file(output_dir: Path) -> Path | None:
+    """The single ``<prefix>_biomass_Simu0.csv`` in *output_dir*, or None (with a message).
 
-    if not java_file or not python_file.exists():
+    Each engine names it by its own prefix: Java by ``output.file.prefix`` (``biscay`` for the
+    bundled config), the Python engine by its writer's default (``osm``). A hard-coded
+    ``osmose_biomass_Simu0.csv`` matched neither, so no comparison was ever produced.
+    """
+    found = sorted(output_dir.glob("*_biomass_Simu0.csv"))
+    if len(found) != 1:
+        print(
+            f"  Expected one *_biomass_Simu0.csv in {output_dir}, found {[p.name for p in found]}"
+        )
+        return None
+    return found[0]
+
+
+def _final_year_mean(bio: pd.DataFrame, species: str) -> float:
+    """Mean of *species* over the final simulated year, or 0.0 if the column is absent.
+
+    Rows are picked by ``Time``, so any record frequency works, and so do both stamping
+    conventions: Java labels a step by its end (0.0417 ... 5.0), Python by its start
+    (0.0 ... 4.9583), and ``Time > last - 1`` selects the same final-year rows from each.
+    """
+    if species not in bio.columns:
+        return 0.0
+    time = bio["Time"]
+    return float(bio.loc[time > time.max() - 1 + 1e-9, species].mean())
+
+
+def compare_biomass(java_dir: Path, python_dir: Path) -> pd.DataFrame:
+    """Compare the engines' final-year mean biomass, per species.
+
+    Not the last step: a species can be absent at a single step in both engines while they
+    disagree all year. Bay of Biscay Hake on a 5-yr run is 0 vs 0 at the final step, which
+    this used to score as agreement, but 247 t (Java) vs 41,540 t (Python) averaged over year
+    5 (2026-11-07).
+    """
+    java_file = _biomass_file(java_dir)
+    python_file = _biomass_file(python_dir)
+
+    if java_file is None or python_file is None:
         print("  Missing biomass files!")
         return pd.DataFrame()
 
-    java_bio = pd.read_csv(java_file[0], skiprows=1)
+    java_bio = pd.read_csv(java_file, skiprows=1)
     python_bio = pd.read_csv(python_file, skiprows=1)
 
     species = [c for c in java_bio.columns if c != "Time"]
     results = []
 
     for sp in species:
-        j_final = java_bio[sp].iloc[-1] if sp in java_bio.columns else 0
-        p_final = python_bio[sp].iloc[-1] if sp in python_bio.columns else 0
+        j_mean = _final_year_mean(java_bio, sp)
+        p_mean = _final_year_mean(python_bio, sp)
 
-        if j_final > 0 and p_final > 0:
-            log_ratio = np.log10(p_final / j_final)
-        elif j_final == 0 and p_final == 0:
-            log_ratio = 0.0
+        if j_mean > 0 and p_mean > 0:
+            log_ratio = np.log10(p_mean / j_mean)
+        elif j_mean == 0 and p_mean == 0:
+            log_ratio = 0.0  # absent from both engines for the whole final year
         else:
             log_ratio = float("inf")
 
         results.append(
             {
                 "Species": sp,
-                "Java_biomass": j_final,
-                "Python_biomass": p_final,
+                "Java_biomass": j_mean,
+                "Python_biomass": p_mean,
                 "Log10_ratio": log_ratio,
                 "Within_1_OoM": abs(log_ratio) <= 1.0,
             }
@@ -189,12 +247,9 @@ def main() -> None:
     printed, because ``resolve_jar`` globs ``osmose-java/`` and may pick a different
     version than the caller assumed.
 
-    NOTE: this script cannot currently run against a Java 4.4.x jar. It hands Java the
-    bundled ``data/examples`` config unmodified, and for NETCDF_BIOMASS forcing 4.4.x
-    reads ``species.biomass.file.spN`` while that config supplies the 4.3.x
-    ``species.file.spN`` — so the run dies in ``ResourceForcing.init()`` before the
-    first timestep. ``scripts/cross_engine_parity_440.py`` stages the keys and is the
-    working cross-engine comparison; see docs/java_cross_check_2026-09-27.md.
+    This is a single-run comparison of final-year mean biomass. For a statistical verdict (seed
+    ensembles, equivalence tests) use ``scripts/cross_engine_parity_440.py``; see
+    docs/java_cross_check_2026-09-27.md.
     """
     parser = argparse.ArgumentParser(description="Validate Python vs Java OSMOSE engine")
     parser.add_argument("--years", type=int, default=5, help="Simulation years (default: 5)")
@@ -242,7 +297,7 @@ def main() -> None:
     print(f"  Done in {python_time:.1f}s ({python_time / args.years:.2f}s/year)")
 
     # Compare biomass
-    print("[3/4] Comparing biomass...")
+    print("[3/4] Comparing final-year mean biomass...")
     df = compare_biomass(java_dir, python_dir)
     if df.empty:
         print("  No comparison data available")
