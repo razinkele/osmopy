@@ -98,6 +98,24 @@ class TestRandomWalk:
         on_land = (new_state.cell_x == 2) & (new_state.cell_y == 2)
         assert not on_land.any()
 
+    def test_unlocated_school_is_not_walked(self):
+        # An unlocated school has no position to displace. Clipping (-1 + dx) into the grid
+        # is what put every new "random"-method cohort in the corner (review S1, 2026-11-07).
+        # The last school is located so the walk really draws displacements (an all-unlocated
+        # state could pass by never drawing at all).
+        grid = Grid.from_dimensions(ny=5, nx=5)
+        state = SchoolState.create(n_schools=51, species_id=np.zeros(51, dtype=np.int32))
+        state = state.replace(
+            cell_x=np.append(np.full(50, -1), 2).astype(np.int32),
+            cell_y=np.append(np.full(50, -1), 2).astype(np.int32),
+            abundance=np.ones(51),
+        )
+        rng = np.random.default_rng(3)
+        walk_range = np.full(51, 2, dtype=np.int32)
+        new_state = random_walk(state, grid, walk_range, rng)
+        assert (new_state.cell_x[:50] == -1).all()
+        assert (new_state.cell_y[:50] == -1).all()
+
 
 class TestOutMortality:
     def test_kills_out_of_domain_schools(self):
