@@ -78,7 +78,7 @@ def growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -
     bypass = (state.age_dt == 0) | state.is_out
     growth_factor = np.where(bypass, delta_l, growth_factor)
 
-    # Apply growth, cap at lmax (which defaults to linf if not separately configured)
+    # Apply growth, capped at lmax only when species.lmax is set (default: no cap, as in Java)
     new_length = np.minimum(state.length + growth_factor, config.lmax[sp])
 
     # W_tonnes = c * L^b * 1e-6 (allometric grams -> tonnes)

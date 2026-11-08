@@ -482,10 +482,13 @@ def _parse_growth_params(
     additional_mortality_rate = _species_float_optional(
         cfg, "mortality.additional.rate.sp{i}", n_sp, default=0.0
     )
+    # No length cap unless species.lmax is set, as in Java: 4.3.3 defaults lmax to +infinity and
+    # uses it only as a growth gate (GrowthProcess.java:118-121, :140); 4.4.x drops it (review T1).
+    # This used to default to linf, which clipped well-fed schools at L-infinity.
     lmax = _species_float_optional(cfg, "species.lmax.sp{i}", n_sp, default=0.0)
     for i in range(n_sp):
         if lmax[i] <= 0:
-            lmax[i] = linf[i]
+            lmax[i] = np.inf
     return {
         "focal_linf": linf,
         "focal_k": k,
