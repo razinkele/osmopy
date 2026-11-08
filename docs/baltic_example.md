@@ -249,7 +249,7 @@ Species-by-species spawning windows (with DOIs):
   - **Perch 0.05, pikeperch 0.06:** small increments for cormorant predation in coastal areas.
   - **Others:** 0–0.05 (herring, sprat, flounder, smelt, stickleback). These are OSMOSE's generic "M not otherwise accounted for."
 - **Starvation mortality** (`baltic_param-starvation.csv`, cap 0.3 yr⁻¹): OSMOSE default. Starvation kicks in when foraging fails to meet maintenance rate. Cap prevents cascades.
-- **Out-of-domain mortality** (`baltic_param-out-mortality.csv`): herring 0.05, sprat 0.08, others 0. Represents fish that exit the model domain (e.g. into Kattegat) and are lost to the modeled ecosystem. Calibrated.
+- **Out-of-domain mortality** (`baltic_param-out-mortality.csv`): herring 0.05, sprat 0.08, others 0. Meant to represent fish that exit the model domain (e.g. into the Kattegat), but **inactive**: OSMOSE applies it only to schools that movement places outside the domain (a null map), and no Baltic movement slot is null, so it never fires. Zeroing both rates leaves a run bit-identical (2026-11-08). The file's "calibrated" label is historical: the calibration ran with these rates inert.
 
 ### Output configuration (`baltic_param-output.csv`)
 

@@ -1,4 +1,7 @@
 # Baltic Sea out-of-domain (migration) mortality — calibrated R18
+# INACTIVE on this config - OSMOSE applies these rates only to schools that movement places
+# outside the domain (a null map) and no Baltic movement slot is null - so they never fire.
+# Zeroing herring and sprat leaves a run bit-identical (verified 2026-11-08).
 mortality.out.rate.sp0;0
 mortality.out.rate.sp1;0.05
 mortality.out.rate.sp2;0.08
