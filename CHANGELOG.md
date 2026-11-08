@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.8] - 2026-11-08
+
+### Bug Fixes
+
+- **java:** fishery matrices get one trimmed row per species, not per accessibility stage (4dbcd41)
+- **forcing:** integrate the LTL water column properly and fill coastal regrid holes (#229) (1fe48d8)
+- **sp1b:** re-solve per-stock larval rates after the T3 + T1 engine fixes (fbb54b8)
+- **engine:** no length cap at L-infinity unless species.lmax is set, as in Java (T1) (6bd4a6b)
+- **engine:** a school with fewer than one fish is dead, as in Java (T3) (d40305e)
+
+### Documentation
+
+- **baltic:** replace the April adult-mortality values with the live ones (5754006)
+
+### Other
+
+- Merge pull request #237 from razinkele/fix/java-reconcile-fishery-stage-rows (7595316)
+- Merge pull request #235 from razinkele/docs/baltic-adult-m-values (99d2e61)
+- Merge pull request #234 from razinkele/fix/ltl-depth-integral (8c3bdf5)
+- Merge pull request #233 from razinkele/fix/engine-sub-one-fish-floor (dd6642e)
+- Merge master into fix/engine-sub-one-fish-floor (after #230) (71f8089)
+
+### Tests
+
+- say 'barely identifiable' (issue #232), not 'dead knob', for GreySeal's FR halfsat (08d8853)
+- re-derive what the L-infinity fix moved; assert the thermal gate at its mechanism (9dd04e9)
+
 ## [1.8.7] - 2026-11-08
 
 ### Bug Fixes
