@@ -1013,6 +1013,23 @@ def _strip_background(state: SchoolState, n_focal: int) -> SchoolState:
     return SchoolState(**sliced)
 
 
+def _floor_sub_one_fish(state: SchoolState) -> SchoolState:
+    """A school holding fewer than one fish is dead: set its abundance (and biomass) to 0.
+
+    Java floors instantaneous abundance below one fish to zero (`School.updateBiomAndAbd`,
+    School.java:583-586), and every later read in the step sees the floored value. Applied right
+    after mortality, so growth, the spawning stock behind the `ssb == 0` seeding rescue, and
+    outputs all see what Java sees. The zeroed schools are removed by the end-of-step compaction.
+    Without it, residues from mortality accumulated: on the Baltic config about half of all live
+    focal schools held under one fish, which doubled the work per step (review T3).
+    """
+    sub_one = (state.abundance > 0) & (state.abundance < 1.0)
+    if not sub_one.any():
+        return state
+    abundance = np.where(sub_one, 0.0, state.abundance)
+    return state.replace(abundance=abundance, biomass=abundance * state.weight)
+
+
 # ---------------------------------------------------------------------------
 # Output collection
 # ---------------------------------------------------------------------------
@@ -2108,6 +2125,8 @@ def simulate(
 
         # Strip background schools
         state = _strip_background(state, n_focal)
+        # Schools left with < 1 fish by mortality are dead (Java's instantaneous-abundance floor)
+        state = _floor_sub_one_fish(state)
 
         # -- Genetics trait expression (before growth/bioen) --
         trait_overrides: dict[str, NDArray[np.float64]] = {}
