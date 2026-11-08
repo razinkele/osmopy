@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.8.7] - 2026-11-08
+
+### Bug Fixes
+
+- **sp1b:** re-solve per-stock larval rates after the herring autumn-packing removal (c36a135)
+- **baltic:** stop packing every adult herring onto a 10-cell map each autumn (9f31b8e)
+- **sp1b:** re-solve per-stock larval rates after the GreySeal column (682a68a)
+- **baltic:** give GreySeal an accessibility column (it ate every prey at 1.0) (4a3c25d)
+
+### Documentation
+
+- **baltic:** source the herring autumn spawning share (about 1% or less today, not 25%) (f803808)
+- **baltic:** say plainly that pikeperch and smelt are not credibly represented (5e997c2)
+- **baltic:** the herring/sprat out-of-domain mortality never applies (c1940f6)
+- address review on the reference-demo change (22539fd)
+- make the full EEC the reference demo; say what Bay of Biscay can't do (01dcf8e)
+
+### Other
+
+- Merge pull request #230 from razinkele/fix/baltic-herring-autumn-packing (0011fe3)
+- Merge master into fix/baltic-herring-autumn-packing (after #226, #227, #228) (ebaa3e1)
+- Merge pull request #227 from razinkele/fix/baltic-greyseal-accessibility (dc315da)
+- Merge pull request #228 from razinkele/docs/baltic-percid-limitation (1adb930)
+- Merge pull request #226 from razinkele/docs/baltic-out-mortality-inert (31309a7)
+- test+docs(baltic): guard map orientation and the removed herring packing; record every certification (be28eff)
+- Merge pull request #225 from razinkele/docs/eec-reference-demo (13d5ba6)
+
 ## [1.8.6] - 2026-11-07
 
 ### Bug Fixes
