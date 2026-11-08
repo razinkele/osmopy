@@ -62,10 +62,13 @@ movement.file.map3;maps/cod_west_adult.csv
 movement.steps.map3;0;1;10;11;12;13;14;15;16;17;18;19;20;21;22;23
 
 # ============================================
-# sp1: Herring — juvenile (0-1), adult (1+), spring spawning (Mar-Jun, coastal),
-#   autumn spawning (Sep-Nov, coastal). Both spawning components use coastal areas.
-#   Autumn-spawning herring are ~20-30% of Baltic herring reproductive output
-#   (mainly western Baltic SD22-24 and some central Baltic).
+# sp1: Herring — juvenile (0-1), adult (1+), spring spawning (Mar-Jun, coastal).
+#   No autumn component since 2026-11-08: Baltic autumn spawners "have faced strong
+#   depression for decades" (Bekkevold et al. 2016) and the Gulf of Riga autumn stock has
+#   been collapsed since the 1960s-70s, while the 20-30% share once claimed here was never
+#   sourced and moved EVERY adult onto a 10-cell map for Sep-Nov (review C1,
+#   docs/reviews/2026-11-07-temporal-spatial-dynamics-review.md). maps/herring_spawning_autumn.csv
+#   is kept but unwired.
 # ============================================
 movement.species.map4;herring
 movement.initialage.map4;0
@@ -77,20 +80,13 @@ movement.species.map5;herring
 movement.initialage.map5;1
 movement.lastage.map5;13
 movement.file.map5;maps/herring_adult.csv
-movement.steps.map5;0;1;2;3;12;13;14;15;22;23
+movement.steps.map5;0;1;2;3;12;13;14;15;16;17;18;19;20;21;22;23
 
 movement.species.map6;herring
 movement.initialage.map6;1
 movement.lastage.map6;13
 movement.file.map6;maps/herring_spawning.csv
 movement.steps.map6;4;5;6;7;8;9;10;11
-
-# Autumn spawning season (Sep-Nov, steps 16-21)
-movement.species.map25;herring
-movement.initialage.map25;1
-movement.lastage.map25;13
-movement.file.map25;maps/herring_spawning_autumn.csv
-movement.steps.map25;16;17;18;19;20;21
 
 # ============================================
 # sp2: Sprat — juvenile (0-1), adult (1+), spawning (Apr-Jul, deep)
