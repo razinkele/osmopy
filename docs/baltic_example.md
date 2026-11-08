@@ -213,7 +213,7 @@ Species-by-species spawning windows (with DOIs):
 - **Random-walk range:** 2–3 cells/dt for most species (moderate dispersal); wider for pelagic species on long migrations. Hand-set.
 - **Maps:** 25 CSV grids under `maps/`. Each is 50×40 with `1` = habitable, `0` = accessible-but-avoided, `-99` = land. File naming is `{species}_{stage}.csv` with stages `juvenile`, `adult`, `spawning` (plus `spawning_autumn` for herring — created to support the future autumn-spawning herring split but not currently wired).
 - **Stage-to-map assignment:** controlled by `movement.distribution.ndt.spN` and the per-stage age thresholds in the species CSV. A single-stage species uses `adult` throughout; species with clear ontogenetic shifts (cod, flounder) split into juvenile/adult.
-- **Sources:** map patterns hand-drawn from ICES distribution atlases, HELCOM species fact-sheets, and BalticNest WFD reports. Spawning maps tightened to known spawning grounds (e.g. cod spawning restricted to Bornholm/Gdansk/Gotland basins).
+- **Sources:** map patterns hand-drawn from ICES distribution atlases, HELCOM species fact-sheets, and BalticNest WFD reports. Spawning maps tightened to known spawning grounds. Eastern cod spawn only in SD 25 since 2026-11-08 (the Bornholm Basin and Słupsk Furrow, 14 cells; built by `scripts/build_cod_east_sd25_spawning.py`; Eero et al. 2012). The previous map had no Bornholm Basin cells and most of its cells at or above 57 °N.
 - **Rebuild:** if distribution data shifts, re-run `scripts/rebuild_baltic_mask.py` to sync the mask union; re-draw individual map CSVs by hand.
 
 ### Fishing (`baltic_param-fishing.csv`, `fishing/fishing-distrib.csv`, `fishery-catchability.csv`, `fishery-discards.csv`)
