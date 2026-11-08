@@ -195,6 +195,7 @@ Ready-to-paste issue drafts. Not created on GitHub — review and open manually.
 **Fix plan.**
 1. Make `augment_accessibility` idempotent: skip any predator already present as a column; only add absent ones. (Add a unit test: staging a matrix that already contains `Cormorant` yields exactly one `Cormorant` column.)
 2. *(Optional, ties into cross-check fidelity — deprioritized per 2026-07-29 decision.)* For predators absent from the committed matrix, fill the added column with the Python fallback `access_coeff = 1.0` rather than the authored `BG_ACCESS`, so the staged matrix matches Python's *effective* accessibility.
+   > **Resolved 2026-11-08 in the opposite direction:** the 1.0 was the defect (the `-1` path, see CLAUDE.md), so the committed matrix gained a `GreySeal` column equal to `BG_ACCESS["GreySeal"]`, and both engines now read the same values. Do not implement this step.
 
 **Acceptance criteria.**
 - No duplicate predator columns after `stage_background_for_java` on the disaggregated config.

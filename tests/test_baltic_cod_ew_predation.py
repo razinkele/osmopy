@@ -31,14 +31,25 @@ def _df() -> pd.DataFrame:
     return pd.read_csv(MATRIX, sep=";", index_col=0)
 
 
-def test_matrix_covers_new_species_set_plus_background_predator():
-    """15 prey rows (focal + LTL). The predator columns add a Cormorant background
-    column on top of the prey set — the top-down control introduced by the
-    percid-removals reconciliation — so the matrix is 15x16, not square."""
+def test_matrix_covers_new_species_set_plus_background_predators():
+    """15 prey rows (focal + LTL). The predator columns add the two background predators on top
+    of the prey set: Cormorant (the percid-removals top-down control) and GreySeal. GreySeal had
+    no column until 2026-11-08, which made it eat every prey at accessibility 1.0 (a missing
+    name resolves to -1, and the kernel's -1 path means full access)."""
     df = _df()
     assert list(df.index) == SPECIES_ORDER  # prey rows: focal + LTL
-    assert list(df.columns) == SPECIES_ORDER + ["Cormorant"]  # + background predator column
-    assert df.shape == (15, 16)
+    assert list(df.columns) == SPECIES_ORDER + ["Cormorant", "GreySeal"]
+    assert df.shape == (15, 17)
+
+
+def test_greyseal_column_matches_the_java_arm():
+    """Python's GreySeal column equals BG_ACCESS["GreySeal"], which the Java staging uses, so both
+    engines simulate the same seal predation (0 for any prey BG_ACCESS does not list)."""
+    from osmose.java_background_staging import BG_ACCESS
+
+    col = _df()["GreySeal"]
+    expected = {prey: BG_ACCESS["GreySeal"].get(prey, 0.0) for prey in col.index}
+    assert col.to_dict() == expected
 
 
 def test_no_nan_and_values_in_unit_range():
@@ -70,12 +81,11 @@ def test_no_cross_predation_between_stocks():
 def test_loads_through_engine_accessibility_matrix():
     from osmose.engine.accessibility import AccessibilityMatrix
 
-    names = SPECIES_ORDER + [
-        "GreySeal",
-        "Cormorant",
-    ]  # GreySeal absent (1.0 fallback); Cormorant is a column
+    names = SPECIES_ORDER + ["GreySeal", "Cormorant"]  # both background predators are columns
     am = AccessibilityMatrix.from_csv(str(MATRIX), names)
-    assert am.raw_matrix.shape == (15, 16)  # 15 prey rows x 16 predators (incl. Cormorant)
+    assert am.raw_matrix.shape == (15, 17)  # 15 prey rows x 17 predators (+ Cormorant, GreySeal)
+    # GreySeal must resolve as a PREDATOR column: a miss there means full access (the -1 path)
+    assert am.pred_lookup.get("GreySeal") is not None
     # both cod species resolve to a matrix label
     assert am.resolve_name("cod_west") is not None
     assert am.resolve_name("cod_east") is not None

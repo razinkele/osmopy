@@ -1,6 +1,6 @@
 {
   "note": "Written by scripts/recalibrate_sp1b.py; each run REPLACES this file (a new solve is new provenance; prior solves live in git history). 'joint' is the BEST sweep (smallest worst-stock rel_err), 'per_stock' the 1-D solves of that sweep, 'sweep_history' the joint rel_errs after every sweep. Frozen values in osmose/calibration/larva_recal.py are pasted from the printed block by hand.",
-  "date": "2026-11-05",
+  "date": "2026-11-08",
   "config": "data/baltic/baltic_all-parameters.csv",
   "field": "data/baltic/forcing/baltic_rv_field.nc",
   "tol": 0.02,
@@ -9,8 +9,8 @@
     "cod_west"
   ],
   "baselines": {
-    "cod_east": 105990.1126348874,
-    "cod_west": 6235.707534219898
+    "cod_east": 102490.67802086542,
+    "cod_west": 3048.3834377157104
   },
   "d0": {
     "cod_east": 10.15686139,
@@ -46,101 +46,105 @@
   },
   "per_stock": {
     "cod_east": {
-      "rate": 9.068664426614918,
+      "rate": 9.097301188809261,
       "feasible": true,
       "converged": true,
-      "mean_on": 107750.210478856,
-      "rel_err": 0.01660624562247377,
-      "iters": 5,
+      "mean_on": 102101.96366914666,
+      "rel_err": 0.0037926800683241576,
+      "iters": 6,
       "message": "converged",
       "grid": [
         [
           0.0,
-          2224608.330624707
+          2251741.199763631
         ],
         [
           2.5392153475,
-          1185078.985613692
+          1203697.8261419756
         ],
         [
           5.078430695,
-          676051.8393911211
+          673687.2974785841
         ],
         [
           7.6176460425,
-          292531.58457099315
+          302111.0746926747
         ],
         [
           8.324108609561968,
-          196788.80195210004
+          197786.69261845792
         ],
         [
           10.15686139,
-          13844.386442026296
+          11204.59697416657
         ]
       ]
     },
     "cod_west": {
-      "rate": 9.013820732525947,
+      "rate": 9.27626888348545,
       "feasible": true,
       "converged": true,
-      "mean_on": 6237.785878947298,
-      "rel_err": 0.00033329733891387453,
-      "iters": 7,
+      "mean_on": 3009.49420404292,
+      "rel_err": 0.012757330062760029,
+      "iters": 11,
       "message": "converged",
       "grid": [
         [
           0.0,
-          1017367.9682644607
+          1008567.814648101
         ],
         [
           2.5392153475,
-          483013.4512294135
+          475971.90708088106
         ],
         [
           5.078430695,
-          161291.10933847455
+          163897.25920120627
         ],
         [
           7.6176460425,
-          30727.379198022227
+          30806.483963576655
         ],
         [
           8.616764504140225,
-          12329.493473613837
+          12484.926836534527
         ],
         [
           10.15686139,
-          427.0175708043228
+          235.0222005132489
         ]
       ]
     }
   },
   "sweep_history": [
     {
-      "cod_east": 0.014082959206260494,
-      "cod_west": 0.00033329733891387453
+      "cod_east": 0.048918764169416096,
+      "cod_west": 0.012232098859833678
+    },
+    {
+      "cod_east": 6.0363982716606615e-05,
+      "cod_west": 0.012757330062760029
     }
   ],
   "joint": {
-    "best_sweep": 1,
+    "best_sweep": 2,
     "joint_tol": 0.05,
     "rates": {
-      "cod_east": 9.068664426614918,
-      "cod_west": 9.013820732525947
+      "cod_east": 9.097301188809261,
+      "cod_west": 9.27626888348545
     },
     "means": {
-      "cod_east": 107482.76706739147,
-      "cod_west": 6237.785878947298
+      "cod_east": 102496.86476638209,
+      "cod_west": 3009.49420404292
     },
     "rel_errs": {
-      "cod_east": 0.014082959206260494,
-      "cod_west": 0.00033329733891387453
+      "cod_east": 6.0363982716606615e-05,
+      "cod_west": 0.012757330062760029
     },
     "converged": true,
-    "sweeps": 1,
-    "evaluations": 23,
-    "total_cod_off": 112225.82016910729,
-    "total_cod_on": 113720.55294633876
+    "sweeps": 2,
+    "evaluations": 48,
+    "total_cod_off": 105539.06145858113,
+    "total_cod_on": 105506.358970425
   }
 }

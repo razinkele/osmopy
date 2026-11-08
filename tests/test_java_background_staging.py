@@ -77,6 +77,7 @@ def test_stage_background_for_java_emits_keys_and_returns_cutoff_override(tmp_pa
     from ui.pages.run import write_temp_config
 
     src = Path("data/baltic")
+    source_matrix = (src / "predation-accessibility.csv").read_text()
     raw = dict(OsmoseConfigReader().read(str(src / "baltic_all-parameters.csv")))
     stage = tmp_path / "stage"
     write_temp_config(raw, stage, source_dir=src, target_version="4.4.1")
@@ -90,10 +91,12 @@ def test_stage_background_for_java_emits_keys_and_returns_cutoff_override(tmp_pa
     assert "species.biomass.sp15 ;" in master  # GreySeal inline biomass
     assert "output.diet.stage.threshold.sp15 ; 90" in master  # diet-stage threshold
     assert "simulation.nschool.sp15 ; 10" in master
-    # accessibility matrix got the predator columns (staged copy)
-    assert "GreySeal" in (stage / "predation-accessibility.csv").read_text().splitlines()[0]
+    # the staged matrix has exactly one GreySeal column: the source already carries it (since
+    # 2026-11-08), so staging must not append a duplicate
+    staged_header = (stage / "predation-accessibility.csv").read_text().splitlines()[0]
+    assert staged_header.split(";").count("GreySeal") == 1
     # source untouched
-    assert (src / "predation-accessibility.csv").read_text().splitlines()[0].count("GreySeal") == 0
+    assert (src / "predation-accessibility.csv").read_text() == source_matrix
 
 
 def test_stage_background_raises_clear_error_when_predator_nc_missing(tmp_path):
