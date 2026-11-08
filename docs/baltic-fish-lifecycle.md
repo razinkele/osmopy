@@ -308,7 +308,8 @@ through space as well as time:
 - **Adults** use **offshore/feeding** maps during the non-spawning steps.
 - **Spawning-stage adults** are redirected to **spawning-ground** maps during the species' spawning
   window — e.g. `cod_spawning` (ages 4–21, steps 4–15 = Mar–Aug → the Bornholm/Gdańsk deep basins),
-  `herring_spawning` (spring, coastal) plus a separate `herring_spawning_autumn` (steps 16–21),
+  `herring_spawning` (spring, coastal; since 2026-11-08 the autumn map `herring_spawning_autumn` is
+  unwired, so herring's 25% autumn eggs are released from the adult distribution),
   `sprat_spawning` (deep), `flounder_spawning` (deep south), and coastal/estuarine spawning maps for
   perch, pike-perch, smelt and stickleback.
 
