@@ -3,7 +3,11 @@
 **What this is:** a new calibration of the production Baltic model. It is not a fix certified
 against the old calibration. Four corrections are combined, and two larval mortality rates are
 re-fitted onto the biomass targets. Each step below was measured before the next was decided, and
-each reading was stated before its run.
+each reading was stated before its run. Those statements are committed as written:
+`docs/diagnostics/baltic_ltl_gate_prestated_2026-11-08.md` (the gate) and
+`docs/diagnostics/baltic_recal_prestated_2026-11-08.md` (the solve's targets, fallback and
+cod_east rule). The 'accept only if every seed keeps cod_west at or above 5 kt' rule in §3 was
+stated in the working session before candidate A's certification ran.
 
 ## 1. The corrections
 
@@ -108,6 +112,12 @@ outside the verdict.
   includes the Java cross-check (`docs/baltic_java_crosscheck_2026-11-06.md`; the Java arm reads
   the same file), the ICES validation notes, the B2/C4 scenario tables and the generated reports.
   Each states its date; none was re-run here.
+- **Cross-engine parity is unverified since #233.** The T3 floor and T1 no-cap engine changes
+  affect every config. `scripts/cross_engine_parity_440.py` was NOT re-run, so the published
+  "14/14 EEC, 7/8 BoB within 1 OoM" figures (CLAUDE.md, README, `docs/osmose_4.4_parity.md`)
+  rest on the pre-#233 engine. Both changes move Python toward Java, so parity should hold or
+  improve, but that is a prediction, not a measurement. Re-running it is the first follow-up when
+  a jar is available.
 - **Superseded parked branches:** `fix/baltic-ltl-coastal-holes` (the hole fill alone),
   `fix/baltic-cod-east-sd25-spawning` (C2 alone) and `exp/baltic-c1-full` (the autumn fold on the
   old field).
