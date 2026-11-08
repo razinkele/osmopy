@@ -244,10 +244,7 @@ Species-by-species spawning windows (with DOIs):
 ### Mortality (outside fishing and predation)
 
 - **Larval additional mortality** (`baltic_param-additional-mortality.csv`, rates 3.5–15.0 yr⁻¹). *These are calibration parameters, not measurable biology.* Larval M is the primary recruitment-control lever in OSMOSE; values set by `scripts/calibrate_baltic.py` (currently R18 values).
-- **Adult additional mortality** (same file). Non-zero for:
-  - **Cod 0.20:** includes implicit grey-seal predation. ICES estimates grey seal population >40 000 in Baltic, consuming ~30–50 kt cod/yr (comparable to fishing mortality). With stock ~120 kt, seal-induced F ≈ 0.25–0.4 yr⁻¹. Config uses conservative 0.15 yr⁻¹ on top of 0.05 baseline.
-  - **Perch 0.05, pikeperch 0.06:** small increments for cormorant predation in coastal areas.
-  - **Others:** 0–0.05 (herring, sprat, flounder, smelt, stickleback). These are OSMOSE's generic "M not otherwise accounted for."
+- **Adult additional mortality** (same file), in yr⁻¹. These are calibrated values, not measured biology: cod_west 1.25, cod_east 0.9, herring 2.25, sprat 0.21, flounder 0.006, perch 0.097, pikeperch 0.014, smelt 0.45, stickleback 0.80. The April-2026 values that stood here (cod 0.20, explained as implicit grey-seal predation; perch 0.05 and pikeperch 0.06 for cormorants; the rest 0–0.05) are history. Grey seals and cormorants are now explicit background predators with their own accessibility columns (GreySeal's since 2026-11-08, #227), so the M term no longer stands in for them. cod_east's 0.9 is the value its envelope needs: at 1.2546 the stock sits about 5.6× below it (`docs/baltic_certification_reread_2026-08-01.md`).
 - **Starvation mortality** (`baltic_param-starvation.csv`, cap 0.3 yr⁻¹): OSMOSE default. Starvation kicks in when foraging fails to meet maintenance rate. Cap prevents cascades.
 - **Out-of-domain mortality** (`baltic_param-out-mortality.csv`): herring 0.05, sprat 0.08, others 0. Meant to represent fish that exit the model domain (e.g. into the Kattegat), but **inactive**: OSMOSE applies it only to schools that movement places outside the domain (a null map), and no Baltic movement slot is null, so it never fires. Zeroing both rates leaves a run bit-identical (2026-11-08). The file's "calibrated" label is historical: the calibration ran with these rates inert.
 
