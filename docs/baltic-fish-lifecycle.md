@@ -252,6 +252,10 @@ they outgrow predators' size windows):
   fishery dominates fishing pressure.
 - **Out-of-domain mortality** `mortality.out.rate.spN`: only the two pelagic migrants carry it —
   Sprat 0.08, Herring 0.05 (losses when schools leave the modeled area). All others 0.
+  **It has no effect on this config.** OSMOSE applies the rate only to schools that movement
+  places outside the domain (a null map for that age and step), and every Baltic movement slot has
+  a map, so no school ever leaves. Zeroing both rates leaves a 3-year run bit-identical, and the
+  recorded out-of-domain mortality is 0 throughout (2026-11-08).
 
 ### Aging
 
@@ -325,7 +329,7 @@ dominate at different ages:
 | **Egg** | exempt from predation/fishing; killed only by the larval additional rate when it transitions |
 | **Larva** | `mortality.additional.larva.rate` (3.5–15 yr⁻¹) — orders of magnitude above everything else; the recruitment bottleneck |
 | **Juvenile / small fish** | **predation** — small individuals sit inside cod/perch/pike-perch size windows; also subject to fishing once past `a50` (pelagics from age 1) |
-| **Adult** | low background M (0–0.20, cod highest for seals) + fishing F (0.01–0.32, sprat highest) + a growing size-refuge from predation; pelagics also lose to out-of-domain mortality |
+| **Adult** | low background M (0–0.20, cod highest for seals) + fishing F (0.01–0.32, sprat highest) + a growing size-refuge from predation (out-of-domain mortality is configured for the pelagics but never applies; see Mortality above) |
 | **All ages** | **starvation** whenever feeding efficiency < 0.57, up to 0.3 yr⁻¹ (uniform across species); and **aging** at the lifespan |
 
 Mechanically, mortality is resolved in `mortality()` (`processes/mortality.py`) over
