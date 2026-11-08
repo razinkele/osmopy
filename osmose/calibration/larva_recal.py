@@ -358,26 +358,27 @@ JOINT_TOL: float = 0.05
 
 # Filled by hand from `scripts/recalibrate_sp1b.py` output (the aggregate-cod solve of
 # 2026-07-02, RECAL_RATE=14.655 at d0=15.0, is retired: docs/diagnostics/sp1b_recalibration.md).
-# 2026-11-05 re-solve after the sprat F change (3d74d572) moved both SP1-off baselines (the
-# 2026-10-01 rates had drifted to cod_west -4.5%); converged in one sweep, both stocks inside the
+# 2026-11-08 re-solve after the GreySeal accessibility column (the seal had no column, so it ate
+# every prey at 1.0) moved both SP1-off baselines (cod_east 105990 -> 102491 t, cod_west
+# 6236 -> 3048 t); converged in two sweeps, the frozen state is sweep 2, both stocks inside the
 # 1-D tol. Rates are the solver's bisection floats as printed in docs/diagnostics/sp1b_solve.log,
 # means from one evaluation of the pair.
 RECAL_RATES: dict[str, StockRecal] = {
     "cod_east": StockRecal(
-        rate=9.068664426614918,
+        rate=9.097301188809261,
         d0=10.15686139,
-        baseline=105990.1126348874,
-        mean_on=107482.76706739147,
-        rel_err=0.014082959206260494,
-        note="solved 2026-11-05 sweep 1: converged (1-D 1.7%); joint +1.4%",
+        baseline=102490.67802086542,
+        mean_on=102496.86476638209,
+        rel_err=6.0363982716606615e-05,
+        note="solved 2026-11-08 sweep 2: converged (1-D 0.4%); joint +0.01%",
     ),
     "cod_west": StockRecal(
-        rate=9.013820732525947,
+        rate=9.27626888348545,
         d0=10.15686139,
-        baseline=6235.707534219898,
-        mean_on=6237.785878947298,
-        rel_err=0.00033329733891387453,
-        note="solved 2026-11-05 sweep 1: converged (1-D 0.03%); joint +0.03%",
+        baseline=3048.3834377157104,
+        mean_on=3009.49420404292,
+        rel_err=0.012757330062760029,
+        note="solved 2026-11-08 sweep 2: converged (1-D 1.3%); joint -1.3%",
     ),
 }
 
