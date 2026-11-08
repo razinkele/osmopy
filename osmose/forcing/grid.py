@@ -32,7 +32,13 @@ def target_coords(grid: GridSpec) -> tuple[np.ndarray, np.ndarray]:
 
 
 def regrid(
-    data_3d: np.ndarray, src_lat: np.ndarray, src_lon: np.ndarray, grid: GridSpec
+    data_3d: np.ndarray,
+    src_lat: np.ndarray,
+    src_lon: np.ndarray,
+    grid: GridSpec,
+    *,
+    src_valid: np.ndarray | None = None,
+    target_mask: np.ndarray | None = None,
 ) -> np.ndarray:
     """Nearest-neighbor regrid (time, src_lat, src_lon) -> (time, nlat, nlon).
 
@@ -41,6 +47,15 @@ def regrid(
     (argmin always returns an in-bounds index). The MCP path was implicitly
     safe (download bbox always covered the grid); the grid-general + BYO-file
     surface this package adds removes that guarantee, so surface it loudly.
+
+    Masked fallback (both ``src_valid`` (src_lat, src_lon) bool, True = the source pixel has
+    data, and ``target_mask`` (nlat, nlon) bool, True = wet model cell, given): a wet cell
+    whose nearest source pixel is invalid takes the nearest VALID pixel instead. Without it,
+    a coastal model cell snaps to a land pixel and comes out as an all-zero ocean cell (the
+    Baltic LTL lost 65 of 616 cells that way). Every other cell keeps exactly its plain
+    nearest-neighbour value, so a regenerated file differs from its predecessor only at those
+    holes. Distance is plain lat/lon degrees, the metric of the Baltic oxygen forcing's
+    masked regrid (``scripts/make_baltic_oxygen_forcing.py``), so the two pick the same pixel.
     """
     tlat, tlon = target_coords(grid)
     if (
@@ -65,12 +80,47 @@ def regrid(
     nlat, nlon = len(tlat), len(tlon)
     nt = data_3d.shape[0]
     out = np.zeros((nt, nlat, nlon), dtype=np.float64)
+    lat_idx = np.array([int(np.argmin(np.abs(src_lat - y))) for y in tlat])
+    lon_idx = np.array([int(np.argmin(np.abs(src_lon - x))) for x in tlon])
     for j in range(nlat):
-        lat_idx = int(np.argmin(np.abs(src_lat - tlat[j])))
         for i in range(nlon):
-            lon_idx = int(np.argmin(np.abs(src_lon - tlon[i])))
-            out[:, j, i] = data_3d[:, lat_idx, lon_idx]
+            out[:, j, i] = data_3d[:, lat_idx[j], lon_idx[i]]
+    if src_valid is not None and target_mask is not None:
+        _fill_from_nearest_valid(
+            out, data_3d, src_lat, src_lon, tlat, tlon, lat_idx, lon_idx, src_valid, target_mask
+        )
     return out
+
+
+def _fill_from_nearest_valid(
+    out: np.ndarray,
+    data_3d: np.ndarray,
+    src_lat: np.ndarray,
+    src_lon: np.ndarray,
+    tlat: np.ndarray,
+    tlon: np.ndarray,
+    lat_idx: np.ndarray,
+    lon_idx: np.ndarray,
+    src_valid: np.ndarray,
+    target_mask: np.ndarray,
+) -> None:
+    """In place: wet target cells whose nearest pixel is invalid take the nearest valid one."""
+    if src_valid.shape != (len(src_lat), len(src_lon)):
+        raise ValueError(
+            f"src_valid shape {src_valid.shape} != source grid {(len(src_lat), len(src_lon))}"
+        )
+    if target_mask.shape != out.shape[1:]:
+        raise ValueError(f"target_mask shape {target_mask.shape} != target grid {out.shape[1:]}")
+    holes = target_mask & ~src_valid[np.ix_(lat_idx, lon_idx)]
+    if not holes.any():
+        return
+    vi, vj = np.nonzero(src_valid)
+    if vi.size == 0:
+        raise ValueError("src_valid has no valid source pixel to fall back on")
+    vlat, vlon = src_lat[vi], src_lon[vj]
+    for j, i in zip(*np.nonzero(holes), strict=True):
+        k = int(np.argmin((vlat - tlat[j]) ** 2 + (vlon - tlon[i]) ** 2))
+        out[:, j, i] = data_3d[:, vi[k], vj[k]]
 
 
 def resample_to_24(data: np.ndarray) -> np.ndarray:
