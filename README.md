@@ -125,11 +125,11 @@ See `docs/parity-roadmap.md` for the 7-phase closure history of the final parity
 
 Three ready-to-run configurations ship in-tree.
 
-| Location | Species | Cells | Notes |
+| Location | Species | Ocean cells (grid) | Notes |
 |---|---|---|---|
-| `data/eec_full/` | 14 | Eastern English Channel | **Reference example** and cross-engine parity benchmark. Over 70 years, 12 of 14 species hold steady; cod and whiting decline toward zero. |
-| `data/baltic/` | 8 + 6 LTL | 612 (50 × 40) | Baltic calibration sandbox + ICES cross-validation |
-| `data/examples/` | 8 | Bay of Biscay | Short runs and engine smoke tests only. Not self-sustaining: no fish ever matures, so all species die out once the initial seeding ends (by year 40). |
+| `data/eec_full/` | 14 | 460 (45 × 22) | Eastern English Channel. **Reference example** and cross-engine parity benchmark. Over 70 years, 12 of 14 species hold steady; cod and whiting decline toward zero. |
+| `data/baltic/` | 8 + 6 LTL | 616 (50 × 40) | Baltic Sea. Calibration sandbox + ICES cross-validation |
+| `data/examples/` | 8 | 250 (20 × 20) | Bay of Biscay. Short runs and engine smoke tests only. Not self-sustaining: no fish ever matures, so all species die out once the initial seeding ends (by year 40). |
 
 ### Baltic Sea
 
