@@ -116,3 +116,61 @@ def test_reconcile_raises_on_name_collision(tmp_path):
     )
     with pytest.raises(ValueError, match="collide"):
         reconcile_config_for_java(stage)
+
+
+def _write_stage_structured(stage: Path) -> None:
+    """A staged config whose predation-accessibility matrix is STAGE-STRUCTURED, as EEC's is:
+    each prey has a juvenile row (`name < threshold`) and an adult row (`name`)."""
+    stage.mkdir(parents=True, exist_ok=True)
+    (stage / "osm_all-parameters.csv").write_text(
+        "species.name.sp0 ; cod\n"
+        "species.name.sp1 ; sole\n"
+        "predation.accessibility.file ; predation-accessibility.csv\n"
+        "fisheries.catchability.file ; fishery-catchability.csv\n"
+        "fisheries.discards.file ; fishery-discards.csv\n"
+    )
+    (stage / "predation-accessibility.csv").write_text(
+        "v Prey / Predator >;cod < 0.45;cod;sole < 0.25;sole\n"
+        "cod < 0.45 ;0.8;0.8;0;0\n"
+        "cod;0.1;0.1;0;0\n"
+        "sole < 0.25 ;0.8;0.8;0;0\n"
+        "sole;0.1;0.1;0;0\n"
+    )
+    (stage / "fishery-catchability.csv").write_text(",trawl,net\ncod,1,0\nsole,0,1\n")
+    (stage / "fishery-discards.csv").write_text(",trawl,net\ncod,0,0\nsole,0,0.2\n")
+
+
+def test_reconcile_gives_fishery_matrices_one_row_per_species_not_per_stage(tmp_path):
+    """Fishery matrices are per species. Taking their rows from a stage-structured accessibility
+    matrix added zero-filled `cod < 0.45`-style rows ahead of each species' real row. Since #223
+    put every Java path through this reconcile, that cut EEC's Java yields to about 1e-4 of
+    Python's while biomass still agreed (2026-11-08 parity re-run). Rows must be the species
+    names, once each, with their values preserved."""
+    stage = tmp_path / "stage"
+    _write_stage_structured(stage)
+    reconcile_config_for_java(stage)
+    for name, want in (
+        ("fishery-catchability.csv", {"cod": ["1", "0"], "sole": ["0", "1"]}),
+        ("fishery-discards.csv", {"cod": ["0", "0"], "sole": ["0", "0.2"]}),
+    ):
+        lines = (stage / name).read_text().splitlines()
+        rows = [ln.split(",") for ln in lines[1:]]
+        labels = [r[0] for r in rows]
+        assert labels == ["cod", "sole"], (name, labels)
+        assert {r[0]: r[1:] for r in rows} == want, name
+
+
+def test_reconcile_matches_fishery_matrix_labels_despite_surrounding_whitespace(tmp_path):
+    """EEC's fishery-catchability.csv labels a row `pouting ` (trailing space). Java trims it, and
+    pouting's yield matched Python before #223. The reconcile looked values up by the untrimmed
+    label, missed it and zero-filled the row, leaving pouting's Java yield at about 1e-4 of
+    Python's. Labels must match after trimming."""
+    stage = tmp_path / "stage"
+    _write_stage_structured(stage)
+    (stage / "fishery-catchability.csv").write_text(",trawl , net\ncod ,1,0\n sole,0,1\n")
+    reconcile_config_for_java(stage)
+    rows = {
+        ln.split(",")[0]: ln.split(",")[1:]
+        for ln in (stage / "fishery-catchability.csv").read_text().splitlines()[1:]
+    }
+    assert rows == {"cod": ["1", "0"], "sole": ["0", "1"]}
