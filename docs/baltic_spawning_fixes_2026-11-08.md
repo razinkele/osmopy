@@ -64,7 +64,28 @@ base, with herring at 3.84–3.95 Mt.
   bounded cod_east recalibration (its larval mortality, or the RV gate's scale) to restore the 2–3%;
   (c) treat the cod_east floor as the binding constraint it now is, and revisit it with the stock's own
   assessment.
-- **The autumn egg share (25%, unsourced).** Removing it is literature-correct but collapses cod_west, so
-  any future attempt needs cod_west recalibrated with it.
+- **The autumn egg share (25%, unsourced).** It is now sourced, and the sourced value is about 1% or
+  less. Autumn spawners made up "up to 90% of Baltic herring landings as late as 1927" (Atmore et al.
+  2022). Spring spawners have dominated "the entire Baltic since the beginning 1970's", with autumn
+  spawners "very rare in the yields of fisheries since" (Rechlin 1991). In the Gulf of Riga they were
+  "nearly half the catches" in some years of the 1950s-1970s but "now make up less than 1% of
+  landings" (Bekkevold et al. 2016, citing unpublished data). The config's 25% is therefore a
+  mid-20th-century value, and a landings share bounds the egg share only loosely, because autumn
+  spawners mature later and larger. Even so, no intermediate literature value is available to test:
+  the defensible setting is close to zero, which is full C1, and full C1 collapses cod_west. The egg
+  share therefore belongs in a joint recalibration with cod_west, not in a standalone change. One
+  more point favours C1a's design: Baltic autumn spawners "spawn offshore in August-November, at
+  relatively deeper and broader depth ranges" (Bekkevold et al. 2016). Releasing those eggs from the
+  adult distribution, which includes offshore cells, therefore matches the evidence better than the
+  removed coastal 10-cell map did.
 - **S3, the LTL holes.** These belong with the LTL column bias (the file is about 2.5× a correct
   integral) as a single project. See `docs/baltic_ltl_coastal_holes_2026-11-08.md`.
+
+## References
+
+Formatted from scite's stored metadata (APA).
+
+- Atmore, L. M., Martínez-García, L., Makowiecki, D., André, C., Lõugas, L., Barrett, J. H., & Star, B. (2022). Population dynamics of Baltic herring since the Viking Age revealed by ancient DNA and genomics. *Proceedings of the National Academy of Sciences*, *119*(45). https://doi.org/10.1073/pnas.2208703119
+- Bekkevold, D., Gross, R., Arula, T., Helyar, S., & Ojaveer, H. (2016). Outlier loci detect intraspecific biodiversity amongst spring and autumn spawning herring across local scales. *PLoS ONE*, *11*(4), e0148499. https://doi.org/10.1371/journal.pone.0148499
+- MacKenzie, B. R., & Ojaveer, H. (2018). Evidence from the past: exploitation as cause of commercial extinction of autumn-spawning herring in the Gulf of Riga, Baltic Sea. *ICES Journal of Marine Science*, *75*(7), 2476-2487. https://doi.org/10.1093/icesjms/fsy028
+- Rechlin, O. (1991). Tendencies in the herring population development of the Baltic Sea. *Internationale Revue der Gesamten Hydrobiologie und Hydrographie*, *76*(3), 405-412. https://doi.org/10.1002/iroh.19910760313
