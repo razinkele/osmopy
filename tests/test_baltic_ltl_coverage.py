@@ -13,8 +13,9 @@ import xarray as xr
 
 from osmose.forcing import load_ocean_mask
 
-LTL = Path("data/baltic/baltic_ltl_biomass.nc")
-GRID = Path("data/baltic/baltic_grid.nc")
+ROOT = Path(__file__).resolve().parent.parent  # independent of the cwd pytest is run from
+LTL = ROOT / "data" / "baltic" / "baltic_ltl_biomass.nc"
+GRID = ROOT / "data" / "baltic" / "baltic_grid.nc"
 
 
 def _stack() -> np.ndarray:
