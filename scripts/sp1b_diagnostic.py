@@ -114,9 +114,10 @@ def main() -> int:
                 "sweep could land inside 2% by chance, which would make the drift guard trip on "
                 "trajectory sensitivity rather than drift. The 2026-11-05 re-solve did land both "
                 "inside 2% in one sweep (cod_east +1.4%, cod_west +0.03%), and the 2026-11-08 "
-                "re-solve in its second (sweep 1 left cod_east at -4.9%; sweep 2 ended +0.01% / "
-                "-1.3%); the band stays at JOINT_TOL, so those landings are not what the drift "
-                "guard holds it to."
+                "GreySeal re-solve in its second (sweep 1 left cod_east at -4.9%; sweep 2 ended "
+                "+0.01% / -1.3%), and the C1a re-solve the same day in one (-0.19% / -1.6%); the "
+                "band stays at JOINT_TOL, so those landings are not what the drift guard holds "
+                "it to."
             ),
             "",
             "## Caveat: stacked RV terms on cod_east",
@@ -157,6 +158,14 @@ def main() -> int:
             "this 15-yr window only: its 50-yr final-decade mean is unchanged (12.3-14.3k -> "
             "12.8-13.7k t over 5 seeds). Both rates moved (cod_east 9.0687 -> 9.0973, cod_west "
             "9.0138 -> 9.2763)."
+        ),
+        "",
+        (
+            "Re-solved again the same day for C1a, which stops packing every adult herring onto a "
+            "10-cell autumn map (docs/baltic_spawning_fixes_2026-11-08.md). The SP1-off baselines "
+            "moved to cod_east 102491 -> 101816 t and cod_west 3048 -> 3205 t. The solve converged "
+            "in one sweep (34 evaluations). cod_east's rate came out identical (9.0973) and only "
+            "cod_west's moved (9.2763 -> 9.2558)."
         ),
     ]
     print("\n".join(lines))

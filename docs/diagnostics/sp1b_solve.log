@@ -1,69 +1,54 @@
-[   111s] baseline run: cod_east=102490.7, cod_west=3048.4
-[   223s] baseline repeat bit-identical
-cod_east: baseline=102490.7 t  d0=10.1569  E[clip]=0.160  d1=8.324  grid=[0.0, 2.539, 5.078, 7.618, 8.324, 10.157]
-cod_west: baseline=3048.4 t  d0=10.1569  E[clip]=0.214  d1=8.617  grid=[0.0, 2.539, 5.078, 7.618, 8.617, 10.157]
-[   299s] eval  1: cod_east=0.0000, cod_west=10.1569 -> cod_east=2257874.5, cod_west=117.8
-[   378s] eval  2: cod_east=2.5392, cod_west=10.1569 -> cod_east=1209437.8, cod_west=163.8
-[   455s] eval  3: cod_east=5.0784, cod_west=10.1569 -> cod_east=678283.1, cod_west=161.2
-[   533s] eval  4: cod_east=7.6176, cod_west=10.1569 -> cod_east=298753.9, cod_west=184.1
-[   613s] eval  5: cod_east=8.3241, cod_west=10.1569 -> cod_east=197062.1, cod_west=222.8
-[   698s] eval  6: cod_east=10.1569, cod_west=10.1569 -> cod_east=10010.7, cod_west=232.7
-[   783s] eval  7: cod_east=9.2405, cod_west=10.1569 -> cod_east=87578.5, cod_west=213.9
-[   876s] eval  8: cod_east=8.7823, cod_west=10.1569 -> cod_east=140146.9, cod_west=238.6
-[   967s] eval  9: cod_east=9.0114, cod_west=10.1569 -> cod_east=112128.9, cod_west=193.5
-[  1057s] eval 10: cod_east=9.1259, cod_west=10.1569 -> cod_east=98756.6, cod_west=220.9
-[  1142s] eval 11: cod_east=9.0687, cod_west=10.1569 -> cod_east=103394.4, cod_west=234.5
-[  1224s] eval 12: cod_east=9.0687, cod_west=0.0000 -> cod_east=90878.5, cod_west=1025715.6
-[  1303s] eval 13: cod_east=9.0687, cod_west=2.5392 -> cod_east=95014.4, cod_west=480853.2
-[  1382s] eval 14: cod_east=9.0687, cod_west=5.0784 -> cod_east=103884.3, cod_west=158564.4
-[  1459s] eval 15: cod_east=9.0687, cod_west=7.6176 -> cod_east=102989.1, cod_west=32497.4
-[  1536s] eval 16: cod_east=9.0687, cod_west=8.6168 -> cod_east=104976.5, cod_west=12585.1
-[  1614s] eval 17: cod_east=9.0687, cod_west=9.3868 -> cod_east=105044.5, cod_west=2011.4
-[  1691s] eval 18: cod_east=9.0687, cod_west=9.0018 -> cod_east=107289.7, cod_west=5999.2
-[  1769s] eval 19: cod_east=9.0687, cod_west=9.1943 -> cod_east=105086.2, cod_west=3270.1
-[  1845s] eval 20: cod_east=9.0687, cod_west=9.2906 -> cod_east=104159.5, cod_west=2849.5
-[  1923s] eval 21: cod_east=9.0687, cod_west=9.2424 -> cod_east=107504.4, cod_west=3085.7
-[  1998s] eval 22: cod_east=0.0000, cod_west=9.2424 -> cod_east=2251741.2, cod_west=1385.0
-[  2071s] eval 23: cod_east=2.5392, cod_west=9.2424 -> cod_east=1203697.8, cod_west=1732.0
-[  2143s] eval 24: cod_east=5.0784, cod_west=9.2424 -> cod_east=673687.3, cod_west=1648.5
-[  2218s] eval 25: cod_east=7.6176, cod_west=9.2424 -> cod_east=302111.1, cod_west=2187.0
-[  2296s] eval 26: cod_east=8.3241, cod_west=9.2424 -> cod_east=197786.7, cod_west=2918.0
-[  2373s] eval 27: cod_east=10.1569, cod_west=9.2424 -> cod_east=11204.6, cod_west=3296.7
-[  2451s] eval 28: cod_east=9.2405, cod_west=9.2424 -> cod_east=86340.6, cod_west=3012.1
-[  2528s] eval 29: cod_east=8.7823, cod_west=9.2424 -> cod_east=139185.3, cod_west=3067.1
-[  2606s] eval 30: cod_east=9.0114, cod_west=9.2424 -> cod_east=113065.2, cod_west=3184.5
-[  2683s] eval 31: cod_east=9.1259, cod_west=9.2424 -> cod_east=97076.5, cod_west=3390.4
-[  2761s] eval 32: cod_east=9.0973, cod_west=9.2424 -> cod_east=102102.0, cod_west=3411.6
-[  2837s] eval 33: cod_east=9.0973, cod_west=0.0000 -> cod_east=88205.9, cod_west=1008567.8
-[  2914s] eval 34: cod_east=9.0973, cod_west=2.5392 -> cod_east=90479.7, cod_west=475971.9
-[  2991s] eval 35: cod_east=9.0973, cod_west=5.0784 -> cod_east=99899.1, cod_west=163897.3
-[  3069s] eval 36: cod_east=9.0973, cod_west=7.6176 -> cod_east=101762.1, cod_west=30806.5
-[  3147s] eval 37: cod_east=9.0973, cod_west=8.6168 -> cod_east=104668.2, cod_west=12484.9
-[  3224s] eval 38: cod_east=9.0973, cod_west=10.1569 -> cod_east=102121.5, cod_west=235.0
-[  3301s] eval 39: cod_east=9.0973, cod_west=9.3868 -> cod_east=101702.3, cod_west=2150.2
-[  3379s] eval 40: cod_east=9.0973, cod_west=9.0018 -> cod_east=101268.5, cod_west=6112.4
-[  3457s] eval 41: cod_east=9.0973, cod_west=9.1943 -> cod_east=103239.2, cod_west=4207.5
-[  3534s] eval 42: cod_east=9.0973, cod_west=9.2906 -> cod_east=102036.7, cod_west=2806.2
-[  3613s] eval 43: cod_east=9.0973, cod_west=9.2665 -> cod_east=103274.1, cod_west=3166.3
-[  3692s] eval 44: cod_east=9.0973, cod_west=9.2785 -> cod_east=98408.9, cod_west=2837.8
-[  3770s] eval 45: cod_east=9.0973, cod_west=9.2725 -> cod_east=101596.4, cod_west=3150.6
-[  3847s] eval 46: cod_east=9.0973, cod_west=9.2755 -> cod_east=102273.4, cod_west=3149.0
-[  3924s] eval 47: cod_east=9.0973, cod_west=9.2770 -> cod_east=101695.3, cod_west=2850.3
-[  4002s] eval 48: cod_east=9.0973, cod_west=9.2763 -> cod_east=102496.9, cod_west=3009.5
+[   103s] baseline run: cod_east=101816.3, cod_west=3204.5
+[   204s] baseline repeat bit-identical
+cod_east: baseline=101816.3 t  d0=10.1569  E[clip]=0.160  d1=8.324  grid=[0.0, 2.539, 5.078, 7.618, 8.324, 10.157]
+cod_west: baseline=3204.5 t  d0=10.1569  E[clip]=0.214  d1=8.617  grid=[0.0, 2.539, 5.078, 7.618, 8.617, 10.157]
+[   269s] eval  1: cod_east=0.0000, cod_west=10.1569 -> cod_east=2251897.8, cod_west=155.8
+[   334s] eval  2: cod_east=2.5392, cod_west=10.1569 -> cod_east=1210828.6, cod_west=179.8
+[   397s] eval  3: cod_east=5.0784, cod_west=10.1569 -> cod_east=699838.8, cod_west=188.4
+[   465s] eval  4: cod_east=7.6176, cod_west=10.1569 -> cod_east=313632.2, cod_west=217.5
+[   538s] eval  5: cod_east=8.3241, cod_west=10.1569 -> cod_east=204581.1, cod_west=268.7
+[   611s] eval  6: cod_east=10.1569, cod_west=10.1569 -> cod_east=11427.8, cod_west=246.9
+[   683s] eval  7: cod_east=9.2405, cod_west=10.1569 -> cod_east=84654.8, cod_west=238.4
+[   756s] eval  8: cod_east=8.7823, cod_west=10.1569 -> cod_east=134412.1, cod_west=255.3
+[   828s] eval  9: cod_east=9.0114, cod_west=10.1569 -> cod_east=111000.8, cod_west=230.0
+[   901s] eval 10: cod_east=9.1259, cod_west=10.1569 -> cod_east=98110.9, cod_west=247.6
+[   977s] eval 11: cod_east=9.0687, cod_west=10.1569 -> cod_east=105167.0, cod_west=258.5
+[  1056s] eval 12: cod_east=9.0973, cod_west=10.1569 -> cod_east=101811.5, cod_west=264.4
+[  1134s] eval 13: cod_east=9.0973, cod_west=0.0000 -> cod_east=92420.5, cod_west=1015724.0
+[  1213s] eval 14: cod_east=9.0973, cod_west=2.5392 -> cod_east=95100.7, cod_west=472026.0
+[  1291s] eval 15: cod_east=9.0973, cod_west=5.0784 -> cod_east=102055.0, cod_west=161313.3
+[  1364s] eval 16: cod_east=9.0973, cod_west=7.6176 -> cod_east=100019.7, cod_west=32201.3
+[  1438s] eval 17: cod_east=9.0973, cod_west=8.6168 -> cod_east=103270.2, cod_west=11900.2
+[  1510s] eval 18: cod_east=9.0973, cod_west=9.3868 -> cod_east=102285.8, cod_west=2245.7
+[  1583s] eval 19: cod_east=9.0973, cod_west=9.0018 -> cod_east=102792.9, cod_west=6512.6
+[  1656s] eval 20: cod_east=9.0973, cod_west=9.1943 -> cod_east=102710.5, cod_west=3689.2
+[  1729s] eval 21: cod_east=9.0973, cod_west=9.2906 -> cod_east=100637.6, cod_west=2865.2
+[  1804s] eval 22: cod_east=9.0973, cod_west=9.2424 -> cod_east=100422.8, cod_west=3478.2
+[  1879s] eval 23: cod_east=9.0973, cod_west=9.2665 -> cod_east=100514.2, cod_west=3064.8
+[  1952s] eval 24: cod_east=9.0973, cod_west=9.2545 -> cod_east=100420.4, cod_west=3378.5
+[  2023s] eval 25: cod_east=9.0973, cod_west=9.2605 -> cod_east=99072.2, cod_west=3020.3
+[  2094s] eval 26: cod_east=9.0973, cod_west=9.2575 -> cod_east=100614.0, cod_west=3129.1
+[  2166s] eval 27: cod_east=9.0973, cod_west=9.2560 -> cod_east=100422.8, cod_west=3121.4
+[  2238s] eval 28: cod_east=9.0973, cod_west=9.2552 -> cod_east=102017.4, cod_west=3424.0
+[  2309s] eval 29: cod_east=9.0973, cod_west=9.2556 -> cod_east=99802.3, cod_west=3359.2
+[  2378s] eval 30: cod_east=9.0973, cod_west=9.2558 -> cod_east=99336.6, cod_west=3318.1
+[  2446s] eval 31: cod_east=9.0973, cod_west=9.2559 -> cod_east=101766.2, cod_west=3076.0
+[  2515s] eval 32: cod_east=9.0973, cod_west=9.2558 -> cod_east=102722.3, cod_west=3437.7
+[  2583s] eval 33: cod_east=9.0973, cod_west=9.2558 -> cod_east=102492.6, cod_west=3014.1
+[  2651s] eval 34: cod_east=9.0973, cod_west=9.2558 -> cod_east=101624.8, cod_west=3151.7
 
-cod_east grid (rate, mean): [(0.0, 2251741.2), (2.539, 1203697.8), (5.078, 673687.3), (7.618, 302111.1), (8.324, 197786.7), (10.157, 11204.6)]
-cod_east: feasible=True converged=True rate=9.097301188809261 mean_on=102101.96366914666 rel_err=0.0037926800683241576 iters=6 :: converged
-cod_west grid (rate, mean): [(0.0, 1008567.8), (2.539, 475971.9), (5.078, 163897.3), (7.618, 30806.5), (8.617, 12484.9), (10.157, 235.0)]
-cod_west: feasible=True converged=True rate=9.27626888348545 mean_on=3009.49420404292 rel_err=0.012757330062760029 iters=11 :: converged
-sweep 1 joint rel_err: cod_east=0.0489, cod_west=0.0122
-sweep 2 joint rel_err: cod_east=0.0001, cod_west=0.0128
+cod_east grid (rate, mean): [(0.0, 2251897.8), (2.539, 1210828.6), (5.078, 699838.8), (7.618, 313632.2), (8.324, 204581.1), (10.157, 11427.8)]
+cod_east: feasible=True converged=True rate=9.097301188809261 mean_on=101811.46518269402 rel_err=4.7766862037914687e-05 iters=6 :: converged
+cod_west grid (rate, mean): [(0.0, 1015724.0), (2.539, 472026.0), (5.078, 161313.3), (7.618, 32201.3), (8.617, 11900.2), (10.157, 264.4)]
+cod_west: feasible=True converged=True rate=9.255835621732288 mean_on=3151.710630136322 rel_err=0.016485564413122364 iters=17 :: converged
+sweep 1 joint rel_err: cod_east=0.0019, cod_west=0.0165
 
-joint (best sweep): converged=True sweeps=2 evaluations=48; cod_east: 102496.9 t (rel_err 0.0001); cod_west: 3009.5 t (rel_err 0.0128); total cod 105539.1 -> 105506.4 t (-0.03%)
+joint (best sweep): converged=True sweeps=1 evaluations=34; cod_east: 101624.8 t (rel_err 0.0019); cod_west: 3151.7 t (rel_err 0.0165); total cod 105020.9 -> 104776.6 t (-0.23%)
 
 PASTE into osmose/calibration/larva_recal.py:
 RECAL_RATES: dict[str, StockRecal] = {
-    'cod_east': StockRecal(rate=9.097301188809261, d0=10.15686139, baseline=102490.67802086542, mean_on=102496.86476638209, rel_err=6.0363982716606615e-05, note='solved 2026-11-08: converged'),
-    'cod_west': StockRecal(rate=9.27626888348545, d0=10.15686139, baseline=3048.3834377157104, mean_on=3009.49420404292, rel_err=0.012757330062760029, note='solved 2026-11-08: converged'),
+    'cod_east': StockRecal(rate=9.097301188809261, d0=10.15686139, baseline=101816.32862921686, mean_on=101624.8492988317, rel_err=0.001880634795647265, note='solved 2026-11-08: converged'),
+    'cod_west': StockRecal(rate=9.255835621732288, d0=10.15686139, baseline=3204.5392686642667, mean_on=3151.710630136322, rel_err=0.016485564413122364, note='solved 2026-11-08: converged'),
 }
 
 solve record written to docs/diagnostics/sp1b_solve.json
