@@ -303,7 +303,8 @@ through space as well as time:
 - **Juveniles** use broad **coastal/nursery** maps active all year (e.g. `cod_juvenile` ages 0–1).
 - **Adults** use **offshore/feeding** maps during the non-spawning steps.
 - **Spawning-stage adults** are redirected to **spawning-ground** maps during the species' spawning
-  window — e.g. `cod_spawning` (ages 4–21, steps 4–15 = Mar–Aug → the Bornholm/Gdańsk deep basins),
+  window — e.g. `cod_east_spawning` (steps 10–19 → the 14 SD 25 cells of the Bornholm Basin and
+  Słupsk Furrow since 2026-11-08),
   `herring_spawning` (spring, coastal) plus a separate `herring_spawning_autumn` (steps 16–21),
   `sprat_spawning` (deep), `flounder_spawning` (deep south), and coastal/estuarine spawning maps for
   perch, pike-perch, smelt and stickleback.
