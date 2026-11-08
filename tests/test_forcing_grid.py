@@ -39,6 +39,60 @@ def test_regrid_picks_nearest_src_cell():
     assert out[0, 0, -1] == 2.0  # NE corner -> src (lat0, lon2)
 
 
+def _three_by_three():
+    src_lat = np.array([66.0, 60.0, 54.0])  # descending
+    src_lon = np.array([10.0, 20.0, 30.0])  # ascending
+    data = np.array([[[10 * li + ci for ci in range(3)] for li in range(3)]], dtype=float)
+    return src_lat, src_lon, data
+
+
+def test_regrid_masked_fallback_fills_a_wet_cell_whose_nearest_pixel_is_invalid():
+    """A wet target cell whose nearest source pixel is land (invalid) takes the nearest VALID
+    pixel, in plain lat/lon degrees (the metric scripts/make_baltic_oxygen_forcing.py uses).
+    The NW target cell (65.25 N, 11 E) is nearest to (66, 10); with that pixel invalid, the
+    nearest valid one is (60, 10) at 5.34 deg, not (66, 20) at 9.03 deg."""
+    src_lat, src_lon, data = _three_by_three()
+    valid = np.ones((3, 3), dtype=bool)
+    valid[0, 0] = False
+    wet = np.ones((8, 10), dtype=bool)
+    out = regrid(data, src_lat, src_lon, SMALL, src_valid=valid, target_mask=wet)
+    assert out[0, 0, 0] == 10.0  # src (lat1, lon0)
+    assert regrid(data, src_lat, src_lon, SMALL)[0, 0, 0] == 0.0  # plain NN still the land pixel
+
+
+def test_regrid_masked_fallback_leaves_cells_with_a_valid_nearest_pixel_bit_identical():
+    """The fallback touches ONLY cells whose plain nearest pixel is invalid: every other cell
+    keeps exactly the plain nearest-neighbour value (what makes a regenerated forcing file
+    provably differ from its predecessor at the holes alone)."""
+    rng = np.random.default_rng(3)
+    src_lat = np.linspace(66.0, 54.0, 25)
+    src_lon = np.linspace(10.0, 30.0, 41)
+    data = rng.random((4, 25, 41))
+    valid = rng.random((25, 41)) > 0.3
+    wet = np.ones((8, 10), dtype=bool)
+    plain = regrid(data, src_lat, src_lon, SMALL)
+    masked = regrid(data, src_lat, src_lon, SMALL, src_valid=valid, target_mask=wet)
+    tlat, tlon = target_coords(SMALL)
+    li = np.array([np.argmin(np.abs(src_lat - y)) for y in tlat])
+    ci = np.array([np.argmin(np.abs(src_lon - x)) for x in tlon])
+    nn_valid = valid[np.ix_(li, ci)]
+    assert nn_valid.any() and (~nn_valid).any()  # the fixture exercises both cases
+    assert np.array_equal(masked[:, nn_valid], plain[:, nn_valid])
+    assert not np.array_equal(masked[:, ~nn_valid], plain[:, ~nn_valid])
+
+
+def test_regrid_masked_fallback_skips_dry_target_cells():
+    """Land target cells are not filled: they keep the plain value (the caller's land mask
+    handles them), so the fallback never spends valid ocean data on land."""
+    src_lat, src_lon, data = _three_by_three()
+    valid = np.ones((3, 3), dtype=bool)
+    valid[0, 0] = False
+    wet = np.ones((8, 10), dtype=bool)
+    wet[0, 0] = False
+    out = regrid(data, src_lat, src_lon, SMALL, src_valid=valid, target_mask=wet)
+    assert out[0, 0, 0] == 0.0
+
+
 def test_regrid_warns_when_target_exceeds_source_extent(caplog):
     import logging
 
