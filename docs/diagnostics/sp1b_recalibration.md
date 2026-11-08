@@ -5,17 +5,17 @@ Each stock's larval rate (resolved per-cohort) is solved so its own SP1-on mean 
 
 | stock | d0 | rate | baseline (t) | on_recal (t) | rel_err | overshoot off | overshoot on |
 |---|---|---|---|---|---|---|---|
-| cod_west | 10.1569 | 9.2558 | 3204.5 | 3151.7 | 0.0165 | 1.59 | 2.08 |
-| cod_east | 10.1569 | 9.0973 | 101816.3 | 101624.8 | 0.0019 | 1.32 | 1.16 |
+| cod_west | 10.1569 | 9.1582 | 4331.5 | 4377.7 | 0.0107 | 1.45 | 2.04 |
+| cod_east | 10.1569 | 9.1403 | 103151.0 | 104750.3 | 0.0155 | 1.37 | 1.10 |
 
-total cod: off=105020.9  on_recal=104776.6  drift=-0.23% (measured, not gated)
+total cod: off=107482.6  on_recal=109128.1  drift=+1.53% (measured, not gated)
 
 ## Overshoot (max/mean over years 3-14) — measured, NOT gated
-cod_west: off=1.59  on_recal=2.08  ratio=1.31  (does not damp the boom/bust)
-cod_east: off=1.32  on_recal=1.16  ratio=0.88  (damps the boom/bust)
+cod_west: off=1.45  on_recal=2.04  ratio=1.41  (does not damp the boom/bust)
+cod_east: off=1.37  on_recal=1.10  ratio=0.81  (damps the boom/bust)
 
 ## Coupling: why the joint band is wider than the 1-D tol
-With its own rate fixed at the root, each stock's mean still moves with the OTHER stock's rate, and not smoothly: on the 2026-10-01 solve (47 evaluations, two Gauss-Seidel sweeps; its log is docs/diagnostics/sp1b_solve.log at 3a3b1eed) the half-range within +-0.1 of the roots was 2.0-2.1% for cod_east across cod_west's rate and 3.8% for cod_west across cod_east's rate. Sweep 1 ended cod_east -2.9% / cod_west +1.2%, sweep 2 +4.0% / +0.9%; neither sweep put both inside 2%, and the jitter is as wide as that band, so a joint 2% is below the coupling's resolution. That solve froze its best sweep (1) and the joint band is set above the jitter. A third sweep could land inside 2% by chance, which would make the drift guard trip on trajectory sensitivity rather than drift. The 2026-11-05 re-solve did land both inside 2% in one sweep (cod_east +1.4%, cod_west +0.03%), and the 2026-11-08 GreySeal re-solve in its second (sweep 1 left cod_east at -4.9%; sweep 2 ended +0.01% / -1.3%), and the C1a re-solve the same day in one (-0.19% / -1.6%); the band stays at JOINT_TOL, so those landings are not what the drift guard holds it to.
+With its own rate fixed at the root, each stock's mean still moves with the OTHER stock's rate, and not smoothly: on the 2026-10-01 solve (47 evaluations, two Gauss-Seidel sweeps; its log is docs/diagnostics/sp1b_solve.log at 3a3b1eed) the half-range within +-0.1 of the roots was 2.0-2.1% for cod_east across cod_west's rate and 3.8% for cod_west across cod_east's rate. Sweep 1 ended cod_east -2.9% / cod_west +1.2%, sweep 2 +4.0% / +0.9%; neither sweep put both inside 2%, and the jitter is as wide as that band, so a joint 2% is below the coupling's resolution. That solve froze its best sweep (1) and the joint band is set above the jitter. A third sweep could land inside 2% by chance, which would make the drift guard trip on trajectory sensitivity rather than drift. The 2026-11-05 re-solve did land both inside 2% in one sweep (cod_east +1.4%, cod_west +0.03%), and the 2026-11-08 GreySeal re-solve in its second (sweep 1 left cod_east at -4.9%; sweep 2 ended +0.01% / -1.3%), the C1a re-solve the same day in one (-0.19% / -1.6%), and the T3+T1 engine re-solve in its second (sweep 1 left cod_east at +3.8%; sweep 2 ended +1.6% / +1.1%); the band stays at JOINT_TOL, so those landings are not what the drift guard holds it to.
 
 ## Caveat: stacked RV terms on cod_east
 cod_east carries the temporal RV gate (`reproduction.rv.gate.*`, its dominant control) AND, under this overlay, the spatial RV clip. The two have not been A/B gated against each other; the per-stock neutrality above holds for the stacked pair as a whole, not for either term alone.
@@ -28,3 +28,5 @@ The 2026-10-01 rates were re-solved on 2026-11-05: the sprat F change of 2026-10
 The 2026-11-05 rates were re-solved on 2026-11-08 for the GreySeal accessibility column: the seal had no column, so the kernel's -1 path let it eat every prey at 1.0; it now carries the Java arm's values (BG_ACCESS). d0 is untouched, but both SP1-off baselines moved (cod_east 105990 -> 102491 t, cod_west 6236 -> 3048 t), and the drift guard caught it before merge this time. cod_west's halving is in this 15-yr window only: its 50-yr final-decade mean is unchanged (12.3-14.3k -> 12.8-13.7k t over 5 seeds). Both rates moved (cod_east 9.0687 -> 9.0973, cod_west 9.0138 -> 9.2763).
 
 Re-solved again the same day for C1a, which stops packing every adult herring onto a 10-cell autumn map (docs/baltic_spawning_fixes_2026-11-08.md). The SP1-off baselines moved to cod_east 102491 -> 101816 t and cod_west 3048 -> 3205 t. The solve converged in one sweep (34 evaluations). cod_east's rate came out identical (9.0973) and only cod_west's moved (9.2763 -> 9.2558).
+
+Re-solved a third time that day for two engine fixes from the 2026-11-07 review. T3: a school under one fish is dead, as in Java. T1: no length cap at L-infinity unless species.lmax is set. Baselines moved to cod_east 101816 -> 103151 t and cod_west 3205 -> 4332 t. The solve converged in two sweeps (49 evaluations). Rates moved to cod_east 9.0973 -> 9.1403 and cod_west 9.2558 -> 9.1582.

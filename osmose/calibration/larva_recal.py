@@ -358,27 +358,27 @@ JOINT_TOL: float = 0.05
 
 # Filled by hand from `scripts/recalibrate_sp1b.py` output (the aggregate-cod solve of
 # 2026-07-02, RECAL_RATE=14.655 at d0=15.0, is retired: docs/diagnostics/sp1b_recalibration.md).
-# 2026-11-08 re-solve after the herring autumn-packing removal (C1a), on top of the same day's
-# GreySeal accessibility column. It moved both SP1-off baselines again (cod_east 102491 -> 101816 t,
-# cod_west 3048 -> 3205 t) and converged in one sweep with both stocks inside the 1-D tol; cod_east's
-# rate came out identical to the GreySeal solve's. Rates are the solver's bisection floats as printed
-# in docs/diagnostics/sp1b_solve.log, means from one evaluation of the pair.
+# 2026-11-08 re-solve after the engine's sub-one-fish floor (T3) and L-infinity fix (T1), on top
+# of the same day's GreySeal column and herring autumn-packing removal. It moved both SP1-off
+# baselines (cod_east 101816 -> 103151 t, cod_west 3205 -> 4332 t) and converged in two sweeps; the
+# frozen state is sweep 2, with both stocks inside the 1-D tol. Rates are the solver's bisection
+# floats as printed in docs/diagnostics/sp1b_solve.log, means from one evaluation of the pair.
 RECAL_RATES: dict[str, StockRecal] = {
     "cod_east": StockRecal(
-        rate=9.097301188809261,
+        rate=9.14025633210078,
         d0=10.15686139,
-        baseline=101816.32862921686,
-        mean_on=101624.8492988317,
-        rel_err=0.001880634795647265,
-        note="solved 2026-11-08 (C1a) sweep 1: converged (1-D 0.005%); joint -0.19%",
+        baseline=103151.0067403139,
+        mean_on=104750.32988181333,
+        rel_err=0.015504677967184426,
+        note="solved 2026-11-08 (T3+T1) sweep 2: converged (1-D 1.0%); joint +1.6%",
     ),
     "cod_west": StockRecal(
-        rate=9.255835621732288,
+        rate=9.1582048155753,
         d0=10.15686139,
-        baseline=3204.5392686642667,
-        mean_on=3151.710630136322,
-        rel_err=0.016485564413122364,
-        note="solved 2026-11-08 (C1a) sweep 1: converged (1-D 1.6%); joint -1.6%",
+        baseline=4331.546809728101,
+        mean_on=4377.748001593122,
+        rel_err=0.010666210915984898,
+        note="solved 2026-11-08 (T3+T1) sweep 2: converged (1-D 1.1%); joint +1.1%",
     ),
 }
 

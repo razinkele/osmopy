@@ -1227,20 +1227,36 @@ def test_diagnostic_width10_truncates_resource_columns():
     not _BALTIC_CONFIG.exists(),
     reason="Baltic config not present in data/baltic/",
 )
-def test_fr_type3_reduces_greyseal_predation_on_top_prey():
+def test_fr_type3_on_greyseal_reaches_its_diet_but_barely_moves_it_seals_are_food_saturated():
+    """Type-III FR on GreySeal runs through the production path, but it cannot cut seal predation
+    much on the Baltic config, because seals are food-saturated.
+
+    The kernel applies FR to r = available prey / the predator's maximum ration:
+    g = r^2 / (r^2 + k^2), capped at min(1, r). A seal school's ration is a few tonnes per step
+    against hundreds to thousands of accessible tonnes in its cell, so r runs from the hundreds
+    upward. The validator caps halfsat at 5.0. So g = min(1, r) = 1, identical to type I,
+    everywhere except in a few prey-poor cells.
+
+    This replaces a test asserting that FR at halfsat 2.0 *reduced* seal predation on its top prey.
+    Re-measured 2026-11-08 with diet recorded every step, that comparison was a coin flip: totals
+    2201 vs 2201, and FR was lower in 12 of 24 steps. The step-boundary sub-one-fish floor (review
+    T3) flipped it. At halfsat 5.0 the seed-to-seed change in top-prey predation is -22% to +8%
+    (seeds 1/7/42/11), so no direction can be asserted. What holds robustly: both arms eat the same
+    top prey, and FR changes it by well under 50%. That bound would still catch a gross FR wiring
+    error, such as seals eating nothing or double. The refuge mechanism itself is pinned
+    at kernel level (test_python_kernel_type3_reduces_eaten_at_low_r, the oracle tests) and its
+    production wiring for background predators by test_fr_on_background_predator_changes_outcome.
+    The same saturation leaves GreySeal's halfsat barely identifiable in calibration phase 14
+    (issue #232)."""
     from osmose.engine.output import aggregate_diet_all_predators
 
-    # 1. Baseline diet run: find GreySeal's (runtime slot 9) dominant focal prey.
     dm_base, sid = _run_baltic_short_with_diet(fr=None, width=16)
     seal = aggregate_diet_all_predators(dm_base, sid, n_total=11)[9]  # GreySeal diet row
     prey_id = int(np.argmax(seal[:9]))  # its top FOCAL prey (cols 0..8)
     assert seal[prey_id] > 0  # GreySeal genuinely eats it (test non-vacuous)
-    # 2. type-III refuge on GreySeal -> it eats LESS of that prey.
-    # halfsat=2.0 (re-measured 2026-06-24): the egg-retention fix (94f1bfb) shifted the
-    # Baltic equilibrium, moving GreySeal's herring prey into a density regime where the
-    # prior halfsat=1.0 lands in a noisy near-tie (it was always a fragile ~8-unit margin).
-    # The type-III refuge itself is intact — it holds at halfsat 0.3/2.0/5.0; 2.0 gives the
-    # strongest, most robust refuge margin (~-42 units) at the post-fix equilibrium.
-    dm_fr, sid2 = _run_baltic_short_with_diet(fr={"sp15": (3, 2.0)}, width=16)
+
+    dm_fr, sid2 = _run_baltic_short_with_diet(fr={"sp15": (3, 5.0)}, width=16)
     seal_fr = aggregate_diet_all_predators(dm_fr, sid2, n_total=11)[9]
-    assert seal_fr[prey_id] < seal[prey_id]  # FR cut GreySeal's realized predation on its top prey
+    assert int(np.argmax(seal_fr[:9])) == prey_id  # same top prey under FR
+    assert seal_fr[prey_id] > 0  # FR did not shut seal predation off
+    assert 0.5 < seal_fr[prey_id] / seal[prey_id] < 1.5  # saturated: no gross change

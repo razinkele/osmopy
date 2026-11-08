@@ -511,10 +511,32 @@ class TestLmaxCap:
         new_state = growth(state, cfg, np.random.default_rng(42))
         assert new_state.length[0] <= 25.0
 
-    def test_lmax_defaults_to_linf(self):
+    def test_lmax_defaults_to_no_cap(self):
+        """Without species.lmax there is no length cap, as in Java: 4.3.3 defaults lmax to
+        +infinity and uses it only as a growth gate (GrowthProcess.java:118-121, :140), and 4.4.x
+        drops the cap entirely (review T1). It used to default to linf and clip."""
         cfg_dict = _make_minimal_config()
         cfg = EngineConfig.from_dict(cfg_dict)
-        assert cfg.lmax[0] == cfg.linf[0]
+        assert np.isinf(cfg.lmax[0])
+
+    def test_well_fed_school_at_linf_keeps_growing_by_default(self):
+        """The default clip pinned 65% of Baltic stickleback biomass and 37% of perch biomass at
+        L-infinity (2026-11-08 probe). Without the cap, a well-fed old school grows past linf by
+        lambda * dL(a), as in Java."""
+        cfg_dict = _make_minimal_config()
+        cfg_dict["species.linf.sp0"] = "25.0"
+        cfg = EngineConfig.from_dict(cfg_dict)
+        state = SchoolState.create(n_schools=1, species_id=np.array([0], dtype=np.int32))
+        state = state.replace(
+            length=np.array([25.0]),
+            weight=np.array([0.006 * 25.0**3 * 1e-6]),
+            age_dt=np.array([96], dtype=np.int32),
+            abundance=np.array([100.0]),
+            biomass=np.array([100.0 * 0.006 * 25.0**3 * 1e-6]),
+            pred_success_rate=np.array([1.0]),
+        )
+        new_state = growth(state, cfg, np.random.default_rng(42))
+        assert new_state.length[0] > 25.0
 
 
 # ---------------------------------------------------------------------------

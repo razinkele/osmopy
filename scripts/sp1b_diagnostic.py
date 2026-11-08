@@ -115,9 +115,10 @@ def main() -> int:
                 "trajectory sensitivity rather than drift. The 2026-11-05 re-solve did land both "
                 "inside 2% in one sweep (cod_east +1.4%, cod_west +0.03%), and the 2026-11-08 "
                 "GreySeal re-solve in its second (sweep 1 left cod_east at -4.9%; sweep 2 ended "
-                "+0.01% / -1.3%), and the C1a re-solve the same day in one (-0.19% / -1.6%); the "
-                "band stays at JOINT_TOL, so those landings are not what the drift guard holds "
-                "it to."
+                "+0.01% / -1.3%), the C1a re-solve the same day in one (-0.19% / -1.6%), and the "
+                "T3+T1 engine re-solve in its second (sweep 1 left cod_east at +3.8%; sweep 2 "
+                "ended +1.6% / +1.1%); the band stays at JOINT_TOL, so those landings are not "
+                "what the drift guard holds it to."
             ),
             "",
             "## Caveat: stacked RV terms on cod_east",
@@ -166,6 +167,14 @@ def main() -> int:
             "moved to cod_east 102491 -> 101816 t and cod_west 3048 -> 3205 t. The solve converged "
             "in one sweep (34 evaluations). cod_east's rate came out identical (9.0973) and only "
             "cod_west's moved (9.2763 -> 9.2558)."
+        ),
+        "",
+        (
+            "Re-solved a third time that day for two engine fixes from the 2026-11-07 review. T3: "
+            "a school under one fish is dead, as in Java. T1: no length cap at L-infinity unless "
+            "species.lmax is set. Baselines moved to cod_east 101816 -> 103151 t and cod_west "
+            "3205 -> 4332 t. The solve converged in two sweeps (49 evaluations). Rates moved to "
+            "cod_east 9.0973 -> 9.1403 and cod_west 9.2558 -> 9.1582."
         ),
     ]
     print("\n".join(lines))
