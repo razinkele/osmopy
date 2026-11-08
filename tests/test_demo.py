@@ -287,3 +287,16 @@ def test_demo_info_accessor_and_engine_facts():
     assert demo_info("bay_of_biscay")["engine"].startswith("Java")
     assert demo_info("eec")["title"] == "Eastern English Channel"
     assert demo_info("unknown") is None
+
+
+def test_eec_full_is_the_reference_demo_and_bob_says_it_is_short_run():
+    """The full EEC is the reference example; Bay of Biscay must keep its long-run warning.
+
+    Measured 2026-11-08: no Bay of Biscay fish ever matures and the community is gone by year
+    40, while the full EEC holds 12 of 14 species steady over its 70 years. Reverting either
+    description to "the OSMOSE reference example" for Bay of Biscay would mislead users.
+    """
+    assert list_demos()[0] == "eec_full"
+    assert "reference" in demo_info("eec_full")["title"]
+    bob = demo_info("bay_of_biscay")["summary"]
+    assert "Not self-sustaining" in bob and "reference" not in bob.lower()

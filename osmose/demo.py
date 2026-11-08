@@ -100,14 +100,14 @@ def _bundled_data_dir(subdir: str) -> Path | None:
 
 
 def list_demos() -> list[str]:
-    """List available demo scenarios."""
+    """List available demo scenarios, the reference example (``eec_full``) first."""
     return [
+        "eec_full",
         "baltic",
         "baltic_a2",
         "baltic_depensation",
         "bay_of_biscay",
         "eec",
-        "eec_full",
         "minimal",
         "benguela",
     ]
@@ -124,7 +124,10 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "species": "8 focal species",
         "resources": "6 LTL/plankton groups",
         "engine": "Java + Python",
-        "summary": "The OSMOSE reference example (anchovy, sardine, hake, …); runs on both engines.",
+        "summary": "A synthetic 8-species demo (anchovy, sardine, hake, …) for short runs and "
+        "engine smoke tests; runs on both engines. Not self-sustaining: no fish ever reaches "
+        "maturity, so the community dies out once its initial seeding ends (all gone by year "
+        "40). Use the full Eastern English Channel for anything longer.",
     },
     "eec": {
         "title": "Eastern English Channel",
@@ -135,13 +138,15 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "summary": "A reduced Eastern English Channel configuration; quick to run.",
     },
     "eec_full": {
-        "title": "Eastern English Channel (full)",
+        "title": "Eastern English Channel (full) — reference",
         "region": "English Channel",
         "species": "14 focal species",
         "resources": "10 LTL + 1 background group",
         "engine": "Java 4.4.1 + Python",
-        "summary": "The full 14-species EEC — the cross-engine parity benchmark. Runs on the "
-        "Python engine and the Java 4.4.1 jar.",
+        "summary": "The reference example: the full 14-species EEC, from a published calibrated "
+        "model, and the cross-engine parity benchmark. Over its 70-year run 12 of the 14 "
+        "species settle at stable levels; cod and whiting decline steadily toward zero. Runs on "
+        "the Python engine and the Java 4.4.1 jar.",
     },
     "baltic": {
         "title": "Baltic Sea",
