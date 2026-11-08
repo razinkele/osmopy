@@ -99,6 +99,30 @@ def _seasonal(frac_tuple: tuple[float, ...], n_steps: int, nlat: int, nlon: int)
     return f
 
 
+def _column_mean(sliced: xr.Dataset, depth_m: float) -> xr.Dataset:
+    """Thickness-weighted 0-depth_m column of each variable, divided by depth_m.
+
+    The caller multiplies by a full depth_m cell volume, so this returns column / depth_m and
+    the product is the column inventory times the cell area. Each level's layer runs between
+    the midpoints to its neighbours: from 0 at the top, and to min(depth_m, z_last + half the
+    last spacing) at the bottom. Only finite levels count, so a shallow pixel whose water ends
+    early holds just its real column. A pixel with no finite level stays NaN, which keeps land
+    invalid for regrid's masked fallback.
+
+    This replaces an unweighted mean over levels multiplied by depth_m, which overstated
+    biomass about 2.5x on the Baltic. The surface-crowded levels over-weighted surface plankton,
+    and shallow pixels were credited with water they do not have (issue #229).
+    """
+    z = sliced["depth"].values.astype(float)
+    if len(z) == 1:
+        bottom = depth_m
+    else:
+        bottom = min(depth_m, z[-1] + (z[-1] - z[-2]) / 2.0)
+    edges = np.concatenate([[0.0], (z[:-1] + z[1:]) / 2.0, [bottom]])
+    dz = xr.DataArray(np.diff(edges), dims=["depth"], coords={"depth": sliced["depth"]})
+    return (sliced * dz).sum(dim="depth", skipna=True, min_count=1) / depth_m
+
+
 def bgc_to_ltl(
     ds: xr.Dataset,
     grid: GridSpec,
@@ -130,20 +154,44 @@ def bgc_to_ltl(
                 f"no source depth levels within [0, {depth_integrate_m}] m; "
                 f"source depth range is [{float(work.depth.min())}, {float(work.depth.max())}]"
             )
-        work = sliced.mean(dim="depth", skipna=True)
+        work = _column_mean(sliced, depth_integrate_m)
 
     src_lat, src_lon = get_coords(work)
     has_phyc = "phyc" in work
     has_zooc = "zooc" in work
     mode = "A (direct biomass)" if (has_phyc and has_zooc) else "B (chl-derived)"
+    use_mask = ocean_mask is not None and ocean_mask.shape == (nlat, nlon)
+
+    def fallback(name: str) -> dict[str, np.ndarray]:
+        """regrid kwargs: with a matching ocean mask, wet cells snapped to a land pixel take
+        the nearest valid one (``regrid``'s masked fallback) instead of reading 0."""
+        if not use_mask:
+            return {}
+        assert ocean_mask is not None
+        arr = work[name].values
+        finite = np.isfinite(arr)
+        return {
+            "src_valid": finite.all(axis=0) if arr.ndim == 3 else finite,
+            "target_mask": ocean_mask.astype(bool),
+        }
 
     if has_phyc and has_zooc:
         phyc = get_var(work, "phyc")
         zooc = get_var(work, "zooc")
         nppv = get_var(work, "nppv")
         assert phyc is not None and zooc is not None  # guaranteed by has_phyc/has_zooc
-        phyto_tonnes = regrid(phyc, src_lat, src_lon, grid) * params.phyto_c_to_wet * cell_vol / 1e6
-        zoo_tonnes = regrid(zooc, src_lat, src_lon, grid) * params.zoo_c_to_wet * cell_vol / 1e6
+        phyto_tonnes = (
+            regrid(phyc, src_lat, src_lon, grid, **fallback("phyc"))
+            * params.phyto_c_to_wet
+            * cell_vol
+            / 1e6
+        )
+        zoo_tonnes = (
+            regrid(zooc, src_lat, src_lon, grid, **fallback("zooc"))
+            * params.zoo_c_to_wet
+            * cell_vol
+            / 1e6
+        )
 
         n_steps = phyto_tonnes.shape[0]
         diatom_frac = _seasonal(params.diatom_frac_a, n_steps, nlat, nlon)
@@ -155,7 +203,9 @@ def bgc_to_ltl(
         macrozoo = zoo_tonnes * params.macro_frac
 
         if nppv is not None:
-            npp_tonnes = regrid(nppv, src_lat, src_lon, grid) * cell_vol / 1e9 * 365
+            npp_tonnes = (
+                regrid(nppv, src_lat, src_lon, grid, **fallback("nppv")) * cell_vol / 1e9 * 365
+            )
             benthos = npp_tonnes * params.benthos_npp_frac / params.benthos_npp_div
         else:
             benthos = zoo_tonnes * params.benthos_zoo_frac
@@ -167,11 +217,12 @@ def bgc_to_ltl(
                 "BGC source has neither phyc/zooc nor chl. Provide phyc,zooc[,nppv,si] "
                 "(forecast) or chl,nppv (reanalysis)."
             )
+        nppv_name = "nppv" if nppv is not None else "chl"  # derived nppv inherits chl's pixels
         if nppv is None:
             nppv = chl * 5.0
 
-        chl_grid = regrid(chl, src_lat, src_lon, grid)
-        nppv_grid = regrid(nppv, src_lat, src_lon, grid)
+        chl_grid = regrid(chl, src_lat, src_lon, grid, **fallback("chl"))
+        nppv_grid = regrid(nppv, src_lat, src_lon, grid, **fallback(nppv_name))
         phyto_tonnes = chl_grid * params.chl_to_biomass_factor * cell_vol / 1e9
 
         n_steps = chl_grid.shape[0]
