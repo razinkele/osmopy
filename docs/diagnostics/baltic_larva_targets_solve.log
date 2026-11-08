@@ -1,0 +1,24 @@
+start rates: {0: 10.15686139, 1: 4.106578713, 8: 10.15686139}
+[   142s] eval  1: sp0=10.1569 sp1=4.1066 sp8=10.1569 -> cod_west=2.52e+04 herring=8.067e+05 sprat=9.228e+05 flounder=5.121e+04 cod_east=8.171e+04 pikeperch=5.245e+05 stickleback=1.365e+05
+[   283s] eval  2: sp0=10.1569 sp1=3.2853 sp8=10.1569 -> cod_west=2.535e+04 herring=9.788e+05 sprat=9.081e+05 flounder=5.195e+04 cod_east=7.836e+04 pikeperch=5.568e+05 stickleback=1.223e+05
+[   421s] eval  3: sp0=10.1569 sp1=2.6282 sp8=10.1569 -> cod_west=2.378e+04 herring=1.149e+06 sprat=9.072e+05 flounder=4.996e+04 cod_east=7.8e+04 pikeperch=5.568e+05 stickleback=1.079e+05
+[   554s] eval  4: sp0=10.1569 sp1=2.1026 sp8=10.1569 -> cod_west=2.333e+04 herring=1.274e+06 sprat=8.904e+05 flounder=4.98e+04 cod_east=7.808e+04 pikeperch=5.901e+05 stickleback=1.06e+05
+[   687s] eval  5: sp0=10.1569 sp1=1.6821 sp8=10.1569 -> cod_west=2.273e+04 herring=1.406e+06 sprat=8.905e+05 flounder=5.007e+04 cod_east=7.968e+04 pikeperch=5.732e+05 stickleback=9.013e+04
+[   838s] eval  6: sp0=10.1569 sp1=1.3456 sp8=10.1569 -> cod_west=2.413e+04 herring=1.477e+06 sprat=9.003e+05 flounder=4.995e+04 cod_east=7.939e+04 pikeperch=5.826e+05 stickleback=8.751e+04
+[  1002s] eval  7: sp0=10.1569 sp1=1.0765 sp8=10.1569 -> cod_west=2.405e+04 herring=1.629e+06 sprat=8.993e+05 flounder=4.808e+04 cod_east=7.904e+04 pikeperch=6.043e+05 stickleback=8.77e+04
+[  1165s] eval  8: sp0=10.1569 sp1=1.2036 sp8=10.1569 -> cod_west=2.231e+04 herring=1.513e+06 sprat=8.938e+05 flounder=4.814e+04 cod_east=7.682e+04 pikeperch=6.01e+05 stickleback=9.133e+04
+  herring: rate 1.2036 (err +0.9%)
+[  1326s] eval  9: sp0=10.1569 sp1=1.2036 sp8=10.1569 -> cod_west=2.231e+04 herring=1.513e+06 sprat=8.938e+05 flounder=4.814e+04 cod_east=7.682e+04 pikeperch=6.01e+05 stickleback=9.133e+04
+[  1440s] eval 10: sp0=12.6961 sp1=1.2036 sp8=10.1569 -> cod_west=0 herring=1.546e+06 sprat=9.06e+05 flounder=4.992e+04 cod_east=7.749e+04 pikeperch=6.182e+05 stickleback=9.104e+04
+[  1547s] eval 11: sp0=11.3557 sp1=1.2036 sp8=10.1569 -> cod_west=0 herring=1.541e+06 sprat=8.986e+05 flounder=4.952e+04 cod_east=7.76e+04 pikeperch=6.014e+05 stickleback=8.647e+04
+[  1677s] eval 12: sp0=10.7396 sp1=1.2036 sp8=10.1569 -> cod_west=1.065e+04 herring=1.483e+06 sprat=8.988e+05 flounder=5.037e+04 cod_east=7.717e+04 pikeperch=5.986e+05 stickleback=1.015e+05
+  cod_west: rate 10.7396 (err +6.5%)
+[  1804s] eval 13: sp0=10.7396 sp1=1.2036 sp8=10.1569 -> cod_west=1.065e+04 herring=1.483e+06 sprat=8.988e+05 flounder=5.037e+04 cod_east=7.717e+04 pikeperch=5.986e+05 stickleback=1.015e+05
+sweep 1 done: {'cod_west': 10647.322729438787, 'herring': 1483494.447251518, 'sprat': 898809.1291537551, 'flounder': 50367.54023007522, 'cod_east': 77169.13049053476, 'pikeperch': 598625.0765001283, 'stickleback': 101480.01065821528} accepted: {'herring': True, 'cod_west': True}
+[  1932s] eval 14: sp0=10.7396 sp1=1.2036 sp8=10.1569 -> cod_west=1.065e+04 herring=1.483e+06 sprat=8.988e+05 flounder=5.037e+04 cod_east=7.717e+04 pikeperch=5.986e+05 stickleback=1.015e+05
+[  2060s] eval 15: sp0=10.7396 sp1=1.2036 sp8=10.1569 -> cod_west=1.065e+04 herring=1.483e+06 sprat=8.988e+05 flounder=5.037e+04 cod_east=7.717e+04 pikeperch=5.986e+05 stickleback=1.015e+05
+sweep 2 done: {'cod_west': 10647.322729438787, 'herring': 1483494.447251518, 'sprat': 898809.1291537551, 'flounder': 50367.54023007522, 'cod_east': 77169.13049053476, 'pikeperch': 598625.0765001283, 'stickleback': 101480.01065821528} accepted: {'herring': True, 'cod_west': True}
+
+FINAL rates, resolved per step: {'mortality.additional.larva.rate.sp0': 10.739573360534983, 'mortality.additional.larva.rate.sp1': 1.2035803260153497, 'mortality.additional.larva.rate.sp8': 10.15686139}
+FINAL rates, CSV per year (x ndt): {'mortality.additional.larva.rate.sp0': 257.7497606528396, 'mortality.additional.larva.rate.sp1': 28.885927824368395, 'mortality.additional.larva.rate.sp8': 243.76467336}
+exit=0
