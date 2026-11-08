@@ -1246,7 +1246,8 @@ def test_fr_type3_on_greyseal_reaches_its_diet_but_barely_moves_it_seals_are_foo
     error, such as seals eating nothing or double. The refuge mechanism itself is pinned
     at kernel level (test_python_kernel_type3_reduces_eaten_at_low_r, the oracle tests) and its
     production wiring for background predators by test_fr_on_background_predator_changes_outcome.
-    The same saturation makes GreySeal's FR a dead knob in calibration phase 14."""
+    The same saturation leaves GreySeal's halfsat barely identifiable in calibration phase 14
+    (issue #232)."""
     from osmose.engine.output import aggregate_diet_all_predators
 
     dm_base, sid = _run_baltic_short_with_diet(fr=None, width=16)
