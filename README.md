@@ -14,7 +14,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 | Java engine | Async subprocess runner. OSMOSE **4.4.1 JAR by default** (4.3.3 still selectable). Bundled configs are native 4.4.0; background-species configs (e.g. Baltic) stage + run on the 4.4.1 jar from the UI. |
 | Shiny UI | End-to-end UI: Setup · Grid · Forcing · Fishing · Movement · Run · Results (with Scenario Diff & Config Diff) · Spatial Results · Diagnostics · Calibration · **Sensitivity** · Scenarios · Advanced · Map Viewer. Live-during-run movement map; in-app About (README/Changelog) + a per-version startup "what's new" modal. |
 | Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
-| Examples | Bay of Biscay (8 sp), Eastern English Channel (14 sp), **Baltic Sea (8 sp + 6 LTL)** with ICES SAG cross-validation. |
+| Examples | **Eastern English Channel (14 sp), the reference example**: a published calibrated model in which 12 of 14 species hold steady over its 70-year run. **Baltic Sea (8 sp + 6 LTL)** with ICES SAG cross-validation. Bay of Biscay (8 sp) for short runs only: it isn't self-sustaining. |
 | Tests | 3250+ passed. Pyright clean on `osmose/` and `ui/`. |
 | Config validation | Opt-in typo catcher at `EngineConfig.from_dict` load time. Silent by default; `validation.strict.enabled=warn` logs `difflib` suggestions, `=error` raises with the full unknown-key list. |
 
@@ -113,7 +113,7 @@ EEC 1-year biomass parity (Python vs Java, tonnes):
 
 All 14 species within 1 order of magnitude of Java.
 
-Bay of Biscay is now a fully-native OSMOSE 4.4.1 config. The rigorous N=16 cross-engine parity gate finds 6 of 8 species equivalent — Anchovy and Hake show a pre-existing Python-port-vs-Java divergence, present against both the 4.3.3 and 4.4.1 jars. Re-run it:
+Bay of Biscay is now a fully-native OSMOSE 4.4.1 config. The rigorous N=16 cross-engine parity gate finds 6 of 8 species equivalent — Anchovy and Hake show a pre-existing Python-port-vs-Java divergence, present against both the 4.3.3 and 4.4.1 jars. Read those figures with care: the demo is not self-sustaining, and in its accessibility matrix (authored with predators as rows, the transpose of what both engines read) hake can eat nothing at all. Re-run it:
 
 ```bash
 .venv/bin/python scripts/cross_engine_parity_440.py --config data/examples/osm_all-parameters.csv --engines python,4.4.1
@@ -127,9 +127,9 @@ Three ready-to-run configurations ship in-tree.
 
 | Location | Species | Cells | Notes |
 |---|---|---|---|
-| `data/examples/` | 8 | Bay of Biscay | Reference parity config |
-| `data/eec_full/` | 14 | Eastern English Channel | Full 14-species parity config |
+| `data/eec_full/` | 14 | Eastern English Channel | **Reference example** and cross-engine parity benchmark. Over 70 years, 12 of 14 species hold steady; cod and whiting decline toward zero. |
 | `data/baltic/` | 8 + 6 LTL | 612 (50 × 40) | Baltic calibration sandbox + ICES cross-validation |
+| `data/examples/` | 8 | Bay of Biscay | Short runs and engine smoke tests only. Not self-sustaining: no fish ever matures, so all species die out once the initial seeding ends (by year 40). |
 
 ### Baltic Sea
 
@@ -180,8 +180,8 @@ ui/                         Shiny web interface
 mcp_servers/                MCP servers
   copernicus/               CMEMS forcing downloader (env-based credentials)
 data/
-  examples/                 Bay of Biscay reference config (8 species)
-  eec_full/                 Eastern English Channel config (14 species)
+  eec_full/                 Eastern English Channel reference config (14 species)
+  examples/                 Bay of Biscay config (8 species; short runs only, not self-sustaining)
   baltic/                   Baltic Sea calibration sandbox (8 sp + 6 LTL); see docs/baltic_example.md
     reference/              Biomass targets + frozen ICES SAG snapshots
 scripts/                    One-shot tools: benchmarks, validators, calibration, mask rebuild

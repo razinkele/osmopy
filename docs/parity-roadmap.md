@@ -1,7 +1,7 @@
 # OSMOSE Python Engine — Java Parity Roadmap
 
 > **Date:** 2026-04-19 (STATUS-COMPLETE across all phases)
-> **Current status (2026-11-07):** EEC **14/14** within 1 OoM of Java 4.4.1; Bay of Biscay **7/8** — Hake biomass runs ~123× Java's, a pre-existing gap (see *Post-parity: Bay of Biscay Java 4.4.1 migration* below and the 2026-11-07 re-measurements in §4.1). The earlier "Bay of Biscay 8/8" was measured against Java 4.3.3 and no longer holds.
+> **Current status (2026-11-07):** EEC **14/14** within 1 OoM of Java 4.4.1; Bay of Biscay **7/8** — Hake biomass runs ~123× Java's, a pre-existing gap (see *Post-parity: Bay of Biscay Java 4.4.1 migration* below and the 2026-11-07 re-measurements in §4.1). The earlier "Bay of Biscay 8/8" was measured against Java 4.3.3 and no longer holds. The Bay of Biscay demo is also not self-sustaining (no fish matures; all species are gone by year 40), and its transposed accessibility matrix leaves hake with nothing to eat. So treat its figures as engine-consistency checks on short runs, not as ecology; the full EEC is the reference example.
 > **Goal:** Close all functional gaps between Python and Java OSMOSE engines — **reached**.
 >
 > **Parity complete.** All seven phases are SHIPPED. 2510 tests passing on master; Ev-OSMOSE bioenergetic + genetics + economics also complete. Python engine is faster than Java on every benchmarked configuration. The detailed phase-by-phase ledger below is retained for provenance; no roadmap-scoped work is open.
