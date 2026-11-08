@@ -117,8 +117,10 @@ def main() -> int:
                 "GreySeal re-solve in its second (sweep 1 left cod_east at -4.9%; sweep 2 ended "
                 "+0.01% / -1.3%), the C1a re-solve the same day in one (-0.19% / -1.6%), and the "
                 "T3+T1 engine re-solve in its second (sweep 1 left cod_east at +3.8%; sweep 2 "
-                "ended +1.6% / +1.1%); the band stays at JOINT_TOL, so those landings are not "
-                "what the drift guard holds it to."
+                "ended +1.6% / +1.1%). The corrected-LTL re-solve converged cod_east (-0.18%) but "
+                "left cod_west at -2.4% after 20 bisection steps, because two evaluations at the "
+                "same printed rates differed by 5% there. That is this jitter, and it is why the "
+                "guard holds the pair to JOINT_TOL and not the 1-D tol."
             ),
             "",
             "## Caveat: stacked RV terms on cod_east",
@@ -175,6 +177,16 @@ def main() -> int:
             "species.lmax is set. Baselines moved to cod_east 101816 -> 103151 t and cod_west "
             "3205 -> 4332 t. The solve converged in two sweeps (49 evaluations). Rates moved to "
             "cod_east 9.0973 -> 9.1403 and cod_west 9.2558 -> 9.1582."
+        ),
+        "",
+        (
+            "Re-solved a fourth time that day for the corrected-LTL recalibration "
+            "(docs/baltic_ltl_recalibration_2026-11-08.md): corrected LTL forcing, the C2 spawning "
+            "map, no herring autumn eggs, and re-fitted herring and cod_west larval rates. cod_west's "
+            "resolved d0 moved 10.157 -> 10.444, the case the d0 guard exists for. Baselines moved "
+            "to cod_east 103151 -> 105961 t and cod_west 4332 -> 3769 t. Rates are cod_east "
+            "9.1403 -> 9.1407 and cod_west 9.1582 -> 9.3162. cod_west's 2.4% misses the 1-D tol, "
+            "but it is inside JOINT_TOL (see Coupling)."
         ),
     ]
     print("\n".join(lines))

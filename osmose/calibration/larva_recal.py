@@ -358,27 +358,32 @@ JOINT_TOL: float = 0.05
 
 # Filled by hand from `scripts/recalibrate_sp1b.py` output (the aggregate-cod solve of
 # 2026-07-02, RECAL_RATE=14.655 at d0=15.0, is retired: docs/diagnostics/sp1b_recalibration.md).
-# 2026-11-08 re-solve after the engine's sub-one-fish floor (T3) and L-infinity fix (T1), on top
-# of the same day's GreySeal column and herring autumn-packing removal. It moved both SP1-off
-# baselines (cod_east 101816 -> 103151 t, cod_west 3205 -> 4332 t) and converged in two sweeps; the
-# frozen state is sweep 2, with both stocks inside the 1-D tol. Rates are the solver's bisection
-# floats as printed in docs/diagnostics/sp1b_solve.log, means from one evaluation of the pair.
+# 2026-11-08 re-solve for the corrected-LTL recalibration (docs/baltic_ltl_recalibration_2026-11-08.md):
+# corrected LTL forcing, C2 spawning map, no herring autumn eggs, re-fitted herring and cod_west
+# larval rates. cod_west's resolved d0 moved 10.157 -> 10.444, so the old entry would raise. The
+# SP1-off baselines moved too (cod_east 103151 -> 105961 t, cod_west 4332 -> 3769 t). cod_east
+# converged. cod_west did NOT reach the 1-D tol (2%): 2.4% after 20 bisection steps, inside its
+# documented +-3.8% coupling jitter (two evaluations at the same printed rates differed by 5%)
+# and inside JOINT_TOL (5%), the band the drift guard holds it to. Rates are the solver's
+# bisection floats as printed in docs/diagnostics/sp1b_solve.log, means from one evaluation of
+# the pair.
 RECAL_RATES: dict[str, StockRecal] = {
     "cod_east": StockRecal(
-        rate=9.14025633210078,
+        rate=9.140679953669553,
         d0=10.15686139,
-        baseline=103151.0067403139,
-        mean_on=104750.32988181333,
-        rel_err=0.015504677967184426,
-        note="solved 2026-11-08 (T3+T1) sweep 2: converged (1-D 1.0%); joint +1.6%",
+        baseline=105960.96624702027,
+        mean_on=105774.55580976572,
+        rel_err=0.001759236857278067,
+        note="solved 2026-11-08 (corrected LTL) sweep 1: converged; joint -0.18%",
     ),
     "cod_west": StockRecal(
-        rate=9.1582048155753,
-        d0=10.15686139,
-        baseline=4331.546809728101,
-        mean_on=4377.748001593122,
-        rel_err=0.010666210915984898,
-        note="solved 2026-11-08 (T3+T1) sweep 2: converged (1-D 1.1%); joint +1.1%",
+        rate=9.31615580430319,
+        d0=10.44415425,
+        baseline=3769.39410980222,
+        mean_on=3678.1506595977407,
+        rel_err=0.02420639698226379,
+        note="solved 2026-11-08 (corrected LTL): 1-D tol not reached (2.4% after 20 steps, "
+        "within the +-3.8% coupling jitter); joint -2.4%, inside JOINT_TOL",
     ),
 }
 
