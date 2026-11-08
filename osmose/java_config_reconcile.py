@@ -99,16 +99,34 @@ def _reconcile_fishery_matrix(
     *prey_universe*, preserving existing (prey, fishery) cell values by name (both sanitized)
     and zero-filling the rest."""
     old = _read_matrix(path, sep)
-    old_header = [sanitize_java_name(c) for c in old[0]]
+    # labels are trimmed: Java trims them (EEC's catchability has `pouting `), and an untrimmed
+    # lookup misses the row and zero-fills it
+    old_header = [sanitize_java_name(c.strip()) for c in old[0]]
     lookup: dict[tuple[str, str], str] = {}
     for row in old[1:]:
-        prey = sanitize_java_name(row[0])
+        prey = sanitize_java_name(row[0].strip())
         for j in range(1, len(row)):
             lookup[(prey, old_header[j])] = row[j]
     new = [list(fisheries_header)]
     for prey in prey_universe:
         new.append([prey] + [lookup.get((prey, f), "0") for f in fisheries_header[1:]])
     _write_matrix(path, new, sep)
+
+
+def _species_universe(prey_rows: list[str]) -> list[str]:
+    """Species names from accessibility row labels, once each, in first-seen order.
+
+    A stage-structured accessibility matrix labels a prey's juvenile row `name < threshold`, as
+    EEC's does. Fishery matrices are per species, so the stage qualifier is dropped. Rows built
+    from the raw labels gained zero-filled `name < threshold` rows ahead of each species' real
+    row, and Java's yields on EEC fell to about 1e-4 of Python's.
+    """
+    out: list[str] = []
+    for label in prey_rows:
+        name = label.split("<", 1)[0].strip()
+        if name and name not in out:
+            out.append(name)
+    return out
 
 
 def _resolve(stage_dir: Path, master_cfg: dict[str, str], key: str, default: str) -> Path | None:
@@ -147,11 +165,12 @@ def reconcile_config_for_java(
 
     cat_path = _resolve(stage_dir, cfg, "fisheries.catchability.file", "fishery-catchability.csv")
     if cat_path is not None and prey_universe:
-        fisheries_header = [sanitize_java_name(c) for c in _read_matrix(cat_path, ",")[0]]
-        _reconcile_fishery_matrix(cat_path, fisheries_header, prey_universe)
+        species = _species_universe(prey_universe)  # fishery matrices are per species, not stage
+        fisheries_header = [sanitize_java_name(c.strip()) for c in _read_matrix(cat_path, ",")[0]]
+        _reconcile_fishery_matrix(cat_path, fisheries_header, species)
         summary["catchability"] = 1
         disc_path = _resolve(stage_dir, cfg, "fisheries.discards.file", "fishery-discards.csv")
         if disc_path is not None:
-            _reconcile_fishery_matrix(disc_path, fisheries_header, prey_universe)
+            _reconcile_fishery_matrix(disc_path, fisheries_header, species)
             summary["discards"] = 1
     return summary
