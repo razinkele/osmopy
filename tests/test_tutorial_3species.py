@@ -151,10 +151,19 @@ _CASCADE_SPRAT_MAX_RATIO: float = 1.60  # ...without running away
 # includes or the engine reads. Combined with the quantitative match above this is strong, but
 # it is not the same as a direct on/off run — re-run the isolated A/B if this attribution is
 # ever load-bearing for something more consequential than a test band.
+#
+# 2026-11-08 — stickleback re-derived for the engine's L-infinity fix (review T1: species.lmax
+# no longer defaults to linf, so well-fed schools are not clipped there; 65% of Baltic
+# stickleback biomass had sat exactly at L-infinity). Here the attribution IS an isolated A/B on
+# this fixture: the same seed-42 30-yr run with species.lmax.sp{i} = linf (the clip restored)
+# gives stickleback 6.851e4 (inside the old band), against 1.0365e5 with the fix, a 1.51x ratio.
+# total_cod (1.032x) and sprat (1.029x) stay inside their bands and are left unchanged. The new
+# band is +-20% around 1.0365e5. The sub-one-fish floor (review T3) in the same change moved
+# stickleback only about 2% (50-yr A/B).
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
     "total_cod": (9.785e04, 1.468e05),  # re-derived 2026-08-09 — see comment above
     "sprat": (7.313e05, 1.097e06),  # unchanged since 2026-08-02 — still valid post-adoption
-    "stickleback": (5.989e04, 8.983e04),  # unchanged since 2026-08-02 — still valid post-adoption
+    "stickleback": (8.292e04, 1.244e05),  # re-derived 2026-11-08 for T1 — see comment above
 }
 
 
@@ -258,7 +267,9 @@ def test_biomass_pyramid_emerges(baseline_run: pd.DataFrame) -> None:
     (b) ±20% bands around the measured window. Bands last measured in full 2026-08-02 (#129);
     total_cod's band was RE-DERIVED 2026-08-09 after the O2->benthos coupling was adopted into
     the production Baltic config (see the dated comment above _PYRAMID_BOUNDS for the full
-    story and the attribution caveat). sprat and stickleback keep their 2026-08-02 bands
+    story and the attribution caveat). stickleback's band was RE-DERIVED 2026-11-08 for the
+    engine's L-infinity fix (review T1), attributed by an isolated A/B (see the same comment).
+    sprat keeps its 2026-08-02 band, and on 2026-08-09 both sprat and stickleback were left
     unchanged; that choice is confirmed correct by a separate 2026-08-09 verification run
     (after the total_cod fix landed) in which this test passed end-to-end with all three bands
     genuinely evaluated — not by the original failing run, which asserts inside the band loop

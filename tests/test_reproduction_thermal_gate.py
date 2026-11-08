@@ -37,13 +37,6 @@ def test_gate_off_is_bit_identical_to_baseline():
     np.testing.assert_array_equal(base.to_numpy(), off.to_numpy())
 
 
-def _age0_biomass(res, sp):
-    # by-age bin 0 is [0, 1) yr and includes egg schools (CLAUDE.md) -- an index of
-    # recruitment, not a survival rate; only its on/off direction is asserted.
-    df = res.biomass_by_age(sp)
-    return float(df.loc[df["bin"] == df["bin"].min(), "value"].sum())
-
-
 def _rel_change(off, on, sp):
     a, b = off[sp].to_numpy(), on[sp].to_numpy()
     d = float(np.abs(a).sum())
@@ -57,8 +50,23 @@ def _rel_change(off, on, sp):
     "mortality-kernel FP reduction order) — perch dropped locally but rose on a CI runner. The "
     "gate's config/logic and bit-identical-when-off are covered by deterministic unit tests.",
 )
-def test_gate_on_targets_percids_and_reduces_perch():
+def test_gate_on_targets_percids_and_reduces_perch(monkeypatch):
+    import osmose.engine.simulate as sim
+
+    eggs: dict[int, float] = {}
+    real_reproduction = sim._reproduction
+
+    def counting_reproduction(state, config, step, rng, grid_ny=10, grid_nx=10):
+        n_before = len(state)
+        new = real_reproduction(state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx)
+        for s, a in zip(new.species_id[n_before:], new.abundance[n_before:], strict=True):
+            eggs[int(s)] = eggs.get(int(s), 0.0) + float(a)  # eggs released this step
+        return new
+
+    monkeypatch.setattr(sim, "_reproduction", counting_reproduction)
     off_res = _run({})
+    eggs_off = dict(eggs)
+    eggs.clear()
     on_res = _run(
         {
             "reproduction.thermal.gate.enabled": "true",
@@ -68,6 +76,7 @@ def test_gate_on_targets_percids_and_reduces_perch():
             "reproduction.thermal.gate.species.enabled.sp5": "true",
         }
     )
+    eggs_on = dict(eggs)
     off, on = off_res.biomass(), on_res.biomass()
     # The gate fired on perch, the strong-signal percid: it moves materially...
     assert _rel_change(off, on, "perch") > 0.02
@@ -78,13 +87,16 @@ def test_gate_on_targets_percids_and_reduces_perch():
     # the honest control.
     clupeid = max(_rel_change(off, on, "herring"), _rel_change(off, on, "sprat"))
     assert _rel_change(off, on, "perch") > clupeid
-    # Pikeperch is asserted at the gate's mechanism, recruitment, not as a biomass
-    # magnitude: its direct response is small (age-0 -2.25% before the 2026-10-29
-    # sprat F change, -1.75% after) and its 6-yr biomass change fell from 3.0% to
-    # 0.8%, below the clupeid control, once food-web noise outweighed it. Leaving
-    # pikeperch ungated gives an age-0 ratio of 1.0008, so the direction still tells
-    # a gated pikeperch from an ungated one (measured 2026-11-05).
-    assert _age0_biomass(on_res, "pikeperch") < _age0_biomass(off_res, "pikeperch")
+    # Pikeperch is asserted at the gate's mechanism itself, the eggs it releases. Its biomass
+    # response is small and food-web-dominated. The age-0 biomass index this used to assert
+    # (-2.25% before the 2026-10-29 sprat F change, -1.75% after) flipped to +0.48% once growth
+    # stopped being clipped at L-infinity (review T1). The gate still cuts pikeperch eggs by 12%;
+    # the remaining age-0 fish simply survive and grow better. Measured 2026-11-08 on this 6-yr
+    # run: eggs on/off 0.876 with pikeperch gated against 0.970 with it ungated (the food web
+    # alone moves it 3%). The 0.93 bound therefore still tells a gated pikeperch from an ungated
+    # one.
+    pikeperch = 5
+    assert eggs_on[pikeperch] / eggs_off[pikeperch] < 0.93
     # Physical direction: the mean-reducing thermal_cap lowers the strongest-signal
     # percid's (perch) recruitment, so its mean biomass drops.
     assert on["perch"].to_numpy().mean() < off["perch"].to_numpy().mean()
