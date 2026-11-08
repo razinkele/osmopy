@@ -42,6 +42,23 @@ def test_cod_east_spawns_only_in_sd25():
     assert ((lat >= 54.5) & (lat <= 56.2) & (lon >= 14.0) & (lon <= 18.0)).all()
 
 
+def test_every_baltic_map_is_oriented_to_the_grid():
+    """Each map, read by the engine's loader, has its land (-99) exactly where the engine's grid
+    has land, and no positive cell on land. baltic_grid.nc is north-first while the loader
+    follows the OSMOSE convention (CSV row 0 -> grid row ny-1), so Baltic maps are stored
+    south-first; a map written the other way up fails here rather than putting fish on land."""
+    from osmose.engine.grid import Grid
+    from osmose.engine.movement_maps import _load_csv_grid
+
+    grid = Grid.from_netcdf(BALTIC / "baltic_grid.nc")
+    maps = sorted((BALTIC / "maps").glob("*.csv"))
+    assert len(maps) > 20
+    for path in maps:
+        m = _load_csv_grid(path, grid.ny, grid.nx)
+        assert np.array_equal(m == -99, ~grid.ocean_mask), path.name
+        assert not ((m > 0) & ~grid.ocean_mask).any(), path.name
+
+
 def test_herring_has_no_autumn_spawning():
     lines = (BALTIC / "reproduction" / "reproduction-seasonality-sp1.csv").read_text().splitlines()
     rows = [ln.replace('"', "").split(";") for ln in lines[1:] if ln.strip()]
