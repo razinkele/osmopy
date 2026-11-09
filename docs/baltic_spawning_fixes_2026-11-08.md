@@ -35,7 +35,7 @@ Base for every run: master plus the GreySeal accessibility column (PR #227, cert
 | flounder [20–100 kt] | 32.6–33.6 kt | 32.4–33.6 kt | 32.6–37.1 kt | 32.9–34.6 kt | 30.5–32.3 kt | 31.3–33.9 kt |
 | **verdict (assessed)** | 5/5 | 5/5 | **3/5** | **5/5** | **4/5** | **4/5** |
 
-For reference, the LTL hole fill (S3, `docs/baltic_ltl_coastal_holes_2026-11-08.md`) gives 4/5 on the same
+For reference, the LTL hole fill (S3, issue #229; branch `fix/baltic-ltl-coastal-holes`) gives 4/5 on the same
 base, with herring at 3.84–3.95 Mt.
 
 ## 3. Reading
@@ -56,6 +56,11 @@ base, with herring at 3.84–3.95 Mt.
   below the floor (58.5 kt).
 
 ## 4. What ships, and the open decisions
+
+> **Settled later the same day** by the corrected-LTL recalibration
+> (`docs/baltic_ltl_recalibration_2026-11-08.md`). On the corrected food field, C2 and the sourced
+> autumn share (folded to zero) both ship, and herring and cod_west larval mortality are re-fitted,
+> certifying 5/5. The decisions below are kept as they were written.
 
 - **Shipped:** C1a (`fix/baltic-herring-autumn-packing`), with the SP1b rates re-solved for it and
   guard tests, which are mutation-checked.
@@ -79,7 +84,7 @@ base, with herring at 3.84–3.95 Mt.
   adult distribution, which includes offshore cells, therefore matches the evidence better than the
   removed coastal 10-cell map did.
 - **S3, the LTL holes.** These belong with the LTL column bias (the file is about 2.5× a correct
-  integral) as a single project. See `docs/baltic_ltl_coastal_holes_2026-11-08.md`.
+  integral) as a single project (issue #229).
 
 ## References
 

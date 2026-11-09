@@ -21,7 +21,7 @@ on a 2-D grid, feeding on each other and on **6 lower-trophic-level (LTL) resour
 | idx | Species | Role |
 |-----|---------|------|
 | sp0 | Cod (*Gadus morhua*) | apex piscivore |
-| sp1 | Herring (*Clupea harengus membras*) | pelagic planktivore (spring + autumn spawner) |
+| sp1 | Herring (*Clupea harengus membras*) | pelagic planktivore (spring spawner; no autumn component since 2026-11-08) |
 | sp2 | Sprat (*Sprattus sprattus*) | pelagic planktivore (key forage fish) |
 | sp3 | Flounder (*Platichthys flesus*) | demersal benthivore |
 | sp4 | Perch (*Perca fluviatilis*) | coastal meso-predator |
@@ -214,7 +214,7 @@ The fraction of annual eggs released per timestep comes from per-species seasona
 | Species | Spawning window | Peak | Shape |
 |---------|-----------------|------|-------|
 | **Cod** | mid-Mar → mid-Aug | late May–early Jun | broad ~5-month bell (deep-basin summer spawning) |
-| **Herring** | spring mid-Mar→mid-Jun **and** autumn Sep→mid-Nov | spring late-Apr–May (autumn secondary) | **bimodal** — spring + autumn cohorts in one curve |
+| **Herring** | mid-Mar → mid-Jun | late Apr–May | single spring bell. The autumn mode (Sep→mid-Nov, 25% of eggs, unsourced) was folded into it on 2026-11-08: Baltic autumn spawners are about 1% or less of landings today (Bekkevold et al. 2016; Rechlin 1991). See docs/baltic_spawning_fixes_2026-11-08.md |
 | **Sprat** | Apr → mid-Jul | June | sharp single late-spring peak |
 | **Flounder** | Feb → Jun | Apr–early May | earliest spawner; late-winter/spring |
 | **Perch** | May → early Jul | May–Jun | very narrow (4 timesteps) |
@@ -307,9 +307,9 @@ through space as well as time:
 - **Juveniles** use broad **coastal/nursery** maps active all year (e.g. `cod_juvenile` ages 0–1).
 - **Adults** use **offshore/feeding** maps during the non-spawning steps.
 - **Spawning-stage adults** are redirected to **spawning-ground** maps during the species' spawning
-  window — e.g. `cod_spawning` (ages 4–21, steps 4–15 = Mar–Aug → the Bornholm/Gdańsk deep basins),
-  `herring_spawning` (spring, coastal; since 2026-11-08 the autumn map `herring_spawning_autumn` is
-  unwired, so herring's 25% autumn eggs are released from the adult distribution),
+  window — e.g. `cod_east_spawning` (steps 10–19 → the 14 SD 25 cells of the Bornholm Basin and
+  Słupsk Furrow since 2026-11-08), `herring_spawning` (spring, coastal; since 2026-11-08 the autumn
+  map `herring_spawning_autumn` is unwired and the autumn egg share is folded into spring),
   `sprat_spawning` (deep), `flounder_spawning` (deep south), and coastal/estuarine spawning maps for
   perch, pike-perch, smelt and stickleback.
 

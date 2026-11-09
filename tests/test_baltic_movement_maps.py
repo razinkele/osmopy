@@ -65,3 +65,15 @@ def test_every_herring_slot_has_a_map():
         config_dir=ec.raw_config.get("_osmose.config.dir", ""),
         strict=True,
     )
+
+
+def test_herring_season_has_no_autumn_eggs_and_sums_to_one():
+    """The autumn egg share is folded into spring (sourced: autumn spawners are about 1% or less of
+    Baltic landings today; docs/baltic_spawning_fixes_2026-11-08.md). Annual egg output is
+    preserved: the season still sums to 1."""
+    lines = (BALTIC / "reproduction" / "reproduction-seasonality-sp1.csv").read_text().splitlines()
+    rows = [ln.replace('"', "").split(";") for ln in lines[1:] if ln.strip()]
+    t_yr = np.array([float(r[0]) for r in rows])
+    share = np.array([float(r[1]) for r in rows])
+    assert abs(share.sum() - 1.0) < 1e-6
+    assert (share[t_yr >= 0.5] == 0).all()
