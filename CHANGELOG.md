@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.9.0] - 2026-11-09
+
+### Features
+
+- **calib:** targeted larval-rate solve onto the Baltic biomass targets (1d24625)
+
+### Bug Fixes
+
+- **sp1b:** re-solve per-stock larval rates for the corrected-LTL recalibration (fe0bae8)
+- **baltic:** fold herring's autumn egg share into spring (sourced: about 1% or less today) (b499765)
+- **baltic:** eastern cod spawn in SD 25 (Bornholm Basin + Slupsk Furrow) (eae0f04)
+
+### Documentation
+
+- **baltic:** parity was re-run after #233; biomass holds, and the yield regression is fixed in #237 (934db8a)
+- **baltic:** commit the pre-stated readings; flag cross-engine parity as unverified since #233 (d1eda38)
+- **baltic:** record the corrected-LTL recalibration and bring current-state docs up to date (f00ad06)
+
+### Other
+
+- Merge pull request #239 from razinkele/docs/parity-reverified (14c406a)
+- Merge pull request #236 from razinkele/calib/baltic-corrected-ltl (55b55e1)
+- Merge master into calib/baltic-corrected-ltl (after #234, #235) (377b2c8)
+- **baltic:** re-fit herring and cod_west larval mortality on the corrected config (5ada81e)
+- **baltic:** regenerate the LTL forcing with the corrected generator (#229) (f242063)
+- Merge fix/ltl-depth-integral (#234) for the corrected LTL generator (8060137)
+
+### Tests
+
+- anchor the LTL coverage test's data paths to the repo, not the cwd (eedd208)
+
 ## [1.8.8] - 2026-11-08
 
 ### Bug Fixes
