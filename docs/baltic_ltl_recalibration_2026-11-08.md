@@ -112,12 +112,18 @@ outside the verdict.
   includes the Java cross-check (`docs/baltic_java_crosscheck_2026-11-06.md`; the Java arm reads
   the same file), the ICES validation notes, the B2/C4 scenario tables and the generated reports.
   Each states its date; none was re-run here.
-- **Cross-engine parity is unverified since #233.** The T3 floor and T1 no-cap engine changes
-  affect every config. `scripts/cross_engine_parity_440.py` was NOT re-run, so the published
-  "14/14 EEC, 7/8 BoB within 1 OoM" figures (CLAUDE.md, README, `docs/osmose_4.4_parity.md`)
-  rest on the pre-#233 engine. Both changes move Python toward Java, so parity should hold or
-  improve, but that is a prediction, not a measurement. Re-running it is the first follow-up when
-  a jar is available.
+- **Cross-engine parity was re-run after #233 (2026-11-08, late), and the biomass claims hold.**
+  `scripts/cross_engine_parity_440.py --engines python,4.4.1 --n 16 --years 10 --spinup-years 2`
+  on master after #233 (EEC and BoB do not use the Baltic data, so this recalibration does not
+  move them):
+  - EEC: 14/14 within 1 OoM on biomass, worst 2.6× (mackerel). It was 3.3× before.
+  - BoB: still 7/8. Hake is about 129× Java (10^2.11) and Anchovy about 3.2× below.
+
+  The same run showed **EEC yield** off by 10^2–10^4.5 for 9 species while biomass agreed. That
+  was a separate Java-staging regression from #223, bisected and fixed in #237 (v1.8.8): the
+  reconcile gave the fishery matrices stage-structured rows. A 2-rep check after the fix puts
+  all 14 yields within |d| <= 0.23. A full 16-rep refresh of `docs/java_cross_check_2026-09-27.md`
+  is still to do.
 - **Superseded parked branches:** `fix/baltic-ltl-coastal-holes` (the hole fill alone),
   `fix/baltic-cod-east-sd25-spawning` (C2 alone) and `exp/baltic-c1-full` (the autumn fold on the
   old field).
