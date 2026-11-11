@@ -1,5 +1,8 @@
 # Python ↔ Java cross-engine check — 2026-09-27
 
+> **Superseded 2026-11-11** by `docs/java_cross_check_2026-11-11.md` (v1.9.0): 66/70 equivalent,
+> worst 1.6×, and the dogfish/mackerel signal below is gone. Kept as the dated record.
+
 First execution of the Python-vs-Java cross-check that the deep-review plan has
 carried as unverified since 2026-09-12. **Verdict: `REVIEW`** — 59 of 70
 species×metric pairs pass formal equivalence, all 70 stay within 1 order of
