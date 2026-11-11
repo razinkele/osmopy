@@ -247,7 +247,7 @@ def main() -> None:
 
     This is a single-run comparison of final-year mean biomass. For a statistical verdict (seed
     ensembles, equivalence tests) use ``scripts/cross_engine_parity_440.py``; see
-    docs/java_cross_check_2026-09-27.md.
+    docs/java_cross_check_2026-11-11.md.
     """
     parser = argparse.ArgumentParser(description="Validate Python vs Java OSMOSE engine")
     parser.add_argument("--years", type=int, default=5, help="Simulation years (default: 5)")

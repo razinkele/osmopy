@@ -122,8 +122,9 @@ outside the verdict.
   The same run showed **EEC yield** off by 10^2–10^4.5 for 9 species while biomass agreed. That
   was a separate Java-staging regression from #223, bisected and fixed in #237 (v1.8.8): the
   reconcile gave the fishery matrices stage-structured rows. A 2-rep check after the fix puts
-  all 14 yields within |d| <= 0.23. A full 16-rep refresh of `docs/java_cross_check_2026-09-27.md`
-  is still to do.
+  all 14 yields within |d| <= 0.23. The full 16-rep refresh is `docs/java_cross_check_2026-11-11.md`
+  (v1.9.0): 66/70 equivalent, worst 1.6×. It also supersedes the 2.6× biomass figure above, whose
+  Java arm still carried the #223 regression.
 - **Superseded parked branches:** `fix/baltic-ltl-coastal-holes` (the hole fill alone),
   `fix/baltic-cod-east-sd25-spawning` (C2 alone) and `exp/baltic-c1-full` (the autumn fold on the
   old field).
