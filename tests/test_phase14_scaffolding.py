@@ -89,6 +89,20 @@ def test_phase14_params_shape(cal):
         assert 0.1 <= 10.0**v <= 5.0
 
 
+def test_phase14_bound_corners_pass_the_engine_halfsat_check(cal):
+    """Both corners of the search box must reach the engine as a K it accepts.
+
+    The engine rejects a half-saturation outside [0.1, 5.0] (``_parse_reproduction_params``,
+    ``osmose/engine/config.py``). ``10 ** log10(5.0)`` is 5.000000000000001, so evaluating a
+    candidate on the upper bound raised ValueError and aborted a default DE run (found 2026-11-11,
+    #232)."""
+    keys, bounds, _ = cal.get_phase14_params()
+    for corner in ([b[0] for b in bounds], [b[1] for b in bounds]):
+        overrides = cal.expand_param_overrides(keys, np.array(corner), True)
+        for key in keys:
+            assert 0.1 <= float(overrides[key]) <= 5.0, f"{key} = {overrides[key]}"
+
+
 def test_reconstructed_phase13_has_40_params(cal):
     data = _ensure_phase13_results()
     params = data["parameters"]
@@ -113,24 +127,16 @@ def test_reconstructed_phase13_has_40_params(cal):
 
 
 def _build_phase14_base_config(cal) -> tuple[dict, list[str]]:
-    """Replicate the phase=='14' base_config assembly from run_calibration."""
+    """The phase-14 base exactly as run_calibration builds it, via the shared
+    ``apply_phase14_base``. This used to be a hand copy, and it drifted to the pre-split
+    indices (0, 5, 14, 15): type III on Benthos, none on Cormorant. That made the assertions
+    below check the copy instead of the calibrator."""
     from osmose.config.reader import OsmoseConfigReader
 
     _ensure_phase13_results()
     param_keys, _, _ = cal.get_phase14_params()
-
-    reader = OsmoseConfigReader()
-    base_config = reader.read(cal.BALTIC_CONFIG)
-
-    p13_file = cal.RESULTS_DIR / "phase13_results.json"
-    with open(p13_file) as f:
-        p13_data = json.load(f)
-    for key, val in p13_data.get("parameters", {}).items():
-        base_config[key.lower()] = str(val)
-    for sp_idx in range(8):
-        base_config[f"stock.recruitment.type.sp{sp_idx}"] = "shepherd"
-    for sp_idx in (0, 5, 14, 15):
-        base_config[f"predation.functional.response.shape.sp{sp_idx}"] = "type3"
+    base_config = OsmoseConfigReader().read(cal.BALTIC_CONFIG)
+    cal.apply_phase14_base(base_config)
     return base_config, param_keys
 
 
@@ -140,9 +146,11 @@ def test_phase14_base_config_freezes_and_sets_fr(cal):
     # All 9 focal species on Shepherd (cod_east sp8 included after the disaggregation)
     for sp_idx in range(9):
         assert base_config[f"stock.recruitment.type.sp{sp_idx}"] == "shepherd"
-    # FR type3 on the 4 calibrated predators
-    for sp_idx in (0, 5, 14, 15):
+    # FR type3 on the 4 calibrated predators: cod_west, pikeperch, GreySeal, Cormorant
+    for sp_idx in (0, 5, 15, 16):
         assert base_config[f"predation.functional.response.shape.sp{sp_idx}"] == "type3"
+    # ...and not on Benthos (sp14), where the pre-split indices used to put it
+    assert "predation.functional.response.shape.sp14" not in base_config
     # 39+ frozen phase-13 params present (40 minus cod ssbhalf.sp0 which would also be
     # set explicitly in phase 13; here it comes through the reconstructed JSON)
     frozen = [
