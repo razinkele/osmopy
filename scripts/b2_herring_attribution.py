@@ -65,7 +65,14 @@ ARMS: dict[str, tuple[tuple[str, ...], tuple[int, ...]]] = {
     "A3": ((F_LTL,), ()),
     "A4": ((F_LTL, F_SEASON, F_CODMAP), (0, 1)),
     "A5": ((F_CODMAP,), (0,)),
+    # POST-HOC, added after the pre-stated run showed the single reverts summing to 0.26 against
+    # A4's 0.97: the two changes that were fitted jointly (herring larval rate + LTL), together.
+    "A13": ((F_LTL,), (1,)),
+    # POST-HOC: A13 plus the autumn-spawning fold, i.e. A4 without the cod pair (A5). Splits
+    # the A13 -> A4 remainder between the seasonality file and the cod pair.
+    "A123": ((F_LTL, F_SEASON), (1,)),
 }
+PRESTATED = ("A0", "A1", "A2", "A3", "A4", "A5")
 
 
 def _git_show(path: str) -> bytes:
@@ -130,32 +137,39 @@ def run_one(job: tuple) -> dict:
             cfg.update(overlays)
         bio = PythonEngine().run_in_memory(cfg, seed=seed).biomass()
         names = [c for c in bio.columns if c not in ("Time", "species")]
-        series = {n: bio[n].to_numpy(dtype=float).tolist() for n in names}
+        series = {n: bio[n].to_numpy(dtype=float) for n in names}
         return {
             "arm": arm,
             "variant": variant,
             "seed": seed,
             "resolved_larva": want,
-            "series": series,
+            # Compact output: every species' final-decade mean, plus herring's annual series.
+            "final_decade_means": {n: decade_mean(s) for n, s in series.items()},
+            "herring_annual": annualize(series["herring"]).tolist(),
             "seconds": round(time.time() - t0, 1),
         }
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def decade_mean(series: list[float], n_year: int = 50) -> float:
+def annualize(series, n_year: int = 50) -> np.ndarray:
     x = np.asarray(series, dtype=float)
-    x = x if len(x) == n_year else x.reshape(n_year, -1).mean(axis=1)
-    return float(x[-10:].mean())
+    return x if len(x) == n_year else x.reshape(n_year, -1).mean(axis=1)
+
+
+def decade_mean(series, n_year: int = 50) -> float:
+    """Final-decade mean of the annualised series (run_b2's `_decade_mean`, one seed)."""
+    return float(annualize(series, n_year)[-10:].mean())
 
 
 def analyse(runs: list[dict], herring: str = "herring") -> dict:
     out = {}
     by = {(r["arm"], r["variant"], r["seed"]): r for r in runs}
     a0 = None
-    for arm in ARMS:
-        base = np.array([decade_mean(by[(arm, "baseline", s)]["series"][herring]) for s in SEEDS])
-        warm = np.array([decade_mean(by[(arm, "rcp85_ref", s)]["series"][herring]) for s in SEEDS])
+    present = {r["arm"] for r in runs}
+    for arm in [a for a in ARMS if a in present]:
+        base = np.array([by[(arm, "baseline", s)]["final_decade_means"][herring] for s in SEEDS])
+        warm = np.array([by[(arm, "rcp85_ref", s)]["final_decade_means"][herring] for s in SEEDS])
         decline = float(warm.mean() / base.mean() - 1.0)  # exactly run_b2's formula
         paired = warm / base - 1.0
         se = float(paired.std(ddof=1) / np.sqrt(len(SEEDS)))
@@ -187,7 +201,16 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--workers", type=int, default=14)
+    ap.add_argument("--arms", default=",".join(PRESTATED), help="comma-separated arms to run")
+    ap.add_argument(
+        "--reuse",
+        type=Path,
+        default=None,
+        help="earlier result JSON whose runs are kept for every arm not being run again",
+    )
     args = ap.parse_args()
+    run_arms = [a.strip() for a in args.arms.split(",") if a.strip()]
+    assert all(a in ARMS for a in run_arms), run_arms
 
     import sys
 
@@ -211,7 +234,7 @@ def main() -> int:
 
     jobs = [
         (arm, variant, seed, v188, overlays, current_mort)
-        for arm in ARMS
+        for arm in run_arms
         for variant in ("baseline", "rcp85_ref")
         for seed in SEEDS
     ]
@@ -221,10 +244,13 @@ def main() -> int:
     )
     t0 = time.time()
     runs = []
+    if args.reuse is not None:
+        runs = [r for r in json.loads(args.reuse.read_text())["runs"] if r["arm"] not in run_arms]
+        print(f"reusing {len(runs)} runs from {args.reuse}", flush=True)
     with ProcessPoolExecutor(args.workers, mp_context=mp.get_context("spawn")) as pool:
         for r in pool.map(run_one, jobs):
             runs.append(r)
-            h = decade_mean(r["series"]["herring"])
+            h = r["final_decade_means"]["herring"]
             print(
                 f"[{time.time() - t0:6.0f}s] {r['arm']} {r['variant']:9s} seed={r['seed']:<5}"
                 f" herring final-decade {h:12.0f}  ({r['seconds']}s)",
@@ -233,6 +259,7 @@ def main() -> int:
     result = {
         "seeds": SEEDS,
         "arms": {k: list(v[0]) + [f"larva sp{i}" for i in v[1]] for k, v in ARMS.items()},
+        "prestated_arms": list(PRESTATED),
     }
     result["analysis"] = analyse(runs)
     result["runs"] = runs
@@ -241,7 +268,7 @@ def main() -> int:
     print(
         f"GATE A0 {g['A0_decline']:+.4%} vs B2 {g['B2_v190_decline']:+.4%}: {'PASS' if g['pass'] else 'FAIL'}"
     )
-    for arm in ARMS:
+    for arm in [a for a in ARMS if a in result["analysis"]]:
         v = result["analysis"][arm]
         print(
             f"{arm}: decline {v['decline']:+.2%} (SE {v['se']:.2%})  f={v['fraction_restored']:+.2f}"
