@@ -110,6 +110,9 @@ def test_fr_predator_set_matches_across_calibrator_and_evaluator(
     keys, _b, _x = calibrate_baltic.get_phase14_params()
     from_calibrator = tuple(int(k.rsplit(".sp", 1)[1]) for k in keys)
     assert from_calibrator == tuple(evaluate_vs_ices.FR_PREDATOR_SP)
+    # The base sets type III on exactly the predators whose K is free: a type-III predator with
+    # no free K has no half-saturation, which the engine rejects.
+    assert tuple(calibrate_baltic.PHASE14_FR_PREDATORS) == from_calibrator
 
 
 def test_ltl_accessibility_indices_are_exactly_the_resource_block(calibrate_baltic):

@@ -46,20 +46,16 @@ ASSESSED = ("cod_west", "cod_east", "herring", "sprat", "flounder")
 
 
 def build_phase14_base() -> tuple[dict[str, str], list[str]]:
-    """Replicate the ``phase == "14"`` base-config assembly in ``run_calibration``."""
+    """The ``--phase 14`` base config, via the calibrator's own ``apply_phase14_base``.
+
+    (The 2026-11-11 run used an inline copy of the same three steps, at ``163da593``.)"""
     import calibrate_baltic as cal
 
     from osmose.config.reader import OsmoseConfigReader
 
     keys, _bounds, _x0 = cal.get_phase14_params()
     base = OsmoseConfigReader().read(cal.BALTIC_CONFIG)
-    p13 = json.loads((cal.RESULTS_DIR / "phase13_results.json").read_text())
-    for key, val in p13.get("parameters", {}).items():
-        base[key.lower()] = str(val)
-    for sp in range(cal.N_SPECIES):
-        base[f"stock.recruitment.type.sp{sp}"] = "shepherd"
-    for sp in (0, 5, 15, 16):
-        base[f"predation.functional.response.shape.sp{sp}"] = "type3"
+    cal.apply_phase14_base(base)
     return base, keys
 
 
