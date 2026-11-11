@@ -1,5 +1,10 @@
 # Baltic C4 — salinity-gate sensitivity arms (2026-08-30)
 
+> **Superseded 2026-11-11** by `docs/baltic_c4_salinity_2026-11-11.md` (re-run on v1.9.0). The July
+> chain is still absent; cod_west now moves +1.5/+7.0/+18.7% (not +5.9/+11.0/+27.9%), cod_east is the
+> clearest responder (−6.5% at −3 PSU, 3.9× sd), the sprat secondary signal is gone, and under C2 the
+> salinity lever no longer touches cod_east's spawning map.
+
 **Verdict: ALL GATES PASS.** Builder zero-check: PASS. `movement.salinity.field.constant`
 absence: PASS on every arm config. Frame-count assert (24 frames): PASS on every arm field.
 Three-way load-through (engine-loaded == on-disk == builder-recomputed offset): PASS for
