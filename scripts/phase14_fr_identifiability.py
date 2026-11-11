@@ -66,7 +66,12 @@ def build_phase14_base() -> tuple[dict[str, str], list[str]]:
 def _x_for(keys: list[str], sp: int, k: float) -> np.ndarray:
     """log10 parameter vector: every K at the x0 value 1.0 except predator ``sp`` at ``k``."""
     x = np.zeros(len(keys))
-    x[keys.index(f"predation.functional.response.halfsat.sp{sp}")] = np.log10(k)
+    xk = float(np.log10(k))
+    # 10 ** log10(5.0) == 5.000000000000001, which the engine's [0.1, 5.0] check rejects. Step
+    # one ULP down so the upper bound is the largest K the engine accepts (4.999999999999999).
+    while 10.0**xk > k:
+        xk = float(np.nextafter(xk, -np.inf))
+    x[keys.index(f"predation.functional.response.halfsat.sp{sp}")] = xk
     return x
 
 
