@@ -1398,5 +1398,13 @@
    },
    "seconds": 162.2
   }
- ]
+ ],
+ "outcome": {
+  "control": "cod_west",
+  "control_pass": false,
+  "predators": {
+   "GreySeal": "inconclusive",
+   "Cormorant": "inconclusive"
+  }
+ }
 }

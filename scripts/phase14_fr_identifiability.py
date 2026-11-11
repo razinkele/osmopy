@@ -135,6 +135,26 @@ def analyse(runs: list[dict]) -> dict:
     return out
 
 
+def gated_outcome(analysis: dict) -> dict:
+    """Apply the pre-stated validity gate to the raw per-predator flags.
+
+    If the cod_west control does not pass on the objective, the instrument has not shown that it
+    can see a knob known to matter, so every other predator's outcome is "inconclusive". The raw
+    criterion flags in ``analysis`` stay as measured.
+    """
+    control = PREDATORS[CONTROL_SP]
+    control_pass = bool(analysis[control]["objective"]["identifiable"])
+    outcome = {}
+    for name, a in analysis.items():
+        if name == control:
+            continue
+        if not control_pass:
+            outcome[name] = "inconclusive"
+        else:
+            outcome[name] = "identifiable" if a["objective"]["identifiable"] else "not identifiable"
+    return {"control": control, "control_pass": control_pass, "predators": outcome}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", type=Path, required=True)
@@ -149,6 +169,7 @@ def main() -> int:
     if args.reanalyse:
         result = json.loads(args.out.read_text())
         result["analysis"] = analyse(result["runs"])
+        result["outcome"] = gated_outcome(result["analysis"])
         _write_and_report(result, args.out)
         return 0
 
@@ -177,6 +198,7 @@ def main() -> int:
         "analysis": analyse(runs),
         "runs": runs,
     }
+    result["outcome"] = gated_outcome(result["analysis"])
     _write_and_report(result, args.out)
     print(f"({time.time() - t0:.0f}s)")
     return 0
@@ -199,6 +221,10 @@ def _write_and_report(result: dict, out: Path) -> None:
                 f"    {sp_name:9s} dlog10B {v['mean_delta']:+.4f}  sd {v['pooled_seed_sd']:.4f}"
                 f"  ratio {_fmt_ratio(v['ratio'])}  {'IDENT' if v['identifiable'] else ''}"
             )
+    g = result["outcome"]
+    print(f"control {g['control']}: {'PASS' if g['control_pass'] else 'FAIL'} (pre-stated gate)")
+    for name, verdict in g["predators"].items():
+        print(f"  {name}: {verdict.upper()}")
     print(f"wrote {out}")
 
 
