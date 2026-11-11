@@ -41,19 +41,25 @@ Temperature is still the dominant driver. Within each RCP, BSAP and REF differ b
 contribution is not excluded. The response is still monotone in ΔT, and its size fell 2.3× at both
 warming levels.
 
-**Attribution is not measured.** The knob is the C1 reproduction thermal gate
-(`reproduction.thermal.gate.*`, exponential): it scales herring egg production by
-exp(β·(T − tref)). Of the changes since August, two act on that pathway directly:
-- herring's larval mortality was re-fitted 3.4× lower;
-- its autumn spawning share was folded into spring.
+**Attribution (measured 2026-11-12, `docs/diagnostics/b2_herring_attribution_2026-11-12.md`).**
+The knob is the C1 reproduction thermal gate (`reproduction.thermal.gate.*`, exponential): it
+scales herring egg production by exp(β·(T − tref)). A pre-stated A/B reverted v1.9.0's data
+changes (#236) to v1.8.8 at file level and re-ran this `rcp85_ref` pair. Its control reproduced
+the −26.47% above to the last bit.
 
-The others act on it indirectly:
-- herring's baseline went from about 2.7 Mt to its 1.5 Mt target, through the re-fit on the
-  corrected food field;
-- the GreySeal column and C2 changed its predators.
-
-Which of these halved the response was not tested. A one-change A/B on the RCP8.5 arm would settle
-it.
+- **Reverting all of #236 restores −61.25%**, which is 97% of the gap between v1.9.0 and August
+  (98.4% of the August response). That arm is v1.8.8 as released, so the halving happened at
+  the v1.8.8 → v1.9.0 step. Whether the earlier August → v1.8.8 changes condition it was not
+  tested.
+- **No tested single revert explains it.** Reverting herring's larval rate alone restores 27% of
+  the gap; the LTL file alone, 6%; the cod pair (two changes reverted together) alone, 2%. The autumn-spawning share alone moves it
+  9% the *other* way.
+- **Along one path, three steps carry it:**
+  - herring's larval rate and the LTL file it was re-fitted onto, together, restore 66%;
+  - the autumn share then adds 28%;
+  - the cod pair adds the last 4%.
+- **The response belongs to the jointly recalibrated state.** It is not an artefact of one input.
+  Why that state is less sensitive was not measured.
 
 ## Demersal load contrast (BSAP vs REF within an RCP)
 
