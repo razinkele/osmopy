@@ -122,3 +122,43 @@ final year; the October mean is carried by that one year alone. Sprat age-0 stan
   the mean kept in the JSON.*)
 - **For the validator:** a 5-yr *mean* of an annual stage rate is not robust to one spike year. The
   cod-attributed M2 and the adult rates in this note are steady year to year and unaffected.
+
+## Re-run 2026-11-11: v1.9.0, and the 15-yr protocol is not at equilibrium
+
+Follow-up 1 above asks for a re-run after any seal-matrix or percid recalibration. v1.9.0 carries
+both: the GreySeal accessibility column (#227) and the corrected-LTL recalibration (#236). This is
+production `data/baltic` at `95baf49b`, seed 0, the same trailing 5-yr window, and the same
+`validate_outputs_vs_ices.py --sms-m2`. Artifacts: `baltic_sms_m2_validation_2026-11-11_15yr.json`
+and `…_50yr.json` beside this note.
+
+The protocol's 15-yr run (model years 11–15) gives cod_east **155 kt**. Its certified equilibrium
+is **76–80 kt** (50 yr, final decade, 5 seeds). So the 15-yr window still sits in cod_east's
+transient. The same seed was therefore also run to 50 yr (window years 46–50):
+
+| | 15 yr: model cod M2 | model / SMS | 50 yr: model cod M2 | model / SMS | 50-yr / 15-yr |
+|---|---:|---:|---:|---:|---:|
+| cod_east biomass (window mean) | 155,180 t | | 72,274 t | | **0.47** |
+| herring, by cod_east | 0.069 | | 0.029 | | 0.42 |
+| herring, by cod_west | 0.005 | | 0.015 | | 3.0 |
+| **herring, cod total** | 0.074 | **1.08** | 0.044 | **0.64** | 0.59 |
+| sprat, by cod_east | 0.381 | | 0.156 | | 0.41 |
+| sprat, by cod_west | 0.004 | | 0.012 | | 3.0 |
+| **sprat, cod total** | 0.386 | **4.44** | 0.168 | **1.93** | 0.44 |
+
+SMS: herring 0.069 and sprat 0.087 (2018–2022), unchanged.
+
+- **cod_east's attributed M2 falls in step with its biomass.** Biomass falls 0.47×; its
+  predation on herring falls 0.42× and on sprat 0.41×. cod_west's share triples, as its biomass
+  does (6.0 kt → 17.4 kt). So on the current config the 15-yr protocol overstates cod-attributed
+  M2 about 2×, through the cod_east transient alone.
+- **At equilibrium, cod sits within 2× of SMS on both prey**: herring 0.64×, sprat 1.93×. That is
+  closer than either the October run (0.51× and 3.19×) or this config's own 15-yr reading. The
+  October and 2026-11-05 runs used the 15-yr protocol too. Their cod_east trajectories were not
+  recorded, so how much of their sprat excess was transient is not known.
+- **Total predation, annual medians (Juvenil / Adult):**
+  - herring: 0.38 / 0.68 at 50 yr, against 0.41 / 0.79 at 15 yr;
+  - sprat: 0.51 / 0.42 at 50 yr, against 0.73 / 0.64 at 15 yr.
+  These are context only, as above.
+- **For the protocol:** compare the SMS key run against the model's equilibrium. Use a 50-yr run
+  (the certification horizon), not 15 yr. The validator itself is unchanged; this is a statement
+  about which run to feed it.

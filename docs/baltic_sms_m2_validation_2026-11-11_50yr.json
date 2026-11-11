@@ -1,0 +1,155 @@
+{
+  "snapshot_dir": "/home/razinka/osmopy/data/baltic/reference/ices_snapshots",
+  "results_dir": "/home/razinka/.claude/jobs/7349a595/tmp/sms_m2_run50/output",
+  "window_years": 5,
+  "ices_window_start": 2018,
+  "ices_window_end": 2022,
+  "comparisons": [
+    {
+      "species": "cod_west",
+      "model_mean_tonnes": 17448.70726486691,
+      "ices_min_tonnes": 5303.0,
+      "ices_max_tonnes": 12896.0,
+      "in_range": false,
+      "magnitude_factor": 2.1099634429082723,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "cod_east",
+      "model_mean_tonnes": 72273.56720247562,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": [
+        "cod.27.24-32"
+      ]
+    },
+    {
+      "species": "herring",
+      "model_mean_tonnes": 1584806.5281550484,
+      "ices_min_tonnes": 790268.0,
+      "ices_max_tonnes": 867726.0,
+      "in_range": false,
+      "magnitude_factor": 1.9138052777151626,
+      "excluded_index_stocks": [
+        "her.27.25-2932"
+      ]
+    },
+    {
+      "species": "sprat",
+      "model_mean_tonnes": 890495.018138051,
+      "ices_min_tonnes": 888412.0,
+      "ices_max_tonnes": 1121262.0,
+      "in_range": true,
+      "magnitude_factor": 0.8922174935724013,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "flounder",
+      "model_mean_tonnes": 49330.711030219114,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": [
+        "fle.27.2223",
+        "bzq.27.2425",
+        "bzq.27.2628",
+        "bwp.27.2729-32"
+      ]
+    },
+    {
+      "species": "perch",
+      "model_mean_tonnes": 64906.892921296225,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "pikeperch",
+      "model_mean_tonnes": 598417.4260036384,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "smelt",
+      "model_mean_tonnes": 661241.9643386757,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    },
+    {
+      "species": "stickleback",
+      "model_mean_tonnes": 93549.44736055276,
+      "ices_min_tonnes": null,
+      "ices_max_tonnes": null,
+      "in_range": null,
+      "magnitude_factor": null,
+      "excluded_index_stocks": []
+    }
+  ],
+  "sms_m2": [
+    {
+      "model_species": "herring",
+      "sms_species": "Herring",
+      "sms_stock": "her.27.25-2932",
+      "sms_m2_mean": 0.06872696340380866,
+      "sms_m2_min": 0.06048923194282647,
+      "sms_m2_max": 0.08304994026690334,
+      "sms_n_years": 5,
+      "model_cod_m2_mean": 0.04421556595484552,
+      "model_cod_m2_min": 0.03673249049079819,
+      "model_cod_m2_max": 0.049344793206713415,
+      "model_n_years": 5,
+      "model_by_predator": {
+        "cod_west": 0.015092527038985884,
+        "cod_east": 0.02912303891585964
+      },
+      "model_predation_rate_by_stage": {
+        "Juvenil": 0.3826960121759227,
+        "Adult": 0.678786921200975
+      },
+      "model_predation_rate_by_stage_mean": {
+        "Juvenil": 0.39633984377285036,
+        "Adult": 0.6843068138052271
+      },
+      "ratio": 0.6433510774374649,
+      "note": ""
+    },
+    {
+      "model_species": "sprat",
+      "sms_species": "Sprat",
+      "sms_stock": "spr.27.22-32",
+      "sms_m2_mean": 0.08683676372836781,
+      "sms_m2_min": 0.07864616577901586,
+      "sms_m2_max": 0.09402761671476406,
+      "sms_n_years": 5,
+      "model_cod_m2_mean": 0.16761988888320223,
+      "model_cod_m2_min": 0.13401416567853586,
+      "model_cod_m2_max": 0.20261342795293974,
+      "model_n_years": 5,
+      "model_by_predator": {
+        "cod_west": 0.01181877620988558,
+        "cod_east": 0.15580111267331667
+      },
+      "model_predation_rate_by_stage": {
+        "Juvenil": 0.5068768689472704,
+        "Adult": 0.416481216646425
+      },
+      "model_predation_rate_by_stage_mean": {
+        "Juvenil": 0.5264006240598597,
+        "Adult": 0.40827199979256273
+      },
+      "ratio": 1.9302871466690117,
+      "note": ""
+    }
+  ]
+}
