@@ -47,10 +47,12 @@ scales herring egg production by exp(β·(T − tref)). A pre-stated A/B reverte
 changes (#236) to v1.8.8 at file level and re-ran this `rcp85_ref` pair. Its control reproduced
 the −26.47% above to the last bit.
 
-- **Reverting all of #236 restores −61.25%**, which is 97% of the August response. So nothing
-  before v1.8.8 is needed to explain the halving.
-- **No single change explains it.** Reverting herring's larval rate alone restores 27% of the
-  gap; the LTL file alone, 6%; the cod pair alone, 2%. The autumn-spawning share alone moves it
+- **Reverting all of #236 restores −61.25%**, which is 97% of the gap between v1.9.0 and August
+  (98.4% of the August response). That arm is v1.8.8 as released, so the halving happened at
+  the v1.8.8 → v1.9.0 step. Whether the earlier August → v1.8.8 changes condition it was not
+  tested.
+- **No tested single revert explains it.** Reverting herring's larval rate alone restores 27% of
+  the gap; the LTL file alone, 6%; the cod pair (two changes reverted together) alone, 2%. The autumn-spawning share alone moves it
   9% the *other* way.
 - **Along one path, three steps carry it:**
   - herring's larval rate and the LTL file it was re-fitted onto, together, restore 66%;

@@ -263,11 +263,19 @@ def main() -> int:
     }
     result["analysis"] = analyse(runs)
     result["runs"] = runs
-    args.out.write_text(json.dumps(result, indent=1, allow_nan=False) + "\n")
     g = result["analysis"]["_gate"]
     print(
         f"GATE A0 {g['A0_decline']:+.4%} vs B2 {g['B2_v190_decline']:+.4%}: {'PASS' if g['pass'] else 'FAIL'}"
     )
+    if not g["pass"]:
+        # Pre-stated protocol: a failed instrument gate means no revert arm is interpreted. Keep the
+        # raw runs for diagnosis, but do not publish fractions under the requested output path.
+        failed = args.out.with_name(args.out.stem + ".GATE_FAILED.json")
+        result["analysis"] = {"_gate": g}
+        failed.write_text(json.dumps(result, indent=1, allow_nan=False) + "\n")
+        print(f"gate failed: no attribution reported; raw runs in {failed}")
+        return 2
+    args.out.write_text(json.dumps(result, indent=1, allow_nan=False) + "\n")
     for arm in [a for a in ARMS if a in result["analysis"]]:
         v = result["analysis"][arm]
         print(

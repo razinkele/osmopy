@@ -5,10 +5,15 @@ final-decade biomass by 62.27% in August and by 26.47% on v1.9.0. Which change h
 response? The criterion was committed before any run:
 `b2_herring_attribution_prestated_2026-11-11.md` (`f5774b66`).
 
-**Answer: v1.9.0's data change (#236) holds the whole gap, and no single file inside it does.**
-- **Restoring all of #236 restores 97% of the August response:** A4 gives −61.25% against
-  August's −62.27%.
-- **Restoring any one file alone restores at most 27%.** The four single reverts sum to 0.26.
+**Answer: the halving happened at v1.9.0's data change (#236), and no tested single revert
+inside it explains it.**
+- **Restoring all of #236 restores 97% of the gap** between v1.9.0 and August: A4 gives −61.25%
+  against August's −62.27%, which is 98.4% of the August response itself. A4 is v1.8.8 as
+  released (identical code apart from an opt-in module, identical data). So the response was
+  already at the August level at v1.8.8, and the August → v1.8.8 changes moved it by about
+  1 pp net. August's noise is not known.
+- **No tested single revert restores more than 27%.** The four sum to 0.26. Note that A5
+  reverts two cod changes together, so offsetting effects inside it are not excluded.
 - **That is an interaction, by the pre-stated rule.** The response belongs to the jointly fitted
   state, not to any one input.
 
@@ -63,9 +68,10 @@ the combined SE of the per-seed paired declines.
 Per-seed paired declines are in the JSON. The largest within-arm range is 4.3 pp (A2, −21.25% to
 −25.53%).
 
-- **The pivot passes: f(A4) = 0.97 ≥ 0.8.** #236 holds the August gap. Nothing in the August →
-  v1.8.8 window is needed to explain the halving. A4's baseline herring, 2.70 Mt, is also the
-  pre-recalibration level.
+- **The pivot passes: f(A4) = 0.97 ≥ 0.8.** On the current code, reverting #236 restores the
+  August-level response: the halving is the v1.8.8 → v1.9.0 step. This run does not test whether
+  the August → v1.8.8 changes condition that step, for example by interacting with #236. A4's
+  baseline herring, 2.70 Mt, is also the pre-recalibration level.
 - **A1 moves the response** (z = −12.6): restoring herring's old larval rate alone restores 27%
   of the gap.
 - **A2 moves it the other way** (z = +3.1). Restoring the 25% autumn spawning share makes herring
@@ -88,8 +94,13 @@ Per-seed paired declines are in the JSON. The largest within-arm range is 4.3 pp
 
 ## What it means for B2
 
-The halving is a consequence of the recalibration as a whole: the corrected food field plus the
-larval re-fit onto it. It is not an artefact of any one input change. On the current, certified
+The halving is a consequence of the v1.9.0 recalibration as a whole. Along the tested path it
+takes three steps:
+- the corrected food field together with herring's larval re-fit onto it (0.66 of the gap);
+- the autumn-spawning fold (a further 0.28);
+- the cod pair (0.04).
+
+These shares are order-dependent, and no tested single revert explains it. On the current, certified
 model, herring's +2.9 °C response is −26.5%. The August −62% belonged to a herring stock calibrated
 on a food field that overstated plankton about 2.5×. It is not the better number, only the older
 one.
