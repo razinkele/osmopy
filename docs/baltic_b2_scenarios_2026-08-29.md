@@ -1,5 +1,9 @@
 # Baltic B2 — RCP × load literature-delta scenarios (2026-08-29)
 
+> **Superseded 2026-11-11** by `docs/baltic_b2_scenarios_2026-11-11.md` (re-run on v1.9.0). Herring's
+> warming decline is now −17%/−18% (RCP4.5) and −26.5% (RCP8.5), not the −40%/−63% below; do not
+> quote these herring figures for the current model. The demersal load contrast is essentially unchanged.
+
 **Verdict: ALL GATES PASS.** Identity: zero violations (zero arm bit-identical to
 baseline, 5 seeds). Load-through (three-way assert: engine-loaded == on-disk ==
 recomputed-from-production): true for all 5 non-baseline arms. Hill ordering:
