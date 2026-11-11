@@ -41,9 +41,9 @@ The distinguishability measure is August's: max |Δ| across the three arms over 
 
 - **cod_west** is still monotone and still the largest relative change. Its baseline is noisier
   now (seed SD 7.2%, against 5.2%), and its −1 PSU response is inside the noise.
-- **cod_east** moves only at −3 PSU, the arm where its juvenile and adult maps start excluding
-  cells (instruments below). That is the same lever as in August, but the population response is
-  2.8× larger.
+- **cod_east** moves only at −3 PSU. That is where exclusion from its juvenile and adult maps
+  jumps, from 0.06% / 0.23% of cells at −1 and −2 PSU to 3.4% / 5.2% (instruments below). It is
+  the same lever as in August, but the population response is 2.8× larger.
 - **The secondary sprat signal is gone.** Sprat is still monotone (−0.5% / −0.75% / −1.0%) but at
   1.34× its SD, below the ~1.8× line. August had inferred, without measuring, that it came through
   cod_west predation. With cod_west's response smaller, a smaller sprat echo is consistent with
@@ -63,7 +63,9 @@ The one change is **cod_east spawning**. On every arm it now reads `mean_w_base`
 `mean_dw` −0.280 and `excluded_fraction` 0.4%. The cause is C2, shipped in v1.9.0: it moved
 cod_east's spawning map to 14 SD 25 cells, and every one sits where the gate is saturated
 (w = 1) even at −3 PSU. **On the current config, freshening up to 3 PSU does not touch cod_east's
-spawning distribution at all.** Its response flows through the juvenile and adult maps alone.
+spawning distribution at all.** The gate reaches cod_east directly only through its juvenile and
+adult maps. The same arms also shift cod_west's maps, and the two stocks share prey, so part of
+cod_east's response can come through that interaction. This run does not separate the two.
 
 **Not measured:** why cod_east's population response grew 2.8× while its juvenile and adult
 instruments are unchanged and its spawning pathway dropped out. Its baseline also moved, from

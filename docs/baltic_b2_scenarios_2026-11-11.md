@@ -19,8 +19,10 @@ published.**
 **The August herring figures should no longer be quoted** for the current model.
 
 **Run:** 6 arms × seeds `[42, 123, 7, 999, 2024]` × 50 yr, in 4370 s (73 min; it was 1h52m).
-Harness: `scripts/baltic_b2_scenario_ab.py`, run with its report redirected to
-`docs/diagnostics/baltic_b2_scenario_report_2026-11-11.json`. The `labels` array, seeds and arms
+Harness: `scripts/baltic_b2_scenario_ab.py`. The run set the module constant `REPORT_PATH`, which
+defaults to `/tmp/b2_scenario_report.json`, to a private path, then called `run_b2()`. The JSON was
+then copied to `docs/diagnostics/baltic_b2_scenario_report_2026-11-11.json`. Redirecting stdout
+would not reproduce the report: stdout carries only status lines. The `labels` array, seeds and arms
 are identical to the August report. Delta spec, citations and the six caveat labels: see the
 August note. They are unchanged.
 
@@ -34,8 +36,10 @@ August note. They are unchanged.
 | `rcp85_bsap` | +2.9 °C | −62.81% | **−26.50%** |
 | `rcp85_ref` | +2.9 °C | −62.27% | **−26.47%** |
 
-The response still runs through temperature alone: BSAP and REF are near-identical within each
-RCP. It is still monotone in ΔT. Its size fell 2.3× at both warming levels.
+Temperature is still the dominant driver. Within each RCP, BSAP and REF differ by at most 0.7 pp
+(RCP4.5: −17.20% vs −17.93%, at different O₂ deltas). RCP8.5 has no zero-O₂ control, so a small O₂
+contribution is not excluded. The response is still monotone in ΔT, and its size fell 2.3× at both
+warming levels.
 
 **Attribution is not measured.** The knob is the C1 reproduction thermal gate
 (`reproduction.thermal.gate.*`, exponential): it scales herring egg production by
@@ -59,7 +63,9 @@ it.
 | RCP8.5 | +17.03% → **+18.46%** | +12.67% → **+10.03%** | 2.85 → **4.36** pp | ±1.9% |
 
 - **The measured contrasts held.** They are within 1.5 pp of August for cod_east, and within
-  0.4–2.6 pp for flounder. All four remain 5–10× the cod_east seed-noise floor.
+  0.4–2.6 pp for flounder. All four are 5–10× the historical ±1.9% cod_east reference (see the
+  last bullet). That reference is not a measured noise level for these contrasts on the current
+  config, and not for flounder at all.
 - **The predicted effective-K change rose 1.6×**: +5.37% / 0% / +3.16% / −1.20% for the four
   scenario arms, against +3.42% / 0% / +2.04% / −0.81% in August. No engine run feeds it. The
   builder weights the O₂ → Hill response by the `Benthos` field of
@@ -74,9 +80,14 @@ it.
 ## What changes for anyone citing B2
 
 - **Herring's warming decline is −17% to −27%** on the current model, not −40% to −63%.
-  "Temperature-owned" still holds.
+  Temperature is the dominant driver (see above).
 - **The demersal load signal stands**: about +19% cod_east and +10–15% flounder for the BSAP vs
-  REF contrast. It is 5–10× noise.
+  REF contrast. It is 5–10× the historical cod_east seed reference.
+- **Two caveats apply to that contrast.**
+  - It is the O₂ → benthos-K pathway only. Plankton and nutrient pathways stay at baseline in
+    every arm (the LTL-at-baseline label), so it is not a complete load-policy response.
+  - cod_east's deltas are conditioned on its partly prescribed RV narrative trajectory (label 6
+    of the August note), so its contrast is not as clean a measurement as flounder's.
 - **The reference-period caveat applies unchanged.** These are raw end-century literature deltas
   on a present-day baseline.
 
