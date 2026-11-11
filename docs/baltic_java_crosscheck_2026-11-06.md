@@ -1,5 +1,9 @@
 # Baltic Java 4.4.1 cross-check, re-run after the Cormorant fix — 2026-11-06
 
+> **Superseded 2026-11-11** by `docs/baltic_java_crosscheck_2026-11-11.md`, re-run on v1.9.0's
+> corrected LTL forcing and recalibration: herring now agrees (1.01×), Java still drives sprat extinct,
+> and the other species run 4–36× above Python (6–96× here). §3's units bug and its workaround stand.
+
 **Trigger:** #208 found that every Baltic Java arm had run Cormorant at **1×** while the Python engine
 uses **2×** (`species.biomass.multiplier.sp16 = 2.0` never reached Java's `species.multiplier.sp16`).
 The question here is whether earlier Java cross-checks involving the background predators have to be
