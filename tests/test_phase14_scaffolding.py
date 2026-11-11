@@ -93,8 +93,9 @@ def test_phase14_bound_corners_pass_the_engine_halfsat_check(cal):
     """Both corners of the search box must reach the engine as a K it accepts.
 
     The engine rejects a half-saturation outside [0.1, 5.0] (``_parse_reproduction_params``,
-    ``osmose/engine/config.py``). ``10 ** log10(5.0)`` is 5.000000000000001, so a candidate on the
-    upper bound used to fail its simulation and score the 1e6 sentinel (found 2026-11-11, #232)."""
+    ``osmose/engine/config.py``). ``10 ** log10(5.0)`` is 5.000000000000001, so evaluating a
+    candidate on the upper bound raised ValueError and aborted a default DE run (found 2026-11-11,
+    #232)."""
     keys, bounds, _ = cal.get_phase14_params()
     for corner in ([b[0] for b in bounds], [b[1] for b in bounds]):
         overrides = cal.expand_param_overrides(keys, np.array(corner), True)

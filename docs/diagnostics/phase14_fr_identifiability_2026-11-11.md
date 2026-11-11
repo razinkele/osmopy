@@ -57,9 +57,15 @@ cod_east at 76–80 kt, sprat at 0.88–0.90 Mt and flounder at 48–50 kt. The 
 The upper K ran at **4.999999999999999**, not 5.0. `10 ** log10(5.0)` is 5.000000000000001, which
 the engine's [0.1, 5.0] half-saturation check rejects. The first attempt died on exactly that, and
 none of its output was used. 4.999999999999999 is one ULP down and the largest value the engine
-accepts. The same defect sat in `get_phase14_params` itself: a DE candidate on the upper bound
-failed its simulation and scored the 1e6 sentinel. It is fixed alongside this note
-(`_log10_inside`, test `test_phase14_bound_corners_pass_the_engine_halfsat_check`).
+accepts. The same defect sat in `get_phase14_params` itself. Evaluating a DE candidate on the
+upper bound raised `ValueError` from the engine's config parse. `run_simulation` catches only
+timeouts, so the error aborted a default DE run; only `--isolated-eval` turned it into the 1e6
+penalty. It is fixed alongside this note (`_log10_inside`, test
+`test_phase14_bound_corners_pass_the_engine_halfsat_check`).
+
+The per-stock analysis in the JSON was recomputed (`--reanalyse`, no new runs) after the review.
+One value changed: Cormorant → cod_east, exactly 0 in all 8 runs. Its ratio had been written as
+a non-JSON `Infinity` and is now 0.0.
 
 ## What this does and does not say about #232
 

@@ -110,7 +110,9 @@ def analyse(runs: list[dict]) -> dict:
                 "mean_delta": mean,
                 "delta_per_seed": [float(d) for d in delta],
                 "pooled_seed_sd": pooled,
-                "ratio": abs(mean) / pooled if pooled > 0 else float("inf"),
+                # No seed noise at all (e.g. a stock exactly 0 in every run): 0.0 when nothing moved,
+                # None (undefined) when it moved deterministically -- never inf, which is not JSON.
+                "ratio": abs(mean) / pooled if pooled > 0 else (0.0 if mean == 0 else None),
                 "identifiable": bool(abs(mean) > 2 * pooled),
             }
 
@@ -137,7 +139,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--workers", type=int, default=12)
+    ap.add_argument(
+        "--reanalyse",
+        action="store_true",
+        help="recompute the analysis from the runs already stored in --out; no simulation",
+    )
     args = ap.parse_args()
+
+    if args.reanalyse:
+        result = json.loads(args.out.read_text())
+        result["analysis"] = analyse(result["runs"])
+        _write_and_report(result, args.out)
+        return 0
 
     jobs = [(sp, k, seed) for sp in PREDATORS for k in K_LEVELS for seed in SEEDS]
     print(f"{len(jobs)} runs x {N_YEARS} yr, {args.workers} workers", flush=True)
@@ -164,20 +177,29 @@ def main() -> int:
         "analysis": analyse(runs),
         "runs": runs,
     }
-    args.out.write_text(json.dumps(result, indent=1) + "\n")
+    _write_and_report(result, args.out)
+    print(f"({time.time() - t0:.0f}s)")
+    return 0
+
+
+def _fmt_ratio(r: float | None) -> str:
+    return "undefined" if r is None else f"{r:.2f}"
+
+
+def _write_and_report(result: dict, out: Path) -> None:
+    out.write_text(json.dumps(result, indent=1, allow_nan=False) + "\n")
     for name, a in result["analysis"].items():
         o = a["objective"]
         print(
             f"{name:9s} objective: delta {o['mean_delta']:+.4f}  seed-sd {o['pooled_seed_sd']:.4f}"
-            f"  ratio {o['ratio']:.2f}  identifiable={o['identifiable']}"
+            f"  ratio {_fmt_ratio(o['ratio'])}  identifiable={o['identifiable']}"
         )
         for sp_name, v in a["assessed_log10_biomass"].items():
             print(
                 f"    {sp_name:9s} dlog10B {v['mean_delta']:+.4f}  sd {v['pooled_seed_sd']:.4f}"
-                f"  ratio {v['ratio']:.2f}  {'IDENT' if v['identifiable'] else ''}"
+                f"  ratio {_fmt_ratio(v['ratio'])}  {'IDENT' if v['identifiable'] else ''}"
             )
-    print(f"wrote {args.out}  ({time.time() - t0:.0f}s)")
-    return 0
+    print(f"wrote {out}")
 
 
 if __name__ == "__main__":

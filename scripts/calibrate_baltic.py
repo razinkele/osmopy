@@ -878,9 +878,10 @@ def _log10_inside(value: float, *, upper: bool) -> float:
     """``log10(value)``, nudged by ULPs so that ``10 ** x`` lands on the inside of ``value``.
 
     ``10 ** log10(5.0)`` is 5.000000000000001. That is past the engine's [0.1, 5.0] half-saturation
-    check, so a DE candidate sitting on that bound failed its simulation and scored the 1e6
-    sentinel. An upper bound is stepped down until ``10 ** x <= value``; a lower bound up until
-    ``10 ** x >= value``.
+    check, so evaluating a DE candidate on that bound raised ``ValueError`` from the config parse.
+    ``run_simulation`` catches only timeouts, so that aborted a default DE run; only
+    ``--isolated-eval`` turned it into the 1e6 penalty. An upper bound is stepped down until
+    ``10 ** x <= value``, and a lower bound up until ``10 ** x >= value``.
     """
     x = float(np.log10(value))
     step = -np.inf if upper else np.inf
@@ -939,7 +940,8 @@ def get_phase14_params() -> tuple[list[str], list[tuple[float, float]], list[flo
     only the half-saturation K is free here. Bounds are log10(0.5)..log10(5.0), the upper one
     stepped one ULP down (``_log10_inside``): the objective applies 10**x, and 10**log10(5.0)
     is 5.000000000000001, past the engine's accepted FR-halfsat range [0.1, 5.0]. So the engine
-    receives a raw float K in [0.5, 4.999999999999999]. x0 = log10(1.0) = 0.0.
+    receives a K in [0.5, 5.0] up to one ULP at either face, always inside [0.1, 5.0]. (scipy's DE
+    can map the lower face to 0.49999999999999994.) x0 = log10(1.0) = 0.0.
 
     Note: ``predation.functional.response.shape.sp{i}`` is the FR Holling form (set
     fixed to type3 in base_config) — a DIFFERENT key from the Shepherd SR
