@@ -1,5 +1,10 @@
 # Herring compensation breakdown: result, 2026-11-12
 
+> **Historical since v1.10.0.** This compares the v1.9.0 state (A0) with the v1.8.8 state (A4).
+> v1.10.0 (#250) recalibrated herring. The "model-state finding" at the end, a spawning stock of 22 kt
+> (1.5%), is what that recalibration fixed: herring SSB is now 1.40–1.47 Mt (93%). The channel result
+> stands as a description of those two states. It was not re-run.
+
 **Question:** under B2's +2.9 °C knob (egg production × f = 0.228), herring's biomass falls by
 26.5% in the v1.9.0 state (A0) but by 61.2% in the v1.8.8 state (A4). Through which channel does
 A0 compensate with a smaller fall in density, and which cause's hazard moves? The criterion was

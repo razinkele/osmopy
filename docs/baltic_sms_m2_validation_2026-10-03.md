@@ -162,3 +162,27 @@ SMS: herring 0.069 and sprat 0.087 (2018–2022), unchanged.
 - **For the protocol:** compare the SMS key run against the model's equilibrium. Use a 50-yr run
   (the certification horizon), not 15 yr. The validator itself is unchanged; this is a statement
   about which run to feed it.
+
+## Re-run 2026-11-12 on v1.10.0 (herring recalibration), 50-yr protocol
+
+v1.10.0 (#250) recalibrated herring: maturity 14.5 cm, adult additional mortality 0.2 /yr, larval
+rate re-fitted. Herring is one of the two prey stocks here, so the comparison is re-run with the
+50-yr protocol the previous section recommends. Setup: seed 0, final 5 years (years 46–50). The
+artifact is `baltic_sms_m2_validation_2026-11-12_v1.10.0_50yr.json`.
+
+| | v1.9.0, 50 yr | **v1.10.0, 50 yr** | SMS |
+|---|---:|---:|---:|
+| herring, cod-attributed M2 | 0.044 (0.64×) | **0.036 (0.53×)** | 0.069 |
+| sprat, cod-attributed M2 | 0.168 (1.93×) | **0.157 (1.81×)** | 0.087 |
+| herring total predation, Juvenil / Adult (annual median) | 0.38 / 0.68 | **0.64 / 0.26** | — |
+| sprat total predation, Juvenil / Adult | 0.51 / 0.42 | 0.65 / 0.37 | — |
+| cod_east biomass (window mean) | 72,274 t | 67,198 t | — |
+
+- **Cod stays within 2× of SMS on both prey.** It is 0.53× on herring and 1.81× on sprat.
+- **Herring's adult total predation rate fell from 0.68 to 0.26 /yr.** v1.10.0's herring has many
+  more adults (SSB 93% of biomass), and the predators' consumption is spread over that larger adult
+  stock. The cod-attributed M2 on herring fell less, from 0.044 to 0.036. The mechanism is not
+  measured.
+- **The validator's SSB table still compares herring's ≥0.5-yr biomass** (1.58 Mt) **with an ICES
+  SSB envelope.** `output.ssb.enabled` is on since v1.10.0, so switching it to compare SSB with SSB
+  is now a small follow-up (#247, option 3). It is done in #253, not here.

@@ -1,5 +1,11 @@
 # B2 herring attribution A/B: result, 2026-11-12
 
+> **Historical since v1.10.0.** This attributes the change in herring's warming response between v1.8.8
+> and v1.9.0. v1.10.0 (#250) recalibrated herring again (maturity 14.5 cm, adult M 0.2 /yr), so the
+> "v1.9.0" arm here is no longer the current model. Herring's current B2 response is in
+> `docs/baltic_b2_scenarios_2026-11-12.md`. This note was not re-run: its question is about that step,
+> not about the current model.
+
 **Question:** B2's `rcp85_ref` arm (+2.9 °C through the C1 reproduction thermal gate) cut herring's
 final-decade biomass by 62.27% in August and by 26.47% on v1.9.0. Which change halved the
 response? The criterion was committed before any run:
@@ -68,7 +74,7 @@ the combined SE of the per-seed paired declines.
 Per-seed paired declines are in the JSON. The largest within-arm range is 4.3 pp (A2, −21.25% to
 −25.53%).
 
-- **The pivot passes: f(A4) = 0.97 ≥ 0.8.** On the current code, reverting #236 restores the
+- **The pivot passes: f(A4) = 0.97 ≥ 0.8.** On the v1.9.0 code, reverting #236 restores the
   August-level response: the halving is the v1.8.8 → v1.9.0 step. This run does not test whether
   the August → v1.8.8 changes condition that step, for example by interacting with #236. A4's
   baseline herring, 2.70 Mt, is also the pre-recalibration level.
@@ -104,7 +110,7 @@ takes three steps:
 - the autumn-spawning fold (a further 0.28);
 - the cod pair (0.04).
 
-These shares are order-dependent, and no tested single revert explains it. On the current, certified
-model, herring's +2.9 °C response is −26.5%. The August −62% belonged to a herring stock calibrated
+These shares are order-dependent, and no tested single revert explains it. On v1.9.0, the model
+certified when this ran, herring's +2.9 °C response was −26.5% (v1.10.0: −71%, see the banner). The August −62% belonged to a herring stock calibrated
 on a food field that overstated plankton about 2.5×. It is not the better number, only the older
 one.

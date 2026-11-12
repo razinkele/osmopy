@@ -1,5 +1,13 @@
 # Baltic herring growth and maturity against data (issue #247): 2026-11-12
 
+> **Model numbers here are v1.9.0's.** v1.10.0 (#250) applied two changes this note supports:
+> - maturity size 14.5 cm;
+> - adult additional mortality 0.2 /yr.
+>
+> After it, 40.5% of herring by number are age 2+ (Q1; it was 4.7%), against SMS's 68%. 93% of
+> biomass is mature. See `docs/baltic_herring_recalibration_2026-11-12.md`. The survey and
+> assessment data sections are unaffected.
+
 **Question:** on v1.9.0, herring's spawning stock is 1.5% of its biomass (#247). Is that because
 model herring grow too slowly, or because the 18 cm maturity size is too high? Both were checked
 against ICES survey and assessment data.
