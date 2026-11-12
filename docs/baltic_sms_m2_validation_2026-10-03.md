@@ -185,4 +185,4 @@ artifact is `baltic_sms_m2_validation_2026-11-12_v1.10.0_50yr.json`.
   measured.
 - **The validator's SSB table still compares herring's ≥0.5-yr biomass** (1.58 Mt) **with an ICES
   SSB envelope.** `output.ssb.enabled` is on since v1.10.0, so switching it to compare SSB with SSB
-  is now a small follow-up (#247, option 3). It is not done here.
+  is now a small follow-up (#247, option 3). It is done in #253, not here.
