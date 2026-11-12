@@ -1,6 +1,6 @@
 {
   "note": "Written by scripts/recalibrate_sp1b.py; each run REPLACES this file (a new solve is new provenance; prior solves live in git history). 'joint' is the BEST sweep (smallest worst-stock rel_err), 'per_stock' the 1-D solves of that sweep, 'sweep_history' the joint rel_errs after every sweep. Frozen values in osmose/calibration/larva_recal.py are pasted from the printed block by hand.",
-  "date": "2026-11-08",
+  "date": "2026-11-12",
   "config": "data/baltic/baltic_all-parameters.csv",
   "field": "data/baltic/forcing/baltic_rv_field.nc",
   "tol": 0.02,
@@ -9,8 +9,8 @@
     "cod_west"
   ],
   "baselines": {
-    "cod_east": 105960.96624702027,
-    "cod_west": 3769.39410980222
+    "cod_east": 121760.28736975748,
+    "cod_west": 11231.370901409246
   },
   "d0": {
     "cod_east": 10.15686139,
@@ -46,105 +46,101 @@
   },
   "per_stock": {
     "cod_east": {
-      "rate": 9.140679953669553,
+      "rate": 8.992091279409108,
       "feasible": true,
       "converged": true,
-      "mean_on": 107063.3733116153,
-      "rel_err": 0.010403897809171099,
+      "mean_on": 123203.08074100742,
+      "rel_err": 0.011849457671436915,
       "iters": 6,
       "message": "converged",
       "grid": [
         [
           0.0,
-          1722213.4262406297
+          1754539.6368873015
         ],
         [
           2.5392153475,
-          1038396.8728776934
+          915452.2639079582
         ],
         [
           5.078430695,
-          677309.2456254616
+          594598.4315753273
         ],
         [
           7.6176460425,
-          302962.89045111823
+          301406.79738619464
         ],
         [
           9.995064830667108,
-          18658.61632751078
+          30792.54725763942
         ],
         [
           10.15686139,
-          9397.62764414914
+          20140.47677294351
         ]
       ]
     },
     "cod_west": {
-      "rate": 9.31615580430319,
+      "rate": 8.929625378846882,
       "feasible": true,
-      "converged": false,
-      "mean_on": 3678.1506595977407,
-      "rel_err": 0.02420639698226379,
-      "iters": 20,
-      "message": "max_iter=20 reached, rel_err=0.024 > tol=0.02",
+      "converged": true,
+      "mean_on": 11009.017013208026,
+      "rel_err": 0.019797573257359015,
+      "iters": 10,
+      "message": "converged",
       "grid": [
         [
           0.0,
-          758418.705142005
+          723042.9085631295
         ],
         [
           2.6110385625,
-          416876.7144898933
+          378767.5603823787
         ],
         [
           5.222077125,
-          169505.4889531549
+          155621.4200390098
         ],
         [
           7.8331156875,
-          30471.497601950246
+          34282.22906461833
         ],
         [
           8.904057364140225,
-          9245.383086617878
+          12070.086578249568
         ],
         [
           10.44415425,
-          376.7321545761228
+          504.460248837649
         ]
       ]
     }
   },
   "sweep_history": [
     {
-      "cod_east": 0.001759236857278067,
-      "cod_west": 0.02420639698226379
-    },
-    {
-      "cod_east": 0.001759236857278067,
-      "cod_west": 0.02420639698226379
+      "cod_east": 0.005249893612924467,
+      "cod_west": 0.019797573257359015
     }
   ],
   "joint": {
     "best_sweep": 1,
     "joint_tol": 0.05,
     "rates": {
-      "cod_east": 9.140679953669553,
-      "cod_west": 9.31615580430319
+      "cod_east": 8.992091279409108,
+      "cod_west": 8.929625378846882
     },
     "means": {
-      "cod_east": 105774.55580976572,
-      "cod_west": 3678.1506595977407
+      "cod_east": 122399.51592472782,
+      "cod_west": 11009.017013208026
     },
     "rel_errs": {
-      "cod_east": 0.001759236857278067,
-      "cod_west": 0.02420639698226379
+      "cod_east": 0.005249893612924467,
+      "cod_west": 0.019797573257359015
     },
-    "converged": false,
-    "sweeps": 2,
-    "evaluations": 49,
-    "total_cod_off": 109730.3603568225,
-    "total_cod_on": 109452.70646936346
+    "converged": true,
+    "sweeps": 1,
+    "evaluations": 27,
+    "total_cod_off": 132991.65827116673,
+    "total_cod_on": 133408.53293793584
   }
 }

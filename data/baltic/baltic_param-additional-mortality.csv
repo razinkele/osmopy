@@ -3,7 +3,7 @@
 # NOTE: These are calibration parameters, not directly measurable biological values.
 # Larval mortality is the primary recruitment-control lever in OSMOSE calibration.
 mortality.additional.larva.rate.sp0;250.65970201481855
-mortality.additional.larva.rate.sp1;28.885927824368395
+mortality.additional.larva.rate.sp1;192.0
 mortality.additional.larva.rate.sp2;147.71283750854758
 mortality.additional.larva.rate.sp3;190.2323668174037
 mortality.additional.larva.rate.sp4;152.04440321365996
@@ -18,7 +18,7 @@ mortality.additional.larva.rate.sp7;21.976812598569087
 # seal-induced F ~ 0.25-0.4/yr. Conservative 0.15/yr added to base 0.05.
 # Perch/pikeperch slightly increased for cormorant predation in coastal areas.
 mortality.additional.rate.sp0;1.2545949046281932
-mortality.additional.rate.sp1;2.247192881951114
+mortality.additional.rate.sp1;0.2
 mortality.additional.rate.sp2;0.21435847448826884
 mortality.additional.rate.sp3;0.005978902385314909
 mortality.additional.rate.sp4;0.09666917387416468
