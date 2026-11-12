@@ -28,7 +28,7 @@ import argparse
 import json
 import multiprocessing as mp
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -132,10 +132,16 @@ def run_point(pt: dict) -> dict:
     return out
 
 
+# The pre-recalibration (v1.9.0) herring values, pinned so the control and the reference reproduce
+# the pre-stated runs whatever data/baltic now holds. The larval rate is the reader's own resolved
+# string (10 significant digits): an override at full precision would not be bit-identical.
+PRE_RECAL = {"maturity": 18.0, "m_add": 2.247192881951114, "larva_sp1": 1.203580326}
+
+
 def grid_points() -> list[dict]:
     pts = [
-        {"label": "control_production_ssb_on"},
-        {"label": "ref_mat14.5_current", "maturity": 14.5},
+        {"label": "control_production_ssb_on", **PRE_RECAL},
+        {"label": "ref_mat14.5_current", **PRE_RECAL, "maturity": 14.5},
     ]
     for m in M_GRID:
         for lr in L_GRID:
@@ -153,10 +159,27 @@ def main() -> int:
     pts = grid_points() if args.grid else json.loads(args.points.read_text())
     print(f"{len(pts)} points x {N_YEAR} yr, {args.workers} workers", flush=True)
     t0 = time.time()
-    results = []
+    done: dict[int, dict] = {}
+
+    def save() -> None:
+        # Input order, whatever order runs finish in; failures are recorded, never dropped.
+        ordered = [done[i] for i in sorted(done)]
+        args.out.write_text(json.dumps(ordered, indent=1, allow_nan=False) + "\n")
+
     with ProcessPoolExecutor(args.workers, mp_context=mp.get_context("spawn")) as pool:
-        for r in pool.map(run_point, pts):
-            results.append(r)
+        futures = {pool.submit(run_point, pt): i for i, pt in enumerate(pts)}
+        for fut in as_completed(futures):
+            i = futures[fut]
+            try:
+                r = fut.result()
+            except Exception as exc:  # keep going: one bad point must not lose the others
+                done[i] = {**pts[i], "error": repr(exc)}
+                print(
+                    f"[{time.time() - t0:6.0f}s] {pts[i].get('label')}: FAILED {exc!r}", flush=True
+                )
+                save()
+                continue
+            done[i] = r
             b = r["biomass"]
             ages = r["herring_q1_age_share"]
             share2 = f"{sum(ages[2:]):5.1%}" if ages else "  n/a"
@@ -170,9 +193,11 @@ def main() -> int:
                 f" | env {sum(r['in_envelope'].values())}/5 ({r['seconds']}s)",
                 flush=True,
             )
-            # Save after every run, so a later failure never loses finished results.
-            args.out.write_text(json.dumps(results, indent=1, allow_nan=False) + "\n")
-    args.out.write_text(json.dumps(results, indent=1, allow_nan=False) + "\n")
+            save()
+    save()
+    failed = [d for d in done.values() if "error" in d]
+    if failed:
+        print(f"{len(failed)} point(s) failed: {[d.get('label') for d in failed]}")
     print(f"wrote {args.out} ({time.time() - t0:.0f}s)")
     return 0
 
