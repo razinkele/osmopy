@@ -28,7 +28,16 @@ check (`docs/baltic_herring_growth_maturity_2026-11-12.md`) found two main cause
 | `mortality.additional.larva.rate.sp1` | 28.89 /yr (1.204 per step) | **192.0 /yr (8.0 per step)**, re-fitted to 1.5 Mt |
 | `output.ssb.enabled` | absent | **true** (outputs only; verified bit-identical) |
 
-<!-- SP1B -->
+**SP1b re-solved** (`osmose/calibration/larva_recal.py` `RECAL_RATES`;
+record in `docs/diagnostics/sp1b_solve.json`). Cod moved, so the SP1b rates were re-solved. It
+converged in one sweep and 27 evaluations.
+
+| stock | rate | was | baseline | joint error |
+|---|---:|---:|---:|---:|
+| cod_east | 8.9921 | 9.1407 | 121,760 t | +0.52% |
+| cod_west | 8.9296 | 9.3162 | 11,231 t | −1.98% |
+
+Both are inside the 1-D tolerance (2%) and JOINT_TOL (5%). d0 is unchanged.
 
 The pre-stated design is `docs/diagnostics/baltic_herring_recal_prestated_2026-11-12.md`
 (`1cbba80f`), committed before any run.
@@ -113,7 +122,13 @@ Herring per seed (`baltic_herring_recal_candidate_seeds_2026-11-12.json`):
 
 ## Tests
 
-<!-- TESTS -->
+- **Full local suite on the final branch** (master merged in): **5,030 passed**, 51 skipped (opt-in
+  or data-gated), 2 xfailed (known gaps, strict), **0 failed**. No absolute-value fixture needed
+  re-deriving.
+- **The SP1b drift guard runs locally and passes on the new rates.** Mutation-checked: restoring
+  the old cod_west baseline makes it fail.
+- **The harness asserts the units on every run:** the adult rate is used as read, and the larval
+  rate equals CSV / 24.
 
 ## What goes stale
 
