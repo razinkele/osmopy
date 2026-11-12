@@ -49,5 +49,8 @@ Ratios are taken against the midpoint of Python's range.
 
 ```
 PYTHONPATH=. .venv/bin/python scripts/baltic_stability_certify.py --params current --java \
-    --out docs/baltic_java_crosscheck_2026-11-12.md
+    --out /tmp/baltic_java_crosscheck_certify.md
 ```
+
+The script overwrites `--out` with its generated certification tables, so write it to a scratch
+path, not to this note; the comparison and narrative here were written from that output.

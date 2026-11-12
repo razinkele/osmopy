@@ -3,7 +3,10 @@
 This re-runs `docs/baltic_c4_salinity_2026-11-11.md` (v1.9.0) on **v1.10.0** (`05b517f3`), after
 #250's herring recalibration (maturity 14.5 cm, adult additional mortality 0.2 /yr). Harness, arms
 (ΔS = −1, −2, −3 PSU), seeds and labels are unchanged. It is still a mechanism characterisation, not
-a projection.
+a projection. Label 6 in the report JSON is the spec's pre-registered prediction that cod_west is
+an inert "saturated null control". It is kept verbatim as a record, but the August run refuted it
+(`docs/baltic_c4_salinity_2026-08-30.md`, Headline 2), and this run does too: cod_west rises 8.6% at
+−3 PSU, 7.7× its seed SD.
 
 **Verdict: all gates pass, and both cod responses are now much clearer signals.**
 - **cod_east** falls **12.9%** at −3 PSU (12.9× its seed SD). On v1.9.0 it fell 6.5% (3.9×).
@@ -44,13 +47,15 @@ before.
 ## Instruments: identical to v1.9.0
 
 The map instruments are **byte-identical** to the v1.9.0 run. #250 changed no map, and cod_east's
-SD 25 spawning map is still fully saturated, un-gated at every offset. So the stronger cod responses
-come from the food web after the herring recalibration, not from a change in what the salinity lever
-does to the maps.
+SD 25 spawning map is still fully saturated, un-gated at every offset. So the changed cod responses
+are not a change in what the salinity lever does to the maps. They come from something else #250
+changed: the herring recalibration, or the SP1b cod larval rates it re-solved. The two stocks moved
+differently: cod_east's response doubled in percentage (−6.5% → −12.9%), while cod_west's fell
+(+18.7% → +8.6%) and became clearer only because its seed noise fell.
 
-**Why they changed is not measured.** Herring is cod food, and its biomass structure is now mostly
-adult. The two stocks also share prey, and the arms shift both cod maps, so part of either stock's
-response can come through the other.
+**Which pathway is not measured.** A food-web route is possible: herring is cod food, and its
+biomass structure is now mostly adult. The two stocks also share prey, and the arms shift both cod
+maps, so part of either stock's response can come through the other.
 
 ## What changes for anyone citing C4
 
