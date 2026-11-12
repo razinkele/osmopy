@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.0] - 2026-11-12
+
+### Bug Fixes
+
+- **calibration:** review follow-ups on the phase-14 bound and harness (7fa16bc)
+- **calibration:** phase-14 upper K bound reaches the engine; one shared phase-14 base (f782c36)
+
+### Documentation
+
+- **baltic:** herring recalibration note -- SP1b and test results (5176147)
+- **diagnostics:** state G2's tolerance against the pre-stated 'exactly' (4a1fdab)
+- **diagnostics:** G2's annual check equals a per-step one (factor is constant within a year) (9293974)
+- **baltic:** herring growth and maturity against BITS and SMS data (#247) (9ac6f26)
+- **baltic:** review corrections to the B2/C4 re-run notes (d70d052)
+- **baltic:** C4 salinity arms re-run on v1.9.0 -- cod_east now the clearest responder (a609b1b)
+- **baltic:** B2 RCP x load re-run on v1.9.0 -- herring's warming response halved (8c626d1)
+- **baltic:** SMS M2 re-run on v1.9.0; the 15-yr protocol overstates cod M2 ~2x (b9e53a3)
+- **baltic:** Java cross-check re-run on v1.9.0's corrected food field (fdb3aec)
+- **parity:** 16-rep EEC refresh on v1.9.0 -- 66/70 equivalent, worst 1.6x (d1239be)
+
+### Other
+
+- Merge pull request #250 from razinkele/calib/baltic-herring-maturity-mortality (31e7f1d)
+- **baltic:** pin the grid's control/reference to v1.9.0 values; save results as they finish (5accfec)
+- Merge remote-tracking branch 'origin/master' into calib/baltic-herring-maturity-mortality (02ba6b7)
+- **baltic:** herring maturity 14.5 cm, adult M 0.2/yr, larval rate re-fitted (#247) (070f5c0)
+- Merge pull request #248 from razinkele/diag/herring-compensation (f314ae0)
+- Merge pull request #249 from razinkele/docs/herring-growth-maturity-check (36e66cc)
+- **baltic:** grid harness survives an extinct-herring run and saves after every run (8216772)
+- **baltic:** pre-state the herring maturity + adult-mortality recalibration (#247) (1cbba80)
+- **baltic:** review fixes to the herring compensation breakdown (4c59b7f)
+- **baltic:** herring compensation breakdown -- the channel is spawning biomass per fish (b3c95b2)
+- **baltic:** pre-state the herring compensation breakdown (A0 vs A4) (6d40b5c)
+- Merge pull request #246 from razinkele/diag/b2-herring-attribution (35fc94e)
+- **baltic:** review corrections to the B2 herring attribution (a85f06b)
+- **baltic:** B2 herring attribution -- #236 holds the gap, no single change does (1353158)
+- **baltic:** pre-state the B2 herring attribution A/B (f5774b6)
+- Merge pull request #245 from razinkele/docs/baltic-b2-c4-rerun-2026-11-11 (481cf1a)
+- Merge pull request #244 from razinkele/calib/phase14-fr-identifiability (562e444)
+- **calibration:** report the control-gated outcome, not only the raw flags (d52e5b7)
+- Merge pull request #242 from razinkele/docs/baltic-refresh-2026-11-11 (2fb3d4b)
+- Merge pull request #241 from razinkele/docs/eec-parity-refresh-2026-11-11 (e1f40b0)
+- **calibration:** step the K upper bound one ULP down so the engine accepts it (163da59)
+- **calibration:** pre-state the phase-14 FR K identifiability test (#232) (a90b00a)
+
 ## [1.9.0] - 2026-11-09
 
 ### Features
