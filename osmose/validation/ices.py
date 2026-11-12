@@ -14,8 +14,10 @@ Snapshot layout (matches ``data/baltic/reference/ices_snapshots/``)::
 The validator:
 
 1. Loads the snapshot manifest + per-stock assessments.
-2. Computes the model's mean biomass per species over a configurable
-   window (e.g. last 5 years of the run).
+2. Computes the model's mean spawning-stock biomass (the `SSB` output, which needs
+   `output.ssb.enabled`) per species over a configurable window (e.g. last 5 years of
+   the run). The biomass output is read alongside as context; `quantity="biomass"`
+   compares it instead (explicit opt-in).
 3. Computes the ICES SSB envelope (min, max) over a configurable
    window of historical SAG data, summed across tonnes-unit stocks
    linked to the species.
@@ -195,21 +197,20 @@ def _model_window_mean(
 ) -> float:
     """Mean of a model output (`biomass` or `ssb`) for `species` over the last `window_years`.
 
-    Reads the `biomass` output (long-form DataFrame with `time` + `value`
-    columns), filters to the species, takes the trailing window, and
-    averages. Returns model biomass in TONNES — the same unit OSMOSE
-    writes biomass outputs in (per `output.biomass.unit`).
+    Reads the output (long-form DataFrame with `time` + `value` columns), filters to the
+    species, takes the trailing window, and averages. Returns TONNES, the unit OSMOSE writes
+    both outputs in.
 
-    Some configs (e.g. eec/BoB) instead emit a WIDE cross-species frame from
-    `results.biomass()` — species are columns, and the frame's own `species`
-    column is the literal string `"all"` — so `results.biomass(species=X)`
-    returns 0 rows for any real species name. In that case, fall back to the
+    Some configs (e.g. eec/BoB, and Baltic) instead emit a WIDE cross-species frame — species
+    are columns, and the frame's own `species` column is the literal string `"all"` — so
+    `read(species=X)` returns 0 rows for any real species name. In that case, fall back to the
     unfiltered wide frame and pull out the species' column directly.
 
     Raises
     ------
-    KeyError if `species` has no biomass output in the results dir.
-    ValueError if the biomass time series is empty.
+    ValueError if there is no series for `species` or the window is empty (what a non-strict
+    reader's empty frame leads to). The reader itself raises FileNotFoundError when strict, or
+    when in-memory results never produced the output; callers handle both.
     """
     read = getattr(results, output)
     df = read(species=species)
@@ -304,30 +305,43 @@ def compare_outputs_to_ices(
         raise ValueError(f"quantity must be 'ssb' or 'biomass', got {quantity!r}")
     out: list[SpeciesBiomassComparison] = []
     units = snapshot.manifest.get("units_by_stock", {})
+    # What a missing or empty output raises: ValueError (non-strict reader: no series / empty
+    # window), FileNotFoundError (strict or in-memory reader), KeyError (kept for older readers).
+    missing = (KeyError, ValueError, FileNotFoundError)
     for species, stocks in snapshot.manifest.get("model_species_to_ices_stocks", {}).items():
+        biomass: float | None
+        ssb: float | None = None
         try:
             biomass = model_biomass_window_mean(results, species, window_years=window_years)
-        except (KeyError, ValueError) as e:
+        except missing as e:
+            biomass, biomass_error = None, e
+        if quantity == "ssb":
+            try:
+                ssb = model_ssb_window_mean(results, species, window_years=window_years)
+            except missing:
+                ssb = None
+        if biomass is None and ssb is None:  # neither output: nothing to show
             print(
-                f"WARN: skipping {species!r} — model output missing or empty: {e}",
+                f"WARN: skipping {species!r} — model output missing or empty: {biomass_error}",
                 file=sys.stderr,
             )
             continue
 
         note = ""
-        model_quantity = quantity
-        model_value = biomass
-        if quantity == "ssb":
-            try:
-                model_value = model_ssb_window_mean(results, species, window_years=window_years)
-            except (KeyError, ValueError, FileNotFoundError):
-                # FileNotFoundError: in-memory OsmoseResults' answer for an output never produced.
-                model_quantity = "biomass"
-                note = (
-                    "model SSB unavailable (enable output.ssb.enabled); no verdict against the "
-                    "ICES SSB envelope"
-                )
-                print(f"WARN: {species!r} — {note}", file=sys.stderr)
+        if quantity == "biomass":
+            model_quantity, model_value = "biomass", biomass
+        elif ssb is not None:
+            model_quantity, model_value = "ssb", ssb
+        else:
+            # Biomass only. The usual cause is a run without output.ssb.enabled; a species
+            # column missing from the SSB file gives the same row.
+            model_quantity, model_value = "biomass", biomass
+            note = (
+                "no model SSB series for this species (is output.ssb.enabled set?); no verdict "
+                "against the ICES SSB envelope"
+            )
+            print(f"WARN: {species!r} — {note}", file=sys.stderr)
+        assert model_value is not None  # biomass mode skipped above when biomass is missing
 
         base = {
             "species": species,
@@ -445,9 +459,9 @@ def format_markdown_report(
     else:
         explanation = (
             "The ICES envelope is spawning-stock biomass, so the model side is the model's SSB"
-            " (`compared` = ssb). Biomass at or above the output cutoff age is context only; SSB"
-            " counts mature fish of any age, so it can exceed that biomass where fish mature"
-            " before the cutoff."
+            " (`compared` = ssb). Biomass at or above the output cutoff age is context only. The"
+            " Python engine's SSB counts mature fish of any age, so it can exceed that biomass"
+            " where fish mature before the cutoff."
         )
     lines += [
         "",

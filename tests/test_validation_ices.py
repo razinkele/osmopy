@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -127,7 +128,8 @@ def _fake_results(
 
     mock = MagicMock()
     mock.biomass = _reader(biomass_by_species)
-    mock.ssb = _reader(biomass_by_species if ssb_by_species is _SAME else ssb_by_species)  # type: ignore[arg-type]
+    ssb = biomass_by_species if ssb_by_species is _SAME else ssb_by_species
+    mock.ssb = _reader(ssb)  # type: ignore[arg-type]
     mock.output_dir = Path("/tmp/fake-results")
     return mock
 
@@ -304,6 +306,7 @@ class TestCompareOutputsToIces:
         assert cod.model_mean_tonnes == 120.0
         assert cod.model_biomass_tonnes == 500.0  # kept as context, not compared
         assert cod.in_range is True
+        assert cod.magnitude_factor == pytest.approx(120.0 / math.sqrt(100.0 * 140.0))
 
     def test_missing_ssb_output_gives_no_verdict_instead_of_comparing_biomass(self, tmp_path):
         # A run without output.ssb.enabled must not silently fall back to biomass-vs-SSB.
@@ -326,6 +329,7 @@ class TestCompareOutputsToIces:
         assert cod.model_quantity == "biomass"
         assert cod.model_mean_tonnes == 500.0
         assert cod.in_range is False
+        assert cod.magnitude_factor == pytest.approx(500.0 / math.sqrt(100.0 * 140.0))
 
     def test_in_memory_results_without_ssb_give_no_verdict(self, tmp_path):
         # In-memory OsmoseResults raises FileNotFoundError (not KeyError) for an output it never
@@ -362,8 +366,32 @@ class TestCompareOutputsToIces:
         assert comps["cod"].model_mean_tonnes == pytest.approx(120.0)
         assert comps["cod"].model_biomass_tonnes == pytest.approx(500.0)
         assert comps["cod"].in_range is True
+        assert comps["cod"].magnitude_factor == pytest.approx(120.0 / math.sqrt(100.0 * 140.0))
         assert comps["herring"].model_mean_tonnes == pytest.approx(1300.0)
         assert comps["herring"].in_range is True
+
+    def test_ssb_is_scored_when_the_biomass_output_is_missing(self, tmp_path):
+        # Biomass is context only in SSB mode, so its absence must not drop a species whose SSB
+        # exists. A species with neither output is still skipped.
+        snap = load_snapshot(_make_snapshot(tmp_path))
+        results = _fake_results({}, ssb_by_species={"cod": [120.0] * 5})
+        comps = compare_outputs_to_ices(results, snap, window_years=5)
+        assert {c.species for c in comps} == {"cod"}
+        (cod,) = comps
+        assert cod.model_quantity == "ssb"
+        assert cod.model_biomass_tonnes is None
+        assert cod.in_range is True
+
+    def test_strict_reader_missing_biomass_does_not_crash_ssb_mode(self, tmp_path):
+        # A strict OsmoseResults raises FileNotFoundError for a missing biomass file.
+        snap = load_snapshot(_make_snapshot(tmp_path))
+        results = _fake_results({}, ssb_by_species={"cod": [120.0] * 5})
+        results.biomass = MagicMock(side_effect=FileNotFoundError("no biomass output"))
+        cod = next(
+            c for c in compare_outputs_to_ices(results, snap, window_years=5) if c.species == "cod"
+        )
+        assert cod.in_range is True
+        assert cod.model_biomass_tonnes is None
 
 
 class TestFormatMarkdownReport:
