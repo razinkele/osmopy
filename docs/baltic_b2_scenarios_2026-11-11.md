@@ -1,5 +1,9 @@
 # Baltic B2 re-run on v1.9.0: RCP × load scenarios, 2026-11-11
 
+> **Superseded 2026-11-12** by `docs/baltic_b2_scenarios_2026-11-12.md` (v1.10.0, herring
+> recalibration). Herring's warming decline is now −50% (RCP4.5) and −71% (RCP8.5), not the −17% / −27%
+> below. The demersal load contrast is essentially unchanged.
+
 This re-runs `docs/baltic_b2_scenarios_2026-08-29.md` on **v1.9.0** (`95baf49b`) with the same
 harness, arms, seeds and literature deltas. In between, the model's inputs changed:
 - the corrected LTL forcing (#234, #236);
