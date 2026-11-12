@@ -151,18 +151,20 @@ def main() -> int:
         for r in pool.map(run_point, pts):
             results.append(r)
             b = r["biomass"]
-            share2 = (
-                sum(r["herring_q1_age_share"][2:]) if r["herring_q1_age_share"] else float("nan")
-            )
-            ssb = r["herring_ssb"] or float("nan")
+            ages = r["herring_q1_age_share"]
+            share2 = f"{sum(ages[2:]):5.1%}" if ages else "  n/a"
+            ssb = r["herring_ssb"] or 0.0
+            ssb_share = f"{ssb / b['herring']:5.1%}" if b["herring"] > 0 else "  n/a"
             print(
                 f"[{time.time() - t0:6.0f}s] {r['label']:26s} herring {b['herring'] / 1e3:8.0f} kt"
-                f" SSB {ssb / 1e3:7.0f} kt ({ssb / b['herring']:5.1%}) age2+ {share2:5.1%}"
+                f" SSB {ssb / 1e3:7.0f} kt ({ssb_share}) age2+ {share2}"
                 f" | codW {b['cod_west'] / 1e3:6.1f} codE {b['cod_east'] / 1e3:6.1f}"
                 f" sprat {b['sprat'] / 1e3:6.0f} flo {b['flounder'] / 1e3:5.1f}"
                 f" | env {sum(r['in_envelope'].values())}/5 ({r['seconds']}s)",
                 flush=True,
             )
+            # Save after every run, so a later failure never loses finished results.
+            args.out.write_text(json.dumps(results, indent=1, allow_nan=False) + "\n")
     args.out.write_text(json.dumps(results, indent=1, allow_nan=False) + "\n")
     print(f"wrote {args.out} ({time.time() - t0:.0f}s)")
     return 0
