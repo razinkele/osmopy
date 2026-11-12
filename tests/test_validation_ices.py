@@ -97,23 +97,37 @@ def _make_snapshot(tmp_path: Path) -> Path:
     return d
 
 
-def _fake_results(biomass_by_species: dict[str, list[float]]) -> MagicMock:
-    """Build a mock OsmoseResults whose .biomass(species=...) returns a long-form df."""
+_SAME = object()
 
-    def _biomass(species: str | None = None) -> pd.DataFrame | None:
-        if species is None or species not in biomass_by_species:
-            return None
-        values = biomass_by_species[species]
-        return pd.DataFrame(
-            {
-                "species": [species] * len(values),
-                "time": list(range(len(values))),
-                "value": values,
-            }
-        )
+
+def _fake_results(
+    biomass_by_species: dict[str, list[float]],
+    ssb_by_species: dict[str, list[float]] | None | object = _SAME,
+) -> MagicMock:
+    """Build a mock OsmoseResults whose .biomass(species=...) / .ssb(species=...) return
+    long-form dfs. By default SSB equals biomass; pass a dict for distinct SSB, or None for a run
+    without SSB output (OsmoseResults(strict=False) then yields an empty frame)."""
+
+    def _reader(by_species: dict[str, list[float]] | None):
+        def _read(species: str | None = None) -> pd.DataFrame | None:
+            if by_species is None:
+                return pd.DataFrame()
+            if species is None or species not in by_species:
+                return None
+            values = by_species[species]
+            return pd.DataFrame(
+                {
+                    "species": [species] * len(values),
+                    "time": list(range(len(values))),
+                    "value": values,
+                }
+            )
+
+        return _read
 
     mock = MagicMock()
-    mock.biomass = _biomass
+    mock.biomass = _reader(biomass_by_species)
+    mock.ssb = _reader(biomass_by_species if ssb_by_species is _SAME else ssb_by_species)  # type: ignore[arg-type]
     mock.output_dir = Path("/tmp/fake-results")
     return mock
 
@@ -278,6 +292,79 @@ class TestCompareOutputsToIces:
         species_present = {c.species for c in comps}
         assert species_present == {"cod"}
 
+    def test_compares_model_ssb_with_the_ices_ssb_envelope(self, tmp_path):
+        # The envelope is ICES SSB, so the model side must be SSB too. Biomass 500 would sit far
+        # above the [100, 140] envelope; SSB 120 sits inside it. The verdict follows SSB.
+        snap = load_snapshot(_make_snapshot(tmp_path))
+        results = _fake_results({"cod": [500.0] * 5}, ssb_by_species={"cod": [120.0] * 5})
+        cod = next(
+            c for c in compare_outputs_to_ices(results, snap, window_years=5) if c.species == "cod"
+        )
+        assert cod.model_quantity == "ssb"
+        assert cod.model_mean_tonnes == 120.0
+        assert cod.model_biomass_tonnes == 500.0  # kept as context, not compared
+        assert cod.in_range is True
+
+    def test_missing_ssb_output_gives_no_verdict_instead_of_comparing_biomass(self, tmp_path):
+        # A run without output.ssb.enabled must not silently fall back to biomass-vs-SSB.
+        snap = load_snapshot(_make_snapshot(tmp_path))
+        results = _fake_results({"cod": [120.0] * 5}, ssb_by_species=None)
+        cod = next(
+            c for c in compare_outputs_to_ices(results, snap, window_years=5) if c.species == "cod"
+        )
+        assert cod.in_range is None
+        assert cod.magnitude_factor is None
+        assert cod.model_quantity == "biomass"
+        assert "output.ssb.enabled" in cod.note
+
+    def test_biomass_quantity_is_an_explicit_opt_in(self, tmp_path):
+        # quantity="biomass" keeps the old comparison for engine-vs-engine consistency checks.
+        snap = load_snapshot(_make_snapshot(tmp_path))
+        results = _fake_results({"cod": [500.0] * 5}, ssb_by_species={"cod": [120.0] * 5})
+        comps = compare_outputs_to_ices(results, snap, window_years=5, quantity="biomass")
+        cod = next(c for c in comps if c.species == "cod")
+        assert cod.model_quantity == "biomass"
+        assert cod.model_mean_tonnes == 500.0
+        assert cod.in_range is False
+
+    def test_in_memory_results_without_ssb_give_no_verdict(self, tmp_path):
+        # In-memory OsmoseResults raises FileNotFoundError (not KeyError) for an output it never
+        # produced; that must become a no-verdict row, not a crash of the whole report.
+        snap = load_snapshot(_make_snapshot(tmp_path))
+        results = _fake_results({"cod": [120.0] * 5})
+        results.ssb = MagicMock(side_effect=FileNotFoundError("no 'SSB' output"))
+        cod = next(
+            c for c in compare_outputs_to_ices(results, snap, window_years=5) if c.species == "cod"
+        )
+        assert cod.in_range is None
+        assert "output.ssb.enabled" in cod.note
+
+    def test_reads_ssb_from_real_output_files(self, tmp_path):
+        # The Baltic writes both outputs as WIDE frames (Time + one column per species); the
+        # biomass file carries a description line, the SSB file does not. Read them through the
+        # real OsmoseResults, not a mock, so the SSB reader path itself is exercised.
+        from osmose.results import OsmoseResults
+
+        out = tmp_path / "output"
+        out.mkdir()
+        times = [i + 0.9583333333333334 for i in range(8)]
+        (out / "osm_biomass_Simu0.csv").write_text(
+            '"Mean biomass (tons), excluding first ages specified in input"\n'
+            "Time,cod,herring\n" + "".join(f"{t},500.0,9000.0\n" for t in times)
+        )
+        (out / "osm_SSB_Simu0.csv").write_text(
+            "Time,cod,herring\n" + "".join(f"{t},120.0,1300.0\n" for t in times)
+        )
+        snap = load_snapshot(_make_snapshot(tmp_path))
+        with OsmoseResults(out, prefix="osm", strict=False) as results:
+            comps = {c.species: c for c in compare_outputs_to_ices(results, snap, window_years=5)}
+        assert comps["cod"].model_quantity == "ssb"
+        assert comps["cod"].model_mean_tonnes == pytest.approx(120.0)
+        assert comps["cod"].model_biomass_tonnes == pytest.approx(500.0)
+        assert comps["cod"].in_range is True
+        assert comps["herring"].model_mean_tonnes == pytest.approx(1300.0)
+        assert comps["herring"].in_range is True
+
 
 class TestFormatMarkdownReport:
     def test_includes_headers_and_summary(self):
@@ -312,3 +399,106 @@ class TestFormatMarkdownReport:
         assert "| sprat | 50 | [200, 300] | ✗ | 0.20 |" in report
         # Summary count
         assert "1/2 species in ICES SSB envelope" in report
+
+    def test_no_verdict_row_is_not_scored_and_states_why(self):
+        # A row with an envelope but no model SSB must print no verdict and not count as checked.
+        comps = [
+            SpeciesBiomassComparison(
+                species="cod",
+                model_mean_tonnes=120.0,
+                ices_min_tonnes=100.0,
+                ices_max_tonnes=140.0,
+                in_range=True,
+                magnitude_factor=1.014,
+                model_quantity="ssb",
+                model_biomass_tonnes=150.0,
+            ),
+            SpeciesBiomassComparison(
+                species="herring",
+                model_mean_tonnes=1500.0,
+                ices_min_tonnes=800.0,
+                ices_max_tonnes=900.0,
+                model_quantity="biomass",
+                model_biomass_tonnes=1500.0,
+                note="model SSB unavailable (enable output.ssb.enabled); no verdict",
+            ),
+        ]
+        report = format_markdown_report(comps, window_years=5)
+        assert "| herring | 1,500 | [800, 900] | — | — | biomass |" in report
+        assert "1/1 species in ICES SSB envelope" in report
+        assert "output.ssb.enabled" in report
+        assert "| cod | 120 | [100, 140] | ✓ | 1.01 | ssb | 150 |" in report
+
+    def test_biomass_mode_footer_does_not_claim_an_ssb_comparison(self):
+        # Under --quantity biomass the scored rows compare biomass with the SSB envelope; the
+        # footer must say so instead of describing the SSB comparison that did not happen.
+        comps = [
+            SpeciesBiomassComparison(
+                species="cod",
+                model_mean_tonnes=120.0,
+                ices_min_tonnes=100.0,
+                ices_max_tonnes=140.0,
+                in_range=True,
+                magnitude_factor=1.014,
+                model_quantity="biomass",
+                model_biomass_tonnes=120.0,
+            ),
+        ]
+        report = format_markdown_report(comps, window_years=5)
+        assert "the model side is the model's SSB" not in report
+        assert "not against ICES" in report
+
+
+# -- CLI ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("argv_extra", "expected"), [([], "ssb"), (["--quantity", "biomass"], "biomass")]
+)
+def test_cli_passes_the_quantity_through_and_records_it(
+    tmp_path, monkeypatch, argv_extra, expected
+):
+    import osmose.validation.ices as ices_mod
+    from scripts.validate_outputs_vs_ices import main
+
+    seen = {}
+
+    def _compare(results, snapshot, **kwargs):
+        seen.update(kwargs)
+        return []
+
+    monkeypatch.setattr(ices_mod, "compare_outputs_to_ices", _compare)
+    results = tmp_path / "results"
+    results.mkdir()
+    out = tmp_path / "out.json"
+    snap = _make_snapshot(tmp_path)
+    main(
+        [
+            "--results-dir",
+            str(results),
+            "--snapshots-dir",
+            str(snap),
+            "--json",
+            str(out),
+            "--quiet",
+            *argv_extra,
+        ]
+    )
+    assert seen["quantity"] == expected
+    assert json.loads(out.read_text())["quantity"] == expected
+
+
+def test_cli_without_ssb_output_exits_1_and_says_how_to_fix_it(tmp_path, capsys):
+    from scripts.validate_outputs_vs_ices import main
+
+    out = tmp_path / "output"
+    out.mkdir()
+    (out / "osm_biomass_Simu0.csv").write_text(
+        "Time,cod,herring\n" + "".join(f"{i + 0.5},120.0,1300.0\n" for i in range(6))
+    )
+    snap = _make_snapshot(tmp_path)
+    rc = main(["--results-dir", str(out), "--snapshots-dir", str(snap), "--quiet"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "No species got a verdict" in err
+    assert "--quantity biomass" in err

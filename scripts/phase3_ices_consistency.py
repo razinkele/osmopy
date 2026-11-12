@@ -19,8 +19,10 @@ DELTA = np.log10(3)
 
 
 def _factors(results, snapshot) -> dict[str, float]:
+    # Engine-vs-engine agreement on the >= cutoff-age biomass, as before the validator moved to
+    # SSB: the in-memory Python results and the persisted Java runs need not carry an SSB output.
     cmp = compare_outputs_to_ices(
-        results, snapshot, window_years=5
+        results, snapshot, window_years=5, quantity="biomass"
     )  # -> list[SpeciesBiomassComparison]
     return {r.species: r.magnitude_factor for r in cmp if r.magnitude_factor is not None}
 

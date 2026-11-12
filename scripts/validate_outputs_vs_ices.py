@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Validate OSMOSE model outputs against ICES SSB envelopes.
 
-Reads a finished simulation's output directory, computes the mean
-species biomass over the last N years, and compares against the ICES
-Stock Assessment Graph (SAG) envelope loaded from frozen JSON snapshots.
+Reads a finished simulation's output directory, computes each species' mean
+spawning-stock biomass (SSB) over the last N years, and compares it against the
+ICES Stock Assessment Graph (SAG) SSB envelope loaded from frozen JSON snapshots.
 Reports per-species in-range / out-of-range with magnitude factor.
+
+The model side is the SSB output, so the config must set `output.ssb.enabled`
+(the Baltic config does since v1.10.0). A species without an SSB series gets no
+verdict rather than being scored on its biomass: `biomass()` counts every fish
+at or above `output.cutoff.age` (0.5 yr on Baltic), immature fish included, so
+it is not comparable with an SSB envelope. `--quantity biomass` restores the old
+biomass-vs-SSB comparison for engine-vs-engine use.
 
 Distinguishes from `validate_baltic_vs_ices_sag.py` which validates the
 **config** (fishing rates + a hand-curated targets CSV); this script
@@ -15,7 +22,7 @@ Usage:
     .venv/bin/python scripts/validate_outputs_vs_ices.py \\
         --results-dir <path> \\
         [--snapshots-dir data/baltic/reference/ices_snapshots] \\
-        [--window-years 5] \\
+        [--window-years 5] [--quantity ssb] \\
         [--ices-window 2018-2022] \\
         [--prefix osm] \\
         [--report path/to/output.md] \\
@@ -73,6 +80,13 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=5,
         help="Trailing simulation years to average for the model mean (default: 5)",
+    )
+    parser.add_argument(
+        "--quantity",
+        choices=("ssb", "biomass"),
+        default="ssb",
+        help="Model quantity compared with the ICES SSB envelope (default: ssb). 'biomass' "
+        "compares the >= cutoff-age biomass instead, which counts immature fish",
     )
     parser.add_argument(
         "--ices-window",
@@ -150,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             snapshot,
             window_years=args.window_years,
             ices_window=args.ices_window,
+            quantity=args.quantity,
         )
         if args.sms_m2:
             try:
@@ -189,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
             "snapshot_dir": str(args.snapshots_dir),
             "results_dir": str(args.results_dir),
             "window_years": args.window_years,
+            "quantity": args.quantity,
             "ices_window_start": args.ices_window.start,
             "ices_window_end": args.ices_window.stop - 1,
             "comparisons": [asdict(c) for c in comparisons],
@@ -199,6 +215,12 @@ def main(argv: list[str] | None = None) -> int:
 
     n_with_envelope = sum(1 for c in comparisons if c.in_range is not None)
     if n_with_envelope == 0:
+        if any(c.note for c in comparisons):
+            print(
+                "No species got a verdict: the model has no SSB output. Enable "
+                "output.ssb.enabled and re-run, or pass --quantity biomass.",
+                file=sys.stderr,
+            )
         return 1  # no comparable species — likely a config or snapshot mismatch
     return 0
 
