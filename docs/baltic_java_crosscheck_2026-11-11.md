@@ -1,5 +1,8 @@
 # Baltic Java 4.4.1 cross-check on the corrected food field: 2026-11-11
 
+> **Superseded 2026-11-12** by `docs/baltic_java_crosscheck_2026-11-12.md` (v1.10.0, herring
+> recalibration). The pattern holds; cod_west's gap narrows from 10× to 4×.
+
 **Trigger:** v1.9.0 changed the inputs that both engines read:
 - regenerated LTL forcing, about 2.5× less food overall and with no empty coastal cells (#234, #236);
 - C2: cod_east spawns in SD 25;
