@@ -1,5 +1,11 @@
 # B2 herring attribution A/B: result, 2026-11-12
 
+> **Historical since v1.10.0.** This attributes the change in herring's warming response between v1.8.8
+> and v1.9.0. v1.10.0 (#250) recalibrated herring again (maturity 14.5 cm, adult M 0.2 /yr), so the
+> "v1.9.0" arm here is no longer the current model. Herring's current B2 response is in
+> `docs/baltic_b2_scenarios_2026-11-12.md`. This note was not re-run: its question is about that step,
+> not about the current model.
+
 **Question:** B2's `rcp85_ref` arm (+2.9 °C through the C1 reproduction thermal gate) cut herring's
 final-decade biomass by 62.27% in August and by 26.47% on v1.9.0. Which change halved the
 response? The criterion was committed before any run:
