@@ -70,6 +70,17 @@ CAUSES = (
 )
 CLASSES = ("egg", "age0", "age1p")
 ATTR_JSON = ROOT / "docs/diagnostics/b2_herring_attribution_2026-11-11.json"
+KEEP_FROM = 38  # stored per-year arrays start here (the analysis needs years 39..49)
+PER_YEAR = (
+    "ssb_annual_mean",
+    "e_lin",
+    "e_sr",
+    "e_fin",
+    "seeded_steps",
+    "recruits",
+    "deaths",
+    "n_end",
+)
 
 
 def run_one(job: tuple) -> dict:
@@ -169,37 +180,51 @@ def run_one(job: tuple) -> dict:
         sim._collect_by_life_stage = real_collect
         repro.regulate_recruitment = real_regulate
         shutil.rmtree(tmp, ignore_errors=True)
-    return {
-        "state": state_arm,
-        "variant": variant,
-        "seed": seed,
-        "herring_final_decade_biomass": herring_fdm,
-        "ssb_annual_mean": rec["ssb"].mean(axis=1).tolist(),
-        "e_lin": rec["e_lin"].tolist(),
-        "e_sr": rec["e_sr"].tolist(),
-        "e_fin": rec["e_fin"].tolist(),
-        "knob_factors_seen": rec["knob_factor_seen"],
-        "seeded_steps": rec["seeded_steps"].tolist(),
-        "recruits": rec["recruits"].tolist(),
-        "deaths": rec["deaths"].tolist(),
-        "n_end": rec["n_end"].tolist(),
-        "seconds": round(time.time() - t0, 1),
-    }
+    return trim_run(
+        {
+            "state": state_arm,
+            "variant": variant,
+            "seed": seed,
+            "herring_final_decade_biomass": herring_fdm,
+            "ssb_annual_mean": rec["ssb"].mean(axis=1).tolist(),
+            "e_lin": rec["e_lin"].tolist(),
+            "e_sr": rec["e_sr"].tolist(),
+            "e_fin": rec["e_fin"].tolist(),
+            "knob_factors_seen": rec["knob_factor_seen"],
+            "seeded_steps": rec["seeded_steps"].tolist(),
+            "recruits": rec["recruits"].tolist(),
+            "deaths": rec["deaths"].tolist(),
+            "n_end": rec["n_end"].tolist(),
+            "seconds": round(time.time() - t0, 1),
+        }
+    )
 
 
-def _w(x, lo=WIN[0], hi=WIN[1]):
-    return np.asarray(x, dtype=float)[lo:hi]
+def _w(x, lo=WIN[0], hi=WIN[1], off=0):
+    return np.asarray(x, dtype=float)[lo - off : hi - off]
+
+
+def trim_run(r: dict) -> dict:
+    """Keep per-year arrays from KEEP_FROM on, recording the offset (idempotent)."""
+    if r.get("year_offset") is not None:
+        return r
+    out = dict(r)
+    for k in PER_YEAR:
+        out[k] = list(r[k])[KEEP_FROM:]
+    out["year_offset"] = KEEP_FROM
+    return out
 
 
 def summarise_run(r: dict, lagged: bool) -> dict:
     """Final-decade quantities for one run. Lagged: eggs/SSB over 39..48, recruits over 40..49."""
     lo, hi = WIN
+    off = r.get("year_offset", 0)
     elo, ehi = (lo - 1, hi - 1) if lagged else (lo, hi)
-    ssb = _w(r["ssb_annual_mean"], elo, ehi).mean()
-    e_lin = _w(r["e_lin"], elo, ehi).sum()
-    e_sr = _w(r["e_sr"], elo, ehi).sum()
-    e_fin = _w(r["e_fin"], elo, ehi).sum()
-    rec = _w(r["recruits"], lo, hi).sum()
+    ssb = _w(r["ssb_annual_mean"], elo, ehi, off).mean()
+    e_lin = _w(r["e_lin"], elo, ehi, off).sum()
+    e_sr = _w(r["e_sr"], elo, ehi, off).sum()
+    e_fin = _w(r["e_fin"], elo, ehi, off).sum()
+    rec = _w(r["recruits"], lo, hi, off).sum()
     return {
         "ssb": ssb,
         "lin": e_lin / ssb,
@@ -213,8 +238,9 @@ def summarise_run(r: dict, lagged: bool) -> dict:
 
 def hazards_and_fractions(r: dict) -> dict:
     """Per-capita hazard (per step, by cause, by class) and year-0 cohort fractions."""
-    deaths = np.asarray(r["deaths"])[WIN[0] : WIN[1]].sum(axis=0)  # (class, cause)
-    n_end = np.asarray(r["n_end"])[WIN[0] : WIN[1]].sum(axis=0)  # (class,) summed over steps
+    off = r.get("year_offset", 0)
+    deaths = np.asarray(r["deaths"])[WIN[0] - off : WIN[1] - off].sum(axis=0)  # (class, cause)
+    n_end = np.asarray(r["n_end"])[WIN[0] - off : WIN[1] - off].sum(axis=0)  # (class,) over steps
     n_start = n_end + deaths.sum(axis=1)  # survivors + this step's deaths, summed over steps
     hazard = {
         CLASSES[k]: {
@@ -223,8 +249,8 @@ def hazards_and_fractions(r: dict) -> dict:
         }
         for k in range(len(CLASSES))
     }
-    e_fin = _w(r["e_fin"]).sum()
-    rec = _w(r["recruits"]).sum()
+    e_fin = _w(r["e_fin"], off=off).sum()
+    rec = _w(r["recruits"], off=off).sum()
     year0 = deaths[0] + deaths[1]  # egg + age-0 post-egg deaths by cause
     frac = {CAUSES[c]: float(year0[c] / e_fin) for c in range(len(CAUSES))}
     return {
@@ -269,7 +295,9 @@ def analyse(runs: list[dict]) -> dict:
     out["knob_factors_seen"] = {
         f"{r['state']}/{r['variant']}/{r['seed']}": r["knob_factors_seen"] for r in runs
     }
-    out["seeded_steps_in_window"] = int(sum(sum(_w(r["seeded_steps"])) for r in runs))
+    out["seeded_steps_in_window"] = int(
+        sum(sum(_w(r["seeded_steps"], off=r.get("year_offset", 0))) for r in runs)
+    )
     hz = {}
     for st in STATES:
         for v in VARIANTS:
@@ -289,14 +317,77 @@ def analyse(runs: list[dict]) -> dict:
                 "closure_year0": [p["closure_year0"] for p in per],
             }
     out["hazards"] = hz
+    out["spr_split"] = spr_split(runs)
     return out
+
+
+def spr_split(runs: list[dict]) -> dict:
+    """SSB per recruit = (age-1+ standing stock per recruit) x (SSB per age-1+ fish), plus immature
+    biomass per recruit. The first factor is a survival/residence measure; the second is mature
+    fraction x weight. Warm/base log ratios of 5-seed means, final decade."""
+    lo, hi = WIN
+
+    def one(r):
+        off = r.get("year_offset", 0)
+        n1p = np.asarray(r["n_end"])[lo - off : hi - off, 2].sum() / ((hi - lo) * NDT)
+        rec = _w(r["recruits"], off=off).sum() / (hi - lo)
+        ssb = _w(r["ssb_annual_mean"], off=off).mean()
+        b = r["herring_final_decade_biomass"]
+        return {
+            "recruits": rec,
+            "age1p_stock": n1p,
+            "ssb": ssb,
+            "biomass": b,
+            "spr": ssb / rec,
+            "stock_per_recruit": n1p / rec,
+            "ssb_per_age1p_fish": ssb / n1p,
+            "immature_biomass_per_recruit": (b - ssb) / rec,
+            "mature_share_of_biomass": ssb / b,
+        }
+
+    res = {}
+    for st in STATES:
+        mean = {
+            v: {
+                k: float(
+                    np.mean([one(r)[k] for r in runs if r["state"] == st and r["variant"] == v])
+                )
+                for k in one(runs[0])
+            }
+            for v in VARIANTS
+        }
+        log_ratio = {
+            k: float(np.log(mean["rcp85_ref"][k] / mean["baseline"][k])) for k in mean["baseline"]
+        }
+        res[st] = {
+            "means": mean,
+            "log_ratio": log_ratio,
+            "post_hoc_secant_ssb_per_fish_vs_age1p_density": log_ratio["ssb_per_age1p_fish"]
+            / -log_ratio["age1p_stock"],
+        }
+    return res
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--workers", type=int, default=10)
+    ap.add_argument(
+        "--reanalyse",
+        action="store_true",
+        help="recompute the analysis from the runs stored in --out (trimming them); no simulation",
+    )
     args = ap.parse_args()
+
+    if args.reanalyse:
+        result = json.loads(args.out.read_text())
+        result["runs"] = [trim_run(r) for r in result["runs"]]
+        f_expected = result["analysis"]["f_expected"]
+        result["analysis"] = analyse(result["runs"])
+        result["analysis"]["f_expected"] = f_expected
+        args.out.write_text(json.dumps(result, allow_nan=False) + "\n")
+        print(f"reanalysed {args.out}")
+        return 0
 
     import baltic_b2_scenario_ab as b2
 
@@ -344,7 +435,7 @@ def main() -> int:
         "analysis": analysis,
         "runs": runs,
     }
-    args.out.write_text(json.dumps(result, indent=1, allow_nan=False) + "\n")
+    args.out.write_text(json.dumps(result, allow_nan=False) + "\n")
     print(
         f"G1 hooks read-only (biomass bit-identical to attribution runs): {analysis['gate_G1_hooks_read_only']}"
     )
