@@ -14,8 +14,10 @@ Snapshot layout (matches ``data/baltic/reference/ices_snapshots/``)::
 The validator:
 
 1. Loads the snapshot manifest + per-stock assessments.
-2. Computes the model's mean biomass per species over a configurable
-   window (e.g. last 5 years of the run).
+2. Computes the model's mean spawning-stock biomass (the `SSB` output, which needs
+   `output.ssb.enabled`) per species over a configurable window (e.g. last 5 years of
+   the run). The biomass output is read alongside as context; `quantity="biomass"`
+   compares it instead (explicit opt-in).
 3. Computes the ICES SSB envelope (min, max) over a configurable
    window of historical SAG data, summed across tonnes-unit stocks
    linked to the species.
@@ -77,7 +79,10 @@ class SpeciesBiomassComparison:
     species:
         Model species name.
     model_mean_tonnes:
-        Mean model biomass over the configured window, in tonnes.
+        Mean of the COMPARED model quantity over the configured window, in tonnes: the model's SSB
+        by default (the envelope is ICES SSB), or its biomass at or above `output.cutoff.age` when
+        `model_quantity` is "biomass" (explicit opt-in, or no SSB output available, in which case
+        there is no verdict).
     ices_min_tonnes / ices_max_tonnes:
         ICES SSB envelope min / max over the configured window, summed
         across tonnes-unit stocks linked to the species. None if no
@@ -93,6 +98,13 @@ class SpeciesBiomassComparison:
         Index-unit stocks linked to this species that were excluded
         from the envelope sum (logged so the report is honest about
         what was compared).
+    model_quantity:
+        Which model output `model_mean_tonnes` is: "ssb" or "biomass".
+    model_biomass_tonnes:
+        The biomass (>= `output.cutoff.age`) over the window, kept as context (never compared when
+        `model_quantity` is "ssb").
+    note:
+        Why a comparison carries no verdict, when it does not (e.g. no SSB output).
     """
 
     species: str
@@ -102,6 +114,9 @@ class SpeciesBiomassComparison:
     in_range: bool | None = None
     magnitude_factor: float | None = None
     excluded_index_stocks: list[str] = field(default_factory=list)
+    model_quantity: str = "ssb"
+    model_biomass_tonnes: float | None = None
+    note: str = ""
 
 
 def load_snapshot(snapshot_dir: Path) -> IcesSnapshot:
@@ -174,32 +189,33 @@ def _ices_ssb_envelope(
     return min(yearly_totals), max(yearly_totals)
 
 
-def model_biomass_window_mean(
+def _model_window_mean(
     results: OsmoseResults,
     species: str,
     window_years: int = 5,
+    output: str = "biomass",
 ) -> float:
-    """Mean model biomass for `species` over the last `window_years` of the run.
+    """Mean of a model output (`biomass` or `ssb`) for `species` over the last `window_years`.
 
-    Reads the `biomass` output (long-form DataFrame with `time` + `value`
-    columns), filters to the species, takes the trailing window, and
-    averages. Returns model biomass in TONNES — the same unit OSMOSE
-    writes biomass outputs in (per `output.biomass.unit`).
+    Reads the output (long-form DataFrame with `time` + `value` columns), filters to the
+    species, takes the trailing window, and averages. Returns TONNES, the unit OSMOSE writes
+    both outputs in.
 
-    Some configs (e.g. eec/BoB) instead emit a WIDE cross-species frame from
-    `results.biomass()` — species are columns, and the frame's own `species`
-    column is the literal string `"all"` — so `results.biomass(species=X)`
-    returns 0 rows for any real species name. In that case, fall back to the
+    Some configs (e.g. eec/BoB, and Baltic) instead emit a WIDE cross-species frame — species
+    are columns, and the frame's own `species` column is the literal string `"all"` — so
+    `read(species=X)` returns 0 rows for any real species name. In that case, fall back to the
     unfiltered wide frame and pull out the species' column directly.
 
     Raises
     ------
-    KeyError if `species` has no biomass output in the results dir.
-    ValueError if the biomass time series is empty.
+    ValueError if there is no series for `species` or the window is empty (what a non-strict
+    reader's empty frame leads to). The reader itself raises FileNotFoundError when strict, or
+    when in-memory results never produced the output; callers handle both.
     """
-    df = results.biomass(species=species)
+    read = getattr(results, output)
+    df = read(species=species)
     if df is None or len(df) == 0 or "value" not in getattr(df, "columns", []):
-        wide = results.biomass()
+        wide = read()
         if wide is not None and species in getattr(wide, "columns", []):
             if "Time" in wide.columns:
                 # Time is in fractional YEARS, not row index — some configs
@@ -215,9 +231,9 @@ def model_biomass_window_mean(
             else:
                 tail = wide[species]
             if len(tail) == 0:
-                raise ValueError(f"empty biomass window for {species!r}")
+                raise ValueError(f"empty {output} window for {species!r}")
             return float(tail.to_numpy().mean())
-        raise ValueError(f"no biomass time series for {species!r} in {results.output_dir}")
+        raise ValueError(f"no {output} time series for {species!r} in {results.output_dir}")
 
     if "time" in df.columns:
         df = df.sort_values("time")
@@ -225,10 +241,31 @@ def model_biomass_window_mean(
     n_total = len(df)
     n_window = min(window_years, n_total)
     if n_window <= 0:
-        raise ValueError(f"empty biomass window for {species!r}")
+        raise ValueError(f"empty {output} window for {species!r}")
 
     tail = df.iloc[-n_window:]
     return float(tail["value"].mean())
+
+
+def model_biomass_window_mean(
+    results: OsmoseResults,
+    species: str,
+    window_years: int = 5,
+) -> float:
+    """Mean model biomass (`biomass` output, >= `output.cutoff.age`) over the trailing window."""
+    return _model_window_mean(results, species, window_years, "biomass")
+
+
+def model_ssb_window_mean(
+    results: OsmoseResults,
+    species: str,
+    window_years: int = 5,
+) -> float:
+    """Mean model spawning-stock biomass (`SSB` output, needs `output.ssb.enabled`) over the window.
+
+    Same frame handling and errors as `model_biomass_window_mean`.
+    """
+    return _model_window_mean(results, species, window_years, "ssb")
 
 
 def compare_outputs_to_ices(
@@ -237,8 +274,14 @@ def compare_outputs_to_ices(
     *,
     window_years: int = 5,
     ices_window: range = range(2018, 2023),
+    quantity: str = "ssb",
 ) -> list[SpeciesBiomassComparison]:
-    """Compare model biomass to ICES SSB envelopes per species.
+    """Compare the model to ICES SSB envelopes per species.
+
+    The envelope is ICES spawning-stock biomass, so by default the model side is the model's SSB
+    (`SSB` output, which needs `output.ssb.enabled`). A run without SSB output gets NO verdict for
+    that species, with a note, rather than a silent biomass-vs-SSB comparison. `quantity="biomass"`
+    is an explicit opt-in for checks where only consistency across engines matters.
 
     Parameters
     ----------
@@ -250,67 +293,98 @@ def compare_outputs_to_ices(
         Number of trailing simulation years to average for the model mean.
     ices_window:
         Range of historical years to compute the ICES envelope over.
+    quantity:
+        "ssb" (default) or "biomass": which model output is compared with the envelope.
 
     Returns
     -------
     One SpeciesBiomassComparison per species in
     `snapshot.manifest["model_species_to_ices_stocks"]`.
     """
+    if quantity not in ("ssb", "biomass"):
+        raise ValueError(f"quantity must be 'ssb' or 'biomass', got {quantity!r}")
     out: list[SpeciesBiomassComparison] = []
     units = snapshot.manifest.get("units_by_stock", {})
+    # What a missing or empty output raises: ValueError (non-strict reader: no series / empty
+    # window), FileNotFoundError (strict or in-memory reader), KeyError (kept for older readers).
+    missing = (KeyError, ValueError, FileNotFoundError)
     for species, stocks in snapshot.manifest.get("model_species_to_ices_stocks", {}).items():
+        biomass: float | None
+        ssb: float | None = None
         try:
-            model_mean = model_biomass_window_mean(results, species, window_years=window_years)
-        except (KeyError, ValueError) as e:
+            biomass = model_biomass_window_mean(results, species, window_years=window_years)
+        except missing as e:
+            biomass, biomass_error = None, e
+        if quantity == "ssb":
+            try:
+                ssb = model_ssb_window_mean(results, species, window_years=window_years)
+            except missing:
+                ssb = None
+        if biomass is None and ssb is None:  # neither output: nothing to show
             print(
-                f"WARN: skipping {species!r} — model output missing or empty: {e}",
+                f"WARN: skipping {species!r} — model output missing or empty: {biomass_error}",
                 file=sys.stderr,
             )
             continue
 
+        note = ""
+        if quantity == "biomass":
+            model_quantity, model_value = "biomass", biomass
+        elif ssb is not None:
+            model_quantity, model_value = "ssb", ssb
+        else:
+            # Biomass only. The usual cause is a run without output.ssb.enabled; a species
+            # column missing from the SSB file gives the same row.
+            model_quantity, model_value = "biomass", biomass
+            note = (
+                "no model SSB series for this species (is output.ssb.enabled set?); no verdict "
+                "against the ICES SSB envelope"
+            )
+            print(f"WARN: {species!r} — {note}", file=sys.stderr)
+        assert model_value is not None  # biomass mode skipped above when biomass is missing
+
+        base = {
+            "species": species,
+            "model_mean_tonnes": model_value,
+            "model_quantity": model_quantity,
+            "model_biomass_tonnes": biomass,
+            "note": note,
+        }
         if not stocks:
-            out.append(SpeciesBiomassComparison(species=species, model_mean_tonnes=model_mean))
+            out.append(SpeciesBiomassComparison(**base))
             continue
 
         tonnes_stocks = [s for s in stocks if units.get(s) == "tonnes"]
         index_stocks = [s for s in stocks if units.get(s) == "index"]
+        base["excluded_index_stocks"] = index_stocks
 
         if not tonnes_stocks:
-            out.append(
-                SpeciesBiomassComparison(
-                    species=species,
-                    model_mean_tonnes=model_mean,
-                    excluded_index_stocks=index_stocks,
-                )
-            )
+            out.append(SpeciesBiomassComparison(**base))
             continue
 
         ices_min, ices_max = _ices_ssb_envelope(snapshot, tonnes_stocks, ices_window)
         if ices_min is None or ices_max is None:
+            out.append(SpeciesBiomassComparison(**base))
+            continue
+        if note:  # no model SSB: show the envelope, give no verdict
             out.append(
-                SpeciesBiomassComparison(
-                    species=species,
-                    model_mean_tonnes=model_mean,
-                    excluded_index_stocks=index_stocks,
-                )
+                SpeciesBiomassComparison(**base, ices_min_tonnes=ices_min, ices_max_tonnes=ices_max)
             )
             continue
 
-        in_range = ices_min <= model_mean <= ices_max
+        in_range = ices_min <= model_value <= ices_max
         # geometric mean of the envelope — symmetric on log scale, robust
         # to envelope width.
         ices_geomean = math.sqrt(ices_min * ices_max) if ices_min > 0 and ices_max > 0 else None
-        magnitude_factor = (model_mean / ices_geomean) if ices_geomean else None
+        magnitude_factor = (model_value / ices_geomean) if ices_geomean else None
 
         out.append(
             SpeciesBiomassComparison(
-                species=species,
-                model_mean_tonnes=model_mean,
+                **base,
                 ices_min_tonnes=ices_min,
                 ices_max_tonnes=ices_max,
                 in_range=in_range,
                 magnitude_factor=magnitude_factor,
-                excluded_index_stocks=index_stocks,
             )
         )
     return out
@@ -335,33 +409,69 @@ def format_markdown_report(
         f"Model window: last {window_years} years of run",
         f"ICES window: {ices_window.start}-{ices_window.stop - 1}",
         "",
-        "| species | model mean (t) | ICES envelope (t) | in range | magnitude × | excluded (index-unit) |",
-        "|---|---:|---:|:---:|---:|---|",
+        (
+            "| species | model (t) | ICES SSB envelope (t) | in range | magnitude × | compared |"
+            " model biomass ≥ cutoff age (t) | excluded (index-unit) |"
+        ),
+        "|---|---:|---:|:---:|---:|:---:|---:|---|",
     ]
     n_in_range = 0
     n_with_envelope = 0
+    notes: list[str] = []
     for c in comparisons:
         model = f"{c.model_mean_tonnes:,.0f}"
-        if c.ices_min_tonnes is None:
-            envelope = "—"
+        envelope = (
+            "—"
+            if c.ices_min_tonnes is None
+            else f"[{c.ices_min_tonnes:,.0f}, {c.ices_max_tonnes:,.0f}]"
+        )
+        if c.in_range is None:  # no envelope, or no model SSB to compare with it
             in_range = "—"
             magnitude = "—"
         else:
-            envelope = f"[{c.ices_min_tonnes:,.0f}, {c.ices_max_tonnes:,.0f}]"
             in_range = "✓" if c.in_range else "✗"
             magnitude = f"{c.magnitude_factor:.2f}" if c.magnitude_factor is not None else "—"
             n_with_envelope += 1
             if c.in_range:
                 n_in_range += 1
+        biomass = "—" if c.model_biomass_tonnes is None else f"{c.model_biomass_tonnes:,.0f}"
         excluded = ", ".join(f"`{s}`" for s in c.excluded_index_stocks) or "—"
         lines.append(
-            f"| {c.species} | {model} | {envelope} | {in_range} | {magnitude} | {excluded} |"
+            f"| {c.species} | {model} | {envelope} | {in_range} | {magnitude} |"
+            f" {c.model_quantity} | {biomass} | {excluded} |"
+        )
+        if c.note:
+            notes.append(f"- {c.species}: {c.note}")
+    # A biomass row WITHOUT a note is the explicit --quantity biomass opt-in; a missing SSB output
+    # always leaves a note (and no verdict) on its row instead.
+    biomass_opt_in = any(c.model_quantity == "biomass" and not c.note for c in comparisons)
+    if biomass_opt_in:
+        explanation = (
+            "Rows with `compared` = biomass score the model's biomass at or above the output cutoff"
+            " age against the SSB envelope (`--quantity biomass`). That counts immature fish, so"
+            " read those verdicts as engine-vs-engine consistency, not against ICES."
+        )
+    elif comparisons and all(c.note for c in comparisons):
+        explanation = (
+            "The ICES envelope is spawning-stock biomass, and this run has no model SSB output,"
+            " so nothing was scored (see No verdict). Biomass is shown as context only."
+        )
+    else:
+        explanation = (
+            "The ICES envelope is spawning-stock biomass, so the model side is the model's SSB"
+            " (`compared` = ssb). Biomass at or above the output cutoff age is context only. The"
+            " Python engine's SSB counts mature fish of any age, so it can exceed that biomass"
+            " where fish mature before the cutoff."
         )
     lines += [
         "",
         f"**Summary:** {n_in_range}/{n_with_envelope} species in ICES SSB envelope.",
         "",
+        explanation,
+        "",
     ]
+    if notes:
+        lines += ["No verdict:", *notes, ""]
     if m2_comparisons is not None:
         lines += format_m2_section(
             m2_comparisons, window_years=window_years, ices_window=ices_window

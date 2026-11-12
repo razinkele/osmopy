@@ -107,7 +107,7 @@ mislabels these as `"tonnes"` in the per-row metadata — the true unit
 is inferred from the `Blim` magnitude. `bzq.27.2425` and `bwp.27.2729-32`
 have no Blim; the puller then reads `StockSizeUnits`, but only to call a
 non-`"tonnes"` unit an index — a bare `"tonnes"` without a Blim stays
-unclassified and the pull fails. The validator skips biomass
+unclassified and the pull fails. The validator skips SSB
 envelope comparisons for index-unit stocks (nothing to compare tonnes
 against an index).
 
