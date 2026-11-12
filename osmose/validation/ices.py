@@ -428,16 +428,19 @@ def format_markdown_report(
         )
         if c.note:
             notes.append(f"- {c.species}: {c.note}")
-    # A scored row compared on biomass can only come from the explicit --quantity biomass opt-in
-    # (a missing SSB output gives a no-verdict row with a note instead).
-    biomass_scored = any(
-        c.model_quantity == "biomass" and c.in_range is not None for c in comparisons
-    )
-    if biomass_scored:
+    # A biomass row WITHOUT a note is the explicit --quantity biomass opt-in; a missing SSB output
+    # always leaves a note (and no verdict) on its row instead.
+    biomass_opt_in = any(c.model_quantity == "biomass" and not c.note for c in comparisons)
+    if biomass_opt_in:
         explanation = (
             "Rows with `compared` = biomass score the model's biomass at or above the output cutoff"
             " age against the SSB envelope (`--quantity biomass`). That counts immature fish, so"
             " read those verdicts as engine-vs-engine consistency, not against ICES."
+        )
+    elif comparisons and all(c.note for c in comparisons):
+        explanation = (
+            "The ICES envelope is spawning-stock biomass, and this run has no model SSB output,"
+            " so nothing was scored (see No verdict). Biomass is shown as context only."
         )
     else:
         explanation = (

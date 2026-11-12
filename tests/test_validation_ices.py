@@ -448,6 +448,24 @@ class TestFormatMarkdownReport:
         assert "the model side is the model's SSB" not in report
         assert "not against ICES" in report
 
+    def test_all_no_verdict_footer_does_not_claim_an_ssb_comparison(self):
+        # With no SSB output anywhere, nothing was compared; the footer must not describe an SSB
+        # comparison that every row contradicts (`compared` = biomass, no verdict).
+        comps = [
+            SpeciesBiomassComparison(
+                species="cod",
+                model_mean_tonnes=150.0,
+                ices_min_tonnes=100.0,
+                ices_max_tonnes=140.0,
+                model_quantity="biomass",
+                model_biomass_tonnes=150.0,
+                note="model SSB unavailable (enable output.ssb.enabled); no verdict",
+            ),
+        ]
+        report = format_markdown_report(comps, window_years=5)
+        assert "the model side is the model's SSB" not in report
+        assert "no model SSB output" in report
+
 
 # -- CLI ----------------------------------------------------------------------
 
