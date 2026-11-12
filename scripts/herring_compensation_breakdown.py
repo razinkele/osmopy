@@ -261,7 +261,17 @@ def hazards_and_fractions(r: dict) -> dict:
     }
 
 
-def analyse(runs: list[dict]) -> dict:
+def _mean_defined(values: list) -> dict:
+    """Mean over defined values, with the count; an undefined hazard is never a measured zero."""
+    ok = [v for v in values if v is not None]
+    return {"mean": float(np.mean(ok)) if ok else None, "n_defined": len(ok)}
+
+
+def _gates_pass(analysis: dict) -> bool:
+    return all(analysis["gates"].values())
+
+
+def analyse(runs: list[dict], f_expected: float) -> dict:
     by = {(r["state"], r["variant"], r["seed"]): r for r in runs}
     stored = json.loads(ATTR_JSON.read_text())["runs"]
     ref = {(s["arm"], s["variant"], s["seed"]): s["final_decade_means"]["herring"] for s in stored}
@@ -298,6 +308,20 @@ def analyse(runs: list[dict]) -> dict:
     out["seeded_steps_in_window"] = int(
         sum(sum(_w(r["seeded_steps"], off=r.get("year_offset", 0))) for r in runs)
     )
+    # G2 at window level: if every non-seeded step applies exactly the knob factor, each year's
+    # after-knob / after-curve egg ratio equals it. (`knob_factors_seen` is only a spin-up sample.)
+    knob_dev = {}
+    for r in runs:
+        off = r.get("year_offset", 0)
+        want = f_expected if r["variant"] == "rcp85_ref" else 1.0
+        e_sr = _w(r["e_sr"], WIN[0] - 1, WIN[1], off)
+        e_fin = _w(r["e_fin"], WIN[0] - 1, WIN[1], off)
+        ok = e_sr > 0
+        dev = np.abs(e_fin[ok] / e_sr[ok] / want - 1.0)
+        knob_dev[f"{r['state']}/{r['variant']}/{r['seed']}"] = (
+            float(dev.max()) if dev.size else None
+        )
+    out["knob_window_max_rel_dev"] = knob_dev
     hz = {}
     for st in STATES:
         for v in VARIANTS:
@@ -305,8 +329,7 @@ def analyse(runs: list[dict]) -> dict:
             hz[f"{st}/{v}"] = {
                 "hazard_per_step": {
                     cl: {
-                        c: float(np.mean([p["hazard_per_step"][cl][c] or 0.0 for p in per]))
-                        for c in CAUSES
+                        c: _mean_defined([p["hazard_per_step"][cl][c] for p in per]) for c in CAUSES
                     }
                     for cl in CLASSES
                 },
@@ -317,6 +340,15 @@ def analyse(runs: list[dict]) -> dict:
                 "closure_year0": [p["closure_year0"] for p in per],
             }
     out["hazards"] = hz
+    closures = [x for v in hz.values() for x in v["closure_year0"]]
+    devs = [d for d in knob_dev.values() if d is not None]
+    out["gates"] = {
+        "G1_hooks_read_only": bool(out["gate_G1_hooks_read_only"]),
+        "G2_knob_exact_in_window": bool(devs)
+        and max(devs) <= 1e-12
+        and out["seeded_steps_in_window"] == 0,
+        "G3_year0_closure_within_5pct": all(abs(c - 1.0) <= 0.05 for c in closures),
+    }
     out["spr_split"] = spr_split(runs)
     return out
 
@@ -368,6 +400,20 @@ def spr_split(runs: list[dict]) -> dict:
     return res
 
 
+def _write_if_gates_pass(result: dict, out: Path) -> int:
+    """Pre-stated: a failed gate means nothing is interpreted. Keep raw runs for diagnosis only."""
+    g = result["analysis"]["gates"]
+    print(f"gates: {g}")
+    if not _gates_pass(result["analysis"]):
+        failed = out.with_name(out.stem + ".GATE_FAILED.json")
+        failed.write_text(json.dumps({"gates": g, "runs": result["runs"]}, allow_nan=False) + "\n")
+        print(f"gate failed: no analysis written; raw runs in {failed}")
+        return 2
+    out.write_text(json.dumps(result, allow_nan=False) + "\n")
+    print(f"wrote {out}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", type=Path, required=True)
@@ -383,11 +429,9 @@ def main() -> int:
         result = json.loads(args.out.read_text())
         result["runs"] = [trim_run(r) for r in result["runs"]]
         f_expected = result["analysis"]["f_expected"]
-        result["analysis"] = analyse(result["runs"])
+        result["analysis"] = analyse(result["runs"], f_expected)
         result["analysis"]["f_expected"] = f_expected
-        args.out.write_text(json.dumps(result, allow_nan=False) + "\n")
-        print(f"reanalysed {args.out}")
-        return 0
+        return _write_if_gates_pass(result, args.out)
 
     import baltic_b2_scenario_ab as b2
 
@@ -426,7 +470,7 @@ def main() -> int:
                 f" herring {r['herring_final_decade_biomass']:12.0f}  ({r['seconds']}s)",
                 flush=True,
             )
-    analysis = analyse(runs)
+    analysis = analyse(runs, f_expected)
     analysis["f_expected"] = f_expected
     result = {
         "seeds": SEEDS,
@@ -435,7 +479,9 @@ def main() -> int:
         "analysis": analysis,
         "runs": runs,
     }
-    args.out.write_text(json.dumps(result, allow_nan=False) + "\n")
+    rc = _write_if_gates_pass(result, args.out)
+    if rc:
+        return rc
     print(
         f"G1 hooks read-only (biomass bit-identical to attribution runs): {analysis['gate_G1_hooks_read_only']}"
     )

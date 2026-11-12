@@ -15,8 +15,9 @@ not change.** What differs is how much density that rise costs.
 - **A0 gets it with half the fish; A4 needs roughly a fifth.** In A0, age-1+ numbers fall to
   0.49×; in A4 they fall to 0.22×. The post-hoc secant (spawning biomass per fish against age-1+
   density) is **2.18 in A0 against 1.00 in A4**.
-- **The early stage pushes the other way.** Age-0 predation hazard *rises* as young herring
-  become scarcer, which deepens A4's decline more than A0's.
+- **The early stage pushes the other way.** Egg-to-age-1 survival falls under warming, by more
+  in A4. That coincides with a rise in age-0 predation hazard as young herring become scarcer.
+  The run shows the association, not the cause.
 
 The note stops at channel and cause, as pre-stated. *Why* spawning biomass per fish is twice as
 density-elastic in A0 is not measured.
@@ -30,15 +31,15 @@ density-elastic in A0 is not measured.
 | gate | result |
 |---|---|
 | G1: hooks read-only | **PASS.** All 20 herring final-decade biomasses are bit-identical to the matching attribution runs. |
-| G2: knob exactness | **PASS.** After spin-up, after-knob / after-curve = 0.22786543992898978 on every warm run, up to one ULP of division round-off; baseline = 1.0. No seeded herring step falls in the window. |
+| G2: knob exactness | **PASS.** In every year of the window (and the lag year) of every run, annual after-knob / after-curve eggs equal 0.22786543992898978 on warm runs and 1.0 on baseline runs. The maximum relative deviation is 4.4e-16, about 2 ULP. No seeded herring step falls in the window. Review caught that the first G2 instrument, a per-step sample capped at four values, filled during spin-up and never saw the window; this window-level check replaced it (`knob_window_max_rel_dev`). |
 | G3: year-0 accounting | **PASS.** (recruits + egg and age-0 deaths) / eggs lies between 0.9956 and 1.0006 across all 20 runs. |
 | Stationarity | The same-window and lagged decompositions agree to ≤ 0.006 in every log ratio, so the final decade is at equilibrium for this purpose. |
 
 ## The pre-stated η was mis-specified
 
 The pre-stated comparison metric was η_k = ln r_k / ln r_SSB. In A4, SSB does not move under
-warming (ln r_SSB = −0.005), so η there is undefined: the values come out in the hundreds and swing
-with the window. The normaliser was the wrong density. The channel that carries the compensation
+warming (ln r_SSB = −0.005), so η is defined but unstable: dividing by a near-zero denominator
+gives values in the hundreds that swing with the window. The normaliser was the wrong density. The channel that carries the compensation
 (SPR) responds to **recruit or age-1+ density**, not to SSB. The pre-stated channel definitions
 and the log-ratio table below stand. Both were pre-stated, and the table is identity-exact. Only
 the η step fails. The recruit-normalised secant reported here is **post-hoc**.
@@ -92,10 +93,10 @@ step, ×24 to give per year.
 | age-1+ fishing | 0.355 → 0.355 | 0.354 → 0.354 |
 | egg additional | 16.80 → 16.80 | 23.61 → 23.61 |
 
-- **Age-0 predation is depensatory.** Its per-capita hazard rises when young herring are scarcer:
-  +18% in A0 and +38% in A4. That is why the `early` channel is −0.03 in A0 against −0.12 in A4,
-  and it is a real contributor to A4's larger decline. Why predators behave this way is not
-  measured.
+- **Age-0 predation hazard rises when young herring are scarcer:** +18% in A0 and +38% in A4.
+  It moves in the same direction as the `early` channel (−0.03 in A0, −0.12 in A4). The run does
+  not separate predation from exposure or the other causes, so this is an association, not a
+  demonstrated cause of A4's larger early decline.
 - **Post-recruit hazards barely move**, consistent with the flat stock-per-recruit factor above.
 - **The egg-stage additional hazard differs by construction** (larval rate 28.89 vs 98.56 /yr).
   That is the state difference, not a response. Survival to age 1 is 2.0% in A0 against 0.097%
