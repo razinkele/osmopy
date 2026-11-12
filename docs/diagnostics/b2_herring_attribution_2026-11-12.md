@@ -87,8 +87,12 @@ Per-seed paired declines are in the JSON. The largest within-arm range is 4.3 pp
 - **Why the joint state is so much more sensitive.** The baselines show that a simple level effect
   is not the explanation. Herring's sensitivity does not track its biomass across the arms: −36%
   at 0.80 Mt, −26% at 1.53 Mt, −23% at 2.05 Mt, −61% at 2.70 Mt and −29% at 3.97 Mt. The mechanism
-  was not measured. That would take a recruitment and mortality breakdown of A0 against A4 under
-  the knob.
+  was not measured here. The breakdown that followed (`herring_compensation_2026-11-12.md`) found
+  the channel:
+  - both states compensate through spawning biomass per age-1+ fish, about 4.6×;
+  - survival per recruit is flat in both;
+  - A0 reaches that rise at half the density reduction A4 needs (post-hoc secant 2.18 vs 1.00).
+  Why remains open.
 - **The noise on D_Aug.** The August report has no per-seed values, so the gap is treated as
   exact.
 
