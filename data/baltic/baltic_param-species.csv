@@ -127,7 +127,7 @@ species.egg.weight.sp7;0.001
 # Current eastern Baltic cod L50 has halved to ~20 cm (Svedang et al. 2024;
 # DTU data doi:10.11583/DTU:16895254). Revise if modeling post-2015 conditions.
 species.maturity.size.sp0;38.0
-species.maturity.size.sp1;18.0
+species.maturity.size.sp1;14.5
 species.maturity.size.sp2;9.0
 species.maturity.size.sp3;22.0
 species.maturity.size.sp4;18.0

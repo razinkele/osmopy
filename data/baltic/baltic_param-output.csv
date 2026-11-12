@@ -4,6 +4,7 @@ output.recordfrequency.ndt;24
 output.start.year;0
 
 output.fisheries.enabled;true
+output.ssb.enabled;true
 
 output.cutoff.age.sp0;0.5
 output.cutoff.age.sp1;0.5

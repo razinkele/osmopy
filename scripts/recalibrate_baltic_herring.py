@@ -59,9 +59,16 @@ def run_point(pt: dict) -> dict:
     from osmose.engine import PythonEngine
 
     cfg = dict(OsmoseConfigReader().read(str(CONFIG)))
-    # Units: the adult rate is used as read (per year); the larval rate arrives resolved (/24).
-    assert abs(float(cfg[M_ADD_KEY]) - 2.247192881951114) < 1e-12, cfg[M_ADD_KEY]
-    assert abs(float(cfg[LARVA_KEY.format(1)]) - 28.885927824368395 / NDT) < 1e-8, cfg[
+    # Units, checked against the CSV on disk (whatever its current values): the adult rate is used
+    # as read (per year); the larval rate arrives resolved (CSV / 24).
+    csv = {
+        ln.split(";")[0].strip(): float(ln.split(";")[1])
+        for ln in (CONFIG.parent / "baltic_param-additional-mortality.csv").read_text().splitlines()
+        if ln.startswith("mortality.additional.")
+    }
+    assert abs(float(cfg[M_ADD_KEY]) - csv[M_ADD_KEY]) < 1e-12, (cfg[M_ADD_KEY], csv[M_ADD_KEY])
+    want_l = csv[LARVA_KEY.format(1)] / NDT
+    assert abs(float(cfg[LARVA_KEY.format(1)]) - want_l) <= 1e-8 * max(1.0, want_l), cfg[
         LARVA_KEY.format(1)
     ]
     if pt.get("maturity") is not None:

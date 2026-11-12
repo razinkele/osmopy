@@ -1,0 +1,207 @@
+[
+ {
+  "label": "cand_seed42",
+  "seed": 42,
+  "resolved_larva_sp1": 8.0,
+  "resolved_larva_sp0": 10.44415425,
+  "m_add_used": 0.2,
+  "maturity_used": 14.5,
+  "biomass": {
+   "cod_west": 19168.724150599493,
+   "herring": 1586229.7344281524,
+   "sprat": 917592.1048206019,
+   "flounder": 48654.18588443286,
+   "perch": 36406.97502549643,
+   "pikeperch": 518296.08289627417,
+   "smelt": 661136.7789994857,
+   "stickleback": 86657.02877409689,
+   "cod_east": 73722.54962878658,
+   "GreySeal": 4500.000000000043,
+   "Cormorant": 999.9999999999966
+  },
+  "herring_ssb": 1469707.388064486,
+  "herring_q1_age_share": [
+   0.0,
+   0.5925147075208826,
+   0.24754577680000833,
+   0.0963293699266786,
+   0.03821016627843351,
+   0.015264212626804172,
+   0.006139108345473886,
+   0.002438292935009612,
+   0.0015583655667091485
+  ],
+  "seconds": 399.3,
+  "in_envelope": {
+   "cod_west": true,
+   "cod_east": true,
+   "herring": true,
+   "sprat": true,
+   "flounder": true
+  }
+ },
+ {
+  "label": "cand_seed123",
+  "seed": 123,
+  "resolved_larva_sp1": 8.0,
+  "resolved_larva_sp0": 10.44415425,
+  "m_add_used": 0.2,
+  "maturity_used": 14.5,
+  "biomass": {
+   "cod_west": 19254.807651236646,
+   "herring": 1545480.856044956,
+   "sprat": 905051.5850777762,
+   "flounder": 47565.35531749028,
+   "perch": 34885.373239149936,
+   "pikeperch": 520569.13543839083,
+   "smelt": 661192.9280746895,
+   "stickleback": 98212.72044272667,
+   "cod_east": 74937.08392917624,
+   "GreySeal": 4500.000000000043,
+   "Cormorant": 999.9999999999966
+  },
+  "herring_ssb": 1442651.239166659,
+  "herring_q1_age_share": [
+   0.0,
+   0.5947370544122493,
+   0.24637191419854992,
+   0.09642628331600352,
+   0.03763509005894473,
+   0.015011136497318025,
+   0.005951066114403436,
+   0.0023625520200265065,
+   0.0015049033825045865
+  ],
+  "seconds": 395.9,
+  "in_envelope": {
+   "cod_west": true,
+   "cod_east": true,
+   "herring": true,
+   "sprat": true,
+   "flounder": true
+  }
+ },
+ {
+  "label": "cand_seed7",
+  "seed": 7,
+  "resolved_larva_sp1": 8.0,
+  "resolved_larva_sp0": 10.44415425,
+  "m_add_used": 0.2,
+  "maturity_used": 14.5,
+  "biomass": {
+   "cod_west": 18712.618222883862,
+   "herring": 1509027.616588046,
+   "sprat": 915528.5207016163,
+   "flounder": 47561.50315077467,
+   "perch": 35901.11791335567,
+   "pikeperch": 514937.04611408786,
+   "smelt": 659332.8457203798,
+   "stickleback": 95815.16733978581,
+   "cod_east": 73673.0507164428,
+   "GreySeal": 4500.000000000043,
+   "Cormorant": 999.9999999999966
+  },
+  "herring_ssb": 1397966.7851634256,
+  "herring_q1_age_share": [
+   0.0,
+   0.5973503360711429,
+   0.24584662055702466,
+   0.09607155423324379,
+   0.03730904930076667,
+   0.014464244259872723,
+   0.0054728224952993966,
+   0.002145631482451579,
+   0.001339741600198211
+  ],
+  "seconds": 398.0,
+  "in_envelope": {
+   "cod_west": true,
+   "cod_east": true,
+   "herring": true,
+   "sprat": true,
+   "flounder": true
+  }
+ },
+ {
+  "label": "cand_seed999",
+  "seed": 999,
+  "resolved_larva_sp1": 8.0,
+  "resolved_larva_sp0": 10.44415425,
+  "m_add_used": 0.2,
+  "maturity_used": 14.5,
+  "biomass": {
+   "cod_west": 19308.896642931624,
+   "herring": 1558205.753937473,
+   "sprat": 900445.9454955682,
+   "flounder": 49131.60714029213,
+   "perch": 35232.017386377076,
+   "pikeperch": 520599.0026969768,
+   "smelt": 655408.1225872252,
+   "stickleback": 92319.09425625997,
+   "cod_east": 75635.92441487774,
+   "GreySeal": 4500.000000000043,
+   "Cormorant": 999.9999999999966
+  },
+  "herring_ssb": 1450207.9076724327,
+  "herring_q1_age_share": [
+   0.0,
+   0.5935083659101354,
+   0.2492272027939883,
+   0.09689773362312575,
+   0.036982913093921356,
+   0.014316619123955028,
+   0.005551886908235255,
+   0.0021521441407730416,
+   0.0013631344058656636
+  ],
+  "seconds": 399.1,
+  "in_envelope": {
+   "cod_west": true,
+   "cod_east": true,
+   "herring": true,
+   "sprat": true,
+   "flounder": true
+  }
+ },
+ {
+  "label": "cand_seed2024",
+  "seed": 2024,
+  "resolved_larva_sp1": 8.0,
+  "resolved_larva_sp0": 10.44415425,
+  "m_add_used": 0.2,
+  "maturity_used": 14.5,
+  "biomass": {
+   "cod_west": 19055.910249867586,
+   "herring": 1532427.3588251746,
+   "sprat": 916506.5298472171,
+   "flounder": 47676.616803251265,
+   "perch": 33873.03313163422,
+   "pikeperch": 528762.1870956718,
+   "smelt": 662902.1031401155,
+   "stickleback": 82069.143039647,
+   "cod_east": 74351.53528053446,
+   "GreySeal": 4500.000000000043,
+   "Cormorant": 999.9999999999966
+  },
+  "herring_ssb": 1426540.6429191,
+  "herring_q1_age_share": [
+   0.0,
+   0.5984102799355294,
+   0.2453076053363146,
+   0.09498628502158585,
+   0.03688124502577981,
+   0.014656967728237727,
+   0.005850622345854836,
+   0.0023909722274590393,
+   0.0015160223792385695
+  ],
+  "seconds": 398.0,
+  "in_envelope": {
+   "cod_west": true,
+   "cod_east": true,
+   "herring": true,
+   "sprat": true,
+   "flounder": true
+  }
+ }
+]
