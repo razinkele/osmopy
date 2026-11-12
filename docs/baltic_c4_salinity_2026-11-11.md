@@ -1,5 +1,9 @@
 # Baltic C4 re-run on v1.9.0: salinity-gate sensitivity arms, 2026-11-11
 
+> **Superseded 2026-11-12** by `docs/baltic_c4_salinity_2026-11-12.md` (v1.10.0, herring
+> recalibration). cod_east now falls 12.9% at −3 PSU (12.9× SD) and cod_west rises 8.6% (7.7× SD); the
+> July chain is still absent; the instruments are unchanged.
+
 This re-runs `docs/baltic_c4_salinity_2026-08-30.md` on **v1.9.0** (`95baf49b`) with the same
 harness, arms (ΔS = −1, −2, −3 PSU), seeds and labels. It is still a **mechanism
 characterization, not a projection**. The August note's labels apply unchanged.
