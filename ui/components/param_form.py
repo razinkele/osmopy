@@ -313,6 +313,21 @@ def render_species_params(
     )
 
 
+def _age_based_maturity(field: OsmoseField, config: dict[str, str] | None, sp_idx: int) -> bool:
+    """True for the maturity-size cell of a species that sets a maturity age but no size.
+
+    Java treats the two keys as alternatives: a size, when set, wins and the age is ignored; with no
+    size, the species matures by age. Rendering a size input for such a species would write the
+    schema default back into the config and stop it maturing in both engines.
+    """
+    if field.key_pattern != "species.maturity.size.sp{idx}" or not config:
+        return False
+    return (
+        f"species.maturity.size.sp{sp_idx}" not in config
+        and f"species.maturity.age.sp{sp_idx}" in config
+    )
+
+
 def render_species_table(
     fields: list[OsmoseField],
     n_species: int,
@@ -462,7 +477,15 @@ def render_species_table(
                         val = raw
 
                 cell_style = "text-align: center; padding: 4px;"
-                if field.param_type in (ParamType.FLOAT, ParamType.INT):
+                if _age_based_maturity(field, config, sp_idx):
+                    # No input: sync_species_inputs skips cells without one, so the schema's 50 cm
+                    # default never reaches the config of a species that matures by age.
+                    widget = ui.tags.span(
+                        "age-based",
+                        title="Matures by species.maturity.age (no maturity size set)",
+                        style="color: #5a6a7a; font-size: 11px;",
+                    )
+                elif field.param_type in (ParamType.FLOAT, ParamType.INT):
                     widget = ui.input_numeric(
                         input_id,
                         "",

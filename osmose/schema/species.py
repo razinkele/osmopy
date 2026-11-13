@@ -205,10 +205,14 @@ SPECIES_FIELDS: list[OsmoseField] = [
     OsmoseField(
         key_pattern="species.maturity.age.sp{idx}",
         param_type=ParamType.FLOAT,
-        default=3.0,
+        # 0 = no age condition, the engine's own default for an absent key. The species table
+        # writes rendered defaults back into the config, so a non-zero default here would impose a
+        # minimum maturity age on every species of a UI-launched run.
+        default=0.0,
         min_val=0.0,
         max_val=100.0,
-        description="Age at sexual maturity",
+        description="Age at sexual maturity (0 = none). Java uses it only when no maturity size "
+        "is set; the Python engine requires both size and age",
         category="reproduction",
         unit="year",
         indexed=True,
