@@ -594,3 +594,55 @@ def test_species_with_both_maturity_keys_keeps_its_size_input():
     cfg = {"species.maturity.size.sp0": "9.0", "species.maturity.age.sp0": "1.0"}
     html = str(render_species_table(SPECIES_FIELDS, 1, ["sprat"], config=cfg))
     assert float(_maturity_cell(html, "species_maturity_size", 0)) == 9.0
+
+
+def test_sync_skips_a_stale_size_input_of_an_age_based_species():
+    """Shiny keeps the last value of an input removed from the page, so after an age-only config
+    replaces a size-based one, the old size input still returns a value. Writing it back would give
+    the species a size, and Java would then ignore its age. The decision comes from the config."""
+    from osmose.schema.species import SPECIES_FIELDS
+    from ui.components.param_form import collect_species_table_updates
+
+    cfg = {"species.maturity.size.sp0": "38.0", "species.maturity.age.sp1": "1.0"}
+    stale = {
+        "spt_species_maturity_size_0": 38.0,
+        "spt_species_maturity_size_1": 9.0,
+        "spt_species_maturity_age_1": 1.0,
+    }
+
+    def read(input_id):
+        if input_id not in stale:
+            raise AttributeError(input_id)
+        return stale[input_id]
+
+    updates = collect_species_table_updates(SPECIES_FIELDS, 2, cfg, read)
+    assert "species.maturity.size.sp1" not in updates
+    assert updates["species.maturity.size.sp0"] == "38.0"
+    assert updates["species.maturity.age.sp1"] == "1.0"
+
+
+def test_copying_an_age_based_species_0_makes_the_others_age_based():
+    """Copying species 0's parameters to all: when species 0 matures by age (no size), each
+    destination must lose its own size, or it would keep maturing by size in Java."""
+    from unittest.mock import MagicMock
+
+    from osmose.schema.species import SPECIES_FIELDS
+    from ui.components.param_form import copy_species0_to_all
+
+    cfg = {
+        "species.maturity.age.sp0": "1.0",  # age-based source
+        "species.maturity.size.sp1": "38.0",
+        "species.maturity.size.sp2": "22.0",
+    }
+    values = {"spt_species_maturity_age_0": 1.0, "spt_species_maturity_size_0": 9.0}  # 9.0: stale
+
+    class _Input:
+        def __getattr__(self, name):
+            if name not in values:
+                raise AttributeError(name)
+            return lambda: values[name]
+
+    copy_species0_to_all(SPECIES_FIELDS, 3, cfg, _Input(), MagicMock())
+    for i in (1, 2):
+        assert f"species.maturity.size.sp{i}" not in cfg
+        assert cfg[f"species.maturity.age.sp{i}"] == "1.0"

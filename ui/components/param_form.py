@@ -11,6 +11,8 @@ from osmose.logging import setup_logging
 from osmose.schema.base import OsmoseField, ParamType
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from shiny.session import Session
 
 _log = setup_logging("osmose.param_form")
@@ -328,6 +330,41 @@ def _age_based_maturity(field: OsmoseField, config: dict[str, str] | None, sp_id
     )
 
 
+def collect_species_table_updates(
+    fields: list[OsmoseField],
+    n_species: int,
+    config: dict[str, str],
+    read_input: Callable[[str], Any],
+    show_advanced: bool = False,
+) -> dict[str, str]:
+    """Config updates from the species table's inputs (what ``sync_species_inputs`` applies).
+
+    ``read_input(input_id)`` returns the input's value, raising ``AttributeError`` or Shiny's
+    ``SilentException`` when it does not exist. The maturity-size cell of an age-based species is
+    skipped by looking at ``config``, not at whether an input exists: Shiny keeps the last value of
+    an input that was removed from the page, so a size input rendered for an earlier config would
+    otherwise write a size back into a species that matures by age.
+    """
+    from shiny.types import SilentException
+
+    visible = [f for f in fields if f.indexed and (show_advanced or not f.advanced)]
+    updates: dict[str, str] = {}
+    for i in range(n_species):
+        for field in visible:
+            if _age_based_maturity(field, config, i):
+                continue
+            base_key = (
+                field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+            )
+            try:
+                val = read_input(f"spt_{base_key}_{i}")
+            except (AttributeError, SilentException):
+                continue
+            if val is not None:
+                updates[field.resolve_key(i)] = str(val)
+    return updates
+
+
 def render_species_table(
     fields: list[OsmoseField],
     n_species: int,
@@ -593,6 +630,14 @@ def copy_species0_to_all(
     copied = 0
     for field in visible:
         if field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
+            continue
+        if _age_based_maturity(field, config, start_idx):
+            # Species 0 matures by age: copying it means no size anywhere, or a destination that
+            # keeps its size would still mature by size in Java. Decided from the config: the
+            # source's size input, if any, is stale.
+            for i in range(1, n_species):
+                config.pop(field.resolve_key(start_idx + i), None)
+            copied += 1
             continue
         base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
         src_id = f"spt_{base_key}_{start_idx}"
