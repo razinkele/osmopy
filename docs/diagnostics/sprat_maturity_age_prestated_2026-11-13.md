@@ -46,7 +46,7 @@ These master figures motivate the change; they are not the test.
 
 ## C3: SP1b drift guard
 
-- Run `tests/test_larva_recal.py` explicitly (the d0 guard cannot see a shift in the cod baseline).
+- Run `tests/test_sp1b_recalibration.py` explicitly (the d0 guard cannot see a shift in the cod baseline).
 - If the guard fails because cod moved, re-solve `RECAL_RATES` as #250 did. Accept the re-solve only
   inside the 1-D tolerance (2%) and JOINT_TOL (5%).
 
