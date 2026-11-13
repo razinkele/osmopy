@@ -65,3 +65,41 @@ def test_species_tab_does_not_impose_a_maturity_age(page: Page, app: ShinyAppPro
         f"opening the Species tab wrote species.maturity.age.sp0 = {after!r}; the engine reads any "
         "non-zero value as a minimum maturity age"
     )
+
+
+def test_copy_species_0_refreshes_an_age_based_destination_cell(
+    page: Page, app: ShinyAppProc, tmp_path
+):
+    """The table reads the config in isolate, so after "copy species 0 to all" it must re-render
+    (species_table_rev in ui/pages/setup.py) or a destination cell keeps its old widget.
+
+    The app starts from schema defaults, which give species 0-2 a maturity size, and an import
+    merges keys without removing any, so an AGE-based species 0 cannot be built here. This test
+    builds the mirror case through the same refresh: species 3 is imported with a maturity age and
+    no size (an "age-based" cell); copying the size-based species 0 gives it a size, and its cell
+    must become a size input."""
+    flat = tmp_path / "age_based_sp3.csv"
+    flat.write_text(
+        "simulation.nspecies;4\nspecies.name.sp3;agefish\nspecies.maturity.age.sp3;1.0\n"
+    )
+    page.goto(app.url)
+    page.wait_for_selector(".nav-pills", timeout=_T)
+    dismiss_changelog_modal(page)
+
+    page.locator(".nav-pills .nav-link[data-value='advanced']").click()
+    page.set_input_files("#import_config", str(flat))
+    page.locator("#confirm_import").click(timeout=_T)
+    page.wait_for_timeout(2_000)
+
+    page.locator(".nav-pills .nav-link[data-value='setup']").click()
+    page.locator("#n_species").fill("4")
+    page.locator("#n_species").press("Tab")
+    page.wait_for_selector("#spt_species_maturity_size_2", timeout=_T)
+    page.wait_for_timeout(1_500)
+    assert page.locator("#spt_species_maturity_size_3").count() == 0  # age-based: no size input
+    assert page.get_by_text("age-based").count() >= 1
+
+    page.get_by_role("button", name="Copy to all").click()  # header button of species 0
+    page.wait_for_selector("#spt_species_maturity_size_3", timeout=_T)  # re-rendered as an input
+    src = page.locator("#spt_species_maturity_size_0").input_value()
+    assert float(page.locator("#spt_species_maturity_size_3").input_value()) == float(src)
