@@ -128,17 +128,19 @@ species.egg.weight.sp7;0.001
 # DTU data doi:10.11583/DTU:16895254). Revise if modeling post-2015 conditions.
 species.maturity.size.sp0;38.0
 species.maturity.size.sp1;14.5
-species.maturity.size.sp2;9.0
 species.maturity.size.sp3;22.0
 species.maturity.size.sp4;18.0
 species.maturity.size.sp5;40.0
 species.maturity.size.sp6;10.0
 species.maturity.size.sp7;4.5
 
-# Maturity age (years). A school is mature when length >= maturity size AND age >= maturity age.
-# Sprat: no spawning before age 1 (2026-11-13). Age-1 sprat already exceed 9 cm at spawning, so the
-# age decides: each fish matures at its first birthday, inside its second spawning season, so only
-# part of the age-1 cohort spawns (maintainer's band 15-40%). Other species keep the default 0.
+# Maturity age (years). Sprat (sp2) matures by AGE, so it deliberately has NO maturity size above.
+# Java treats species.maturity.size and species.maturity.age as alternatives: a size, when set, wins
+# and the age is ignored. The Python engine requires both (size default 0), so age-only is the one
+# form both engines read the same way: mature at age >= 1 yr. Do not add a sprat maturity size: Java
+# would then ignore the age. Each sprat matures on its first birthday, inside its second spawning
+# season, so only part of the age-1 cohort spawns (maintainer's band 15-40%, 2026-11-13). Age-1
+# sprat are 10-13 cm at spawning, above the 9 cm size this replaced.
 species.maturity.age.sp2;1.0
 
 # Relative fecundity (eggs per gram of mature female)
