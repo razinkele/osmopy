@@ -61,6 +61,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from osmose.calibration.bioen_offline import bioen_m0_cm
+
 # e_maint/e_gross ~ 0.8 at 10 degC (task-6-carried-items.md item A; matches
 # tests/test_engine_bioen_budget_parity.py::_three_schools exactly -- see module docstring
 # and tests/test_bioen_overlay.py for the pinned arithmetic).
@@ -113,7 +115,8 @@ def apply_overlay(
             becomes starvation-free) or write bioen overlay keys onto the wrong index --
             "the two paths agree with each other while both being wrong" (see this module's
             docstring, ledger ruling R1).
-        KeyError: if a focal index is missing ``species.maturity.size.sp{i}``, or a
+        KeyError: if a focal index is missing ``species.maturity.size.sp{i}`` and is not a
+            known age-based species (``osmose.calibration.bioen_offline.AGE_BASED_M0_CM``), or a
             background index is missing ``predation.ingestion.rate.max.sp{i}`` -- both
             would otherwise silently produce a wrong or zeroed bioen budget.
     """
@@ -142,7 +145,15 @@ def apply_overlay(
 
     for i in range(n_species):
         sp = f"sp{i}"
-        cfg[f"species.maturity.m0.{sp}"] = cfg[f"species.maturity.size.{sp}"]
+        size_key = f"species.maturity.size.{sp}"
+        if size_key in cfg:
+            cfg[f"species.maturity.m0.{sp}"] = cfg[size_key]
+        else:  # an age-based species: bioen still needs a maturity length (KeyError if unknown)
+            name = cfg.get(f"species.name.{sp}", sp)
+            try:
+                cfg[f"species.maturity.m0.{sp}"] = repr(bioen_m0_cm(name, None))
+            except KeyError as e:
+                raise KeyError(f"{size_key} ({name}): {e}") from None
         for pattern, value in _FOCAL_SPECIES_OVERLAY.items():
             cfg[pattern.format(i=i)] = value
         cfg[f"species.bioen.maint.energy.c_m.{sp}"] = str(C_M)

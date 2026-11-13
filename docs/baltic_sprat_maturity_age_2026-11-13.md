@@ -131,6 +131,14 @@ these differed, every run would have been repeated on the age-only config.
 
 ## Side effects to know
 
+- **Bioen still needs a maturity length for sprat.** Bioen maturity is a length reaction norm (`length
+  >= m0 + m1 * age`; Java rejects size/age maturity under bioen), and the tools that build a bioen
+  config copied `m0` from the maturity size, which sprat no longer has. The production C3 bioen arm
+  is unaffected: its JSON sets `species.maturity.m0.sp2 = 9.0` explicitly. For the tools,
+  `osmose.calibration.bioen_offline.bioen_m0_cm` returns the maturity size, or for an age-based
+  species the same 9.0 (`AGE_BASED_M0_CM`), and raises for any other species without a size. It is
+  used by `scripts/fit_baltic_bioen_params.py` (which would otherwise have written `m0 = 0`, so
+  every sprat matured at any length) and the test overlay `tests/_bioen_overlay.py` (which raised).
 - **Sprat's "Juvenil" stage now runs to age 1.** Stage outputs use the same maturity rule, so sprat's
   stage mortality rates (and the SMS M2 comparison's per-stage rates for sprat) are not comparable
   across this change.

@@ -292,12 +292,38 @@ def _fmt(x: float) -> str:
     return repr(x)
 
 
+# Bioen maturity is a length reaction norm (length >= m0 + m1 * age), so every focal species needs a
+# maturity LENGTH, even one whose standard config matures by AGE (species.maturity.age with no
+# species.maturity.size; the Python engine then reads its size as 0). Baltic sprat has matured by age
+# since 2026-11-13; for bioen it keeps the 9 cm intercept the C3 bioen arm was characterised with,
+# which data/baltic/scenarios/c3_bioen/c3_bioen_arm.json sets explicitly.
+AGE_BASED_M0_CM: dict[str, float] = {"sprat": 9.0}
+
+
+def bioen_m0_cm(name: str, maturity_size: float | None) -> float:
+    """Bioen maturation intercept m0 (cm): the species' maturity size, or, for a species that
+    matures by age (size absent or 0), its entry in ``AGE_BASED_M0_CM``.
+
+    Raises KeyError for an age-based species without an entry, rather than returning 0 (which
+    would make every school of that species mature at any length under bioen).
+    """
+    if maturity_size is not None and maturity_size > 0:
+        return float(maturity_size)
+    if name in AGE_BASED_M0_CM:
+        return AGE_BASED_M0_CM[name]
+    raise KeyError(
+        f"{name}: no species.maturity.size and no bioen m0 for an age-based species; "
+        "add it to osmose.calibration.bioen_offline.AGE_BASED_M0_CM"
+    )
+
+
 def bioen_param_lines(
     results, fx: BioenFixed, zlayer, sp_index, background_imax, notes, m0, background_beta=None
 ):
     """Full Java 4.3.3 bioen key inventory (canonical 4.4.0 spellings), one block per species.
 
-    m0: {species name: maturity length (cm)} -- the config's species.maturity.size values.
+    m0: {species name: maturity length (cm)} -- the config's species.maturity.size values, or
+        ``AGE_BASED_M0_CM`` for a species that matures by age (see ``bioen_m0_cm``).
 
     background_beta: {file index: allometric exponent} for background predators in
     ``background_imax`` (default 0.8 for any index not given, matching
