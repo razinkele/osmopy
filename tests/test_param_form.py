@@ -646,3 +646,10 @@ def test_copying_an_age_based_species_0_makes_the_others_age_based():
     for i in (1, 2):
         assert f"species.maturity.size.sp{i}" not in cfg
         assert cfg[f"species.maturity.age.sp{i}"] == "1.0"
+
+    # The Species page re-renders the table after a copy (species_table_rev in ui/pages/setup.py);
+    # from the copied config every destination then shows the read-only age-based cell.
+    html = str(render_species_table(SPECIES_FIELDS, 3, ["a", "b", "c"], config=cfg))
+    for i in (0, 1, 2):
+        assert _maturity_cell(html, "species_maturity_size", i) is None
+    assert html.count("age-based") >= 3

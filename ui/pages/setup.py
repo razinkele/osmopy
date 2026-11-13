@@ -116,9 +116,14 @@ def setup_server(input, output, session, state: AppState):
             config=cfg,
         )
 
+    # Bumped after "copy species 0 to all": the copy can change which cells render as inputs (an
+    # age-based species 0 makes the destinations age-based), so the table must re-render.
+    species_table_rev = reactive.Value(0)
+
     @render.ui
     def species_panels():
         state.load_trigger.get()
+        species_table_rev.get()
         n = input.n_species()
         show_adv = input.show_advanced_species()
         with reactive.isolate():
@@ -190,6 +195,7 @@ def setup_server(input, output, session, state: AppState):
             )
             state.config.set(cfg)
             state.dirty.set(True)
+            species_table_rev.set(species_table_rev.get() + 1)
             ui.notification_show(
                 f"Copied {count} parameters from species 0 to {n - 1} species.",
                 type="message",
