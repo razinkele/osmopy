@@ -13,11 +13,16 @@ Run explicitly:
 
 from __future__ import annotations
 
+import shutil
+import uuid
+from pathlib import Path
+
 import pytest
 from playwright.sync_api import Page
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
+from osmose.scenarios import Scenario, ScenarioManager
 from tests._e2e_support import dismiss_changelog_modal
 
 pytestmark = pytest.mark.e2e
@@ -103,3 +108,48 @@ def test_copy_species_0_refreshes_an_age_based_destination_cell(
     page.wait_for_selector("#spt_species_maturity_size_3", timeout=_T)  # re-rendered as an input
     src = page.locator("#spt_species_maturity_size_0").input_value()
     assert float(page.locator("#spt_species_maturity_size_3").input_value()) == float(src)
+
+
+_SCENARIOS_DIR = Path("data/scenarios")  # state.scenarios_dir default (ui/state.py)
+
+
+def test_copying_an_age_based_species_0_turns_a_destination_size_input_age_based(
+    page: Page, app: ShinyAppProc
+):
+    """Species 0 matures by age (no size), species 1 by size. Copying species 0 to all removes
+    species 1's size, and the re-rendered table must replace its size input with "age-based".
+
+    Loading a scenario REPLACES the config (state.load_config), so it can start from an age-based
+    species 0, which the schema defaults and the merge-only import cannot."""
+    name = f"e2e_agebased_{uuid.uuid4().hex[:8]}"
+    config = {
+        "simulation.nspecies": "2",
+        "species.name.sp0": "agefish",
+        "species.maturity.age.sp0": "1.0",
+        "species.name.sp1": "sizefish",
+        "species.maturity.size.sp1": "38.0",
+    }
+    try:
+        ScenarioManager(_SCENARIOS_DIR).save(Scenario(name=name, config=config))
+        page.goto(app.url)
+        page.wait_for_selector(".nav-pills", timeout=_T)
+        dismiss_changelog_modal(page)
+
+        page.locator(".nav-pills .nav-link[data-value='scenarios']").click()
+        page.locator(f"#selected_scenario input[value='{name}']").check(timeout=_T)
+        page.click("#btn_load_scenario")
+        page.wait_for_timeout(2_000)
+
+        page.locator(".nav-pills .nav-link[data-value='setup']").click()
+        page.locator("#n_species").fill("2")
+        page.locator("#n_species").press("Tab")
+        page.wait_for_selector("#spt_species_maturity_size_1", timeout=_T)
+        page.wait_for_timeout(1_500)
+        assert page.locator("#spt_species_maturity_size_0").count() == 0  # age-based source
+        assert float(page.locator("#spt_species_maturity_size_1").input_value()) == 38.0
+
+        page.get_by_role("button", name="Copy to all").click()
+        page.wait_for_selector("#spt_species_maturity_size_1", state="detached", timeout=_T)
+        assert page.get_by_text("age-based").count() >= 2
+    finally:
+        shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)
