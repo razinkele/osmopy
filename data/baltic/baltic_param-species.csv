@@ -135,6 +135,12 @@ species.maturity.size.sp5;40.0
 species.maturity.size.sp6;10.0
 species.maturity.size.sp7;4.5
 
+# Maturity age (years). A school is mature when length >= maturity size AND age >= maturity age.
+# Sprat: no spawning before age 1 (2026-11-13). Age-1 sprat already exceed 9 cm at spawning, so the
+# age decides: each fish matures at its first birthday, inside its second spawning season, so only
+# part of the age-1 cohort spawns (maintainer's band 15-40%). Other species keep the default 0.
+species.maturity.age.sp2;1.0
+
 # Relative fecundity (eggs per gram of mature female)
 species.relativefecundity.sp0;500
 species.relativefecundity.sp1;600
