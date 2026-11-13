@@ -1,7 +1,6 @@
 """Species & Simulation setup page."""
 
 from shiny import reactive, render, ui
-from shiny.types import SilentException
 
 from osmose.config.validator import summarize_config_validation
 from osmose.logging import setup_logging
@@ -10,6 +9,7 @@ from osmose.schema.species import SPECIES_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.fishbase_bootstrap import fishbase_bootstrap_server, fishbase_bootstrap_ui
 from ui.components.param_form import (
+    collect_species_table_updates,
     copy_species0_to_all,
     render_category,
     render_species_table,
@@ -116,9 +116,14 @@ def setup_server(input, output, session, state: AppState):
             config=cfg,
         )
 
+    # Bumped after "copy species 0 to all": the copy can change which cells render as inputs (an
+    # age-based species 0 makes the destinations age-based), so the table must re-render.
+    species_table_rev = reactive.Value(0)
+
     @render.ui
     def species_panels():
         state.load_trigger.get()
+        species_table_rev.get()
         n = input.n_species()
         show_adv = input.show_advanced_species()
         with reactive.isolate():
@@ -151,27 +156,19 @@ def setup_server(input, output, session, state: AppState):
         n = input.n_species()
         show_adv = input.show_advanced_species()
 
-        # Collect all updates before touching reactive state.
-        updates: dict[str, str] = {"simulation.nspecies": str(n)}
-
-        visible = [f for f in SPECIES_FIELDS if f.indexed and (show_adv or not f.advanced)]
-        for i in range(n):
-            for field in visible:
-                config_key = field.resolve_key(i)
-                base_key = (
-                    field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
-                )
-                input_id = f"spt_{base_key}_{i}"
-                try:
-                    val = getattr(input, input_id)()
-                except (AttributeError, SilentException):
-                    continue
-                if val is not None:
-                    updates[config_key] = str(val)
-
-        # Apply all updates in a single config.set() call.
         with reactive.isolate():
             cfg = dict(state.config.get())
+
+        # Collect all updates before touching reactive state. The config decides which cells are
+        # synced (an age-based species' maturity size is never written back).
+        updates: dict[str, str] = {"simulation.nspecies": str(n)}
+        updates.update(
+            collect_species_table_updates(
+                SPECIES_FIELDS, n, cfg, lambda input_id: getattr(input, input_id)(), show_adv
+            )
+        )
+
+        # Apply all updates in a single config.set() call.
         actual_changes = {k: v for k, v in updates.items() if cfg.get(k) != v}
         if actual_changes:
             cfg.update(actual_changes)
@@ -198,6 +195,7 @@ def setup_server(input, output, session, state: AppState):
             )
             state.config.set(cfg)
             state.dirty.set(True)
+            species_table_rev.set(species_table_rev.get() + 1)
             ui.notification_show(
                 f"Copied {count} parameters from species 0 to {n - 1} species.",
                 type="message",
