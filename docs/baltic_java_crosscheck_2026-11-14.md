@@ -34,12 +34,41 @@ v1.10.0 note (it reproduces that note's 4.1×, 9.9× and 0.88× exactly).
 
 - **Java still drives sprat extinct,** as it has since v1.9.0. So sprat's maturity change has no
   equilibrium to act on in the Java arm.
-- **Every other Java value moved by at most 8%,** and every Java / Python ratio by at most 0.4×.
+- **Every other Java value moved by at most 8%,** and every Java / Python ratio by at most 7.5%
+  relative (cod_west 4.09× → 4.39×). In absolute terms the largest ratio change is 0.80×
+  (stickleback 21.70× → 22.50×), on a ratio already above 20×.
   Why Java's values moved is not measured; one candidate is sprat's early years, before it dies out,
   when its maturity rule still applies.
 - **Herring is still the one stock where the engines agree** (0.91×).
 - **The large gaps are the pre-existing ones** (cod_east about 10×, flounder about 38×); nothing in
   #255 addresses them.
+
+## Seeding mode: Java seeds linearly, the Python arm above did not
+
+`--java` always runs Java with linear seeding (Java 4.4.1's `SeedingInterface`); the Python arm above
+ran with the config default, `stock_recruitment` (`population.seeding.mode` is Python-only). The
+modes differ only in how seeded biomass becomes eggs during the bootstrap. To check that this does not
+bias the comparison, the Python arm was re-run on the same code with `--seeding-mode linear` (5 seeds
+× 50 yr, `v1.10.1` plus docs-only commits). It also certifies 5/5 assessed.
+
+| species | Python, linear seeding | vs stock_recruitment midpoint | Java / Python, linear |
+|---|---|---:|---:|
+| cod_west | 18,387–19,371 | −1.5% | 4.5× |
+| cod_east | 72,567–74,289 | +0.1% | 10.3× |
+| herring | 1,521,524–1,562,252 | +0.5% | 0.91× |
+| sprat | 999,306–1,005,547 | −0.0% | extinct |
+| flounder | 47,012–48,794 | +0.5% | 38× |
+| perch | 35,154–36,719 | +2.8% | 21× |
+| pikeperch | 519,452–533,089 | +0.5% | 4.9× |
+| smelt | 639,231–659,596 | −1.4% | 4.1× |
+| stickleback | 81,856–88,079 | −6.2% | 24× |
+
+- **The seeding mode moves Python's equilibrium by at most 2.8%,** except stickleback (−6.2%). This
+  agrees with the 2026-08-01 A/B (`docs/baltic_seeding_ab_comparison_2026-08-01.md`: ±5%, mostly
+  ±2%) on the current config.
+- **The like-for-like ratios match the table above:** herring 0.91× in both modes, cod_east 10.3×,
+  cod_west 4.5× against 4.4×. The mismatch in seeding mode does not change any conclusion of this
+  note. Earlier cross-checks used the same stock_recruitment Python arm.
 
 ## Reproduce
 
@@ -49,6 +78,12 @@ PYTHONPATH=. .venv/bin/python scripts/baltic_stability_certify.py --params curre
 ```
 
 The script overwrites `--out` with its generated certification tables, so write it to a scratch
-path, not to this note; the comparison and narrative here were written from that output.
+path, not to this note; the comparison and narrative here were written from that output. The
+like-for-like Python arm:
+
+```
+PYTHONPATH=. .venv/bin/python scripts/baltic_stability_certify.py --params current \
+    --seeding-mode linear --out /tmp/baltic_cert_linear.md
+```
 
 The v1.10.0 note now carries a superseded line.

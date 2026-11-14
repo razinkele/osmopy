@@ -39,10 +39,10 @@ before.
 - **cod_east** responds mainly at −3 PSU, where exclusion from its juvenile and adult maps jumps (the
   instruments, identical to v1.10.0's, record the jump).
 - **cod_west** is monotone and positive from −2 PSU.
-- **Herring is the one new row above the ~1.8× line, but it is not a salinity response.** Its largest
-  shift is +1.75% at −1 PSU, falling to +0.5% at −3 PSU: not monotone in ΔS. Its baseline seed SD
-  is small (0.6%), so a small shift reads as large in SD units. Read as noise or an indirect food-web
-  wobble, not as a dose-response.
+- **Herring is the one new row above the ~1.8× line, and these runs do not establish a dose-response
+  for it.** Its largest shift is +1.75% at −1 PSU, falling to +0.5% at −3 PSU: not monotone in ΔS.
+  Its baseline seed SD is small (0.6%), so a small shift reads as large in SD units. Whether this is
+  seed noise or an indirect effect of the salinity arms through the food web is not resolved here.
 - **Everything else is below the ~1.8× line.**
 
 ## Instruments: identical to v1.10.0
