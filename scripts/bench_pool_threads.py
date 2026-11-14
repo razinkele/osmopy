@@ -212,6 +212,10 @@ def main() -> int:
             _emit({"phase": "grid", **launch(w, t, args.rounds)}, args.out)
         return 0
     cells = [(int(s.split(":")[0]), s.split(":")[1]) for s in args.cells]
+    for w, _t in cells:
+        # _resolve_worker_count clamps the pool to [1, 32]; a larger W would be recorded wrongly.
+        if not 1 <= w <= 32:
+            ap.error(f"worker count {w} outside 1..32 (the calibration pool's clamp)")
     for rep in range(args.repeats):
         for w, t in cells:
             _emit({"phase": "confirm", "repeat": rep, **launch(w, t, args.rounds)}, args.out)
