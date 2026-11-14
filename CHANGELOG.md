@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.1] - 2026-11-14
+
+### Bug Fixes
+
+- **ui:** re-render the species table after copying species 0 (03c3f42)
+- **ui:** age-based maturity is decided from the config in sync and copy (a7d51ce)
+- **bioen:** age-based species keep a maturity length for bioen (fb41e74)
+- **ui:** rendering the species table no longer imposes a maturity age of 3 yr (eeab880)
+- **validation:** SSB is scored even without a biomass series; pin magnitude_factor (6c9bc30)
+- **validation:** footer for an all-no-verdict run; README says SSB envelope (47d0778)
+- **validation:** compare model SSB, not biomass, with the ICES SSB envelope (4ca3f47)
+
+### Documentation
+
+- **baltic:** pre-stated note names the right SP1b test file (before any run) (31658de)
+- **baltic:** pre-state the sprat maturity-age criteria (95e1b34)
+- **baltic:** SMS addendum points its validator follow-up to #253 (2db85fe)
+- **baltic:** attribution note names v1.9.0 where it said 'current' (2bff895)
+- **baltic:** C4 attribution stated as unmeasured; label 6 flagged as refuted; safe reproduce path (3f0ffbc)
+- **baltic:** C4 re-run on v1.10.0 -- both cod responses now clear signals (87f24e7)
+- **baltic:** B2 re-run on v1.10.0 -- herring now -50% / -71% under warming (b45d9e1)
+- **baltic:** Java cross-check and SMS M2 re-run on v1.10.0 (5b8bdbc)
+- **baltic:** mark the v1.9.0-era herring notes as historical since v1.10.0 (922075b)
+
+### Other
+
+- Merge pull request #255 from razinkele/calib/baltic-sprat-maturity-age (9dfbee6)
+- Merge remote-tracking branch 'origin/master' into calib/baltic-sprat-maturity-age (afb5553)
+- Merge pull request #254 from razinkele/fix/ui-maturity-defaults (5705d35)
+- **baltic:** sprat matures by age only (1 yr); SP1b re-solved (b0858e4)
+- **baltic:** sprat maturity age 1 yr (f199afe)
+- Merge pull request #253 from razinkele/fix/validator-ssb-vs-ssb (e835e1e)
+- Merge pull request #252 from razinkele/docs/baltic-refresh-v1.10.0 (dacc853)
+
+### Tests
+
+- **e2e:** Baltic sprat's maturity-size cell renders age-based (33e79ae)
+- **e2e:** an age-based species 0 copied to all turns a size input age-based (28f1e33)
+- **e2e:** copying species 0 refreshes an age-based destination cell (76b7f68)
+- **e2e:** opening the Species tab must not impose a maturity age (a815346)
+
 ## [1.10.0] - 2026-11-12
 
 ### Bug Fixes
