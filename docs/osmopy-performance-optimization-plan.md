@@ -285,6 +285,15 @@ Baltic runs `mortality.subdt = 10`.
 
 ### Item 4 — The serial tail
 
+**Status: PARTLY DONE 2026-11-14 — nothing ships** (`docs/perf/2026-11-14-baltic-serial-tail.md`).
+- **The tail, named:** a one-thread cProfile names the remainder. It is mostly functions outside
+  the profiler's phase list, not interpreter overhead. All output collection together is 5.1% of a
+  one-thread run, and no single tail function is over 1.8%.
+- **The one sizeable bit-exact edit:** `_collect_by_life_stage` with `np.bincount` (branch
+  `perf/life-stage-bincount`). It saves 0.39 s per 10-yr run, measured in-process on identical
+  states. It misses the 2%-in-every-pair bar: −0.6% and −3.8% at 14 threads, −3.9% and −1.0% at one.
+- **Left:** an opt-in mode that skips output collectors a calibration objective does not read.
+
 **Goal.** Reduce state initialisation, loop overhead and output collection, which together
 are about 14% of a threaded Baltic run (10.5% loop overhead plus 4.0%
 `_collect_by_life_stage`, measured).
