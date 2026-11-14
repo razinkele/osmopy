@@ -1,5 +1,9 @@
 # Baltic B2 re-run on v1.10.0: RCP × load scenarios, 2026-11-12
 
+> **Superseded 2026-11-14** by `docs/baltic_b2_scenarios_2026-11-14.md` (v1.10.1, sprat matures by
+> age). Herring's warming decline is −51% / −72% there, within 1.3 points of the figures below; the
+> demersal load contrast holds.
+
 This re-runs `docs/baltic_b2_scenarios_2026-11-11.md` (v1.9.0) on **v1.10.0** (`05b517f3`), whose
 #250 recalibrated herring:
 - maturity 14.5 cm;
