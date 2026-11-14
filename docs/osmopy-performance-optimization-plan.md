@@ -237,6 +237,8 @@ the docstring. If not, record the negative in `docs/perf/` and leave the code al
 
 ### Item 2 — Diagnose Baltic movement
 
+**Status: DONE 2026-11-14 — no code change** (`docs/perf/2026-11-14-baltic-movement-diagnosis.md`): 92% of movement time is the serial seeded Numba kernel (0.94 s of 1.02 s in a warm 5-yr Baltic run); the Python side is 1.8% of the run, below the 2% bar. Parallelising the kernel is a statistically-equivalent change (it needs independent per-school streams).
+
 **Goal.** Explain the 3.8 s that movement costs in a 10-yr Baltic run, and remove whatever
 part of it is Python-side.
 
