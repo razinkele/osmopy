@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import subprocess
 import sys
 import time
@@ -47,9 +48,18 @@ def apply_double(worktree: Path, passes: int = 2, test_only: bool = False) -> No
     worktree = worktree.resolve()
     if worktree == ROOT:
         raise SystemExit(f"refusing to edit this repository's own checkout: {worktree}")
+    # Inherited GIT_DIR / GIT_WORK_TREE (e.g. from a git hook) would point both checks at another
+    # checkout while the edit below still lands in `worktree`; drop them so `-C` decides.
+    git_env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")
+    }
     on_branch = (
         subprocess.run(
-            ["git", "-C", str(worktree), "symbolic-ref", "-q", "HEAD"], capture_output=True
+            ["git", "-C", str(worktree), "symbolic-ref", "-q", "HEAD"],
+            capture_output=True,
+            env=git_env,
         ).returncode
         == 0
     )
@@ -63,6 +73,7 @@ def apply_double(worktree: Path, passes: int = 2, test_only: bool = False) -> No
         capture_output=True,
         text=True,
         check=True,
+        env=git_env,
     ).stdout
     if dirty.strip():
         raise SystemExit(f"refusing: {worktree} has uncommitted changes")

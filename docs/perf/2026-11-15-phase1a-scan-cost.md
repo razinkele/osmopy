@@ -68,8 +68,10 @@ The in-situ repeats are the measurement to use.
 
 ## What it means for item 6
 
-**Ceilings.** Removing Phase 1a entirely would save about 20% of a one-thread run. A prefilter can
-remove at most the rejected pairs' testing, about 11–13%.
+**Ceilings, as estimates.** Both rest on a repeated pass costing what the original pass costs; the
+linearity check above supports that.
+- **Removing Phase 1a entirely** would save about 20% of a one-thread run.
+- **A prefilter** can remove at most the rejected pairs' testing, about 11–13%.
 
 **A length prefilter is the obvious candidate.** Length is fixed during the mortality step, so a
 per-cell index sorted by length could be built once per cell per step. To stay

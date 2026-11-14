@@ -304,8 +304,12 @@ Baltic runs `mortality.subdt = 10`.
   `perf/life-stage-bincount`). It saves 0.40 s per 10-yr run, measured in-process on identical
   states. It misses the 2%-in-every-pair bar: −0.6% and −3.8% at 14 threads, −3.9% and −1.0% at one.
 - **Found on the way:** the by-stage outputs had no end-to-end regression coverage. With them
-  doubled, `test_engine_parity.py` still passes. Closed by #264:
-  `tests/test_engine_output_parity.py` compares every output the core baseline omits.
+  doubled, `test_engine_parity.py` still passes.
+  - **Closed by #264:** `tests/test_engine_output_parity.py` compares every output the BoB and EEC
+    baseline configs produce beyond the core three. It does not cover SSB, carbon flux or
+    bioenergetics, which neither config enables.
+  - **Local-only, like the core suite:** it compares exactly on CPython 3.12 and skips those
+    comparisons on CI.
 - **Left:** an opt-in mode that skips output collectors a calibration objective does not read.
 
 **Goal.** Reduce state initialisation, loop overhead and output collection, which together
