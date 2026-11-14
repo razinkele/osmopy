@@ -4,9 +4,10 @@
  "subdt": 10,
  "year1": {
   "window": "year 1",
-  "steps": 22,
-  "schools_per_step_mean": 2074,
-  "occupied_cells_mean": 443,
+  "steps": 24,
+  "steps_with_schools": 22,
+  "schools_per_step_mean": 1901,
+  "occupied_cells_mean": 406,
   "schools_per_cell_mean": 6.0,
   "schools_per_cell_median": 4.0,
   "schools_per_cell_max": 390,
@@ -20,11 +21,12 @@
    "51_100": 0.017,
    "gt100": 0.718
   },
-  "cells_over_100_per_step_mean": 0.5
+  "cells_over_100_per_step_mean": 0.4
  },
  "final5": {
   "window": "years 6-10",
   "steps": 120,
+  "steps_with_schools": 120,
   "schools_per_step_mean": 17730,
   "occupied_cells_mean": 608,
   "schools_per_cell_mean": 29.1,
@@ -44,9 +46,10 @@
  },
  "all": {
   "window": "years 1-10",
-  "steps": 238,
-  "schools_per_step_mean": 12709,
-  "occupied_cells_mean": 592,
+  "steps": 240,
+  "steps_with_schools": 238,
+  "schools_per_step_mean": 12603,
+  "occupied_cells_mean": 587,
   "schools_per_cell_mean": 21.1,
   "schools_per_cell_median": 21.0,
   "schools_per_cell_max": 390,

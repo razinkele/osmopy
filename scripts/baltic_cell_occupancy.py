@@ -35,6 +35,21 @@ def _observer(rows: list[dict]):
         live = (state.abundance > 0) & ~state.is_out & (state.length > 0)
         idx = np.where(live)[0]
         if idx.size == 0:
+            # Counts are zero; schools-per-cell statistics are undefined and kept out of them.
+            rows.append(
+                {
+                    "step": step,
+                    "schools": 0,
+                    "cells": 0,
+                    "mean": None,
+                    "median": None,
+                    "max": 0,
+                    "scanned": 0,
+                    "eligible": 0,
+                    "bins": {k: 0 for k, _, _ in BINS},
+                    "n_over_100": 0,
+                }
+            )
             return
         cell = state.cell_y[idx].astype(np.int64) * grid.nx + state.cell_x[idx]
         order = np.argsort(cell, kind="stable")
@@ -74,13 +89,16 @@ def _observer(rows: list[dict]):
 def summarize(rows: list[dict], label: str, subdt: int) -> dict:
     scanned = sum(r["scanned"] for r in rows)
     eligible = sum(r["eligible"] for r in rows)
+    occupied = [r for r in rows if r["mean"] is not None]
     return {
         "window": label,
         "steps": len(rows),
+        "steps_with_schools": len(occupied),
         "schools_per_step_mean": round(float(np.mean([r["schools"] for r in rows]))),
         "occupied_cells_mean": round(float(np.mean([r["cells"] for r in rows]))),
-        "schools_per_cell_mean": round(float(np.mean([r["mean"] for r in rows])), 1),
-        "schools_per_cell_median": float(np.median([r["median"] for r in rows])),
+        # Per-cell statistics over the steps that hold at least one school.
+        "schools_per_cell_mean": round(float(np.mean([r["mean"] for r in occupied])), 1),
+        "schools_per_cell_median": float(np.median([r["median"] for r in occupied])),
         "schools_per_cell_max": int(max(r["max"] for r in rows)),
         "pairs_scanned": scanned,
         "pairs_eligible": eligible,

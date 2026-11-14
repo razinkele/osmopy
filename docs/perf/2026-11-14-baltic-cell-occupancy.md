@@ -35,16 +35,20 @@ length:
 These are the quantities of the September table. September's probe was not committed, so its code
 cannot be diffed against this one.
 
-**How windows are summarised.** The mean is a mean of per-step means, the median a median of
-per-step medians, and the maximum the largest cell seen. The observer skips steps with no live
-in-domain school: two in year 1, so 22 of 24 steps there and 238 of 240 over the run. The
-late-run window, years 6–10, is the one comparable with "EEC 5 yr", since both are past the
-first-year seeding transient.
+**How windows are summarised.**
+- **Schools-per-cell figures:** the mean is a mean of per-step means, the median a median of
+  per-step medians, and the maximum the largest cell seen.
+- **Empty steps:** two steps in year 1 hold no live in-domain school. They count as zero in the
+  per-step counts (schools, occupied cells, pairs). They are left out of the schools-per-cell
+  statistics, which are undefined there: those use 22 of 24 steps in year 1 and 238 of 240 over the
+  run.
+- **Which Baltic window to compare:** years 6–10 is the one comparable with "EEC 5 yr", since both
+  are past the first-year seeding transient.
 
 | | Baltic yr 1 | Baltic yrs 6–10 | Baltic yrs 1–10 | EEC 1 yr | EEC 5 yr | BoB 1 yr |
 |---|---:|---:|---:|---:|---:|---:|
-| live schools per step | 2,074 | 17,730 | 12,709 | | | |
-| occupied cells per step | 443 | 608 | 592 | | | |
+| live schools per step | 1,901 | 17,730 | 12,603 | | | |
+| occupied cells per step | 406 | 608 | 587 | | | |
 | schools/cell, mean | 6.0 | **29.1** | 21.1 | 6.8 | 19.0 | 13.8 |
 | schools/cell, median | 4 | **26** | 21 | 5 | 15 | 6 |
 | schools/cell, max | 390 | 390 | 390 | 36 | 101 | 271 |
