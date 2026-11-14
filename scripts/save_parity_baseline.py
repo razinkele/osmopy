@@ -8,11 +8,15 @@ to verify that optimizations produce identical outputs.
 Usage:
     .venv/bin/python scripts/save_parity_baseline.py [--config bob|eec] [--years N] [--seed S]
     .venv/bin/python scripts/save_parity_baseline.py --statistical [--years N] [--seeds N]
+    .venv/bin/python scripts/save_parity_baseline.py --outputs [--config bob|eec]
 
 Output:
     tests/baselines/parity_baseline_bob_<years>yr_seed<seed>.npz
     tests/baselines/parity_baseline_eec_<years>yr_seed<seed>.npz
     tests/baselines/statistical_baseline_bob_<years>yr_<n>seeds.npz
+    tests/baselines/parity_outputs_{bob,eec}_<years>yr_seed<seed>.npz (--outputs: every per-step
+        output the core baseline omits -- by-stage counts and rates, yield, distributions, mean
+        TL, mean size, SSB; tests/test_engine_output_parity.py)
 """
 
 from __future__ import annotations
@@ -35,8 +39,8 @@ _CONFIG_META = {
 }
 
 
-def save_baseline(n_years: int, seed: int, config: str = "bob") -> Path:
-    """Run engine and save outputs as baseline .npz file.
+def run_outputs(n_years: int, seed: int, config: str = "bob"):
+    """Run the engine on a named config; return ``(step_outputs, engine_config)``.
 
     Args:
         n_years: Number of simulation years.
@@ -51,7 +55,7 @@ def save_baseline(n_years: int, seed: int, config: str = "bob") -> Path:
     if config not in _CONFIG_META:
         raise ValueError(f"Unknown config {config!r}; choose from {list(_CONFIG_META)}")
 
-    config_path, base_dir, name_prefix = _CONFIG_META[config]
+    config_path, base_dir, _ = _CONFIG_META[config]
 
     reader = OsmoseConfigReader()
     raw = reader.read(config_path)
@@ -71,9 +75,76 @@ def save_baseline(n_years: int, seed: int, config: str = "bob") -> Path:
         grid = Grid.from_dimensions(ny=ny, nx=nx)
 
     rng = np.random.default_rng(seed)
+    return simulate(cfg, grid, rng), cfg
+
+
+# Fields the original parity baseline already covers; the outputs baseline holds the rest.
+_CORE_FIELDS = ("step", "biomass", "abundance", "mortality_by_cause")
+
+
+def flatten_outputs(outputs) -> dict[str, np.ndarray]:
+    """Every per-step output field not in the core baseline, as ``name -> (n_steps, ...)`` arrays.
+
+    Array fields are stacked over steps. Per-species dict fields (distributions, mean TL, mean
+    size) become one array per species, ``"<field>__sp<k>"``; a step on which the species is
+    absent from the dict (e.g. mean TL of a species with no biomass) is filled with NaN, so a
+    change in WHICH steps carry it is a mismatch too. Fields that are None on every step are
+    omitted, so a field that stops being produced shows up as a missing key.
+    """
+    import dataclasses
+
+    flat: dict[str, np.ndarray] = {}
+    for field in dataclasses.fields(outputs[0]):
+        name = field.name
+        if name in _CORE_FIELDS:
+            continue
+        values = [getattr(out, name) for out in outputs]
+        if all(v is None for v in values):
+            continue
+        if any(v is None for v in values):
+            raise ValueError(f"{name} is None on some steps only")
+        if isinstance(values[0], dict):
+            keys = sorted(set().union(*(v.keys() for v in values)))
+            for k in keys:
+                present = [np.asarray(v[k], dtype=np.float64) for v in values if k in v]
+                gap = np.full_like(present[0], np.nan)
+                flat[f"{name}__sp{k}"] = np.stack(
+                    [np.asarray(v[k], dtype=np.float64) if k in v else gap for v in values]
+                )
+        else:
+            flat[name] = np.stack([np.asarray(v, dtype=np.float64) for v in values])
+    return flat
+
+
+def save_outputs_baseline(n_years: int, seed: int, config: str = "bob") -> Path:
+    """Run engine and save every non-core per-step output as a baseline .npz file."""
+    _, _, name_prefix = _CONFIG_META[config]
+    print(f"Running engine ({config}): {n_years}yr, seed={seed}...")
+    outputs, _ = run_outputs(n_years, seed, config)
+    flat = flatten_outputs(outputs)
+    BASELINE_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = BASELINE_DIR / f"parity_outputs_{name_prefix}_{n_years}yr_seed{seed}.npz"
+    # numpy's stub types **kwds as the allow_pickle flag; any array keyword is valid at runtime.
+    np.savez_compressed(out_path, **flat)  # type: ignore[arg-type]
+    print(f"Outputs baseline saved: {out_path}")
+    print(f"  Fields: {len(flat)}, File size: {out_path.stat().st_size / 1024:.1f} KB")
+    return out_path
+
+
+def save_baseline(n_years: int, seed: int, config: str = "bob") -> Path:
+    """Run engine and save outputs as baseline .npz file.
+
+    Args:
+        n_years: Number of simulation years.
+        seed: RNG seed.
+        config: Which config to run — "bob" (Bay of Biscay) or "eec" (Eastern English Channel).
+    """
+    if config not in _CONFIG_META:
+        raise ValueError(f"Unknown config {config!r}; choose from {list(_CONFIG_META)}")
+    _, _, name_prefix = _CONFIG_META[config]
 
     print(f"Running engine ({config}): {n_years}yr, seed={seed}...")
-    outputs = simulate(cfg, grid, rng)
+    outputs, cfg = run_outputs(n_years, seed, config)
 
     n_steps = len(outputs)
     n_species = len(outputs[0].biomass)
@@ -183,6 +254,11 @@ def main() -> None:
         "--statistical", action="store_true", help="Save multi-seed statistical baseline"
     )
     parser.add_argument(
+        "--outputs",
+        action="store_true",
+        help="Save the outputs baseline: every per-step output the core baseline omits",
+    )
+    parser.add_argument(
         "--seeds", type=int, default=10, help="Number of seeds for statistical baseline"
     )
     args = parser.parse_args()
@@ -194,6 +270,8 @@ def main() -> None:
 
     if args.statistical:
         save_statistical_baseline(args.years, args.seeds)
+    elif args.outputs:
+        save_outputs_baseline(args.years, args.seed, config=args.config)
     else:
         save_baseline(args.years, args.seed, config=args.config)
 

@@ -142,6 +142,8 @@ tests/baselines/*.json
 !tests/baselines/benchmark_pre_tier1.json
 !tests/baselines/parity_baseline_bob_1yr_seed42.npz
 !tests/baselines/parity_baseline_eec_1yr_seed42.npz
+!tests/baselines/parity_outputs_bob_1yr_seed42.npz
+!tests/baselines/parity_outputs_eec_1yr_seed42.npz
 !tests/baselines/statistical_baseline_bob_1yr_10seeds.npz
 # Tiny gate series CSVs generated alongside reproduction_reference_seed3.npz
 # (RV / thermal / recruitment-ceiling inputs; regenerated with the reference).
