@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import multiprocessing as mp
@@ -35,6 +36,7 @@ from scipy.optimize import differential_evolution
 
 from osmose.calibration.checkpoint import RESULTS_DIR  # honors OSMOSE_RESULTS_DIR
 from osmose.calibration.losses import STABILITY_TYPES, quantity_key
+from osmose.engine.thread_policy import worker_threads_for_fork
 
 # ---------------------------------------------------------------------------
 # Project paths
@@ -217,6 +219,7 @@ def isolated_eval_map(
                 conns[i].close()
         return results
 
+    _map.n_workers = n_workers  # type: ignore[attr-defined]  # read by the DE thread policy
     return _map
 
 
@@ -1134,21 +1137,28 @@ def _dispatch_optimizer(
     and surrogate-DE have separate iteration models and ignore it.
     """
     if optimizer == "de":
-        result = differential_evolution(
-            objective,
-            bounds,
-            maxiter=maxiter,
-            init=init_pop,
-            seed=seed,
-            tol=tol,
-            mutation=(0.5, 1.5),
-            recombination=0.8,
-            disp=True,
-            polish=False,  # L-BFGS-B unreliable on noisy landscape
-            workers=workers,
-            updating="deferred",  # required when workers > 1
-            callback=de_callback,
-        )
+        # scipy's workers=W pool and the isolated-eval map both FORK from this thread, so the
+        # children inherit its Numba thread count: set it to the worker rule (max(1, physical
+        # cores // W)) for the duration. Unrestricted DE workers oversubscribe the cores
+        # (docs/perf/2026-11-14-worker-thread-sweep.md). The count is restored afterwards.
+        n_pool = workers if isinstance(workers, int) else getattr(workers, "n_workers", 1)
+        threads = worker_threads_for_fork(n_pool) if n_pool > 1 else contextlib.nullcontext()
+        with threads:
+            result = differential_evolution(
+                objective,
+                bounds,
+                maxiter=maxiter,
+                init=init_pop,
+                seed=seed,
+                tol=tol,
+                mutation=(0.5, 1.5),
+                recombination=0.8,
+                disp=True,
+                polish=False,  # L-BFGS-B unreliable on noisy landscape
+                workers=workers,
+                updating="deferred",  # required when workers > 1
+                callback=de_callback,
+            )
         return {
             "x": np.asarray(result.x, dtype=float),
             "fun": float(result.fun),

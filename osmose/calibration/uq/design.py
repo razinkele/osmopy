@@ -26,6 +26,7 @@ from scipy.stats.qmc import LatinHypercube
 from osmose.calibration.problem import FreeParameter, Transform
 from osmose.calibration.uq.gate import GateReport, evaluate_emulator_calibration
 from osmose.calibration.uq.output_stats import compute_uq_stats
+from osmose.engine.thread_policy import apply_worker_threads
 
 
 def point_to_overrides(x: np.ndarray, free_params: list[FreeParameter]) -> dict[str, str]:
@@ -154,9 +155,15 @@ def run_design(
 _WORKER_EVALUATOR: Evaluator | None = None
 
 
-def _worker_init(factory: Callable[[], Evaluator]) -> None:
-    """ProcessPoolExecutor initializer: build the (serial) evaluator once per worker."""
+def _worker_init(factory: Callable[[], Evaluator], n_workers: int = 1) -> None:
+    """ProcessPoolExecutor initializer: set this worker's threads, then build the evaluator.
+
+    Each of the pool's W workers runs max(1, physical cores // W) Numba threads
+    (``osmose.engine.thread_policy``), so the pool no longer depends on the launch
+    environment pinning NUMBA_NUM_THREADS.
+    """
     global _WORKER_EVALUATOR
+    apply_worker_threads(n_workers)
     _WORKER_EVALUATOR = factory()
 
 
@@ -195,7 +202,7 @@ class _ParallelEngineEvaluator:
                 max_workers=self._n_workers,
                 mp_context=get_context("spawn"),
                 initializer=_worker_init,
-                initargs=(self._factory,),
+                initargs=(self._factory, self._n_workers),
             )
         return self._pool
 

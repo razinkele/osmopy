@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -236,8 +237,10 @@ def test_cap_is_thread_local_same_process(restore_numba_threads):
 @pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores to observe a cap")
 def test_cap_does_not_leak_into_forkserver_worker(restore_numba_threads):
     """Regression guard: the single-run cap must stay a *thread-local runtime*
-    call (`numba.set_num_threads`), so calibration's forkserver workers keep the
-    unrestricted default. Note the cap cannot leak into a forkserver worker via
+    call (`numba.set_num_threads`), so it cannot leak into a forkserver worker. Workers
+    set their own count from the worker policy in their initializer
+    (`apply_worker_threads`, tested below); a bare worker with no initializer must still
+    see Numba's default. Note the cap cannot leak into a forkserver worker via
     the runtime path anyway — workers fork from the persistent server process, not
     the calling thread, and set_num_threads is thread-local (see the sibling
     thread-local test). So a RED here most likely means the cap was reintroduced
@@ -283,20 +286,133 @@ def test_cap_does_not_leak_into_forkserver_worker(restore_numba_threads):
     assert worker_threads == default, "single-run cap leaked into a forkserver worker"
 
 
-def test_worker_init_does_not_reset_numba_threads():
-    """Calibration's real worker initializer (osmose/calibration/problem.py::_worker_init)
-    must NOT set a Numba thread count — the single-run cap must never be reintroduced
-    there. Static guard so this invariant survives future edits to _worker_init.
+# -- Worker-pool thread policy (perf plan item 1; docs/perf/2026-11-14-worker-thread-sweep.md) --
+#
+# Measured on the 14-physical-core box: 8 workers at Numba's unrestricted default gave 124 evals/h;
+# 14 workers at 1 thread each gave 492 evals/h (3.96x, interleaved repeats). Unrestricted workers
+# oversubscribe the cores (8 x 28 threads). Pools now apply the split rule in their initializers.
 
-    (The thread-ISOLATION guarantee itself comes from the forkserver boundary + Numba's
-    thread-locality, exercised by the two tests above. Reconstructing a full
-    OsmoseCalibrationProblem via _worker_init here — it takes an _EvalSpec and rebuilds
-    the whole problem — would add heavy, fragile calibration coupling for no extra thread
-    coverage, since _worker_init is thread-agnostic; this static guard is the proportionate
-    check that it cannot reintroduce a cap.)"""
+
+def test_worker_thread_count_is_the_split_rule(monkeypatch):
+    monkeypatch.delenv(tp.WORKER_THREADS_ENV, raising=False)
+    monkeypatch.setattr(tp, "physical_budget", lambda: 14)
+    assert [tp.worker_thread_count(w) for w in (1, 4, 8, 12, 14, 16)] == [14, 3, 1, 1, 1, 1]
+    assert tp.worker_thread_count(0) == 14  # a nonsense worker count is treated as one worker
+
+
+def test_worker_thread_count_env_override(monkeypatch, caplog):
+    monkeypatch.setattr(tp, "physical_budget", lambda: 14)
+    monkeypatch.setenv(tp.WORKER_THREADS_ENV, "2")
+    assert tp.worker_thread_count(14) == 2
+    monkeypatch.setenv(tp.WORKER_THREADS_ENV, "unrestricted")
+    assert (
+        tp.worker_thread_count(14) is None
+    )  # leave Numba's default (the pre-2026-11-14 behaviour)
+    monkeypatch.setenv(tp.WORKER_THREADS_ENV, "lots")
+    assert tp.worker_thread_count(4) == 3  # unparseable: warn and use the split rule
+    assert "OSMOSE_WORKER_THREADS" in caplog.text
+
+
+@pytest.mark.skipif((os.cpu_count() or 1) < 4, reason="needs >=4 cores to observe the split rule")
+def test_forkserver_worker_applies_the_worker_policy(restore_numba_threads, monkeypatch):
+    """A pool whose initializer is apply_worker_threads(W) runs its workers at the split rule."""
+    import multiprocessing
+    import multiprocessing.forkserver
+    from concurrent.futures import ProcessPoolExecutor
+
+    numba = pytest.importorskip("numba")
+    monkeypatch.delenv(tp.WORKER_THREADS_ENV, raising=False)
+    expected = min(tp.worker_thread_count(2), numba.config.NUMBA_NUM_THREADS)
+    if expected == numba.config.NUMBA_NUM_THREADS:
+        pytest.skip("the split rule equals the Numba default here; cannot distinguish")
+
+    from tests.helpers import numba_thread_count
+
+    multiprocessing.forkserver._forkserver._stop()  # fresh server from the current env
+    ctx = multiprocessing.get_context("forkserver")
+    with ProcessPoolExecutor(
+        max_workers=1, mp_context=ctx, initializer=tp.apply_worker_threads, initargs=(2,)
+    ) as ex:
+        assert ex.submit(numba_thread_count, None).result(timeout=120) == expected
+
+
+def test_worker_threads_for_fork_sets_then_restores(restore_numba_threads, monkeypatch):
+    """Fork-started workers inherit the forking thread's Numba count, so the context manager sets
+    it to the worker rule for the duration of the fork and restores it afterwards."""
+    numba = pytest.importorskip("numba")
+    monkeypatch.delenv(tp.WORKER_THREADS_ENV, raising=False)
+    monkeypatch.setattr(tp, "physical_budget", lambda: 4)
+    before = numba.get_num_threads()
+    if before < 2:
+        pytest.skip("default thread count is 1; cannot distinguish")
+    with tp.worker_threads_for_fork(4) as n:
+        assert n == 1 and numba.get_num_threads() == 1
+    assert numba.get_num_threads() == before
+
+
+def test_pool_initializers_apply_the_worker_policy():
+    """Both engine pools apply the rule in their worker initializer (static guard: rebuilding a
+    full OsmoseCalibrationProblem in a worker here would add heavy coupling for no extra
+    coverage; the forkserver test above exercises apply_worker_threads itself)."""
     import inspect
 
     from osmose.calibration import problem
+    from osmose.calibration.uq import design
 
-    src = inspect.getsource(problem._worker_init)
-    assert "set_num_threads" not in src, "_worker_init must not touch the Numba thread count"
+    assert "apply_worker_threads(spec.n_workers)" in inspect.getsource(problem._worker_init)
+    assert "apply_worker_threads(n_workers)" in inspect.getsource(design._worker_init)
+    de_script = (
+        Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"
+    ).read_text()
+    assert "worker_threads_for_fork(n_pool)" in de_script, (
+        "calibrate_baltic's DE path lost its policy"
+    )
+
+
+def test_calibration_spec_carries_the_resolved_worker_count(monkeypatch, tmp_path):
+    from osmose.calibration import FreeParameter, Transform
+    from osmose.calibration.problem import OsmoseCalibrationProblem
+
+    def make():
+        return OsmoseCalibrationProblem(
+            free_params=[FreeParameter("species.k.sp0", 0.1, 0.5, Transform.LINEAR)],
+            objective_fns=[lambda r: 0.0],
+            base_config_path=tmp_path / "unused.csv",
+            work_dir=tmp_path,
+            n_parallel=6,
+            parallel_backend="process",
+        )
+
+    monkeypatch.delenv("OSMOSE_NSGA2_WORKERS", raising=False)
+    assert make()._eval_spec().n_workers == 6
+    monkeypatch.setenv("OSMOSE_NSGA2_WORKERS", "3")
+    assert make()._eval_spec().n_workers == 3
+
+
+@pytest.mark.skipif((os.cpu_count() or 1) < 4, reason="needs >=4 cores to observe the split rule")
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
+def test_fork_pool_created_inside_the_context_runs_at_the_worker_rule(
+    restore_numba_threads, monkeypatch
+):
+    """What calibrate_baltic's DE path relies on: scipy's workers=W pool forks inside
+    worker_threads_for_fork(W), and the forked children inherit the rule."""
+    import multiprocessing
+
+    numba = pytest.importorskip("numba")
+    monkeypatch.delenv(tp.WORKER_THREADS_ENV, raising=False)
+    expected = min(tp.worker_thread_count(2), numba.config.NUMBA_NUM_THREADS)
+    if expected == numba.get_num_threads():
+        pytest.skip("the split rule equals the current count here; cannot distinguish")
+
+    from tests.helpers import numba_thread_count
+
+    with tp.worker_threads_for_fork(2), multiprocessing.get_context("fork").Pool(2) as pool:
+        seen = pool.map(numba_thread_count, range(2))
+    assert seen == [expected, expected]
+
+
+def test_isolated_eval_map_exposes_its_worker_count():
+    """calibrate_baltic's DE path reads n_workers off the isolated-eval map to size the rule."""
+    from scripts.calibrate_baltic import isolated_eval_map
+
+    assert isolated_eval_map(timeout_s=10.0, n_workers=3).n_workers == 3

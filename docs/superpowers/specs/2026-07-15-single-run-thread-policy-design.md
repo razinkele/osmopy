@@ -1,5 +1,11 @@
 # Single-run Numba thread policy — design
 
+> **Calibration-worker part superseded 2026-11-14** by `docs/perf/2026-11-14-worker-thread-sweep.md`:
+> process-pool workers left at Numba's unrestricted default oversubscribe the cores (8 workers: 124
+> evals/h vs 492/h for 14 workers × 1 thread), so the pools now apply `max(1, physical // W)` threads
+> per worker. The single-run policy below is unchanged.
+
+
 **Date:** 2026-07-15
 **Status:** Draft (brainstorming → spec)
 **Branch:** `perf/single-run-thread-policy`

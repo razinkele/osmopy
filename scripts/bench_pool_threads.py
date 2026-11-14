@@ -2,7 +2,9 @@
 """Worker x threads-per-worker sweep for the calibration process pool (perf plan item 1).
 
 Each cell runs in its own process with NUMBA_NUM_THREADS / OMP_NUM_THREADS / MKL_NUM_THREADS /
-OPENBLAS_NUM_THREADS set to T (or all unset for "unr", Numba's unrestricted default), builds an
+OPENBLAS_NUM_THREADS and OSMOSE_WORKER_THREADS set to T. "unr" sets OSMOSE_WORKER_THREADS=unrestricted
+(Numba's default, the pre-2026-11-14 behaviour); "policy" sets nothing, so the pools apply their own
+split rule (osmose.engine.thread_policy). The cell builds an
 ``OsmoseCalibrationProblem`` with ``parallel_backend="process"`` and ``n_parallel=W`` on the
 production Baltic config (its default horizon), discards one warm-up round of W evaluations, then
 times R rounds of W evaluations in one batch on the same pool. W=1 evaluates serially in the cell
@@ -31,6 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BALTIC_CONFIG = ROOT / "data" / "baltic" / "baltic_all-parameters.csv"
 THREAD_VARS = ("NUMBA_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
+WORKER_THREADS_ENV = "OSMOSE_WORKER_THREADS"  # osmose.engine.thread_policy override
 WORKERS = (1, 4, 8, 12, 14, 16)
 THREADS = ("1", "2", "unr")
 SPLIT_EXTRA = ((1, "14"), (4, "3"))  # T = max(1, 14 // W) where it is not already in the grid
@@ -147,10 +150,14 @@ def run_cell(workers: int, rounds: int) -> dict:
 def launch(workers: int, threads: str, rounds: int) -> dict:
     """Run one cell in a fresh process with the thread env vars set (or unset for 'unr')."""
     env = dict(os.environ)
-    for v in THREAD_VARS:
+    for v in (*THREAD_VARS, WORKER_THREADS_ENV):
         env.pop(v, None)
-        if threads != "unr":
+    if threads == "unr":
+        env[WORKER_THREADS_ENV] = "unrestricted"  # pools would otherwise apply their own rule
+    elif threads != "policy":  # "policy": nothing set, the pools' built-in rule decides
+        for v in THREAD_VARS:
             env[v] = threads
+        env[WORKER_THREADS_ENV] = threads
     cmd = [
         sys.executable,
         str(Path(__file__).resolve()),

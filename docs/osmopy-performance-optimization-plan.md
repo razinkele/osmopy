@@ -161,7 +161,7 @@ Status values: **done** / **rejected** (tried or argued, with the record) / **co
 | §7 WP3.1 objective-only run mode | done | `PythonEngine.run_in_memory`, `osmose/engine/__init__.py:123` |
 | §7 WP3.2 process pool | done for calibration and UQ | forkserver `osmose/calibration/problem.py:354-357`; spawn `osmose/calibration/uq/design.py:194-196` |
 | §7 WP3.2 ensemble runs | open | `PythonEngine.run_ensemble` (`__init__.py:157`) is a serial loop with one `output_dir`; no callers found |
-| §7 WP3.3 one thread per worker | open; reverses a decision | item 1 |
+| §7 WP3.3 one thread per worker | **done 2026-11-14** (split rule adopted, 3.96×) | item 1; `docs/perf/2026-11-14-worker-thread-sweep.md` |
 | §7 WP3.4 shared worker initialisation | partly done; not a lever | built once per worker; config re-read per evaluation at `problem.py:445`; setup is 0.25 s of a 15–33 s run |
 | §7 WP3.5 seed hierarchy | open at task level; conflict inside the engine | item 5 and section 7 |
 | §8 Phase 4 hybrid stochastic sampling | wrong assumption | no binomial death sampling exists; appendix |
@@ -193,6 +193,8 @@ treatment lives in a worktree, run with `PYTHONPATH=.` from the worktree (CLAUDE
 worktree import note) and confirm the imported `osmose.__file__`.
 
 ### Item 1 — Worker × thread sweep for the process pools
+
+**Status: DONE 2026-11-14 — pinned split rule adopted** (`docs/perf/2026-11-14-worker-thread-sweep.md`): 14 workers × 1 thread give 492 evals/h against 124/h for 8 unrestricted workers (3.96×); the calibration and UQ pools and `calibrate_baltic.py`'s DE path now apply `max(1, physical // W)` threads per worker.
 
 **Goal.** Find the worker count and threads-per-worker that maximise evaluations per hour
 for calibration and UQ on this box, then make the pools apply it themselves.
