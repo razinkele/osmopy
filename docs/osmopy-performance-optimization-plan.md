@@ -1,1164 +1,429 @@
-# Osmopy Performance Optimization Implementation Plan
+# Osmopy Performance Optimization Plan
+
+Revised 2026-11-14 after review (docs/perf/2026-11-14-performance-plan-review.md); original draft in git history (0119c53e).
+
+Every number below is labelled **measured** (with its source) or **inferred**. File:line
+citations are against master on 2026-11-14 and will drift; re-check them with `grep -n`
+before relying on one.
+
+---
 
 ## 1. Objective
 
 Improve Osmopy performance without compromising:
 
-- compatibility with the Java-compatible reference engine;
-- reproducibility of stochastic simulations;
-- biomass and abundance conservation;
-- ecological validity;
-- existing calibration and sensitivity workflows.
+- **Python fixed-seed reproducibility.** The same config and seed give bit-equal output
+  across runs of the Python engine. The committed baselines in `tests/test_engine_parity.py`
+  are compared at `atol=0`.
+- **Java agreement "within 1 OoM" per species.** This is a statistical contract, not a
+  bit-exact one (NumPy PCG64 vs Java MT19937). It holds for 14/14 EEC species and 7/8 Bay
+  of Biscay. A performance change must not move it, and cannot be validated by it alone.
+- ecological validity of the outputs;
+- existing calibration, sensitivity and UQ workflows.
 
-### Target outcomes
-
-| Outcome | Target |
-|---|---:|
-| Single-simulation speedup | **2–5×** |
-| Ensemble speedup on 16 physical cores | **8–12× wall-clock** |
-| Reduction in full calibration evaluations | **5–20×** |
-| Deterministic biomass residual | Below **$10^{-10}$** relative per process where conservation is expected |
-| Fixed-seed regression error | Zero where event order is unchanged; otherwise within documented tolerance |
-| Statistical parity | No material change in ensemble means, variances, quantiles or collapse probabilities |
-
-The work should preserve the current implementation as a reference path:
-
-```python
-engine = PythonEngine(
-    numerics_mode="legacy",
-    performance_profile="reference",
-)
-```
-
-Optimizations should initially be opt-in:
-
-```python
-engine = PythonEngine(
-    numerics_mode="legacy",
-    performance_profile="optimized",
-)
-```
+The original draft listed "compatibility with the Java-compatible reference engine" as one
+objective. That conflated the two contracts above; they are checked by different tests and
+have different tolerances.
 
 ---
 
-# 2. Guiding principles
+## 2. Guiding principles
 
-## 2.1 Optimize algorithms before changing technology
+### 2.1 Optimize algorithms before changing technology
 
-Priority order:
+Reduce work first, then parallelise independent work, then reduce the number of simulations
+a calibration needs. Do not move the current algorithm to another technology (native
+extension, GPU) before the first three are exhausted and measured.
 
-1. Reduce unnecessary predator–prey comparisons.
-2. Improve state layout and memory access.
-3. Fuse repeated loops.
-4. Parallelize independent simulations.
-5. Reduce the number of simulations needed for calibration.
-6. Only then consider a JAX/GPU backend.
+### 2.2 Classify every change before starting it
 
-Moving an inefficient all-pairs algorithm to a GPU should not be the first intervention.
+| Class | Meaning | Gate |
+|---|---|---|
+| Performance-preserving | Reproduces the existing algorithm and the fixed-seed stream | `tests/test_engine_parity.py` at `atol=0`, unchanged baselines |
+| Statistically equivalent | Changes individual trajectories, keeps output distributions | Regenerated baselines plus a multi-seed comparison with tolerances fixed in advance |
+| Model-changing | Changes the numerical model | Separate scientific validation; never part of a performance release |
 
-## 2.2 Separate performance from numerical reformulation
+Only performance-preserving work belongs in a performance release. Section 6 lists changes
+that look performance-preserving in a generic engine and are not in this one.
 
-Changes should be classified as:
+### 2.3 Measure before and after, on this box, interleaved
 
-### Performance-preserving
-
-Expected to reproduce the existing algorithm:
-
-- cell/species sorting;
-- sparse candidate generation;
-- structure-of-arrays storage;
-- fused Numba kernels;
-- parallel ensemble execution;
-- output suppression.
-
-### Statistically equivalent
-
-May alter individual stochastic trajectories but should preserve output distributions:
-
-- normal or Poisson approximations;
-- reordered vectorized random draws;
-- batch processing;
-- alternative parallel random streams.
-
-### Model-changing
-
-Require separate scientific validation:
-
-- balanced predation allocation;
-- Strang splitting;
-- deterministic relaxation;
-- adaptive process scheduling;
-- differentiable approximations.
-
-Only performance-preserving work belongs in the first production release.
+- Profile with a warm Numba cache before proposing a change. A cold first run cost 45.96 s
+  against about 5.6 s warm on EEC 5 yr (measured 2026-09-12).
+- Compare control and treatment **interleaved** (A, B, A, B, ...), and report the **median
+  of N**, never the best of N. Master's own EEC runs spread 15% in September, and a
+  best-of-5 comparison produced a phantom 11.9% win in July
+  (`docs/diagnostics/2026-07-14-schoolstate-perf-negative.md`).
+- Confirm the changed code runs on the benchmark config. Two September items were inert
+  because the code path was gated off on the fixtures.
+- Run one engine job at a time (section 6).
 
 ---
 
-# 3. Delivery roadmap
+## 3. Targets
 
-| Phase | Duration | Principal result |
-|---|---:|---|
-| 0. Baseline and instrumentation | 1–2 weeks | Reproducible benchmark suite |
-| 1. Sparse predation search | 2–4 weeks | Fewer predator–prey candidate pairs |
-| 2. State and kernel optimization | 3–5 weeks | Contiguous arrays and fused kernels |
-| 3. Ensemble parallelism | 1–3 weeks | Multi-core calibration and ensembles |
-| 4. Hybrid stochastic sampling | 2–3 weeks | Cheaper mortality and recruitment draws |
-| 5. Calibration efficiency | 3–5 weeks | Fewer complete model evaluations |
-| 6. Optional JAX/GPU prototype | 6–12 weeks | Batched accelerator backend |
-| 7. Modern numerical methods | research branch | Improved splitting and predation mathematics |
+| Original target | Status | Replacement |
+|---|---|---|
+| Single simulation 2–5× faster | **Unsupported.** No evidence in the repo's history points to it. | No headline target. Each item in section 5 carries its own bound. |
+| Ensemble 8–12× on 16 physical cores | **Wrong hardware, undefined baseline.** The box has 14 physical cores (28 logical, 31 GB). | Measure a worker-scaling curve (item 1). Expect at most about 6× against threaded serial runs (inferred, below). |
+| 5–20× fewer calibration evaluations | **Cannot be judged.** The only optimizer comparison is on synthetic functions. | Produce one matched-budget comparison on a real objective (item 5), then set a target. |
+| Conservation residual below 1e-10 per process | **Undefined for this model.** | Death-accounting identity (below). |
+| Fixed-seed regression error zero where event order is unchanged | Kept. | `tests/test_engine_parity.py` at `atol=0`. |
 
-Phases 1–5 can partly overlap after Phase 0 establishes stable benchmarks.
+**Why 2–5× is unsupported.** Shipped history (all measured): −41% wall time on EEC from
+Python-side vectorisation (May, `docs/perf/2026-05-08-perf-arc-overview.md`); 1.5–2× from
+capping single runs at physical cores (July,
+`docs/perf/2026-07-15-mortality-thread-oversubscription.md`); about 1.7× on Baltic from the
+sub-one-fish floor (November). The September pass concluded there was no cheap win left in
+the mortality kernel (`docs/plans/2026-05-05-deep-review-remediation-plan.md`, "Exploring
+the algorithmic improvement"). On the 2026-11-14 Baltic profile (section 4.1), an infinitely
+fast mortality kernel gives about 2× at 14 threads; at one thread, 2× needs the kernel about
+2.8× faster (inferred from the shares by Amdahl).
+
+**Why the ensemble target needs a baseline.** A one-thread Baltic run took 2.2× as long as
+a 14-thread run (measured 2026-11-14, under load). So 14 workers pinned to one thread each
+are at best about 14 / 2.2 ≈ 6× faster than running the same simulations serially with
+threads (inferred). 8–12× is only reachable against a one-thread serial baseline. April
+data (older engine, thread count uncontrolled): 175 evals/h at 8 DE workers; the per-worker
+rate fell from 0.4 to about 0.35 evals/min at 16 workers and 0.13 at 24, attributed to
+memory bandwidth (`docs/claude-memory/feedback_de_workers_default.md`).
+
+**Why the conservation target is undefined.** With bioenergetics off, growth is
+length-based and gated by predation success (`osmose/engine/processes/growth.py:48-90`);
+eaten biomass does not become predator biomass. The sub-one-fish floor
+(`osmose/engine/simulate.py:1016`) and aging are deliberate sinks. There is no per-process
+biomass balance to hold to 1e-10.
+
+**Replacement: death accounting.** For every school and step, the abundance removed equals
+the sum of `n_dead` over causes, plus the abundance zeroed by the floor. This is checkable
+to floating-point accuracy and is what an optimisation of the mortality path can break.
+No such ledger exists today; add it as a test when item 6 is ever started, not before.
 
 ---
 
-# 4. Phase 0: baseline and instrumentation
+## 4. Current state
 
-## Goal
+### 4.1 Where the time goes (measured 2026-11-14)
 
-Determine where simulation time is actually spent and establish non-negotiable numerical baselines.
+`scripts/profile_engine.py --config baltic --years 10`, current master, Intel i9-10940X.
+Three sequential runs: warm-up, warm at the automatic thread count, then
+`NUMBA_NUM_THREADS=1`. **Another project's test suite was running (load 1.6 → 3.0), so read
+the shares, not the seconds.** The automatic thread count is 14 (`physical_budget()`,
+confirmed by a separate call; the profiler does not print it).
 
-## Tasks
+| Phase | 14 threads (15.1 s total) | 1 thread (33.4 s total) |
+|---|---|---|
+| `_mortality` | 7.65 s, 50.8% | 26.16 s, 78.4% |
+| `_movement` | 3.82 s, 25.4% | 3.74 s, 11.2% |
+| `_collect_by_life_stage` | 0.60 s, 4.0% | 0.58 s, 1.8% |
+| `_growth` | 0.39 s, 2.6% | 0.37 s, 1.1% |
+| `_collect_mortality` | 0.22 s, 1.4% | 0.21 s, 0.6% |
+| `_reproduction` | 0.18 s, 1.2% | 0.18 s, 0.5% |
+| state init + loop overhead | 1.58 s, 10.5% | 1.50 s, 4.5% |
+| engine setup (`_prepare_run`) | 0.25 s, 1.7% | 0.25 s, 0.8% |
+| `write_outputs()` | 0.07 s, 0.5% | 0.07 s, 0.2% |
 
-### 0.1 Create representative benchmark cases
+What this shows and does not show:
 
-Use four configurations:
+- Movement is serial and is a quarter of a threaded Baltic run. Earlier profiles did not
+  show this: they were on EEC (May) or on a 4-core container (September).
+- A calibration worker pinned to one thread sees the right-hand column: mortality is 78%.
+- The profiler cannot see inside the Numba kernels or count predator–prey pairs. Baltic
+  cell occupancy and size-window selectivity have never been measured; the September table
+  covered EEC and Bay of Biscay only. Baltic runs `mortality.subdt = 10`.
+- Do not compare these seconds with the July or September figures. The Baltic config and
+  the machine load differ.
 
-1. **Minimal smoke model**
-   - 2 species;
-   - short run;
-   - intended for continuous integration.
+### 4.2 Status of every original phase and work package
 
-2. **Baltic configuration**
-   - 8 focal species plus lower-trophic-level forcing;
-   - representative scientific benchmark.
+Status values: **done** / **rejected** (tried or argued, with the record) / **conflict**
+(breaks an invariant in section 6) / **wrong assumption** / **open**.
 
-3. **Eastern English Channel**
-   - 14 species;
-   - larger interaction network.
+| Original item | Status | Evidence |
+|---|---|---|
+| §4 0.1–0.3, 0.6 benchmark and profiling tools | done | `scripts/benchmark_engine.py`, `scripts/profile_engine.py`, `tests/baselines/` |
+| §4 0.2 `osmose benchmark` CLI | open, not needed | `osmose/cli.py:123-135` has `validate`, `run`, `report` only |
+| §4 0.1 minimal 2-species CI benchmark | wrong assumption | `data/minimal` never produces a predation event |
+| §4 0.1 candidate-pair counters | open | never measured for Baltic; item 3 |
+| §4 0.5 per-process conservation diagnostics | wrong assumption | section 3 |
+| §5 WP1.2 cell sort and offsets | done | `osmose/engine/processes/mortality.py:2576-2581` |
+| §5 WP1.2 re-key the sort by cell × species | conflict | changes within-cell order; `mortality.py:1990-2007`, `:1195` |
+| §5 WP1.3 species-pair accessibility graph | open, low value, has a trap | cells hold a median of 5–15 schools (EEC, measured 2026-09-12); see section 6 |
+| §5 WP1.4 size filter before expensive work | done | `mortality.py:1167` precedes accessibility and biomass |
+| §5 sort by length + binary search | rejected (argued, not built) | remediation plan, "Exploring the algorithmic improvement" |
+| §5 contiguous per-cell gather | rejected (built, bit-exact, measured slightly slower) | same section: 5.342 vs 5.376 s, 5.286 vs 5.427 s |
+| §6 WP2.1 structure-of-arrays state | done | `osmose/engine/state.py:31` |
+| §6 WP2.1 mixed precision | conflict | `atol=0` baselines |
+| §6 WP2.2 no Python objects in kernels | done | kernels are `@njit` on flat arrays |
+| §6 WP2.3 fused natural + fishing mortality | conflict | causes are interleaved per school in shuffled order, `mortality.py:2024` |
+| §6 WP2.4 allocation control | rejected | K1 shipped (6.4%); K2, K3, P4, P4b dropped at 0.2–1.8% (`docs/perf/2026-05-08-*-not-shipping.md`); removing all `SchoolState` validation measured 6.675 vs 6.674 s |
+| §6 WP2.5 compaction policy | done + conflict | floor at `simulate.py:2129`, compaction every step at `:2247`; deferring it changes `n_local` |
+| §7 WP3.1 objective-only run mode | done | `PythonEngine.run_in_memory`, `osmose/engine/__init__.py:123` |
+| §7 WP3.2 process pool | done for calibration and UQ | forkserver `osmose/calibration/problem.py:354-357`; spawn `osmose/calibration/uq/design.py:194-196` |
+| §7 WP3.2 ensemble runs | open | `PythonEngine.run_ensemble` (`__init__.py:157`) is a serial loop with one `output_dir`; no callers found |
+| §7 WP3.3 one thread per worker | open; reverses a decision | item 1 |
+| §7 WP3.4 shared worker initialisation | partly done; not a lever | built once per worker; config re-read per evaluation at `problem.py:445`; setup is 0.25 s of a 15–33 s run |
+| §7 WP3.5 seed hierarchy | open at task level; conflict inside the engine | item 5 and section 7 |
+| §8 Phase 4 hybrid stochastic sampling | wrong assumption | no binomial death sampling exists; appendix |
+| §9 WP5.1 Morris screening | done | `osmose/calibration/preflight.py:137` |
+| §9 WP5.2 common random numbers | done for DE; open for NSGA-II | DE uses one fixed seed; NSGA-II uses `seed=run_id`, `problem.py:448` |
+| §9 WP5.3 staged seeds, finalist re-ranking | partly done | `osmose/calibration/multiseed.py`; `scripts/calibrate_baltic.py:1566` |
+| §9 WP5.4 active surrogate workflow | done for UQ; untested for calibration | `osmose/calibration/uq/run.py` (GP emulator, calibration gate, sampler); `surrogate_de.py` |
+| §9 WP5.5 shorter simulations as low fidelity | conflict for Baltic | short horizons measure the seeding transient |
+| §10 Phase 6 JAX/GPU | dropped | appendix |
+| §11 research branch | unchanged, out of scope | model-changing by the plan's own classification |
+| §13 repository restructure | dropped | appendix |
 
-4. **Calibration benchmark**
-   - 20 parameter candidates;
-   - 5 seeds each;
-   - no complete simulation output files;
-   - objective values returned in memory.
+---
 
-Osmopy already supports a pure Python NumPy/Numba engine and an original Java-engine execution route. These provide the two main parity references.
+## 5. Work plan
 
-### 0.2 Add benchmark commands
-
-Proposed interface:
+Six items, in order. Items 1–3 are cheap and decide whether 4–6 are worth starting.
+Standard A/B protocol for every engine change (referred to below as **the A/B protocol**):
 
 ```bash
-osmose benchmark \
-    data/baltic/baltic_all-parameters.csv \
-    --engine python \
-    --years 20 \
-    --warmup 1 \
-    --repetitions 5 \
-    --seed 42 \
-    --output benchmark-baseline.json
+# control and treatment alternate; warm cache; one job at a time
+.venv/bin/python scripts/benchmark_engine.py --config baltic --years 5 --repeats 7 --output /tmp/a1.json
+# switch to treatment, repeat, switch back, repeat -- at least two pairs
+.venv/bin/python scripts/benchmark_engine.py --compare /tmp/a1.json /tmp/b1.json
 ```
 
-Separate compilation from execution time. The first Numba run should be reported as warm-up and excluded from steady-state timing.
+Report medians. Keep a result only if every interleaved pair agrees in sign. When the
+treatment lives in a worktree, run with `PYTHONPATH=.` from the worktree (CLAUDE.md,
+worktree import note) and confirm the imported `osmose.__file__`.
 
-### 0.3 Profile the engine
+### Item 1 — Worker × thread sweep for the process pools
 
-Use:
+**Goal.** Find the worker count and threads-per-worker that maximise evaluations per hour
+for calibration and UQ on this box, then make the pools apply it themselves.
 
-- `py-spy record` for low-overhead call-stack sampling;
-- `Scalene` for CPU, memory and copying attribution;
-- `line_profiler` for selected Python functions;
-- `time.perf_counter_ns()` for stable internal timing;
-- Numba diagnostics for object-mode fallbacks and inferred signatures.
+**This reverses a documented decision.** The 2026-07-15 thread-policy spec
+(`docs/superpowers/specs/2026-07-15-single-run-thread-policy-design.md`) keeps calibration
+workers at Numba's unrestricted default, and two tests assert it:
+`tests/test_thread_policy.py:237` (`test_cap_does_not_leak_into_forkserver_worker`) and
+`:286` (`test_worker_init_does_not_reset_numba_threads`). Both must be rewritten to assert
+the new policy if the sweep supports a cap. The module docstring of
+`osmose/engine/thread_policy.py` must change with them.
 
-Example:
+**Evidence.**
+- For the existing decision: capping Numba threads slowed a 4-worker run (measured April,
+  **thread** backend, GIL-bound; `docs/claude-memory/project_v010_calibration_python_engine.md`).
+- Against it, for **process** pools: an uncapped 8-worker UQ run took 4.4 h against about
+  50 min pinned (observed 2026-07-24, not a controlled A/B); a surrogate-DE sweep recorded
+  thread contention across 8 workers. Today the cap is a launch-environment convention
+  (`NUMBA_NUM_THREADS=1` etc.), not code.
 
-```bash
-py-spy record \
-    -o osmopy-baltic-profile.svg \
-    -- python scripts/run_baltic.py
-```
+**Expected gain.** Unmeasured. Large for calibration and UQ throughput if the July
+observation holds; possibly nil for small worker counts.
 
-### 0.4 Add process timers
+**Invariant risk.** None to results: mortality output is bit-identical at every thread
+count (`tests/test_thread_policy.py:192`). Risk is operational: memory (about 400 MB per
+50-yr Baltic run, `scripts/calibrate_baltic.py:1472-1477`) and memory bandwidth above 16
+workers.
 
-Collect time for:
+**Verification.**
+- `scripts/benchmark_calibration.py --backend process`, workers ∈ {1, 4, 8, 12, 14, 16},
+  threads per worker ∈ {1, 2, unrestricted}. Record evals/h and peak resident memory.
+- Run the grid cells sequentially. Repeat the best two cells and the current default
+  interleaved.
+- Check workers show about 100% CPU each when pinned to one thread.
 
-```text
-configuration and initialization
-movement
-growth
-predation candidate generation
-predation allocation
-natural mortality
-fishing
-starvation
-reproduction
-school creation/deletion/compaction
-aggregation
-output writing
-```
+**Exit criterion.** A table of evals/h per cell. If a pinned setting beats the unrestricted
+default by more than the spread between repeats, set it in `_worker_init`
+(`problem.py:77`) and the UQ `_worker_init` (`uq/design.py:157`), update the two tests and
+the docstring. If not, record the negative in `docs/perf/` and leave the code alone.
 
-### 0.5 Add numerical diagnostics
+### Item 2 — Diagnose Baltic movement
 
-For each process and timestep, optionally collect:
+**Goal.** Explain the 3.8 s that movement costs in a 10-yr Baltic run, and remove whatever
+part of it is Python-side.
 
-```python
-@dataclass
-class ProcessDiagnostics:
-    biomass_before: float
-    biomass_after: float
-    external_input: float
-    external_output: float
-    residual: float
-    schools_processed: int
-    candidate_pairs: int
-    accepted_pairs: int
-    random_draws: int
-```
+**Expected gain.** Bounded at 25% of a threaded Baltic run and 11% of a one-thread run
+(measured shares, section 4.1). The split between the Python wrapper
+(`_precompute_map_indices`, array copies) and the Numba kernel `_map_move_batch_numba` is
+unmeasured.
 
-Conservation residual:
+**Invariant risk.** The map kernel draws from one serial seeded stream
+(`osmose/engine/processes/movement.py:470`). Parallelising or reordering it changes
+fixed-seed output: that is a statistically-equivalent change, not a performance-preserving
+one. Python-side wrapper work is safe if it leaves draw order alone.
 
-$$
-R=B_{\mathrm{after}}-B_{\mathrm{before}}-I+O.
-$$
+**Verification.**
+- Diagnose first: warm cProfile of a Baltic 5-yr run, sorted by `tottime`, restricted to
+  `movement.py`. Do not write code before this.
+- Gate: `.venv/bin/python -m pytest tests/test_engine_parity.py tests/test_perf_movement_diet_vectorization.py`.
+- Measure: the A/B protocol on `--config baltic`, and once on `--config eec_full` to check
+  for a regression.
 
-Normalized residual:
+**Exit criterion.** Either a performance-preserving change with a median gain of at least
+2% on Baltic in every interleaved pair, or a `docs/perf/` note recording that the cost is
+inside the serial kernel and what a statistically-equivalent change would require.
 
-$$
-R_{\mathrm{rel}}
-=
-\frac{|R|}
-{\max(|B_{\mathrm{before}}|,10^{-15})}.
-$$
+### Item 3 — Baltic pair and occupancy counters
 
-### 0.6 Record reproducibility metadata
+**Goal.** Measure, for the Baltic config, schools per cell (mean, median, maximum), pairs
+scanned and the fraction passing the size window, as was done for EEC and Bay of Biscay on
+2026-09-12.
 
-Every benchmark should store:
+**Expected gain.** None directly. It decides whether any work on the mortality kernel
+(item 6, or the WP1.3 graph) has a plausible payoff. If the median cell holds about 15
+schools or fewer, the September conclusion carries over and kernel search work stays
+closed.
 
-- commit hash;
-- Python version;
-- NumPy version;
-- Numba version;
-- operating system;
-- CPU model;
-- thread counts;
-- seed;
-- configuration checksum;
-- compilation and execution times separately.
+**Invariant risk.** None. Use `step_observer` on `PythonEngine.run`
+(`osmose/engine/__init__.py:91-99`); the engine is not modified.
 
-## Exit criteria
+**Verification.** One Baltic 10-yr run with the observer. Cross-check the school count
+against the roughly 18.6k live schools per step recorded after the floor.
 
-- Five repeated steady-state runs vary by less than **5%**.
-- At least **90%** of runtime is attributed to named processes.
-- Java and Python reference outputs are archived.
-- Fixed-seed Python output is reproducible.
-- Baseline candidate-pair and school-count statistics are available.
+**Exit criterion.** A table in `docs/perf/` beside the September one, with the note that
+Baltic runs `mortality.subdt = 10`.
 
-## Deliverables
+### Item 4 — The serial tail
 
-```text
-benchmarks/
-  configs/
-  baseline/
-  benchmark_engine.py
-  compare_benchmarks.py
-docs/performance/
-  baseline.md
-  methodology.md
-```
+**Goal.** Reduce state initialisation, loop overhead and output collection, which together
+are about 14% of a threaded Baltic run (10.5% loop overhead plus 4.0%
+`_collect_by_life_stage`, measured).
+
+**Expected gain.** Unmeasured; modest. The May arc found most single edits here below 2%.
+One candidate specific to calibration: collectors whose output no objective reads.
+
+**Invariant risk.** Low if outputs are unchanged. Skipping a collector changes what
+`OsmoseResults` serves, so make it explicit and opt-in.
+
+**Verification.** Warm cProfile to name the functions inside "loop overhead"; the A/B
+protocol; `tests/test_engine_parity.py`.
+
+**Exit criterion.** Ship only edits with a median gain of at least 2% in every interleaved
+pair. Record the rest as not-shipping notes in the existing `docs/perf/` format.
+
+### Item 5 — Calibration: seeding policy and a real-objective comparison
+
+**Goal.** (a) Give the NSGA-II path an opt-in common-random-number mode. (b) Compare DE,
+CMA-ES and surrogate-DE at a matched evaluation budget on one real OSMOSE objective.
+
+**Evidence.** `OsmoseCalibrationProblem` passes `seed=run_id`, the candidate's index in the
+population (`problem.py:448`), so seed noise is tied to population position, and
+`_cache_key` (`problem.py:576`) omits the seed. The DE path already runs every candidate on
+one fixed seed and re-ranks the best on five (`scripts/calibrate_baltic.py:1566`). The
+optimizer comparison in `data/benchmarks/optimizer_comparison.json` is synthetic only.
+
+**Expected gain.** Unmeasured. No evaluation-count target is set until (b) exists.
+
+**Invariant risk.** Changing the default seed policy would make past NSGA-II runs
+unreproducible and silently mix cached results. Keep the current behaviour as the default;
+add the seed to the cache key only together with the opt-in mode.
+
+**Verification.** Unit test that the opt-in mode gives every candidate in a generation the
+same seed set and that thread and process backends still agree bit-for-bit. For (b): same
+budget, same seeds, final candidates re-ranked on five seeds, run after item 1 has fixed
+the pool settings. Use full-length runs; a short Baltic horizon measures the seeding
+transient.
+
+**Exit criterion.** The opt-in mode merged with its test, and a results table for (b).
+Only then decide whether a staged workflow (screen → surrogate → re-rank) is worth wiring
+as a default.
+
+### Item 6 — Single-thread mortality kernel (open, not scheduled)
+
+**Goal.** Decide whether the mortality kernel can be made faster for the one-thread worker
+regime, where it is 78% of the run (measured).
+
+**Status.** Open and unmeasured. The July decision not to pursue a native port was argued
+for multi-thread single runs, where fork/join and memory bandwidth bind. It was not
+measured at one thread. The June leaf-kernel spike
+(`docs/perf/2026-06-24-native-predation-kernel-spike.md`) passed its gate, but its Numba
+leaf times were flat from 1 to 24 schools per cell, which suggests it measured call
+overhead; do not plan against its ratio.
+
+**Invariant risk.** High. This is the engine's most parity-sensitive code: within-cell
+visit order, `n_local`, the per-cell MT19937 stream and the `exp` implementation all feed
+the `atol=0` baselines.
+
+**Verification, if ever started.** The death-accounting test from section 3 first; the
+kernel equivalence tests against `_mortality_in_cell`; `tests/test_engine_parity.py`; the
+A/B protocol at `NUMBA_NUM_THREADS=1` and at the automatic count.
+
+**Entry criterion.** Items 1 and 3 are done, item 1 shows that pinned one-thread workers
+are the production regime, and item 3 shows enough pairs per cell on Baltic to give a
+kernel change something to save.
 
 ---
 
-# 5. Phase 1: sparse, cell-sorted predation
+## 6. Guardrails
 
-## Goal
+Any change must respect these. Each has cost at least one retraction in this repo.
 
-Reduce predation complexity without changing the ecological interaction rules.
-
-## Expected gain
-
-- **3–20×** faster predation kernel;
-- approximately **2–4×** faster complete simulation if predation consumes 60–85% of runtime.
-
-## Work package 1.1: quantify current search efficiency
-
-Add counters:
-
-```python
-n_possible_pairs
-n_cell_matched_pairs
-n_species_accessible_pairs
-n_size_accessible_pairs
-n_accepted_pairs
-```
-
-Calculate:
-
-$$
-\eta
-=
-\frac{N_{\mathrm{accepted}}}
-{N_{\mathrm{considered}}}.
-$$
-
-If $\eta<0.1$, sparse filtering has high potential.
-
-## Work package 1.2: create compact interaction keys
-
-Construct:
-
-$$
-k_i=
-\mathrm{cell}_iN_{\mathrm{species}}
-+
-\mathrm{species}_i.
-$$
-
-Stable-sort schools using `np.argsort(..., kind="stable")`.
-
-Create:
-
-```python
-sorted_indices
-cell_starts
-cell_ends
-cell_species_starts
-cell_species_ends
-```
-
-The sort should happen no more often than necessary. If movement occurs once per global timestep, sort schools after movement and reuse the ordering through subsequent local processes.
-
-## Work package 1.3: precompute admissible species pairs
-
-Represent the species interaction graph as compact arrays:
-
-```python
-prey_offsets[predator_species]
-prey_species_flat[:]
-```
-
-For each predator species, store only prey species having positive accessibility.
-
-Also store:
-
-```python
-min_ratio[predator_species, prey_species]
-max_ratio[predator_species, prey_species]
-accessibility[predator_species, prey_species]
-```
-
-## Work package 1.4: filter by size before expensive calculations
-
-For each candidate predator–prey block:
-
-1. select same-cell schools;
-2. select admissible species;
-3. filter by size ratio;
-4. only then calculate ingestion, preference and energetic constraints.
-
-Avoid computing detailed energetics for pairs already excluded by species, space or size.
-
-## Work package 1.5: implement reference and optimized paths
-
-```python
-def run_predation(state, config, mode):
-    if mode == "legacy":
-        return predation_legacy(state, config)
-
-    if mode == "sparse":
-        return predation_sparse(state, config)
-
-    raise ValueError(f"Unknown predation mode: {mode}")
-```
-
-## Tests
-
-### Exact tests
-
-- candidate pairs match the legacy implementation;
-- accepted predator–prey relationships match;
-- school-level biomass transfers match;
-- no prey school loses more biomass than available;
-- no predator consumes more than its demand.
-
-### Edge cases
-
-- empty cell;
-- predator without accessible prey;
-- prey with zero abundance;
-- schools exactly at size-ratio thresholds;
-- one predator and many prey;
-- many predators and one prey;
-- all schools in one cell;
-- maximum configured school count.
-
-## Exit criteria
-
-- Candidate-pair evaluations reduced by **at least 70%** in one realistic model.
-- Predation kernel at least **2× faster**.
-- Complete simulation at least **1.5× faster**.
-- Fixed-seed outputs unchanged, or every difference explained by an intentionally changed iteration order.
-- Conservation residual not worse than baseline.
+1. **Fixed-seed baselines.** `tests/test_engine_parity.py` compares committed baselines at
+   `atol=0`. A change that moves them is not performance-preserving, whatever it looks
+   like.
+2. **The bioen-OFF random stream.** It includes:
+   - the per-cell seed and the five unconditional permutations (four used without bioen);
+   - **within-cell school order**, set by the stable sort at `mortality.py:2576`, because
+     permutations index positions in the cell slice;
+   - **`n_local`**, the number of schools in the cell, including zero-abundance ones not yet
+     compacted. Deferring compaction changes it;
+   - the running sum `total_available` (`mortality.py:1195`), whose value depends on visit
+     order.
+3. **Numba `exp` is not NumPy `exp`.** They differ in the last bit on 5–9% of arguments,
+   amplified by `1 - exp(-D)`. Do not chase this as a kernel bug; choose fixtures that
+   avoid it. `expm1` is a different function again and moves every baseline.
+4. **Mortality causes are interleaved per school in shuffled order over sub-steps.** That
+   is Java's algorithm. Combining causes into one hazard is model-changing.
+5. **Process pools use forkserver or spawn.** Fork deadlocks with Numba's thread pool;
+   loky broke worker un-pickling once. Scripts that start a spawn pool need a
+   `__main__` guard.
+6. **One engine job at a time.** Two engine workloads on this box contend for memory
+   bandwidth and have been OOM-killed. Never benchmark while the test suite or a
+   calibration runs.
+7. **`data/minimal` never predates.** It cannot detect a predation or mortality-kernel
+   regression. Use the tutorial config (`tests/_tutorial_config.build_config`) or Baltic.
+8. **`@pytest.mark.slow` does not gate CI.** A benchmark test that must not run in CI needs
+   an environment-variable gate as well.
+9. **Bay of Biscay past year 10 is a dying ecosystem.** Use it for short runs only; use EEC
+   or Baltic for anything longer.
+10. **A missing accessibility entry means full access, not none.** A precomputed
+    "positive accessibility" species graph would drop those pairs. The matrix is also
+    stage-indexed and rescaled per call by the prey-density scale.
+11. **Java cross-checks are "within 1 OoM".** They cannot confirm a bit-level change is
+    harmless, and a green one-year Java parity test says nothing about a ten-year run.
 
 ---
 
-# 6. Phase 2: structure-of-arrays and fused kernels
+## 7. Open item to measure: adjacent seeds may share a stream
 
-## Goal
+**Inferred from code; effect unmeasured.** `PythonEngine._prepare_run`
+(`osmose/engine/__init__.py:72-91`) builds the movement generators from `seed` and the
+mortality generators from `seed + 1`, both through `build_rng`
+(`osmose/engine/rng.py:35-50`). Replicates and UQ design tasks use consecutive seeds. So
+the movement stream of replicate `s + 1` is built from the same seed as the mortality
+stream of replicate `s`.
 
-Reduce cache misses, temporary allocations and repeated state traversal.
+What is not known: whether the batched Numba mortality path consumes those generators at
+all (it seeds MT19937 per cell from a separate value), and whether any shared draws produce
+a measurable correlation between adjacent replicates.
 
-## Expected gain
+**To settle it.** Trace which generator each production path draws from. If a shared
+stream is consumed, compare the between-replicate variance of final biomass for seeds
+`{s, s+1, ...}` against seeds spaced far apart, on one config, at least 16 replicates each.
 
-- **1.5–3×** for affected kernels;
-- **1.2–2×** additional complete-model speedup.
-
-## Work package 2.1: define numerical state arrays
-
-Use a structure-of-arrays representation:
-
-```python
-@dataclass
-class SchoolState:
-    species: np.ndarray       # int16 or int32
-    cell: np.ndarray          # int32
-    age: np.ndarray           # float32 or float64
-    length: np.ndarray        # float32 or float64
-    weight: np.ndarray        # float32 or float64
-    abundance: np.ndarray     # float64
-    biomass: np.ndarray       # float64
-    energy: np.ndarray        # float32 or float64
-    alive: np.ndarray         # bool
-```
-
-Use `float64` initially for all ecological quantities. Introduce mixed precision only after correctness is established.
-
-## Work package 2.2: eliminate hot-loop Python objects
-
-The compiled numerical kernel must not:
-
-- access dictionaries;
-- construct dataclasses;
-- allocate lists;
-- catch exceptions;
-- create temporary Python objects;
-- perform file output.
-
-Configuration data required by kernels should be converted into typed numeric arrays before simulation begins.
-
-## Work package 2.3: fuse compatible operations
-
-Candidate fused kernel:
-
-```text
-calculate natural mortality hazard
-calculate fishing mortality hazard
-combine competing risks
-sample removals
-update abundance
-update biomass
-accumulate catch
-accumulate natural deaths
-write process diagnostics
-```
-
-This replaces multiple full-array passes.
-
-## Work package 2.4: control allocations
-
-Preallocate reusable work arrays:
-
-```python
-workspace.predator_demand
-workspace.prey_supply
-workspace.mortality_probability
-workspace.removals
-workspace.random_buffer
-workspace.candidate_indices
-```
-
-No array proportional to the number of schools should be allocated inside the main timestep loop unless its size genuinely changes.
-
-## Work package 2.5: school compaction policy
-
-Deleting schools on every process can be expensive. Use an active mask and compact at controlled intervals:
-
-```python
-if dead_fraction > 0.10 or steps_since_compaction >= 12:
-    compact_state()
-```
-
-Benchmark thresholds of 5%, 10% and 20%.
-
-## Tests
-
-- state conversion round trip;
-- no state field lost during compaction;
-- stable school identifiers where required;
-- no stale indices after sorting or compaction;
-- biomass totals preserved;
-- fixed-seed behavior preserved where event order is unchanged.
-
-## Exit criteria
-
-- No Numba object-mode execution in production kernels.
-- Temporary allocated bytes per timestep reduced by **at least 70%**.
-- Fused mortality/fishing kernel at least **1.5× faster**.
-- Combined Phases 1–2 provide at least **2× complete-model speedup** on the Baltic benchmark.
+**If it is real.** Fix it at the task level by spacing or spawning replicate seeds in the
+caller. Changing seeding inside the engine moves every fixed-seed baseline and invalidates
+calibration caches.
 
 ---
 
-# 7. Phase 3: ensemble and calibration parallelism
+## Appendix: dropped from the original
 
-## Goal
-
-Exploit independent candidates and random seeds across physical CPU cores.
-
-## Expected gain
-
-- **6–7×** on 8 physical cores;
-- **10–14×** on 16 physical cores;
-- limited primarily by initialization, memory bandwidth and I/O.
-
-## Work package 3.1: calibration execution mode
-
-Create an in-memory mode that does not write detailed outputs:
-
-```python
-result = engine.run_objective(
-    config=config,
-    parameters=candidate,
-    seed=seed,
-    targets=targets,
-)
-```
-
-Return only:
-
-```python
-{
-    "objective": ...,
-    "component_losses": ...,
-    "diagnostics": ...,
-    "status": ...,
-}
-```
-
-## Work package 3.2: process-based worker pool
-
-Use one task per candidate–seed combination:
-
-```python
-tasks = [
-    EvaluationTask(candidate_id=i, seed=seed)
-    for i in range(n_candidates)
-    for seed in seeds
-]
-```
-
-Use `concurrent.futures.ProcessPoolExecutor`, `joblib` with the `loky` backend, or the parallel interface already supported by the calibration framework.
-
-## Work package 3.3: prevent thread oversubscription
-
-Worker environment:
-
-```bash
-OMP_NUM_THREADS=1
-MKL_NUM_THREADS=1
-OPENBLAS_NUM_THREADS=1
-NUMEXPR_NUM_THREADS=1
-NUMBA_NUM_THREADS=1
-```
-
-Default worker count:
-
-```python
-workers = max(1, physical_cores - 2)
-```
-
-Do not default to logical CPU count for memory-intensive simulations.
-
-## Work package 3.4: share immutable initialization
-
-Avoid reparsing and rebuilding all configuration objects for every task.
-
-Possible approaches:
-
-- initialize model configuration once per worker;
-- pass only parameter overrides and seed;
-- memory-map large read-only forcing arrays;
-- cache compiled Numba functions before launching the main workload.
-
-## Work package 3.5: deterministic seed hierarchy
-
-Use `numpy.random.SeedSequence`:
-
-```python
-root = np.random.SeedSequence(base_seed)
-candidate_sequences = root.spawn(n_candidates)
-seed_sequences = candidate_sequences[i].spawn(n_replicates)
-```
-
-Store enough metadata to recreate each random stream independently of scheduling order.
-
-## Scaling benchmark
-
-Test:
-
-```text
-1 worker
-2 workers
-4 workers
-8 workers
-12 workers
-16 workers
-```
-
-Report:
-
-$$
-S_p=\frac{T_1}{T_p},
-\qquad
-E_p=\frac{S_p}{p}.
-$$
-
-## Exit criteria
-
-- At least **70% parallel efficiency** at 8 workers.
-- At least **60% parallel efficiency** at 16 workers.
-- Results independent of task completion order.
-- Seed-to-result mapping is reproducible.
-- Calibration mode writes no large per-run output unless requested.
-
----
-
-# 8. Phase 4: hybrid stochastic sampling
-
-## Goal
-
-Reduce stochastic-event costs for very large schools while maintaining appropriate means and variances.
-
-## Expected gain
-
-- **1.2–3×** in mortality/recruitment kernels;
-- overall gain depends on the fraction of runtime spent sampling.
-
-## Work package 4.1: preserve exact binomial reference
-
-```python
-deaths = rng.binomial(abundance, probability)
-```
-
-This remains the reference for integer abundance.
-
-## Work package 4.2: implement selectable sampling modes
-
-```python
-sampling_mode = "exact"  # reference
-sampling_mode = "hybrid"
-sampling_mode = "deterministic"
-```
-
-Initial hybrid policy:
-
-| Condition | Sampler |
+| Original item | Reason |
 |---|---|
-| $N<1{,}000$ | Binomial |
-| $N\ge1{,}000$ and $Np<30$ | Poisson |
-| $N\ge1{,}000$ and $Np\ge30$ | Normal approximation |
-| Very large $N$, optional low-noise mode | Deterministic expectation |
-
-All approximations must clamp:
-
-$$
-0\le D\le N.
-$$
-
-## Work package 4.3: protect sensitive populations
-
-Always use exact sampling for:
-
-- depleted populations;
-- threatened species;
-- recruitment bottlenecks;
-- populations close to extinction;
-- groups below a configurable abundance threshold.
-
-## Validation
-
-For each $N,p$ combination, run at least 100,000 draws and compare:
-
-$$
-E[D]=Np,
-\qquad
-\operatorname{Var}(D)=Np(1-p).
-$$
-
-Acceptance thresholds:
-
-- mean relative error below **0.5%**;
-- variance relative error below **2%**;
-- tail-probability errors evaluated separately for extinction-sensitive cases.
-
-## Exit criteria
-
-- Kernel speedup at least **1.5×** for abundant-school benchmarks.
-- Ensemble means and standard deviations remain within predefined statistical tolerance.
-- Exact mode remains available for reference and publication runs.
-
----
-
-# 9. Phase 5: calibration efficiency
-
-## Goal
-
-Reduce the number of complete Osmopy runs needed for calibration.
-
-Osmopy already contains modules for CMA-ES, `pymoo`, Gaussian-process surrogates, surrogate-assisted differential evolution, multiseed evaluation, Sobol analysis, stability penalties and Bayesian uncertainty quantification. The implementation priority is to connect these components into a default staged workflow.
-
-## Work package 5.1: screening before calibration
-
-Use Morris screening for broad parameter sets.
-
-Suggested design:
-
-- 10–20 trajectories;
-- 4–8 levels;
-- common seed set;
-- retain parameters with material $\mu^*$ or $\sigma$.
-
-SALib supports Morris, Sobol, FAST, PAWN, DGSM and other global sensitivity methods.
-
-## Work package 5.2: common random numbers
-
-Evaluate every candidate in a calibration generation on the same seeds:
-
-```python
-calibration_seeds = [11, 37, 58, 91, 133]
-```
-
-Change the common seed set between independent calibration experiments, not between candidates within one experiment.
-
-## Work package 5.3: staged seed allocation
-
-Use:
-
-| Calibration stage | Seeds per candidate |
-|---|---:|
-| Initial screening | 1–3 |
-| Surrogate search | 3–5 |
-| Candidate re-ranking | 10–20 |
-| Final validation | 30–100 |
-
-Do not evaluate poor candidates with 30 seeds.
-
-## Work package 5.4: active surrogate workflow
-
-For $D$ retained parameters:
-
-1. generate $10D$–$20D$ Sobol or Latin-hypercube points;
-2. evaluate with 2–3 common seeds;
-3. fit a Gaussian-process or Extra Trees surrogate;
-4. propose batches of 8–32 candidates;
-5. evaluate the real model;
-6. retrain;
-7. stop when improvement or uncertainty reduction becomes negligible.
-
-## Work package 5.5: multi-fidelity objectives
-
-During search, use cheaper evaluations:
-
-- shorter simulation;
-- fewer seeds;
-- reduced spatial output;
-- fewer objective components;
-- lower reporting frequency.
-
-Finalists must be re-evaluated with the full configuration.
-
-## Exit criteria
-
-- At least **5× fewer full-resolution simulations** than baseline evolutionary calibration.
-- Best candidates remain competitive after 30-seed validation.
-- Calibration history records surrogate predictions and actual results.
-- Failed or unstable runs are handled consistently and penalized explicitly.
-
----
-
-# 10. Phase 6: optional JAX/GPU prototype
-
-## Goal
-
-Assess whether batched ensembles benefit from accelerator execution.
-
-## Entry conditions
-
-Do not start until:
-
-- state is already stored as arrays;
-- school capacity can be bounded or preallocated;
-- sparse interaction generation is stable;
-- the CPU implementation has reached at least 2× baseline speed;
-- a real workload includes at least dozens of simulations per batch.
-
-A JAX-based agent-model architecture can provide JIT compilation, vectorization and accelerator execution, but dynamic creation and deletion of schools must be reformulated using fixed arrays and masks.
-
-## Prototype scope
-
-Implement only:
-
-1. growth;
-2. natural mortality;
-3. fishing;
-4. simplified movement;
-5. one predation kernel;
-6. batching across seeds with `vmap`;
-7. timesteps with `jax.lax.scan`.
-
-## State design
-
-```python
-state = {
-    "species": int_array,
-    "cell": int_array,
-    "age": float_array,
-    "length": float_array,
-    "abundance": float_array,
-    "biomass": float_array,
-    "active": bool_array,
-}
-```
-
-Use a fixed-capacity school pool with inactive slots.
-
-## Go/no-go criteria
-
-Proceed only if:
-
-- GPU batch of 64 simulations is at least **3× faster** than optimized multi-core CPU;
-- compilation cost is amortized in a realistic workflow;
-- memory usage remains manageable;
-- ecological outputs pass parity tests;
-- implementation complexity does not compromise the reference engine.
-
-Otherwise, retain Numba CPU as the primary backend.
-
----
-
-# 11. Research branch: modern numerical reformulation
-
-These changes should not block performance work.
-
-## 11.1 Competing-risk mortality
-
-Combine natural and fishing mortality:
-
-$$
-Z=M+F,
-$$
-
-$$
-D=N\left(1-e^{-Z\Delta t}\right),
-$$
-
-$$
-D_M=D\frac{M}{Z},
-\qquad
-D_F=D\frac{F}{Z}.
-$$
-
-Use `numpy.expm1`:
-
-```python
-removed = abundance * (-np.expm1(-z * dt))
-```
-
-This can eliminate order bias and combine two update passes.
-
-## 11.2 Strang splitting
-
-Evaluate smooth process groups symmetrically:
-
-$$
-X^{n+1}
-=
-A_{\Delta t/2}
-B_{\Delta t}
-A_{\Delta t/2}
-X^n.
-$$
-
-This is an accuracy feature and may increase runtime.
-
-## 11.3 Balanced predation
-
-Formulate predation as a constrained allocation:
-
-$$
-0\le x_{ij},
-$$
-
-$$
-\sum_jx_{ij}\le D_i,
-$$
-
-$$
-\sum_ix_{ij}\le S_j.
-$$
-
-This removes predator-order dependence but changes the numerical model. It therefore requires an independent configuration mode and ecological validation.
-
----
-
-# 12. Test strategy
-
-## Unit tests
-
-Test:
-
-- key construction;
-- stable sorting;
-- cell/species offset generation;
-- candidate-pair filtering;
-- size-ratio boundaries;
-- fused mortality calculations;
-- seed hierarchy;
-- school compaction;
-- hybrid sampler moments;
-- diagnostic residual calculations.
-
-## Regression tests
-
-Maintain reference outputs for:
-
-```text
-minimal deterministic
-minimal stochastic fixed seed
-Baltic fixed seed
-Eastern English Channel fixed seed
-Java-versus-Python aggregate comparison
-```
-
-## Statistical tests
-
-For each benchmark configuration, run at least 100 seeds and compare baseline with optimized mode.
-
-Report:
-
-- mean;
-- standard deviation;
-- median;
-- 5th and 95th percentiles;
-- collapse/extinction frequency;
-- catch distribution;
-- terminal biomass;
-- spatial occupancy.
-
-Use:
-
-- confidence intervals for mean differences;
-- Kolmogorov–Smirnov distance;
-- Wasserstein distance;
-- energy distance where appropriate.
-
-Do not rely on a non-significant $p$-value alone. Define ecological equivalence tolerances in advance.
-
-## Performance tests
-
-Add non-blocking continuous-integration smoke benchmarks and scheduled full benchmarks.
-
-CI should detect, for example:
-
-- more than **10%** regression in minimal benchmark runtime;
-- more than **15%** regression in Baltic kernel time;
-- increased candidate-pair counts;
-- unexpected allocation growth.
-
----
-
-# 13. Proposed repository structure
-
-```text
-osmose/
-  engine/
-    python_engine.py
-    state.py
-    workspace.py
-    diagnostics.py
-
-    kernels/
-      growth.py
-      movement.py
-      predation_legacy.py
-      predation_sparse.py
-      mortality.py
-      fishing.py
-      reproduction.py
-      compaction.py
-
-    indexing/
-      cell_sort.py
-      species_graph.py
-      candidate_pairs.py
-
-    random/
-      seed_manager.py
-      samplers.py
-
-  calibration/
-    parallel.py
-    staged.py
-    active_learning.py
-    multiseed.py
-
-benchmarks/
-  benchmark_engine.py
-  benchmark_predation.py
-  benchmark_sampling.py
-  configs/
-  baselines/
-
-tests/
-  unit/
-  regression/
-  statistical/
-  performance/
-
-docs/
-  performance/
-    baseline.md
-    optimized-engine.md
-    reproducibility.md
-    calibration-performance.md
-```
-
----
-
-# 14. Work backlog
-
-## Epic A: performance baseline
-
-- [ ] Add benchmark CLI.
-- [ ] Add per-process timers.
-- [ ] Add school and candidate-pair counters.
-- [ ] Separate Numba compilation from runtime.
-- [ ] Store hardware and package metadata.
-- [ ] Commit fixed benchmark configurations.
-- [ ] Publish baseline report.
-
-## Epic B: sparse predation
-
-- [ ] Build stable cell/species sort.
-- [ ] Build offsets and compact blocks.
-- [ ] Precompute trophic accessibility graph.
-- [ ] Add size-window filtering.
-- [ ] Implement sparse predation kernel.
-- [ ] Add reference-versus-sparse comparison.
-- [ ] Benchmark pair-count reduction.
-- [ ] Document any iteration-order differences.
-
-## Epic C: state and kernels
-
-- [ ] Introduce `SchoolState`.
-- [ ] Introduce reusable `EngineWorkspace`.
-- [ ] Remove Python objects from hot loops.
-- [ ] Fuse natural and fishing mortality loops.
-- [ ] Add controlled school compaction.
-- [ ] Audit array allocations.
-- [ ] Test mixed precision experimentally.
-
-## Epic D: parallel execution
-
-- [ ] Create objective-only execution method.
-- [ ] Add process pool.
-- [ ] Add `SeedSequence` hierarchy.
-- [ ] Set one thread per worker.
-- [ ] Cache worker initialization.
-- [ ] Add worker-scaling benchmark.
-- [ ] Implement restartable evaluation batches.
-
-## Epic E: stochastic sampling
-
-- [ ] Add exact/hybrid/deterministic modes.
-- [ ] Implement binomial, Poisson and normal branches.
-- [ ] Protect extinction-sensitive groups.
-- [ ] Add distributional sampler tests.
-- [ ] Benchmark mortality and recruitment kernels.
-
-## Epic F: calibration efficiency
-
-- [ ] Integrate Morris screening.
-- [ ] Add common-random-number evaluation.
-- [ ] Add staged seed allocation.
-- [ ] Connect surrogate search to multiseed re-ranking.
-- [ ] Add active-learning batch acquisition.
-- [ ] Add full-resolution finalist validation.
-- [ ] Compare against baseline CMA-ES and NSGA-II budgets.
-
----
-
-# 15. Release strategy
-
-## Release 1: optimized CPU engine
-
-Include:
-
-- benchmark framework;
-- sparse predation;
-- structure-of-arrays;
-- fused kernels;
-- objective-only execution;
-- parallel candidate–seed evaluation.
-
-Target version:
-
-```text
-1.x performance release
-```
-
-## Release 2: calibration acceleration
-
-Include:
-
-- staged seed allocation;
-- common random numbers;
-- active surrogate calibration;
-- automated finalist re-ranking;
-- calibration budget reporting.
-
-## Experimental release
-
-Include behind explicit flags:
-
-- hybrid stochastic approximations;
-- JAX backend;
-- competing-risk mortality;
-- balanced predation;
-- Strang splitting.
-
----
-
-# 16. Final acceptance gate
-
-The optimized engine should be merged as the default only when all conditions are met:
-
-1. Baltic and Eastern English Channel simulations are at least **2× faster**.
-2. An 8-worker ensemble achieves at least **5.5× wall-clock speedup**.
-3. Fixed-seed differences are either zero or explicitly attributable to a documented ordering change.
-4. Statistical outputs remain within predefined ecological tolerances.
-5. No biomass-conservation regression is detected.
-6. Reference `legacy` mode remains available.
-7. Calibration reproduces or improves the baseline objective with at least **5× fewer full-resolution runs**.
-8. Benchmarks and reproducibility metadata are generated automatically.
-
-## Recommended first development milestone
-
-The first milestone should contain only:
-
-- benchmark instrumentation;
-- candidate-pair counters;
-- stable cell/species sorting;
-- sparse predation candidate generation;
-- reference-versus-optimized regression tests.
-
-That milestone will establish whether predation is truly the dominant bottleneck and whether the anticipated **2–4× whole-engine speedup** is realistic before committing effort to JAX, GPU execution or more substantial mathematical reformulation.
+| Phase 4, hybrid stochastic sampling (§8) | The engine has no binomial death sampling. Deaths are deterministic `abd * (1 - exp(-D))` on float abundance; random numbers go to ordering and movement. There is nothing to approximate, and a hybrid sampler would add noise. |
+| Phase 6, JAX/GPU prototype (§10) | Within-cell mortality mutates instantaneous abundance sequentially in permuted order, so it cannot be batched without changing the algorithm. The box's GPU is a GT 1030 with 2 GB. |
+| §13 repository restructure | No performance value. It would invalidate the Numba cache layout and the many file:line citations in CLAUDE.md and the docs. |
+| Mixed precision (WP2.1, Epic C) | Breaks the `atol=0` baselines; no measured memory-bound kernel to justify it. |
+| Fused natural + fishing mortality (WP2.3), competing-risk mortality (§11.1) | Causes are interleaved per school in shuffled order; fusing them is model-changing and moves the random stream. |
+| `PythonEngine(numerics_mode=..., performance_profile=...)`, `engine.run_objective(...)` | These APIs do not exist. `PythonEngine.__init__` takes only `backend` (`osmose/engine/__init__.py:35`); the in-memory path is `run_in_memory`. A parallel "legacy/optimized" engine is not needed for performance-preserving work, which the parity tests already gate. |
+| Sparse, cell-sorted predation as the first milestone (§5, §16) | The cell sort and the size-first filter exist. The two remaining ideas were rejected in September, one on measurement. |
+| Deferred school compaction (WP2.5) | The engine floors and compacts every step; deferring changes `n_local` and the stream. |
+| CI gates on 10–15% runtime regressions (§12) | Run-to-run spread on master has reached 15%. Use interleaved medians locally. |
+| 100-seed statistical tests per config (§12) | Cost is out of proportion; the existing guard is 10 seeds at `rtol=0.05` (`tests/test_engine_parity.py:358-363`). Set the seed count per change. |
