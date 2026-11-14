@@ -102,7 +102,9 @@ The share is larger in a threaded run, where the kernels shrink and these functi
   zero.
 - **Regression coverage for the stage outputs.** Any future change to these collectors, including
   `d535aa81` if it is ever merged, has only its own unit test to catch it. A fixed-seed baseline
-  for the by-stage outputs would close that gap.
+  for the by-stage outputs would close that gap. (Update 2026-11-15: closed by #264,
+  `tests/test_engine_output_parity.py`. It covers the by-stage outputs and every other output the
+  core baseline omits.)
 - **Bundling bit-exact collector edits.** `d535aa81` plus the remaining 1-D `np.add.at` call sites
   (0.21 s of `ufunc.at` time over the run, mostly per-call overhead) could be measured together
   as one edit. Unmeasured; the expected total is about 0.4–0.5 s per 10-yr run.
