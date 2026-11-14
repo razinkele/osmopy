@@ -265,6 +265,17 @@ inside the serial kernel and what a statistically-equivalent change would requir
 
 ### Item 3 — Baltic pair and occupancy counters
 
+**Status: DONE 2026-11-14 — criterion fails, Baltic cells are full**
+(`docs/perf/2026-11-14-baltic-cell-occupancy.md`). Over years 6–10 the median cell holds 26 schools
+(mean 29.1, max 390), against the ≤15 that would have carried September's conclusion over.
+- 57.5% of scanned pairs sit in cells over 50 schools, and 29% in the roughly 9 cells per step over
+  100.
+- 11.8% of scanned pairs pass the size window.
+- With `mortality.subdt = 10` that is about 1.08 billion pair tests over the five years, by an
+  end-of-step count that approximates the kernel's `n_local`.
+
+This weakens only the "cells are tiny" objection. The visit-order objection stands.
+
 **Goal.** Measure, for the Baltic config, schools per cell (mean, median, maximum), pairs
 scanned and the fraction passing the size window, as was done for EEC and Bay of Biscay on
 2026-09-12.
@@ -351,6 +362,18 @@ A/B protocol at `NUMBA_NUM_THREADS=1` and at the automatic count.
 **Entry criterion.** Items 1 and 3 are done, item 1 shows that pinned one-thread workers
 are the production regime, and item 3 shows enough pairs per cell on Baltic to give a
 kernel change something to save.
+
+**Entry status, 2026-11-14:**
+- **Item 1:** met. The split rule gives one thread per worker at 8 or more workers on this
+  14-core box, including the DE default of 8 and the sweep's best of 14.
+- **Item 3's occupancy part:** met (median 26 schools per cell, 57.5% of pairs in cells over 50).
+- **Payoff:** still unmeasured. The first number to take is the share of one-thread kernel time
+  spent in the Phase 1a scan on Baltic.
+
+**One candidate, a hypothesis only: an order-preserving prefilter.** It would find the eligible
+prey faster and visit them in their original cell order. To count as performance-preserving it
+must keep the eligible set, the visit order (so `total_available`), `n_local` and the per-cell
+random stream all unchanged. See the item 3 note.
 
 ---
 
