@@ -2,10 +2,17 @@
 """In-situ cost of the predation kernel's Phase 1a size-window scan on the Baltic (perf plan item 6).
 
 Method: in a SCRATCH worktree, wrap Phase 1a of ``_apply_predation_numba`` (the school-prey scan,
-with its ``total_available``/``n_prey`` reset) in ``for _rep in range(2):``. The second pass
-recomputes the same buffers from unchanged inputs, so the outputs must stay identical (the ``time``
-command prints a biomass hash to check this); the extra ``mortality()`` time is then the scan's
-in-situ cost. A warm-cache repeat, so if anything it understates the cold first pass.
+with its ``total_available``/``n_prey`` reset) in ``for _rep in range(N):`` (``--passes N``,
+default 2). The repeats recompute the same buffers from unchanged inputs, so the outputs must stay
+identical; the ``time`` command prints a biomass hash to check this. The extra ``mortality()`` time
+is then the scan's in-situ cost.
+
+``--test-only`` instead adds passes that run only the per-pair tests (self, abundance, length,
+size window), without the eligible-prey work. That separates the testing a length prefilter could
+remove from the work it must keep.
+
+A repeat can err in either direction (a warm cache understates, a restructured loop nest can
+overstate), so check linearity with ``--passes 3``.
 
 Usage (from the repo root):
     git worktree add --detach ../osmopy-scratch origin/master
@@ -31,12 +38,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 KERNEL = Path("osmose/engine/processes/mortality.py")
-MARKER = "# PERF PROBE: Phase 1a twice"
+MARKER = "# PERF PROBE: Phase 1a"
 BLOCK_START = "        total_available = 0.0\n        n_prey = 0\n\n        # 1a: School prey\n"
 BLOCK_END = "        # 1b: Resource prey\n"
 
 
-def apply_double(worktree: Path) -> None:
+def apply_double(worktree: Path, passes: int = 2, test_only: bool = False) -> None:
     worktree = worktree.resolve()
     if worktree == ROOT:
         raise SystemExit(f"refusing to edit this repository's own checkout: {worktree}")
@@ -66,11 +73,42 @@ def apply_double(worktree: Path) -> None:
     block = src[start:end]
     if block.count("for q_pos in range(n_local):") != 1:
         raise SystemExit("Phase 1a block not recognised; the kernel has changed, update this probe")
-    indented = "".join(("    " + ln if ln.strip() else ln) for ln in block.splitlines(True))
-    path.write_text(
-        src[:start] + f"        for _rep in range(2):  {MARKER}\n" + indented + src[end:]
-    )
-    print(f"Phase 1a doubled in {path}")
+    if passes < 2:
+        raise SystemExit("--passes must be at least 2")
+    if test_only:
+        # Extra passes run only the per-pair tests (self, abundance, length, size window) and do
+        # none of the eligible-prey work (accessibility, prey biomass, buffer writes). A sum of
+        # the ratios feeds a branch that is never taken (every ratio is positive), so the
+        # compiler cannot drop the loop and the outputs cannot change.
+        label = f"{MARKER} test-only x{passes - 1} extra"
+        extra = (
+            f"        _probe_sum = 0.0  {label}\n"
+            f"        for _rep in range({passes - 1}):\n"
+            "            for _q_pos in range(n_local):\n"
+            "                _q = cell_indices[_q_pos]\n"
+            "                if _q == p_idx:\n"
+            "                    continue\n"
+            "                _abd = max(inst_abd[_q] - egg_retained[_q], 0.0)\n"
+            "                if _abd <= 0:\n"
+            "                    continue\n"
+            "                _pl = length[_q]\n"
+            "                if _pl <= 0:\n"
+            "                    continue\n"
+            "                _ratio = pred_len / _pl\n"
+            "                if _ratio < r_min or _ratio >= r_max:\n"
+            "                    continue\n"
+            "                _probe_sum += _ratio\n"
+            "        if _probe_sum < -1.0:\n"
+            "            total_available += _probe_sum\n\n"
+        )
+        path.write_text(src[:end] + extra + src[end:])
+    else:
+        label = f"{MARKER} full x{passes}"
+        indented = "".join(("    " + ln if ln.strip() else ln) for ln in block.splitlines(True))
+        path.write_text(
+            src[:start] + f"        for _rep in range({passes}):  {label}\n" + indented + src[end:]
+        )
+    print(f"Phase 1a probe applied in {path}: {label}")
 
 
 def time_arm(repo: Path, years: int, seed: int) -> None:
@@ -82,7 +120,8 @@ def time_arm(repo: Path, years: int, seed: int) -> None:
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine import PythonEngine
 
-    if not sim.__file__.startswith(str(repo)):
+    # A path test, not a string-prefix one: "/x/osmopy-wt-a" starts with "/x/osmopy".
+    if not Path(sim.__file__).resolve().is_relative_to(repo):
         raise SystemExit(f"imported {sim.__file__}, not {repo}")
     numba.set_num_threads(1)
     cfg = dict(OsmoseConfigReader().read(repo / "data/baltic/baltic_all-parameters.csv"))
@@ -103,22 +142,29 @@ def time_arm(repo: Path, years: int, seed: int) -> None:
     results = PythonEngine().run_in_memory(cfg, seed=seed)
     wall = time.perf_counter() - t
     digest = hashlib.sha256(results.biomass().to_csv().encode()).hexdigest()[:16]
-    arm = "doubled" if MARKER in (repo / KERNEL).read_text() else "control"
-    print(f"{arm:8s} mortality {spent[0]:.2f} s  wall {wall:.2f} s  biomass-sha {digest}")
+    probe = [ln for ln in (repo / KERNEL).read_text().splitlines() if MARKER in ln]
+    arm = probe[0].split(MARKER, 1)[1].strip() if probe else "control"
+    print(f"{arm:22s} mortality {spent[0]:.2f} s  wall {wall:.2f} s  biomass-sha {digest}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="In-situ cost of the Phase 1a scan (Baltic).")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    a = sub.add_parser("apply-double", help="double Phase 1a in a scratch worktree")
+    a = sub.add_parser("apply-double", help="repeat Phase 1a in a scratch worktree")
     a.add_argument("worktree", type=Path)
+    a.add_argument("--passes", type=int, default=2, help="total passes of the scan (default 2)")
+    a.add_argument(
+        "--test-only",
+        action="store_true",
+        help="extra passes run only the per-pair tests, none of the eligible-prey work",
+    )
     t = sub.add_parser("time", help="time mortality() for one arm, one thread, warm")
     t.add_argument("repo", type=Path)
     t.add_argument("--years", type=int, default=10)
     t.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
     if args.cmd == "apply-double":
-        apply_double(args.worktree)
+        apply_double(args.worktree, passes=args.passes, test_only=args.test_only)
     else:
         time_arm(args.repo, args.years, args.seed)
     return 0

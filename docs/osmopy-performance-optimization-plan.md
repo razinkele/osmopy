@@ -379,10 +379,13 @@ kernel change something to save.
 - **Item 1:** met. The split rule gives one thread per worker at 8 or more workers on this
   14-core box, including the DE default of 8 and the sweep's best of 14.
 - **Item 3's occupancy part:** met (median 26 schools per cell, 57.5% of pairs in cells over 50).
-- **Payoff, first number (2026-11-15):** the Phase 1a scan costs about 6.7 s of 26.3 s, so 25% of
-  one-thread mortality time and about 20% of a one-thread Baltic run. It was measured in place by
-  running the scan twice (`docs/perf/2026-11-15-phase1a-scan-cost.md`). Removing it entirely would
-  save at most about 20%.
+- **Payoff, first number (2026-11-15):** measured in place by repeating the scan
+  (`docs/perf/2026-11-15-phase1a-scan-cost.md`).
+  - **Phase 1a as a whole:** about 6.7 s of 26.3 s, so 25% of one-thread mortality time and about
+    20% of a one-thread Baltic run.
+  - **Its per-pair testing:** about 4.4 s.
+  - **A prefilter's ceiling:** it can remove only the rejected pairs' testing, about 11–13% of the
+    run, before its own bookkeeping.
 - **Next number:** what an order-preserving prototype costs per predator visit, measured the same
   way.
 
