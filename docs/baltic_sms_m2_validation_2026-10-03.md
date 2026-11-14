@@ -203,8 +203,8 @@ yr, final 5 years. The artifact is `baltic_sms_m2_validation_2026-11-14_v1.10.1_
 
 - **Cod stays within 2× of SMS on both prey,** slightly closer on sprat (1.72× from 1.81×).
 - **Sprat's stage rates are not comparable across this change.** Its "Juvenil" stage now runs to age
-  1, because stage outputs use the maturity rule; the lower juvenile rate (0.54 from 0.65) is partly
-  that relabelling.
+  1, because stage outputs use the maturity rule, so the juvenile rate (0.54 from 0.65) is not
+  comparable; how much of the change is that relabelling is not measured.
 - **The validator's SSB table now compares SSB with SSB** (#253). On this run:
 
   | | model SSB | ICES SSB envelope 2018–22 | |
