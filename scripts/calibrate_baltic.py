@@ -173,6 +173,67 @@ def _eval_child(func, x, conn, n_workers: int = 1) -> None:
         conn.close()
 
 
+def _reeval_child(evaluator, x, conn) -> None:
+    """Child-process entry for ``_ForkedReeval``: run the evaluator, send back its outputs."""
+    try:
+        evaluator.last_per_species_residuals = None
+        value = float(evaluator(x))
+        conn.send(("ok", value, evaluator.last_per_species_residuals))
+    except BaseException as exc:  # report, never let the child die silently
+        try:
+            conn.send(("error", f"{type(exc).__name__}: {exc}", None))
+        except BaseException:
+            pass
+    finally:
+        conn.close()
+
+
+class _ForkedReeval:
+    """The DE checkpoint's best-candidate re-evaluation, run in a forked child.
+
+    With forked DE workers (``--isolated-eval`` or a ``workers=W`` pool) the parent must never
+    run the engine: on Numba's GNU OpenMP layer a process that has run a parallel kernel cannot
+    fork children that run one -- each is terminated, and the isolated map scores it the
+    penalty. ``_write_progress_checkpoint`` re-evaluates ``best_x`` in-process every
+    ``--checkpoint-every`` generations, so done in the parent it silently froze the optimizer
+    after the first checkpoint (reproduced 2026-11-14). This wrapper keeps the evaluator
+    interface the checkpoint reads (``__call__``, ``last_per_species_residuals``, ``seed``,
+    ``targets``) and does the work in a child forked from the still-clean parent.
+    """
+
+    def __init__(self, evaluator, timeout_s: float) -> None:
+        self._evaluator = evaluator
+        self._timeout_s = timeout_s
+        self.seed = getattr(evaluator, "seed", None)
+        self.targets = getattr(evaluator, "targets", None)
+        self.last_per_species_residuals = None
+
+    def __call__(self, x) -> float:
+        ctx = mp.get_context("fork")
+        parent_conn, child_conn = ctx.Pipe(duplex=False)
+        proc = ctx.Process(target=_reeval_child, args=(self._evaluator, x, child_conn))
+        proc.start()
+        child_conn.close()  # only the child holds the write end -> clean EOF on a crash
+        try:
+            if not parent_conn.poll(self._timeout_s):
+                raise TimeoutError(f"checkpoint re-evaluation exceeded {self._timeout_s:.0f} s")
+            kind, value, residuals = parent_conn.recv()
+        except EOFError as exc:
+            raise RuntimeError("checkpoint re-evaluation child exited without a result") from exc
+        finally:
+            if proc.is_alive():
+                proc.terminate()
+            proc.join(timeout=5)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(timeout=5)
+            parent_conn.close()
+        if kind != "ok":
+            raise RuntimeError(f"checkpoint re-evaluation failed in the child: {value}")
+        self.last_per_species_residuals = residuals
+        return value
+
+
 def isolated_eval_map(
     timeout_s: float, n_workers: int, penalty: float = 1e6
 ) -> Callable[[Callable[..., float], Iterable], list[float]]:
@@ -1536,6 +1597,14 @@ def run_calibration(
         # workers call — re-evaluating best_x in-thread is deterministic
         # because the engine rebuilds its PCG64 state from evaluator.seed
         # on every run. See spec §6.5.1.
+        # With forked DE workers the checkpoint's re-evaluation must not run the engine in this
+        # process (GNU OpenMP fork hazard; see _ForkedReeval), so it runs in a forked child.
+        forked_workers = isolated_eval or (isinstance(workers, int) and workers != 1)
+        checkpoint_evaluator = (
+            _ForkedReeval(evaluator_instance, timeout_s=sim_timeout_s or 600.0)
+            if forked_workers and evaluator_instance is not None
+            else evaluator_instance
+        )
         de_callback = _make_checkpoint_callback(
             checkpoint_path,
             checkpoint_every,
@@ -1545,7 +1614,7 @@ def run_calibration(
             wall_clock_max_seconds=wall_clock_cap_s,
             phase=phase,
             optimizer="de",
-            evaluator=evaluator_instance,
+            evaluator=checkpoint_evaluator,
             banded_targets=banded_targets_dict,
             generation_budget=maxiter,
         )
