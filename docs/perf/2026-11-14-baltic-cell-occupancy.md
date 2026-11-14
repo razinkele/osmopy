@@ -99,8 +99,10 @@ keep all of these unchanged:
 - `n_local`;
 - the per-cell random stream, which indexes positions in the cell slice.
 
-Whether the bookkeeping costs less than the scan it replaces is exactly what September found was
-not true at EEC's occupancy. Baltic's crowded cells are where it would have to show a gain.
+Whether the bookkeeping costs less than the scan it replaces is what September argued, without
+measuring, was not true at EEC's occupancy. Baltic's crowded cells are where it would have to show
+a gain. (Wording corrected 2026-11-15: the September sort verdict was an argument, not a
+measurement.)
 
 ## Reproduce
 

@@ -303,10 +303,14 @@ Baltic runs `mortality.subdt = 10`.
 - **The one sizeable bit-exact edit:** `_collect_by_life_stage` with `np.bincount` (branch
   `perf/life-stage-bincount`). It saves 0.40 s per 10-yr run, measured in-process on identical
   states. It misses the 2%-in-every-pair bar: −0.6% and −3.8% at 14 threads, −3.9% and −1.0% at one.
-- **Found on the way:** the by-stage outputs have no end-to-end regression coverage. With them
+- **Found on the way:** the by-stage outputs had no end-to-end regression coverage. With them
   doubled, `test_engine_parity.py` still passes.
-- **Left:** an opt-in mode that skips output collectors a calibration objective does not read, and a
-  fixed-seed baseline for the by-stage outputs.
+  - **Closed by #264:** `tests/test_engine_output_parity.py` compares every output the BoB and EEC
+    baseline configs produce beyond the core three. It does not cover SSB, carbon flux or
+    bioenergetics, which neither config enables.
+  - **Local-only, like the core suite:** it compares exactly on CPython 3.12 and skips those
+    comparisons on CI.
+- **Left:** an opt-in mode that skips output collectors a calibration objective does not read.
 
 **Goal.** Reduce state initialisation, loop overhead and output collection, which together
 are about 14% of a threaded Baltic run (10.5% loop overhead plus 4.0%
@@ -379,8 +383,15 @@ kernel change something to save.
 - **Item 1:** met. The split rule gives one thread per worker at 8 or more workers on this
   14-core box, including the DE default of 8 and the sweep's best of 14.
 - **Item 3's occupancy part:** met (median 26 schools per cell, 57.5% of pairs in cells over 50).
-- **Payoff:** still unmeasured. The first number to take is the share of one-thread kernel time
-  spent in the Phase 1a scan on Baltic.
+- **Payoff, first number (2026-11-15):** measured in place by repeating the scan
+  (`docs/perf/2026-11-15-phase1a-scan-cost.md`).
+  - **Phase 1a as a whole:** about 6.7 s of 26.3 s, so 25% of one-thread mortality time and about
+    20% of a one-thread Baltic run.
+  - **Its per-pair testing:** about 4.4 s.
+  - **A prefilter's ceiling:** it can remove only the rejected pairs' testing, about 11–13% of the
+    run, before its own bookkeeping.
+- **Next number:** what an order-preserving prototype costs per predator visit, measured the same
+  way.
 
 **One candidate, a hypothesis only: an order-preserving prefilter.** It would find the eligible
 prey faster and visit them in their original cell order. To count as performance-preserving it

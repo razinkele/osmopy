@@ -103,6 +103,12 @@ The share is larger in a threaded run, where the kernels shrink and these functi
 - **Regression coverage for the stage outputs.** Any future change to these collectors, including
   `d535aa81` if it is ever merged, has only its own unit test to catch it. A fixed-seed baseline
   for the by-stage outputs would close that gap.
+  - **Update 2026-11-15, closed by #264:** `tests/test_engine_output_parity.py` covers the
+    by-stage outputs and every other output the BoB and EEC baseline configs produce. It does not
+    cover SSB, carbon flux or bioenergetics, which neither enables.
+  - **Its exact comparisons are local-only:** they run on CPython 3.12, like the core parity
+    suite. On CI they skip, and only a check on the baseline's keys runs. So CI alone does not
+    catch a collector change.
 - **Bundling bit-exact collector edits.** `d535aa81` plus the remaining 1-D `np.add.at` call sites
   (0.21 s of `ufunc.at` time over the run, mostly per-call overhead) could be measured together
   as one edit. Unmeasured; the expected total is about 0.4–0.5 s per 10-yr run.
