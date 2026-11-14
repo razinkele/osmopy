@@ -150,7 +150,9 @@ def run_cell(workers: int, rounds: int) -> dict:
 def launch(workers: int, threads: str, rounds: int) -> dict:
     """Run one cell in a fresh process with the thread env vars set (or unset for 'unr')."""
     env = dict(os.environ)
-    for v in (*THREAD_VARS, WORKER_THREADS_ENV):
+    # OSMOSE_NSGA2_WORKERS would silently replace W in the pool (_resolve_worker_count) while
+    # the record still said W, so it is cleared with the thread variables.
+    for v in (*THREAD_VARS, WORKER_THREADS_ENV, "OSMOSE_NSGA2_WORKERS"):
         env.pop(v, None)
     if threads == "unr":
         env[WORKER_THREADS_ENV] = "unrestricted"  # pools would otherwise apply their own rule

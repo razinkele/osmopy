@@ -302,6 +302,7 @@ def test_worker_thread_count_is_the_split_rule(monkeypatch):
 
 def test_worker_thread_count_env_override(monkeypatch, caplog):
     monkeypatch.setattr(tp, "physical_budget", lambda: 14)
+    monkeypatch.setattr(tp, "logical_budget", lambda: 28)
     monkeypatch.setenv(tp.WORKER_THREADS_ENV, "2")
     assert tp.worker_thread_count(14) == 2
     monkeypatch.setenv(tp.WORKER_THREADS_ENV, "unrestricted")
@@ -311,6 +312,9 @@ def test_worker_thread_count_env_override(monkeypatch, caplog):
     monkeypatch.setenv(tp.WORKER_THREADS_ENV, "lots")
     assert tp.worker_thread_count(4) == 3  # unparseable: warn and use the split rule
     assert "OSMOSE_WORKER_THREADS" in caplog.text
+    monkeypatch.setattr(tp, "logical_budget", lambda: 1)
+    monkeypatch.setenv(tp.WORKER_THREADS_ENV, "2")
+    assert tp.worker_thread_count(14) == 1  # a forced count is capped to the logical budget
 
 
 @pytest.mark.skipif((os.cpu_count() or 1) < 4, reason="needs >=4 cores to observe the split rule")
@@ -336,20 +340,6 @@ def test_forkserver_worker_applies_the_worker_policy(restore_numba_threads, monk
         assert ex.submit(numba_thread_count, None).result(timeout=120) == expected
 
 
-def test_worker_threads_for_fork_sets_then_restores(restore_numba_threads, monkeypatch):
-    """Fork-started workers inherit the forking thread's Numba count, so the context manager sets
-    it to the worker rule for the duration of the fork and restores it afterwards."""
-    numba = pytest.importorskip("numba")
-    monkeypatch.delenv(tp.WORKER_THREADS_ENV, raising=False)
-    monkeypatch.setattr(tp, "physical_budget", lambda: 4)
-    before = numba.get_num_threads()
-    if before < 2:
-        pytest.skip("default thread count is 1; cannot distinguish")
-    with tp.worker_threads_for_fork(4) as n:
-        assert n == 1 and numba.get_num_threads() == 1
-    assert numba.get_num_threads() == before
-
-
 def test_pool_initializers_apply_the_worker_policy():
     """Both engine pools apply the rule in their worker initializer (static guard: rebuilding a
     full OsmoseCalibrationProblem in a worker here would add heavy coupling for no extra
@@ -361,12 +351,13 @@ def test_pool_initializers_apply_the_worker_policy():
 
     assert "apply_worker_threads(spec.n_workers)" in inspect.getsource(problem._worker_init)
     assert "apply_worker_threads(n_workers)" in inspect.getsource(design._worker_init)
+    from scripts import calibrate_baltic
+
     de_script = (
         Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"
     ).read_text()
-    assert "worker_threads_for_fork(n_pool)" in de_script, (
-        "calibrate_baltic's DE path lost its policy"
-    )
+    assert "initializer=apply_worker_threads" in de_script, "DE pool lost its worker initializer"
+    assert "apply_worker_threads(n_workers)" in inspect.getsource(calibrate_baltic._eval_child)
 
 
 def test_calibration_spec_carries_the_resolved_worker_count(monkeypatch, tmp_path):
@@ -389,30 +380,50 @@ def test_calibration_spec_carries_the_resolved_worker_count(monkeypatch, tmp_pat
     assert make()._eval_spec().n_workers == 3
 
 
-@pytest.mark.skipif((os.cpu_count() or 1) < 4, reason="needs >=4 cores to observe the split rule")
-@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded:DeprecationWarning")
-def test_fork_pool_created_inside_the_context_runs_at_the_worker_rule(
-    restore_numba_threads, monkeypatch
-):
-    """What calibrate_baltic's DE path relies on: scipy's workers=W pool forks inside
-    worker_threads_for_fork(W), and the forked children inherit the rule."""
-    import multiprocessing
+_FORK_KERNEL_PROBE = """
+import json, multiprocessing as mp
+import numba
+from osmose.engine import thread_policy as tp
 
-    numba = pytest.importorskip("numba")
-    monkeypatch.delenv(tp.WORKER_THREADS_ENV, raising=False)
-    expected = min(tp.worker_thread_count(2), numba.config.NUMBA_NUM_THREADS)
-    if expected == numba.get_num_threads():
-        pytest.skip("the split rule equals the current count here; cannot distinguish")
+@numba.njit(parallel=True)
+def kernel(n):
+    s = 0.0
+    for i in numba.prange(n):
+        s += i
+    return s
 
-    from tests.helpers import numba_thread_count
+def child(_):
+    return float(kernel(1000)), numba.get_num_threads()
 
-    with tp.worker_threads_for_fork(2), multiprocessing.get_context("fork").Pool(2) as pool:
-        seen = pool.map(numba_thread_count, range(2))
-    assert seen == [expected, expected]
+if __name__ == "__main__":
+    # The parent never touches Numba's threads: the contract fork-started pools rely on.
+    with mp.get_context("fork").Pool(2, initializer=tp.apply_worker_threads, initargs=(2,)) as p:
+        out = p.map_async(child, range(2)).get(timeout=120)
+    from numba.core import config
+    expected = min(tp.worker_thread_count(2), config.NUMBA_NUM_THREADS)
+    print(json.dumps({"out": out, "expected": expected}))
+"""
 
 
-def test_isolated_eval_map_exposes_its_worker_count():
-    """calibrate_baltic's DE path reads n_workers off the isolated-eval map to size the rule."""
-    from scripts.calibrate_baltic import isolated_eval_map
+@pytest.mark.skipif((os.cpu_count() or 1) < 2, reason="needs >=2 cores")
+def test_forked_pool_runs_a_parallel_kernel_at_the_worker_rule(tmp_path):
+    """The calibrate_baltic DE pattern: a FORK pool whose initializer applies the rule runs real
+    parallel kernels at the rule. Run in a fresh interpreter: on Numba's GNU OpenMP layer a child
+    forked after the parent started the layer is terminated when it runs a parallel kernel, and
+    this pytest process may already have started it. Applying the rule in the parent before
+    forking (the first version of this change) hit exactly that."""
+    import json
+    import subprocess
 
-    assert isolated_eval_map(timeout_s=10.0, n_workers=3).n_workers == 3
+    pytest.importorskip("numba")
+    script = tmp_path / "probe.py"
+    script.write_text(_FORK_KERNEL_PROBE)
+    env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parent.parent))
+    env.pop(tp.WORKER_THREADS_ENV, None)
+    proc = subprocess.run(
+        [sys.executable, str(script)], capture_output=True, text=True, timeout=300, env=env
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    rec = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert [r[0] for r in rec["out"]] == [499500.0, 499500.0]  # the kernels ran
+    assert [r[1] for r in rec["out"]] == [rec["expected"], rec["expected"]]

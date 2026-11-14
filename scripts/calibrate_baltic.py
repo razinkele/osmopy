@@ -36,7 +36,7 @@ from scipy.optimize import differential_evolution
 
 from osmose.calibration.checkpoint import RESULTS_DIR  # honors OSMOSE_RESULTS_DIR
 from osmose.calibration.losses import STABILITY_TYPES, quantity_key
-from osmose.engine.thread_policy import worker_threads_for_fork
+from osmose.engine.thread_policy import apply_worker_threads
 
 # ---------------------------------------------------------------------------
 # Project paths
@@ -155,9 +155,14 @@ def _run_with_timeout(fn, timeout_s):
         signal.signal(signal.SIGALRM, old)
 
 
-def _eval_child(func, x, conn) -> None:
-    """Child-process entry: evaluate func(x) and send the scalar back, or None on failure."""
+def _eval_child(func, x, conn, n_workers: int = 1) -> None:
+    """Child-process entry: evaluate func(x) and send the scalar back, or None on failure.
+
+    The worker thread rule is applied HERE, in the forked child: on Numba's GNU OpenMP layer
+    the parent must never touch Numba's threads before forking (see osmose.engine.thread_policy).
+    """
     try:
+        apply_worker_threads(n_workers)
         conn.send(float(func(x)))
     except BaseException:
         try:
@@ -191,7 +196,7 @@ def isolated_eval_map(
             procs: dict[int, object] = {}
             for i in wave:
                 parent_conn, child_conn = ctx.Pipe(duplex=False)
-                p = ctx.Process(target=_eval_child, args=(func, tasks[i], child_conn))
+                p = ctx.Process(target=_eval_child, args=(func, tasks[i], child_conn, n_workers))
                 p.start()
                 child_conn.close()  # only the child holds the write end -> clean EOF on crash
                 conns[i] = parent_conn
@@ -219,7 +224,6 @@ def isolated_eval_map(
                 conns[i].close()
         return results
 
-    _map.n_workers = n_workers  # type: ignore[attr-defined]  # read by the DE thread policy
     return _map
 
 
@@ -1137,13 +1141,19 @@ def _dispatch_optimizer(
     and surrogate-DE have separate iteration models and ignore it.
     """
     if optimizer == "de":
-        # scipy's workers=W pool and the isolated-eval map both FORK from this thread, so the
-        # children inherit its Numba thread count: set it to the worker rule (max(1, physical
-        # cores // W)) for the duration. Unrestricted DE workers oversubscribe the cores
-        # (docs/perf/2026-11-14-worker-thread-sweep.md). The count is restored afterwards.
-        n_pool = workers if isinstance(workers, int) else getattr(workers, "n_workers", 1)
-        threads = worker_threads_for_fork(n_pool) if n_pool > 1 else contextlib.nullcontext()
-        with threads:
+        # scipy's workers=W would fork its own Pool. Fork ours instead, with the worker thread
+        # rule (max(1, physical cores // W)) as the initializer, so each worker applies it in
+        # its own process: unrestricted DE workers oversubscribe the cores
+        # (docs/perf/2026-11-14-worker-thread-sweep.md). The parent must not touch Numba's
+        # threads -- on the GNU OpenMP layer a child forked afterwards is terminated when it runs
+        # a parallel kernel. The isolated-eval map applies the rule in its own children.
+        pool_cm: contextlib.AbstractContextManager = contextlib.nullcontext()
+        if isinstance(workers, int) and workers != 1:
+            n_pool = (os.cpu_count() or 1) if workers == -1 else workers  # scipy: -1 = all CPUs
+            pool_cm = mp.get_context("fork").Pool(
+                n_pool, initializer=apply_worker_threads, initargs=(n_pool,)
+            )
+        with pool_cm as pool:
             result = differential_evolution(
                 objective,
                 bounds,
@@ -1155,7 +1165,7 @@ def _dispatch_optimizer(
                 recombination=0.8,
                 disp=True,
                 polish=False,  # L-BFGS-B unreliable on noisy landscape
-                workers=workers,
+                workers=pool.map if pool is not None else workers,
                 updating="deferred",  # required when workers > 1
                 callback=de_callback,
             )

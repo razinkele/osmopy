@@ -10,8 +10,8 @@ Two policies:
 
 - **Single run** (``apply_single_run_threads``): UI run thread, benchmark, headless
   single-run scripts use the physical-core budget.
-- **Worker pools** (``apply_worker_threads``, ``worker_threads_for_fork``): each of W
-  engine worker processes uses ``max(1, physical cores // W)`` threads. Measured
+- **Worker pools** (``apply_worker_threads``, called in each worker's initializer): each of
+  W engine worker processes uses ``max(1, physical cores // W)`` threads. Measured
   2026-11-14 on a 14-physical-core box (docs/perf/2026-11-14-worker-thread-sweep.md):
   8 workers at Numba's unrestricted default (28 threads each) gave 124 evals/h, while
   14 workers at 1 thread gave 492 evals/h (3.96x, interleaved repeats). Unrestricted
@@ -22,14 +22,19 @@ Two policies:
 
 The calls are thread-local runtime settings (``numba.set_num_threads``), never
 inherited environment variables, so a single-run cap cannot leak into a worker pool.
+
+**Apply the worker rule IN the worker, never in a parent that forks.** On Numba's GNU OpenMP
+threading layer, any Numba thread call (``get_num_threads`` / ``set_num_threads``, or a
+parallel kernel) starts the layer in the calling process, and a child forked afterwards is
+terminated ("fork() called from a process already using GNU OpenMP, this is unsafe") as soon
+as it runs a parallel kernel. Fork-started pools must therefore take ``apply_worker_threads``
+as their initializer, as forkserver and spawn pools do.
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
-from collections.abc import Iterator
 
 _log = logging.getLogger(__name__)
 
@@ -157,8 +162,10 @@ def worker_thread_count(n_workers: int) -> int | None:
 def _limit_threads(n: int) -> int:
     """Set Numba's (thread-local) count, and BLAS/OpenMP pools when threadpoolctl is present."""
     import numba  # type: ignore[import-untyped]  # optional extra
+    from numba.core import config as numba_config  # type: ignore[import-untyped]
 
-    n = max(1, min(n, getattr(numba.config, "NUMBA_NUM_THREADS", n)))
+    # NUMBA_NUM_THREADS is the pool size Numba was started with; set_num_threads cannot exceed it.
+    n = max(1, min(n, getattr(numba_config, "NUMBA_NUM_THREADS", n)))
     numba.set_num_threads(n)
     try:
         from threadpoolctl import threadpool_limits  # type: ignore[import-not-found]  # optional
@@ -187,38 +194,3 @@ def apply_worker_threads(n_workers: int) -> int:
     except Exception:
         _log.warning("could not apply the worker thread policy; using Numba default", exc_info=True)
         return 0
-
-
-@contextlib.contextmanager
-def worker_threads_for_fork(n_workers: int) -> Iterator[int]:
-    """Set this thread's Numba count to the worker rule while fork-started workers are created.
-
-    A forked child inherits the forking thread's Numba thread count, so a pool forked inside
-    the block (e.g. scipy's ``differential_evolution(workers=W)``) runs at the rule. Numba's
-    count and any BLAS/OpenMP limit are restored on exit, so serial work in the parent
-    afterwards keeps its threads. Yields the count applied (0 if left unchanged).
-    """
-    n = worker_thread_count(n_workers)
-    try:
-        import numba  # type: ignore[import-untyped]
-    except Exception:
-        yield 0
-        return
-    if n is None:
-        yield 0
-        return
-    previous = numba.get_num_threads()
-    n = max(1, min(n, getattr(numba.config, "NUMBA_NUM_THREADS", n)))
-    numba.set_num_threads(n)
-    blas: contextlib.AbstractContextManager = contextlib.nullcontext()
-    try:
-        from threadpoolctl import threadpool_limits  # type: ignore[import-not-found]  # optional
-
-        blas = threadpool_limits(limits=n)  # applies now; restores on exit
-    except Exception:
-        pass
-    try:
-        with blas:
-            yield n
-    finally:
-        numba.set_num_threads(previous)

@@ -65,25 +65,48 @@ against a spread of 5.3, at 5.7 GB.
 ## What changed
 
 - **`osmose/engine/thread_policy.py`:**
-  - `worker_thread_count(W)` returns the split rule. `OSMOSE_WORKER_THREADS` overrides it: a
-    positive integer forces that count, and `unrestricted` restores Numba's default.
-  - `apply_worker_threads(W)` applies it in a worker, setting Numba's thread-local count and, when
-    `threadpoolctl` is present, the BLAS/OpenMP pools.
-  - `worker_threads_for_fork(W)` sets it while fork-started workers are created, then restores it.
+  - `worker_thread_count(W)` returns the split rule. `OSMOSE_WORKER_THREADS` overrides it: a positive
+    integer forces that count, capped to the logical budget, and `unrestricted` restores Numba's
+    default.
+  - `apply_worker_threads(W)` applies the rule **in the worker**, setting Numba's thread-local count
+    and, when `threadpoolctl` is present, the BLAS/OpenMP pools.
 - **`osmose/calibration/problem.py`:** `_EvalSpec` carries the resolved worker count, and the
   forkserver `_worker_init` applies the rule.
 - **`osmose/calibration/uq/design.py`:** the spawn pool's `_worker_init` applies the rule.
-- **`scripts/calibrate_baltic.py`:** the DE path wraps `differential_evolution` in
-  `worker_threads_for_fork`. Both scipy's `workers=W` pool and the isolated-eval map fork from the
-  parent thread, and forked children inherit its Numba count (verified). Serial work in the parent
-  keeps its threads afterwards.
-- **`tests/test_thread_policy.py`:** the static guard asserting that calibration workers do *not*
-  set a thread count is replaced by tests of the rule, the override, a forkserver worker, a fork
-  pool inside the context manager, the restore, the spec's worker count and the pool initialisers.
-  The single-run-cap leak test stays, with its docstring updated.
+- **`scripts/calibrate_baltic.py`, DE path:**
+  - An integer `workers` now gets a fork `Pool` created here, with `apply_worker_threads` as its
+    initializer, passed to scipy as `workers=pool.map`. `-1` resolves to all CPUs, as scipy does.
+  - The isolated-eval map's children apply the rule themselves (`_eval_child`).
+  - Nothing in the parent touches Numba's threads (see the correction below).
+- **`tests/test_thread_policy.py`:**
+  - The static guard asserting that calibration workers do *not* set a thread count is replaced by
+    tests of the rule, the override and its cap, a forkserver worker, the spec's worker count, and
+    the pool initialisers and DE path.
+  - A fresh-interpreter test checks that a fork pool with the initializer runs a real `prange`
+    kernel at the rule.
+  - The single-run-cap leak test stays, with its docstring updated.
 - **Not covered:** the CMA-ES and surrogate-DE optimizers parallelise through joblib's loky backend,
   which spawns fresh interpreters that do not inherit the parent's setting. They still depend on
   the launch environment. That is a follow-up.
+
+## A correction during review: never set threads in a parent that forks
+
+The first version set the rule in the DE parent, through a context manager around
+`differential_evolution`, so that scipy's forked workers would inherit it. CodeRabbit flagged a real
+hazard, which was reproduced here:
+- **The cause:** this machine's Numba uses the GNU OpenMP threading layer. Any Numba thread call in
+  a process (`get_num_threads`, `set_num_threads`, or a parallel kernel) starts the layer there.
+- **The effect:** a child forked afterwards is killed when it runs a parallel kernel. It prints
+  "Terminating: fork() called from a process already using GNU OpenMP, this is unsafe", and the pool
+  hangs. Every engine evaluation runs the parallel mortality kernel.
+- **Why the tests missed it:** they only had children read `get_num_threads()`, which never runs a
+  parallel region.
+
+The fix applies the rule only inside the children (pool initializer, isolated child). The
+regression test runs a real `prange` kernel in fork children from a fresh interpreter. Re-introducing
+a parent-side call makes it fail with the same termination message (checked by mutation). The
+forkserver and spawn pools were never affected: their workers do not fork from a parent that has
+used Numba.
 
 ## Verification of the encoded rule
 
