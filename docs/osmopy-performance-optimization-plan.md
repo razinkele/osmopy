@@ -270,7 +270,7 @@ inside the serial kernel and what a statistically-equivalent change would requir
 (mean 29.1, max 390), against the ≤15 that would have carried September's conclusion over.
 - 57.5% of scanned pairs sit in cells over 50 schools, and 29% in the roughly 9 cells per step over
   100.
-- 11.9% of scanned pairs pass the size window.
+- 11.8% of scanned pairs pass the size window.
 - With `mortality.subdt = 10` that is about 1.08 billion pair tests over the five years, by an
   end-of-step count that approximates the kernel's `n_local`.
 

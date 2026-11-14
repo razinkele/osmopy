@@ -50,7 +50,7 @@ first-year seeding transient.
 | schools/cell, max | 390 | 390 | 390 | 36 | 101 | 271 |
 | pairs scanned | 1.17 M | 108.3 M | 132.8 M | 473 k | 27.1 M | 908 k |
 | pairs eligible | 14.9 k | 12.8 M | 15.1 M | 64.5 k | 3.0 M | 457 k |
-| **eligible fraction** | 1.3% | **11.9%** | 11.4% | 13.6% | 10.9% | 50.4% |
+| **eligible fraction** | 1.3% | **11.8%** | 11.4% | 13.6% | 10.9% | 50.4% |
 
 The EEC and BoB columns are copied from the September table. Baltic runs `mortality.subdt = 10`,
 and the kernel repeats the scan every sub-step. Years 6–10 therefore come to about 1.08 billion
