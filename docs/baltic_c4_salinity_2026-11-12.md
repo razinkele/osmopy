@@ -1,5 +1,9 @@
 # Baltic C4 re-run on v1.10.0: salinity-gate sensitivity arms, 2026-11-12
 
+> **Superseded 2026-11-14** by `docs/baltic_c4_salinity_2026-11-14.md` (v1.10.1, sprat matures by
+> age). cod_east −13.5% (14.5× SD) and cod_west +9.1% (10.6× SD) at −3 PSU there; the July chain is
+> still absent.
+
 This re-runs `docs/baltic_c4_salinity_2026-11-11.md` (v1.9.0) on **v1.10.0** (`05b517f3`), after
 #250's herring recalibration (maturity 14.5 cm, adult additional mortality 0.2 /yr). Harness, arms
 (ΔS = −1, −2, −3 PSU), seeds and labels are unchanged. It is still a mechanism characterisation, not

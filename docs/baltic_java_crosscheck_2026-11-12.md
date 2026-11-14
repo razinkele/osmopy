@@ -1,5 +1,8 @@
 # Baltic Java 4.4.1 cross-check on v1.10.0 (herring recalibration): 2026-11-12
 
+> **Superseded 2026-11-14** by `docs/baltic_java_crosscheck_2026-11-14.md` (v1.10.1, sprat matures
+> by age). Java still drives sprat extinct; every other Java value moved by at most 8%.
+
 **Trigger:** v1.10.0 (#250) recalibrated herring:
 - maturity size 18 → 14.5 cm;
 - adult additional mortality 2.25 → 0.2 /yr;

@@ -186,3 +186,34 @@ artifact is `baltic_sms_m2_validation_2026-11-12_v1.10.0_50yr.json`.
 - **The validator's SSB table still compares herring's ≥0.5-yr biomass** (1.58 Mt) **with an ICES
   SSB envelope.** `output.ssb.enabled` is on since v1.10.0, so switching it to compare SSB with SSB
   is now a small follow-up (#247, option 3). It is done in #253, not here.
+
+## Re-run 2026-11-14 on v1.10.1 (sprat matures by age), 50-yr protocol
+
+v1.10.1 (#255) changed sprat's maturity (age only, 1 yr) and re-solved SP1b's cod larval rates.
+Sprat is one of the two prey stocks, so the comparison is re-run with the same protocol: seed 0, 50
+yr, final 5 years. The artifact is `baltic_sms_m2_validation_2026-11-14_v1.10.1_50yr.json`.
+
+| | v1.10.0, 50 yr | **v1.10.1, 50 yr** | SMS |
+|---|---:|---:|---:|
+| herring, cod-attributed M2 | 0.036 (0.53×) | **0.036 (0.53×)** | 0.069 |
+| sprat, cod-attributed M2 | 0.157 (1.81×) | **0.149 (1.72×)** | 0.087 |
+| herring total predation, Juvenil / Adult (annual median) | 0.64 / 0.26 | 0.66 / 0.27 | — |
+| sprat total predation, Juvenil / Adult | 0.65 / 0.37 | 0.54 / 0.37 | — |
+| cod_east biomass (window mean) | 67,198 t | 68,128 t | — |
+
+- **Cod stays within 2× of SMS on both prey,** slightly closer on sprat (1.72× from 1.81×).
+- **Sprat's stage rates are not comparable across this change.** Its "Juvenil" stage now runs to age
+  1, because stage outputs use the maturity rule, so the juvenile rate (0.54 from 0.65) is not
+  comparable; how much of the change is that relabelling is not measured.
+- **The validator's SSB table now compares SSB with SSB** (#253). On this run:
+
+  | | model SSB | ICES SSB envelope 2018–22 | |
+  |---|---:|---:|---|
+  | cod_west | 16,897 t | 5,303–12,896 t | 2.04×, above |
+  | herring | 1,455,444 t | 790,268–867,726 t (partial) | 1.76×, above |
+  | sprat | 790,408 t | 888,412–1,121,262 t | 0.79×, below |
+
+  None is inside its envelope (0/3). Herring's envelope omits the central Baltic stock, which ICES
+  reports only as an index, so its verdict is not a calibration result. Sprat moved below its
+  envelope with #255: removing spawners younger than a year lowered model SSB. Certification, which
+  checks total biomass against wider envelopes, still passes 5/5.

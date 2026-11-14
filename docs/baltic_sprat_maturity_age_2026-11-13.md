@@ -142,8 +142,10 @@ these differed, every run would have been repeated on the age-only config.
 - **Sprat's "Juvenil" stage now runs to age 1.** Stage outputs use the same maturity rule, so sprat's
   stage mortality rates (and the SMS M2 comparison's per-stage rates for sprat) are not comparable
   across this change.
-- **Stale v1.10.0 results, not re-run:** B2 scenarios, C4 salinity arms, the Java cross-check and the
-  SMS M2 addendum. The shifts in other species are small (≤1.3%), but sprat moved 10%.
+- **The v1.10.0 results this made stale were re-run on v1.10.1 (2026-11-14):**
+  `docs/baltic_b2_scenarios_2026-11-14.md`, `docs/baltic_c4_salinity_2026-11-14.md`,
+  `docs/baltic_java_crosscheck_2026-11-14.md`, and the v1.10.1 section of
+  `docs/baltic_sms_m2_validation_2026-10-03.md`. None changed materially.
 - **Both engines now read sprat's maturity the same way.** Disassembling the 4.4.1 jar
   (`Species.<init>`, `Species.isSexuallyMature`) shows Java treats size and age as ALTERNATIVES:
 
