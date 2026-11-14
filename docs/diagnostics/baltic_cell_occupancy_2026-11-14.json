@@ -1,0 +1,68 @@
+{
+ "seed": 42,
+ "years": 10,
+ "subdt": 10,
+ "year1": {
+  "window": "year 1",
+  "steps": 24,
+  "steps_with_schools": 22,
+  "schools_per_step_mean": 1901,
+  "occupied_cells_mean": 406,
+  "schools_per_cell_mean": 6.0,
+  "schools_per_cell_median": 4.0,
+  "schools_per_cell_max": 390,
+  "pairs_scanned": 1170363,
+  "pairs_eligible": 14853,
+  "eligible_fraction": 0.0127,
+  "pairs_scanned_x_subdt": 11703630,
+  "scanned_share_by_cell_size": {
+   "le15": 0.22,
+   "16_50": 0.045,
+   "51_100": 0.017,
+   "gt100": 0.718
+  },
+  "cells_over_100_per_step_mean": 0.4
+ },
+ "final5": {
+  "window": "years 6-10",
+  "steps": 120,
+  "steps_with_schools": 120,
+  "schools_per_step_mean": 17730,
+  "occupied_cells_mean": 608,
+  "schools_per_cell_mean": 29.1,
+  "schools_per_cell_median": 26.0,
+  "schools_per_cell_max": 390,
+  "pairs_scanned": 108305142,
+  "pairs_eligible": 12832373,
+  "eligible_fraction": 0.1185,
+  "pairs_scanned_x_subdt": 1083051420,
+  "scanned_share_by_cell_size": {
+   "le15": 0.016,
+   "16_50": 0.409,
+   "51_100": 0.283,
+   "gt100": 0.292
+  },
+  "cells_over_100_per_step_mean": 9.1
+ },
+ "all": {
+  "window": "years 1-10",
+  "steps": 240,
+  "steps_with_schools": 238,
+  "schools_per_step_mean": 12603,
+  "occupied_cells_mean": 587,
+  "schools_per_cell_mean": 21.1,
+  "schools_per_cell_median": 21.0,
+  "schools_per_cell_max": 390,
+  "pairs_scanned": 132836917,
+  "pairs_eligible": 15134373,
+  "eligible_fraction": 0.1139,
+  "pairs_scanned_x_subdt": 1328369170,
+  "scanned_share_by_cell_size": {
+   "le15": 0.035,
+   "16_50": 0.438,
+   "51_100": 0.257,
+   "gt100": 0.27
+  },
+  "cells_over_100_per_step_mean": 4.8
+ }
+}
