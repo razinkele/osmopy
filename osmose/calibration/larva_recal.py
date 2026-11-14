@@ -369,22 +369,20 @@ JOINT_TOL: float = 0.05
 # the pair.
 RECAL_RATES: dict[str, StockRecal] = {
     "cod_east": StockRecal(
-        rate=8.992091279409108,
+        rate=9.029238447974219,
         d0=10.15686139,
-        baseline=121760.28736975748,
-        mean_on=122399.51592472782,
-        rel_err=0.005249893612924467,
-        note="solved 2026-11-12 (herring maturity 14.5 cm + adult M 0.2) sweep 1: converged; "
-        "joint +0.52%",
+        baseline=119835.61951493118,
+        mean_on=119734.43323583742,
+        rel_err=0.0008443756497720767,
+        note="solved 2026-11-13 (sprat maturity age 1 yr) sweep 1: converged; joint -0.08%",
     ),
     "cod_west": StockRecal(
-        rate=8.929625378846882,
+        rate=8.940153384902565,
         d0=10.44415425,
-        baseline=11231.370901409246,
-        mean_on=11009.017013208026,
-        rel_err=0.019797573257359015,
-        note="solved 2026-11-12 (herring maturity 14.5 cm + adult M 0.2): converged "
-        "(1-D tol 2%); joint -1.98%",
+        baseline=11252.6188232591,
+        mean_on=11167.851651812392,
+        rel_err=0.007533106095400091,
+        note="solved 2026-11-13 (sprat maturity age 1 yr) sweep 1: converged; joint -0.75%",
     ),
 }
 

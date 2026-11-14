@@ -189,3 +189,34 @@ def test_apply_overlay_raises_on_background_index_not_typed_background(tmp_path:
     cfg = dict(OsmoseConfigReader().read(str(demo["config_file"])))
     with pytest.raises(ValueError, match="species.type"):
         apply_overlay(cfg, n_species=9, background_indices=[15, 99])  # sp99 doesn't exist
+
+
+def test_apply_overlay_age_based_species_keeps_the_c3_arm_m0(tmp_path: Path):
+    """Baltic sprat matures by age (species.maturity.age, no size) since 2026-11-13. Bioen
+    maturity is a length reaction norm, so the overlay gives sprat the intercept the C3 bioen
+    arm sets explicitly, not a KeyError and not 0."""
+    import json
+
+    demo = osmose_demo("baltic", tmp_path)
+    cfg = dict(OsmoseConfigReader().read(str(demo["config_file"])))
+    assert cfg["species.name.sp2"] == "sprat" and "species.maturity.size.sp2" not in cfg
+    apply_overlay(cfg, n_species=9, background_indices=[15, 16])
+    arm = json.loads(
+        (
+            Path(__file__).resolve().parent.parent
+            / "data"
+            / "baltic"
+            / "scenarios"
+            / "c3_bioen"
+            / "c3_bioen_arm.json"
+        ).read_text()
+    )
+    assert float(cfg["species.maturity.m0.sp2"]) == float(arm["species.maturity.m0.sp2"]) == 9.0
+
+
+def test_apply_overlay_still_raises_for_a_size_missing_on_a_size_based_species(tmp_path: Path):
+    demo = osmose_demo("baltic", tmp_path)
+    cfg = dict(OsmoseConfigReader().read(str(demo["config_file"])))
+    del cfg["species.maturity.size.sp0"]  # cod_west: not age-based
+    with pytest.raises(KeyError, match="species.maturity.size.sp0|cod_west"):
+        apply_overlay(cfg, n_species=9, background_indices=[15, 16])

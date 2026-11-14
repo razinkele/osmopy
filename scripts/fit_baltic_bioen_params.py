@@ -35,6 +35,7 @@ from osmose.calibration.bioen_offline import (
     BioenFixed,
     FitResult,
     SpeciesTargets,
+    bioen_m0_cm,
     bioen_param_lines,
     c_m_from_share,
     fit_species,
@@ -448,7 +449,7 @@ def _species_targets_from_baltic(
         cf = float(raw[f"species.length2weight.condition.factor.sp{i}"])
         b = float(raw[f"species.length2weight.allometric.power.sp{i}"])
         lifespan = float(raw[f"species.lifespan.sp{i}"])
-        m0_val = float(config.maturity_size[i])
+        m0_val = bioen_m0_cm(name, float(config.maturity_size[i]))  # age-based: C3 arm's m0
 
         override = config.egg_weight_override
         if override is not None and not np.isnan(override[i]):

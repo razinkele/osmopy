@@ -1,6 +1,6 @@
 {
   "note": "Written by scripts/recalibrate_sp1b.py; each run REPLACES this file (a new solve is new provenance; prior solves live in git history). 'joint' is the BEST sweep (smallest worst-stock rel_err), 'per_stock' the 1-D solves of that sweep, 'sweep_history' the joint rel_errs after every sweep. Frozen values in osmose/calibration/larva_recal.py are pasted from the printed block by hand.",
-  "date": "2026-11-12",
+  "date": "2026-11-13",
   "config": "data/baltic/baltic_all-parameters.csv",
   "field": "data/baltic/forcing/baltic_rv_field.nc",
   "tol": 0.02,
@@ -9,8 +9,8 @@
     "cod_west"
   ],
   "baselines": {
-    "cod_east": 121760.28736975748,
-    "cod_west": 11231.370901409246
+    "cod_east": 119835.61951493118,
+    "cod_west": 11252.6188232591
   },
   "d0": {
     "cod_east": 10.15686139,
@@ -46,101 +46,101 @@
   },
   "per_stock": {
     "cod_east": {
-      "rate": 8.992091279409108,
+      "rate": 9.029238447974219,
       "feasible": true,
       "converged": true,
-      "mean_on": 123203.08074100742,
-      "rel_err": 0.011849457671436915,
-      "iters": 6,
+      "mean_on": 120941.6246414334,
+      "rel_err": 0.009229352098975999,
+      "iters": 5,
       "message": "converged",
       "grid": [
         [
           0.0,
-          1754539.6368873015
+          1710316.059911209
         ],
         [
           2.5392153475,
-          915452.2639079582
+          919174.4682761781
         ],
         [
           5.078430695,
-          594598.4315753273
+          567736.5576853129
         ],
         [
           7.6176460425,
-          301406.79738619464
+          302601.12897442817
         ],
         [
           9.995064830667108,
-          30792.54725763942
+          28649.420042990416
         ],
         [
           10.15686139,
-          20140.47677294351
+          19509.7389849859
         ]
       ]
     },
     "cod_west": {
-      "rate": 8.929625378846882,
+      "rate": 8.940153384902565,
       "feasible": true,
       "converged": true,
-      "mean_on": 11009.017013208026,
-      "rel_err": 0.019797573257359015,
-      "iters": 10,
+      "mean_on": 11167.851651812392,
+      "rel_err": 0.007533106095400091,
+      "iters": 7,
       "message": "converged",
       "grid": [
         [
           0.0,
-          723042.9085631295
+          727719.5218841737
         ],
         [
           2.6110385625,
-          378767.5603823787
+          389561.20954414667
         ],
         [
           5.222077125,
-          155621.4200390098
+          161236.86907163894
         ],
         [
           7.8331156875,
-          34282.22906461833
+          32772.34737494977
         ],
         [
           8.904057364140225,
-          12070.086578249568
+          11545.141122948662
         ],
         [
           10.44415425,
-          504.460248837649
+          485.8709717726185
         ]
       ]
     }
   },
   "sweep_history": [
     {
-      "cod_east": 0.005249893612924467,
-      "cod_west": 0.019797573257359015
+      "cod_east": 0.0008443756497720767,
+      "cod_west": 0.007533106095400091
     }
   ],
   "joint": {
     "best_sweep": 1,
     "joint_tol": 0.05,
     "rates": {
-      "cod_east": 8.992091279409108,
-      "cod_west": 8.929625378846882
+      "cod_east": 9.029238447974219,
+      "cod_west": 8.940153384902565
     },
     "means": {
-      "cod_east": 122399.51592472782,
-      "cod_west": 11009.017013208026
+      "cod_east": 119734.43323583742,
+      "cod_west": 11167.851651812392
     },
     "rel_errs": {
-      "cod_east": 0.005249893612924467,
-      "cod_west": 0.019797573257359015
+      "cod_east": 0.0008443756497720767,
+      "cod_west": 0.007533106095400091
     },
     "converged": true,
     "sweeps": 1,
-    "evaluations": 27,
-    "total_cod_off": 132991.65827116673,
-    "total_cod_on": 133408.53293793584
+    "evaluations": 23,
+    "total_cod_off": 131088.23833819028,
+    "total_cod_on": 130902.28488764982
   }
 }

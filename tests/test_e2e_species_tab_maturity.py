@@ -153,3 +153,25 @@ def test_copying_an_age_based_species_0_turns_a_destination_size_input_age_based
         assert page.get_by_text("age-based").count() >= 2
     finally:
         shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)
+
+
+def test_baltic_sprat_size_cell_is_age_based(page: Page, app: ShinyAppProc):
+    """Baltic sprat (sp2) matures by age only (2026-11-13), so the Species table must show its
+    size cell as read-only "age-based": a size input would write the 50 cm schema default back and
+    stop sprat maturing in both engines."""
+    page.goto(app.url)
+    page.wait_for_selector(".nav-pills", timeout=_T)
+    dismiss_changelog_modal(page)
+    page.locator(".nav-pills .nav-link[data-value='grid']").click()
+    page.wait_for_selector("#load_example", timeout=_T)
+    page.select_option("#load_example", "baltic")
+    page.click("#btn_load_example")
+    page.wait_for_selector(".shiny-notification", timeout=_T)
+    page.wait_for_timeout(3_000)
+
+    page.locator(".nav-pills .nav-link[data-value='setup']").click()
+    page.wait_for_selector("#spt_species_maturity_size_1", timeout=_T)  # herring: size-based
+    page.wait_for_timeout(2_000)
+    assert page.locator("#spt_species_maturity_size_2").count() == 0
+    assert page.get_by_text("age-based").count() >= 1
+    assert float(page.locator("#spt_species_maturity_age_2").input_value()) == 1.0
