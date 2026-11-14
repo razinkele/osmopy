@@ -80,10 +80,46 @@ def test_checkpoint_reeval_keeps_later_isolated_evals_alive(tmp_path):
     )
 
 
-def test_de_checkpoint_uses_the_forked_reeval_with_forked_workers():
-    """Static guard on the wiring: with forked DE workers the checkpoint gets _ForkedReeval."""
-    src = (ROOT / "scripts" / "calibrate_baltic.py").read_text()
-    assert "_ForkedReeval(evaluator_instance" in src
+class _CallbackCaptured(Exception):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("isolated_eval", "de_workers", "forked"),
+    [
+        (True, "1", True),  # --isolated-eval: a forked child per candidate
+        (False, "4", True),  # scipy's own fork pool
+        (False, "-1", True),  # scipy's pool on every core
+        (False, "1", False),  # serial DE: the parent is the only process
+    ],
+)
+def test_run_calibration_hands_the_checkpoint_a_forked_reeval_only_with_forked_workers(
+    monkeypatch, tmp_results_dir, isolated_eval, de_workers, forked
+):
+    """Drive run_calibration up to the checkpoint callback and capture the evaluator it is
+    given. Forked worker modes must get _ForkedReeval wrapping the DE objective; serial DE must
+    get the objective itself (re-evaluating in the parent is safe there and needs no fork)."""
+    import scripts.calibrate_baltic as cal
+
+    monkeypatch.setenv("OSMOSE_DE_WORKERS", de_workers)
+    seen = {}
+
+    def capture(*args, **kwargs):
+        seen["evaluator"] = kwargs["evaluator"]
+        raise _CallbackCaptured
+
+    monkeypatch.setattr(cal, "_make_checkpoint_callback", capture)
+    with pytest.raises(_CallbackCaptured):
+        cal.run_calibration(phase="1", n_years=1, isolated_eval=isolated_eval)
+
+    evaluator = seen["evaluator"]
+    if forked:
+        assert isinstance(evaluator, cal._ForkedReeval)
+        assert hasattr(evaluator._evaluator, "targets")  # wraps the DE objective
+        assert evaluator.targets == evaluator._evaluator.targets
+    else:
+        assert not isinstance(evaluator, cal._ForkedReeval)
+        assert hasattr(evaluator, "targets")
 
 
 class _RaisingEvaluator:
