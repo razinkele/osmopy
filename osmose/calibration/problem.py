@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 import numpy as np
 from pymoo.core.problem import Problem  # type: ignore[import-untyped]
 
+from osmose.engine.thread_policy import apply_worker_threads
 from osmose.logging import setup_logging
 from osmose.schema import build_registry
 
@@ -69,14 +70,21 @@ class _EvalSpec:
     cleanup_after_eval: bool
     use_java_engine: bool
     use_registry: bool
+    n_workers: int = 1  # pool size; each worker applies the split thread rule for it
 
 
 _WORKER_PROBLEM: OsmoseCalibrationProblem | None = None
 
 
 def _worker_init(spec: _EvalSpec) -> None:
-    """ProcessPoolExecutor initializer: reconstruct the problem once per worker."""
+    """ProcessPoolExecutor initializer: set this worker's threads, then rebuild the problem.
+
+    Each of the pool's W workers runs max(1, physical cores // W) Numba threads
+    (``osmose.engine.thread_policy``); W workers at Numba's unrestricted default
+    oversubscribe the cores (measured 3.96x slower at the default 8 workers).
+    """
     global _WORKER_PROBLEM
+    apply_worker_threads(spec.n_workers)
     reg = build_registry() if spec.use_registry else None
     _WORKER_PROBLEM = OsmoseCalibrationProblem(
         free_params=spec.free_params,
@@ -337,6 +345,7 @@ class OsmoseCalibrationProblem(Problem):
             cleanup_after_eval=self.cleanup_after_eval,
             use_java_engine=self.use_java_engine,
             use_registry=self._registry is not None,
+            n_workers=_resolve_worker_count(self.n_parallel),
         )
 
     def _ensure_pool(self) -> ProcessPoolExecutor:
@@ -352,7 +361,7 @@ class OsmoseCalibrationProblem(Problem):
                     "Objective/spec is not picklable; use parallel_backend='thread'"
                 ) from exc
             self._executor = ProcessPoolExecutor(
-                max_workers=_resolve_worker_count(self.n_parallel),
+                max_workers=spec.n_workers,
                 mp_context=multiprocessing.get_context("forkserver"),
                 initializer=_worker_init,
                 initargs=(spec,),
