@@ -90,16 +90,24 @@ def summarize(rows: list[dict], label: str, subdt: int) -> dict:
     scanned = sum(r["scanned"] for r in rows)
     eligible = sum(r["eligible"] for r in rows)
     occupied = [r for r in rows if r["mean"] is not None]
+    # Undefined statistics are None (JSON null), never NaN: a window with no step has no per-step
+    # mean, and one with no occupied step has no schools-per-cell statistics.
     return {
         "window": label,
         "steps": len(rows),
         "steps_with_schools": len(occupied),
-        "schools_per_step_mean": round(float(np.mean([r["schools"] for r in rows]))),
-        "occupied_cells_mean": round(float(np.mean([r["cells"] for r in rows]))),
+        "schools_per_step_mean": round(float(np.mean([r["schools"] for r in rows])))
+        if rows
+        else None,
+        "occupied_cells_mean": round(float(np.mean([r["cells"] for r in rows]))) if rows else None,
         # Per-cell statistics over the steps that hold at least one school.
-        "schools_per_cell_mean": round(float(np.mean([r["mean"] for r in occupied])), 1),
-        "schools_per_cell_median": float(np.median([r["median"] for r in occupied])),
-        "schools_per_cell_max": int(max(r["max"] for r in rows)),
+        "schools_per_cell_mean": round(float(np.mean([r["mean"] for r in occupied])), 1)
+        if occupied
+        else None,
+        "schools_per_cell_median": float(np.median([r["median"] for r in occupied]))
+        if occupied
+        else None,
+        "schools_per_cell_max": int(max(r["max"] for r in occupied)) if occupied else None,
         "pairs_scanned": scanned,
         "pairs_eligible": eligible,
         "eligible_fraction": round(eligible / scanned, 4) if scanned else None,
@@ -109,7 +117,9 @@ def summarize(rows: list[dict], label: str, subdt: int) -> dict:
         }
         if scanned
         else None,
-        "cells_over_100_per_step_mean": round(float(np.mean([r["n_over_100"] for r in rows])), 1),
+        "cells_over_100_per_step_mean": round(float(np.mean([r["n_over_100"] for r in rows])), 1)
+        if rows
+        else None,
     }
 
 
@@ -141,8 +151,9 @@ def main() -> int:
         ),
         "all": summarize(rows, f"years 1-{args.years}", subdt),
     }
-    args.out.write_text(json.dumps(out, indent=1))
-    print(json.dumps(out, indent=1))
+    text = json.dumps(out, indent=1, allow_nan=False)  # a NaN here is a bug: fail, don't write it
+    args.out.write_text(text)
+    print(text)
     return 0
 
 
