@@ -245,6 +245,11 @@ def sync_inputs(
         except TypeError:
             _log.warning("sync_inputs: TypeError reading input '%s'", input_id)
             continue
+        if isinstance(val, (list, tuple, dict)):
+            # A file-upload control (FILE_PATH / MATRIX fields render ui.input_file) returns a list
+            # of upload records, not a path; str() of it would overwrite the configured file name.
+            # Nothing stores schema-form uploads, so they are never synced.
+            continue
         if val is not None:
             new_val = str(val)
             # Preserve multi-value config entries ("2.3;1.8", or "15, 5": the engine splits on

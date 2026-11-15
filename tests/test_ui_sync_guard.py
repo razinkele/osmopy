@@ -202,3 +202,19 @@ def test_materialize_false_writes_edits_but_not_untouched_defaults():
             _RecordingInput("40"), state, ["grid.nlon"], rendered="grid.fields", materialize=False
         )
         assert state.config.get()["grid.nlon"] == "40"  # an edit (not the default 30): written
+
+
+def test_a_file_upload_value_never_overwrites_a_path():
+    """FILE_PATH fields render ui.input_file, whose value is a list of upload records. Once the
+    Grid sync stopped aborting, an upload reached str(val) and would have replaced
+    grid.netcdf.file with that list's text."""
+    upload = [{"name": "grid.nc", "size": 10, "type": "", "datapath": "/tmp/x/0.nc"}]
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"grid.netcdf.file": "baltic_grid.nc"})
+        state.mark_rendered("grid.fields")
+        changed = sync_inputs(
+            _RecordingInput(upload), state, ["grid.netcdf.file"], rendered="grid.fields"
+        )
+        assert changed == {}
+        assert state.config.get()["grid.netcdf.file"] == "baltic_grid.nc"
