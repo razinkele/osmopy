@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from osmose.config.multivalue import is_multi_value, split_multi_value
 from osmose.schema.base import OsmoseField, ParamType
 from osmose.schema.registry import ParameterRegistry
 
@@ -31,10 +32,10 @@ def validate_config(
         if not value or value.lower() in ("null", "none"):
             continue
 
-        # Validate each value in semicolon-separated multi-value params
-        if ";" in value:
-            for idx, sub_val in enumerate(value.split(";")):
-                sub_val = sub_val.strip()
+        # Validate each value of a multi-value (per-stage) param. The engine splits these on ';'
+        # AND ',' (osmose.config.multivalue), so "15, 5" is two values, not one bad number.
+        if is_multi_value(value):
+            for idx, sub_val in enumerate(split_multi_value(value, keep_empty=True)):
                 if not sub_val:
                     continue
                 if field.param_type in (ParamType.FLOAT, ParamType.INT):

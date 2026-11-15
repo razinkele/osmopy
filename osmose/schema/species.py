@@ -346,7 +346,9 @@ SPECIES_FIELDS: list[OsmoseField] = [
         param_type=ParamType.FLOAT,
         default=3.5,
         min_val=1.0,
-        max_val=1000.0,
+        # Filter feeders need large ratios: the official Benguela config gives sardine's
+        # adult stage 200-4000 (prey of 0.05-1 mm at 20 cm). The cap only guards typos.
+        max_val=100000.0,
         description="Maximum predator/prey size ratio",
         category="predation",
         indexed=True,
@@ -356,7 +358,9 @@ SPECIES_FIELDS: list[OsmoseField] = [
         param_type=ParamType.FLOAT,
         default=1.5,
         min_val=1.0,
-        max_val=1000.0,
+        # Filter feeders need large ratios: the official Benguela config gives sardine's
+        # adult stage 200-4000 (prey of 0.05-1 mm at 20 cm). The cap only guards typos.
+        max_val=100000.0,
         description="Minimum predator/prey size ratio",
         category="predation",
         indexed=True,

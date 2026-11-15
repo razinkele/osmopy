@@ -165,11 +165,16 @@ BIOENERGETICS_FIELDS: list[OsmoseField] = [
     OsmoseField(
         key_pattern="species.maturity.r.sp{idx}",
         param_type=ParamType.FLOAT,
-        description="Reproductive energy allocation fraction r",
+        # Not a fraction: the allocation fraction is rho = r / (eta * E_net) * w^(1-beta), clipped
+        # to [0, 1] (energy_budget.py, as Java). The Java bioen example ships r = 1.3-2.7, which a
+        # former max_val=1.0 rejected, blocking UI runs of any such config.
+        description=(
+            "Reproductive allocation coefficient r (rho = r / (eta * E_net) * w^(1-beta), "
+            "clipped to [0, 1]; r itself is not bounded by 1)"
+        ),
         category="bioenergetics",
         indexed=True,
         min_val=0.0,
-        max_val=1.0,
     ),
     OsmoseField(
         key_pattern="species.maturity.m0.sp{idx}",

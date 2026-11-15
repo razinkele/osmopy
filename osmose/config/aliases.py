@@ -60,16 +60,22 @@ def _ndtperyear(cfg: dict[str, str]) -> float | None:
 
 
 def _scale_rate_value(value: str, factor: float) -> str:
-    # ';'-separated per-stage arrays scaled component-wise; :.10g trims float noise.
+    # Per-stage arrays scaled component-wise, keeping each separator: the engine splits on ';'
+    # AND ',' (osmose.config.multivalue), so "15, 2" is two rates. :.10g trims float noise.
     # Unset/sentinel components ('', null/none/na/nan) pass through verbatim so a
     # recoverable config isn't turned into an uncaught ValueError.
-    def _scale(part: str) -> str:
+    def _scale(part: str, after_separator: bool) -> str:
         s = part.strip()
         if not s or s.lower() in ("null", "none", "na", "nan"):
             return part
-        return f"{float(s) * factor:.10g}"
+        # Keep the space after a separator ("15, 2" -> "360, 48"); the first part is emitted bare,
+        # exactly as before this function learned commas.
+        lead = part[: len(part) - len(part.lstrip())] if after_separator else ""
+        return f"{lead}{float(s) * factor:.10g}"
 
-    return ";".join(_scale(p) for p in value.split(";"))
+    # re.split with a capture group returns the separators too: parts at even indices.
+    pieces = re.split(r"([;,])", value)
+    return "".join(p if i % 2 else _scale(p, i > 0) for i, p in enumerate(pieces))
 
 
 def _migrate_larva_rate(cfg: dict[str, str], factor: float, *, warn_bydt: bool) -> dict[str, str]:

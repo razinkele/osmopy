@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from shiny import reactive
 from shiny.types import SilentException
 
+from osmose.config.multivalue import is_multi_value
 from osmose.logging import setup_logging
 from osmose.runner import RunResult
 from osmose.schema import build_registry
@@ -164,11 +165,10 @@ def sync_inputs(
             continue
         if val is not None:
             new_val = str(val)
-            # Preserve multi-value config entries (e.g. "2.3;1.8" for per-stage
-            # arrays). The UI renders these as single-value inputs using the
-            # field default, so writing back would clobber the original array.
+            # Preserve multi-value config entries ("2.3;1.8", or "15, 5": the engine splits on
+            # both). A single-value input cannot hold the array, so writing back would clobber it.
             old_val = cfg.get(key, "")
-            if ";" in old_val and ";" not in new_val:
+            if is_multi_value(old_val) and not is_multi_value(new_val):
                 _log.debug(
                     "sync_inputs: preserving multi-value '%s' (old=%r, ui=%r)",
                     key,

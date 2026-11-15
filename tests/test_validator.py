@@ -222,3 +222,16 @@ def test_summarize_matches_inline_composition_dry_lock(tmp_path):
         helper_err, helper_warn = summarize_config_validation(config, registry, config_dir)
         assert helper_err == inline_err
         assert helper_warn == inline_warn
+
+
+def test_validate_config_checks_each_part_of_a_comma_array(registry):
+    """The engine splits per-stage arrays on ',' as well as ';' (Benguela: "15, 5"). Each part is
+    validated like a ';' array: no "expected number" for the whole string, bounds per element."""
+    ok = {"predation.predprey.sizeratio.max.sp0": "15, 5"}
+    errors, _ = validate_config(ok, registry)
+    assert errors == []
+    bad = {"predation.predprey.sizeratio.max.sp0": "15, 200000"}  # field max is 1e5
+    errors, _ = validate_config(bad, registry)
+    assert errors == [
+        "predation.predprey.sizeratio.max.sp0[1]: value 200000.0 above maximum 100000.0"
+    ]

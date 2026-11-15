@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from shiny import ui
 
+from osmose.config.multivalue import is_multi_value
 from osmose.logging import setup_logging
 from osmose.schema.base import OsmoseField, ParamType
 
@@ -122,15 +123,15 @@ def render_field(
         config_key = field.key_pattern
     input_id = input_id_for_field(field, idx=species_idx, prefix=prefix)
 
-    # H12: detect multi-value entries (";"-separated arrays like "2.3;1.8"
-    # for per-stage parameters). The single-value inputs below cannot
+    # H12: detect multi-value entries (per-stage arrays: "2.3;1.8", or "15, 5" — the engine
+    # splits on both, see osmose.config.multivalue). The single-value inputs below cannot
     # represent these — render a visibly read-only text input with a label
     # directing the user to edit via the Advanced tab. The reverse-side
     # guard at ui/state.py:sync_inputs already preserves the original
     # array if a single-value form somehow tries to overwrite it.
     if config is not None and config_key in config:
         cfg_val = config[config_key]
-        if isinstance(cfg_val, str) and ";" in cfg_val:
+        if is_multi_value(cfg_val):
             base_label = field.description or field.key_pattern
             label = ui.tags.span(
                 f"{base_label} (multi-value — edit in Advanced)",
@@ -353,6 +354,10 @@ def collect_species_table_updates(
         for field in visible:
             if _age_based_maturity(field, config, i):
                 continue
+            # A per-stage array has no input (render_species_table shows it read-only); decided
+            # from the config, because Shiny keeps the last value of an input removed from the page.
+            if is_multi_value(config.get(field.resolve_key(i))):
+                continue
             base_key = (
                 field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
             )
@@ -522,6 +527,17 @@ def render_species_table(
                         title="Matures by species.maturity.age (no maturity size set)",
                         style="color: #5a6a7a; font-size: 11px;",
                     )
+                elif config and is_multi_value(config.get(config_key)):
+                    # A per-stage array cannot sit in a numeric input: rendering one showed the
+                    # schema default, which sync_species_inputs then wrote over the array, and the
+                    # engine refused the run (EEC full sp5 size ratios). Shown read-only, with no
+                    # input; edited in the Advanced tab.
+                    widget = ui.tags.span(
+                        config[config_key],
+                        title="Per-stage values: edit in the Advanced tab",
+                        class_="osm-multivalue-readonly-label",
+                        style="color: #5a6a7a; font-size: 11px; font-family: monospace;",
+                    )
                 elif field.param_type in (ParamType.FLOAT, ParamType.INT):
                     widget = ui.input_numeric(
                         input_id,
@@ -639,6 +655,12 @@ def copy_species0_to_all(
                 config.pop(field.resolve_key(start_idx + i), None)
             copied += 1
             continue
+        # Per-stage arrays are never copied, in either direction: stage thresholds are not table
+        # fields, so a single value on a staged species (or species 0's array on a species with
+        # other stages) would break the engine's stage count. Decided from the config: the source
+        # cell has no input, so any value read for it is stale.
+        if is_multi_value(config.get(field.resolve_key(start_idx))):
+            continue
         base_key = field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
         src_id = f"spt_{base_key}_{start_idx}"
         try:
@@ -652,6 +674,8 @@ def copy_species0_to_all(
             sp_idx = start_idx + i
             config_key = field.resolve_key(sp_idx)
             dst_id = f"spt_{base_key}_{sp_idx}"
+            if is_multi_value(config.get(config_key)):
+                continue  # staged destination: left as it is (see above)
 
             config[config_key] = str(src_val)
 

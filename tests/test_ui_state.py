@@ -147,3 +147,15 @@ def test_sync_inputs_allows_plain_to_plain_update():
         cfg = state.config.get()
         assert cfg[_SIZERATIO_KEY] == "3.5"
         assert state.dirty.get() is True
+
+
+def test_sync_inputs_preserves_a_comma_multivalue_entry():
+    """The engine also splits arrays on ',' (Benguela: "15, 5"), so the guard must too."""
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({_SIZERATIO_KEY: "15, 5"})
+        state.dirty.set(False)
+
+        changed = sync_inputs(make_fake_input(_SIZERATIO_ID, 3.5), state, [_SIZERATIO_KEY])
+        assert state.config.get()[_SIZERATIO_KEY] == "15, 5"
+        assert _SIZERATIO_KEY not in changed

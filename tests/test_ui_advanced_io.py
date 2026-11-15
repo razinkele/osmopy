@@ -86,3 +86,20 @@ def test_multi_value_keys_empty_when_no_arrays():
 
     assert multi_value_keys({}) == []
     assert multi_value_keys({"a": "1", "b": "2.5"}) == []
+
+
+def test_multi_value_keys_lists_numeric_comma_arrays_too():
+    """Benguela writes per-stage arrays with commas ("15, 5"); the engine splits on both. A comma
+    in a non-numeric value (a path) does not make it an array."""
+    from ui.pages.advanced import multi_value_keys
+
+    cfg = {
+        "predation.predprey.sizeratio.max.sp0": "15, 5",
+        "predation.predprey.sizeratio.max.sp1": "2.3;1.8",
+        "movement.file.map0": "maps/a,b.csv",
+        "species.k.sp0": "0.3",
+    }
+    assert multi_value_keys(cfg) == [
+        "predation.predprey.sizeratio.max.sp0",
+        "predation.predprey.sizeratio.max.sp1",
+    ]
