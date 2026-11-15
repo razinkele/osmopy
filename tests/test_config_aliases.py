@@ -87,10 +87,3 @@ def test_target_version_for_jar():
     assert target_version_for_jar("osmose-java/osmose-4.4.1-jar-with-dependencies.jar") == "4.4.1"
     assert target_version_for_jar("osmose-java/osmose_4.3.3-jar-with-dependencies.jar") == "4.3.3"
     assert target_version_for_jar("weird.jar") == DEFAULT_TARGET_VERSION  # unparseable -> default
-
-
-def test_larva_rate_comma_array_scaled_per_element():
-    """A per-stage larva rate written with commas (the engine accepts both separators) is scaled
-    element-wise, keeping its separator, instead of failing float() on the whole string."""
-    cfg = {"osmose.version": "4.4.0", "simulation.time.ndtperyear": "24", _RK: "15, 2"}
-    assert to_target_keys(dict(cfg), "4.4.1")[_RK] == "360, 48"

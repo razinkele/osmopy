@@ -38,14 +38,14 @@ def compute_import_diff(
 
 
 def multi_value_keys(cfg: dict[str, str]) -> list[str]:
-    """Config keys whose value is a per-stage array: ``;``-separated, or ``,``-separated numbers
-    (the engine splits on both; see ``osmose.config.multivalue``).
+    """Config keys whose value is a per-stage array: ``;``-separated on any key, or
+    ``,``-separated numbers on an array-capable field (see ``osmose.config.multivalue``).
 
     The schema-driven form tabs and the species table render these read-only (see ``render_field``
     and ``render_species_table``); this page is the one place they can be edited, so it needs the
     same test.
     """
-    return sorted(k for k, v in cfg.items() if is_multi_value(v))
+    return sorted(k for k, v in cfg.items() if is_multi_value(v, REGISTRY.match_field(k)))
 
 
 def advanced_ui():
@@ -227,7 +227,8 @@ def advanced_server(input, output, session, state: AppState):
         return ui.div(
             ui.tags.strong(f"{len(keys)} multi-value parameter(s)"),
             ui.p(
-                "Per-stage arrays (';'- or ','-separated) are shown read-only in the "
+                "Per-stage arrays (';'-separated; ',' also for size ratios and stage thresholds) are "
+                "shown read-only in the "
                 "form tabs. Edit them here — the full array is written back verbatim.",
                 class_="mb-2 small",
             ),
@@ -261,10 +262,12 @@ def advanced_server(input, output, session, state: AppState):
         raw = (input.adv_mv_value() or "").strip()
         if not key:
             return
-        if not is_multi_value(raw):
+        # Key-aware: ',' is accepted only for array-capable fields. movement.steps.map{i}, for
+        # one, is read on ';' alone by the Python engine (movement_maps._parse_semicolon_ints).
+        if not is_multi_value(raw, REGISTRY.match_field(key)):
             ui.notification_show(
-                "Value must remain an array (';'- or ','-separated numbers) — use the form tabs "
-                "for scalars.",
+                "Value must remain an array (';'-separated; ',' also for size ratios and stage "
+                "thresholds) — use the form tabs for scalars.",
                 type="warning",
                 duration=6,
             )

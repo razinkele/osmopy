@@ -46,6 +46,11 @@ class OsmoseField:
         indexed: True if this parameter is per-species (uses sp{idx}).
         required: Whether this parameter must be specified.
         advanced: If True, shown only in the advanced config panel.
+        array: True if the value may be a per-stage array that the engine splits on ',' as
+            well as ';' (``_parse_floats``: size ratios, stage thresholds). A ',' in any other
+            field is not an array separator: on a scalar key "0,2" is a decimal-comma typo the
+            validator must still report. A ';' marks an array on any key (see
+            ``osmose.config.multivalue``).
     """
 
     key_pattern: str
@@ -61,6 +66,7 @@ class OsmoseField:
     indexed: bool = False
     required: bool = True
     advanced: bool = False
+    array: bool = False
 
     def __post_init__(self) -> None:
         if self.indexed and "{idx}" not in self.key_pattern:

@@ -103,3 +103,10 @@ def test_multi_value_keys_lists_numeric_comma_arrays_too():
         "predation.predprey.sizeratio.max.sp0",
         "predation.predprey.sizeratio.max.sp1",
     ]
+
+
+def test_multi_value_keys_ignores_a_comma_on_a_scalar_key():
+    """A ',' is an array separator only on array-capable fields; on a scalar key it is a typo."""
+    from ui.pages.advanced import multi_value_keys
+
+    assert multi_value_keys({"species.linf.sp0": "25,5"}) == []

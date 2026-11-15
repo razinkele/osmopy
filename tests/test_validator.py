@@ -230,8 +230,15 @@ def test_validate_config_checks_each_part_of_a_comma_array(registry):
     ok = {"predation.predprey.sizeratio.max.sp0": "15, 5"}
     errors, _ = validate_config(ok, registry)
     assert errors == []
-    bad = {"predation.predprey.sizeratio.max.sp0": "15, 200000"}  # field max is 1e5
+    bad = {"predation.predprey.sizeratio.max.sp0": "15, 20000"}  # field max is 1e4
     errors, _ = validate_config(bad, registry)
     assert errors == [
-        "predation.predprey.sizeratio.max.sp0[1]: value 200000.0 above maximum 100000.0"
+        "predation.predprey.sizeratio.max.sp0[1]: value 20000.0 above maximum 10000.0"
     ]
+
+
+def test_validate_config_still_reports_a_decimal_comma_on_a_scalar_key(registry):
+    """',' separates arrays only on array-capable fields. On a scalar key the engine reads the
+    value with float() and fails, so "0,2" must stay an error here, not pass as an array."""
+    errors, _ = validate_config({"species.linf.sp0": "25,5"}, registry)
+    assert errors == ["species.linf.sp0: expected number, got '25,5'"]

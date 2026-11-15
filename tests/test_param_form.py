@@ -733,16 +733,19 @@ def test_copy_species_0_never_touches_a_multi_value_cell():
     assert cfg[_SR_MIN.format(2)] == "1.4"
 
 
-def test_render_field_treats_a_comma_array_as_multi_value():
+@pytest.mark.parametrize("array", [True, False])
+def test_render_field_treats_a_comma_as_an_array_only_on_an_array_field(array):
+    """On an array-capable field "15, 5" is two stages; on a scalar field a comma is a typo, which
+    stays an editable input so it can be fixed (it is not shown read-only)."""
     field = OsmoseField(
         key_pattern="species.size.threshold.sp{idx}",
         param_type=ParamType.FLOAT,
         default=10.0,
         category="species",
         indexed=True,
+        array=array,
     )
     rendered = str(
         render_field(field, species_idx=0, config={"species.size.threshold.sp0": "15, 5"})
     )
-    assert "15, 5" in rendered
-    assert "multi-value" in rendered.lower()
+    assert ("multi-value" in rendered.lower()) is array

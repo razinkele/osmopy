@@ -168,7 +168,8 @@ def sync_inputs(
             # Preserve multi-value config entries ("2.3;1.8", or "15, 5": the engine splits on
             # both). A single-value input cannot hold the array, so writing back would clobber it.
             old_val = cfg.get(key, "")
-            if is_multi_value(old_val) and not is_multi_value(new_val):
+            field = REGISTRY.match_field(key)  # ',' separates arrays only on array fields
+            if is_multi_value(old_val, field) and not is_multi_value(new_val, field):
                 _log.debug(
                     "sync_inputs: preserving multi-value '%s' (old=%r, ui=%r)",
                     key,

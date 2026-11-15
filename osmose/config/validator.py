@@ -32,10 +32,11 @@ def validate_config(
         if not value or value.lower() in ("null", "none"):
             continue
 
-        # Validate each value of a multi-value (per-stage) param. The engine splits these on ';'
-        # AND ',' (osmose.config.multivalue), so "15, 5" is two values, not one bad number.
-        if is_multi_value(value):
-            for idx, sub_val in enumerate(split_multi_value(value, keep_empty=True)):
+        # Validate each value of a multi-value (per-stage) param. An array-capable field is split
+        # on ';' AND ',' as the engine does (Benguela "15, 5" is two values, not one bad number);
+        # any other field on ';' alone, so "0,2" on a scalar key is still reported.
+        if is_multi_value(value, field):
+            for idx, sub_val in enumerate(split_multi_value(value, field, keep_empty=True)):
                 if not sub_val:
                     continue
                 if field.param_type in (ParamType.FLOAT, ParamType.INT):

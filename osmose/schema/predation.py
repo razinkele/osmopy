@@ -33,6 +33,7 @@ PREDATION_FIELDS: list[OsmoseField] = [
         description="Stage threshold for predator-prey interactions",
         category="predation",
         indexed=True,
+        array=True,  # per-stage: the engine splits on ';' and ','
     ),
     OsmoseField(
         key_pattern="predation.predprey.stage.structure",
