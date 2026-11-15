@@ -210,14 +210,74 @@ def test_raising_the_species_count_seeds_only_the_new_species():
     assert seed_new_species(SPECIES_FIELDS, 3, 2, cfg) == {}  # lowering seeds nothing
 
 
-def test_seeding_keeps_a_re_added_age_based_species_age_based():
-    """Lowering the count keeps the dropped species' keys. Raising it again must not seed a
-    maturity size next to a kept maturity age: Java lets a size win, so the species would stop
-    maturing by age (CodeRabbit, PR #274)."""
+def test_seeding_skips_a_species_the_config_still_holds():
+    """Lowering the count keeps the dropped species' keys, so raising it again re-adds that species
+    as it was. Seeding it wrote defaults into an existing species: a maturity size next to a kept
+    maturity age (Java lets the size win, so it stops maturing by age), species.lmax = 120, ...
+    (CodeRabbit and an independent review, PR #274)."""
     cfg = {"simulation.nspecies": "1", "species.maturity.age.sp1": "2.0"}
-    seeded = seed_new_species(SPECIES_FIELDS, 1, 2, cfg)
-    assert "species.maturity.size.sp1" not in seeded
-    assert "species.linf.sp1" in seeded  # the rest of the species is still seeded
+    assert seed_new_species(SPECIES_FIELDS, 1, 2, cfg) == {}
+    assert "species.linf.sp2" in seed_new_species(SPECIES_FIELDS, 1, 3, cfg)  # a truly new one
+
+
+@pytest.mark.parametrize("lowered", [8, 2])
+def test_lowering_then_raising_the_count_on_baltic_writes_only_the_count(tmp_path, lowered):
+    """The spinner 9 -> 8 -> 9 (or 9 -> 2 -> 9) on Baltic: the second sync must restore the count
+    and write nothing else. It added 17 keys to cod_east (8) and gave age-based sprat a 50 cm
+    maturity size (2)."""
+    from ui.pages.setup import collect_setup_species_updates
+
+    info = osmose_demo("baltic", tmp_path)
+    cfg = dict(OsmoseConfigReader().read(Path(info["config_file"])))
+    cfg["simulation.nspecies"] = str(lowered)  # what the first sync wrote
+    reader = _Inputs({})  # the re-added species' cells are not rendered yet
+    updates = collect_setup_species_updates(9, cfg, lambda i: getattr(reader, i)())
+    assert updates == {"simulation.nspecies": "9"}
+
+
+def test_raising_the_count_onto_a_resource_index_seeds_nothing(tmp_path):
+    """In every bundled demo the index after the last focal species is a resource or background
+    group (Baltic sp9 is Diatoms). Raising the count must not write focal keys over it."""
+    from ui.pages.setup import collect_setup_species_updates
+
+    info = osmose_demo("baltic", tmp_path)
+    cfg = dict(OsmoseConfigReader().read(Path(info["config_file"])))
+    assert "species.name.sp9" in cfg
+    reader = _Inputs({})
+    updates = collect_setup_species_updates(10, cfg, lambda i: getattr(reader, i)())
+    assert updates == {"simulation.nspecies": "10"}
+
+
+def test_an_empty_value_counts_as_unset():
+    """A ``species.lmax.sp0;`` line reads as "" (Java's isNull treats it as unset). Its input shows
+    the default, 120, which was written over it: the very value this rule exists to keep out."""
+    for empty in ("", "null"):
+        state = AppState()
+        with reactive.isolate():
+            state.config.set({"simulation.nspecies": "1", "species.lmax.sp0": empty})
+            sync_inputs(_Inputs({"species_lmax_sp0": 120}), state, ["species.lmax.sp0"])
+            assert state.config.get()["species.lmax.sp0"] == empty
+        cells = collect_species_table_updates(
+            SPECIES_FIELDS,
+            1,
+            {"species.lmax.sp0": empty},
+            lambda i: getattr(_Inputs({"spt_species_lmax_0": 120}), i)(),
+        )
+        assert "species.lmax.sp0" not in cells
+
+
+def test_copy_species_0_does_not_copy_a_value_species_0_lacks():
+    """ "Copy to all" read species 0's inputs, including the default an unset key shows, and wrote
+    it into every species: species.lmax = 120 on 13 EEC full species while species 0 has no cap."""
+    from unittest.mock import MagicMock
+
+    from ui.components.param_form import copy_species0_to_all
+
+    cfg = {"species.linf.sp0": "50", "species.linf.sp1": "40", "species.lmax.sp1": "80"}
+    values = {"spt_species_lmax_0": 120, "spt_species_linf_0": 50}
+    copy_species0_to_all(SPECIES_FIELDS, 2, cfg, _Inputs(values), MagicMock())
+    assert cfg["species.lmax.sp1"] == "80"  # species 0 has no lmax: nothing to copy
+    assert cfg["species.linf.sp1"] == "50"  # a value species 0 has: copied
 
 
 def test_viewing_setup_on_a_config_without_a_species_count_writes_nothing():

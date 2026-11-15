@@ -378,8 +378,13 @@ def untouched_unset(
     placeholder for a field without one). No sync writes it. Writing it made a run depend on which
     tabs had been opened: the Setup tab wrote species.lmax = 120 (unset: no length cap), and a
     placeholder movement.distribution.ncell = 0 is a one-cell patch in Java (unset: whole domain).
+
+    An empty or "null" value counts as unset, as it does in Java (``isNull``): the input of a
+    ``species.lmax.sp0;`` line shows the default, which must not be written over it.
     """
-    return key not in config and shows_field_default(field, value)
+    current = config.get(key)
+    unset = current is None or current.strip().lower() in ("", "null")
+    return unset and shows_field_default(field, value)
 
 
 def seed_new_species(
@@ -388,11 +393,21 @@ def seed_new_species(
     """Schema defaults for the species a count increase from ``old_n`` to ``new_n`` adds.
 
     The one place defaults enter a config without the user typing them, and an explicit one: it
-    runs when the species count goes up, so a new species gets the keys it needs to run. Keys the
-    config already sets are left alone, and so are fields without a default.
+    runs when the species count goes up, so a new species gets the keys it needs to run. Fields
+    without a default are left alone.
+
+    Only an index the config holds NO key for is seeded. Lowering the count keeps the dropped
+    species' keys, so raising it again re-adds those species as they were; seeding them put
+    species.lmax = 120 on Baltic cod_east (9 -> 8 -> 9) and a 50 cm maturity size on age-based
+    sprat (9 -> 2 -> 9). It also leaves alone the resource or background group that sits at the
+    next index in every bundled demo (the index collision itself is older; see
+    ``tests/test_e2e_config_reload.py``).
     """
     seeded: dict[str, str] = {}
     for i in range(old_n, new_n):
+        suffix = f".sp{i}"
+        if any(k.endswith(suffix) for k in config):
+            continue
         for field in fields:
             if not field.indexed or field.default is None:
                 continue
@@ -784,6 +799,11 @@ def copy_species0_to_all(
         except Exception:
             continue
         if src_val is None:
+            continue
+        if untouched_unset(field, field.resolve_key(start_idx), config, str(src_val)):
+            # Species 0 leaves this key unset: its input shows a default or a placeholder, which is
+            # not species 0's value. Copying it put species.lmax = 120 on 13 EEC full species while
+            # species 0 has no cap. The destinations keep what they have.
             continue
 
         for i in range(1, n_species):

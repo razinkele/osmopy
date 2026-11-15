@@ -11,6 +11,7 @@ from osmose.config.multivalue import is_multi_value
 from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
 from ui.components.collapsible import collapsible_card_header, expand_tab
+from ui.pages._helpers import parse_nspecies
 from ui.state import REGISTRY, AppState
 from ui.styles import (
     COLOR_DANGER,
@@ -197,6 +198,10 @@ def advanced_server(input, output, session, state: AppState):
 
             with reactive.isolate():
                 state.load_trigger.set(state.load_trigger.get() + 1)
+            if "simulation.nspecies" in pending:
+                # As the loaders do (grid.py, scenarios.py): a stale count input made the next
+                # Species-tab sync write the old count back over the imported one.
+                ui.update_numeric("n_species", value=parse_nspecies(cfg))
 
             ui.notification_show(
                 f"Imported {len(pending)} parameter(s).",
