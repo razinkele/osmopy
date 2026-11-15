@@ -95,7 +95,7 @@ def test_live_movement_renders_during_python_run(page: Page, app: ShinyAppProc):
     # Regression: filtering to one species in dots mode drops the count below the dots cap,
     # so the ScatterplotLayer actually renders (all-species stays in the heatmap fallback).
     # Selecting a species must NOT crash deck.gl on the heatmap->dots layer-class swap.
-    page.select_option("#live_movement_species", "cod")
+    page.select_option("#live_movement_species", "cod_west")  # Baltic cod was split E/W
     page.wait_for_timeout(800)
     assert not deck_errors, f"deck.gl draw error on heatmap->dots swap: {deck_errors[:2]}"
 

@@ -12,6 +12,7 @@ from osmose.config.multivalue import is_multi_value
 from osmose.logging import setup_logging
 from osmose.runner import RunResult
 from osmose.schema import build_registry
+from osmose.schema.base import OsmoseField, ParamType
 from ui.components.param_form import input_id_for_key
 
 
@@ -67,6 +68,31 @@ class AppState:
         self.results_loaded: reactive.Value[bool] = reactive.Value(False)
         self.key_case_map: reactive.Value[dict[str, str]] = reactive.Value({})
         self.engine_mode: reactive.Value[str] = reactive.Value("python")
+        # load_trigger generation each render output last built its inputs for (see
+        # mark_rendered). A plain dict ON PURPOSE, not reactive: see mark_rendered.
+        self._rendered_gen: dict[str, int] = {}
+
+    def mark_rendered(self, name: str) -> None:
+        """Record that render output ``name`` just built its inputs from the current config.
+
+        Call it from the render function. A sync effect then writes that output's inputs only
+        while ``rendered_current(name)``: a tab that is hidden during a load does not re-render
+        (Shiny suspends hidden outputs), so its inputs still hold the PREVIOUS config's values,
+        and writing them corrupted the new config (2026-11-15: load EEC full, view Setup, load
+        Baltic -> 169 Baltic keys overwritten with EEC full's).
+
+        Deliberately not reactive: if marking invalidated the sync, the sync would run right
+        after the render, before the browser has sent the new inputs' values, and write the
+        stale ones.
+        """
+        with reactive.isolate():
+            self._rendered_gen[name] = self.load_trigger.get()
+
+    def rendered_current(self, *names: str) -> bool:
+        """True when every named render output was built for the current config load."""
+        with reactive.isolate():
+            gen = self.load_trigger.get()
+        return all(self._rendered_gen.get(n) == gen for n in names)
 
     def get_config_value(self, key: str, default: str = "") -> str:
         """Read a single config value without copying the entire dict.
@@ -126,10 +152,57 @@ class AppState:
         self.dirty.set(False)
 
 
+def same_config_value(old: str | None, new: str, field: OsmoseField | None = None) -> bool:
+    """True when writing ``new`` over ``old`` would not change the value of ``field``: equal as
+    text; for a numeric field, equal as numbers ("110.0" vs the numeric input's "110"); for a
+    boolean field, the same boolean in another case ("true" vs a switch's "True"). Any other field
+    (or none) compares as exact text, so a name edited from "001" to "1" is kept. Syncs skip such
+    writes, so viewing a tab neither rewrites the loaded file's formatting nor marks the config
+    as changed."""
+    if old is None:
+        return False
+    if old == new:
+        return True
+    if field is None:
+        return False
+    a, b = old.strip(), new.strip()
+    if field.param_type == ParamType.BOOL:
+        return a.lower() in ("true", "false") and a.lower() == b.lower()
+    # Compare in the field's own type, and only when the OLD value parses as it: an INT field
+    # holding "50.0" is shown as raw text to be fixed, and the user's "50" must then be written
+    # (float equality would call them equal and drop the fix; Java's parseInt rejects "50.0").
+    parse = int if field.param_type == ParamType.INT else float
+    if field.param_type in (ParamType.FLOAT, ParamType.INT):
+        try:
+            return parse(a) == parse(b)
+        except ValueError:
+            return False
+    return False
+
+
+def shows_field_default(field: OsmoseField | None, value: str) -> bool:
+    """True when ``value`` is what a rendered input shows for an unset key: the field's schema
+    default (a numeric field without one renders 0, a switch without one renders False)."""
+    if field is None:
+        return False
+    default = field.default
+    if default is None:
+        default = (
+            0
+            if field.param_type in (ParamType.FLOAT, ParamType.INT)
+            else False
+            if field.param_type == ParamType.BOOL
+            else ""
+        )
+    return value == str(default) or same_config_value(str(default), value, field)
+
+
 def sync_inputs(
     input: ShinyInputs,
     state: AppState,
     keys: list[str],
+    rendered: str | tuple[str, ...] | None = None,
+    materialize: bool = True,
 ) -> dict[str, str]:
     """Read Shiny inputs for the given OSMOSE keys and update state.config.
 
@@ -139,18 +212,22 @@ def sync_inputs(
     Batches all updates into a single config.set() to avoid repeated
     reactive invalidations.
 
+    ``rendered`` names the render output(s) that build these inputs (``state.mark_rendered``).
+    While any of them was built for an earlier config load, nothing is written: the inputs hold
+    the previous config's values.
+
+    ``materialize=False`` stops a key the config does not set from being written while its input
+    still shows the field's default (untouched): the Grid page, visible during every load, wrote
+    e.g. ``grid.java.classname = OriginalGrid`` into each loaded config once its sync stopped
+    aborting. A real edit (a value other than the default) is still written.
+
+    Every input is READ before either gate (busy, stale render) is checked. A reactive effect
+    re-runs only on what it read last time, so returning before the reads would drop its
+    dependencies and stop the page's edits from ever syncing again.
+
     Returns:
         Dict of keys that were actually updated with their new values.
     """
-    # M10: skip while a busy operation is in flight (was state.loading.get();
-    # bool(state.busy.get()) is the same condition since busy is non-None
-    # iff something is actively blocking user input). Isolated read so
-    # sync effects don't re-run when busy toggles, which would overwrite
-    # config with stale input values before ui.update_* reaches the client.
-    with reactive.isolate():
-        if state.busy.get():
-            _log.debug("sync_inputs: skipping — busy in progress")
-            return {}
     changed: dict[str, str] = {}
     with reactive.isolate():
         cfg = dict(state.config.get())
@@ -160,8 +237,18 @@ def sync_inputs(
             continue
         try:
             val = getattr(input, input_id)()
+        except SilentException:
+            # An input the page lists but never rendered (advanced/unrendered fields, keys for a
+            # species added since the last render). Skip THIS key: letting it propagate aborted
+            # the whole batch, so the Grid and Forcing global syncs never wrote anything.
+            continue
         except TypeError:
             _log.warning("sync_inputs: TypeError reading input '%s'", input_id)
+            continue
+        if isinstance(val, (list, tuple, dict)):
+            # A file-upload control (FILE_PATH / MATRIX fields render ui.input_file) returns a list
+            # of upload records, not a path; str() of it would overwrite the configured file name.
+            # Nothing stores schema-form uploads, so they are never synced.
             continue
         if val is not None:
             new_val = str(val)
@@ -177,10 +264,27 @@ def sync_inputs(
                     new_val,
                 )
                 continue
+            if not materialize and key not in cfg and shows_field_default(field, new_val):
+                continue
             changed[key] = new_val
+    # Gate only the WRITE (the reads above keep this effect subscribed to its inputs).
+    # M10: skip while a busy operation is in flight; isolated so toggling busy does not re-run
+    # the effect and write input values before ui.update_* reaches the client.
+    with reactive.isolate():
+        if state.busy.get():
+            _log.debug("sync_inputs: skipping — busy in progress")
+            return {}
+    names = (rendered,) if isinstance(rendered, str) else rendered
+    if names and not state.rendered_current(*names):
+        _log.debug("sync_inputs: skipping — %s rendered for an earlier config load", names)
+        return {}
     if changed:
-        # Only set config if values actually differ
-        actual_changes = {k: v for k, v in changed.items() if cfg.get(k) != v}
+        # Only set config if values actually differ (by value: see same_config_value)
+        actual_changes = {
+            k: v
+            for k, v in changed.items()
+            if not same_config_value(cfg.get(k), v, REGISTRY.match_field(k))
+        }
         if actual_changes:
             cfg.update(actual_changes)
             state.config.set(cfg)

@@ -401,6 +401,7 @@ def render_species_table(
     start_idx: int = 0,
     show_advanced: bool = False,
     config: dict[str, str] | None = None,
+    copy_event: str = "copy_sp0_to_all",
 ) -> ui.Tag:
     """Render a spreadsheet-style table: params as rows, species as columns.
 
@@ -411,6 +412,9 @@ def render_species_table(
         start_idx: Starting species index (for LTL resources offset by nspecies).
         show_advanced: Whether to include advanced fields.
         config: Optional config dict for initial values.
+        copy_event: Shiny input id the "Copy to all" button sets. Each table needs its own: the
+            species and resource tables once shared one id, so either button also fired the other
+            table's copy, which read that (possibly hidden, stale) table's inputs.
     """
     if n_species == 0:
         return ui.div(
@@ -447,7 +451,7 @@ def render_species_table(
                     class_="btn btn-sm btn-outline-warning mt-1",
                     style="font-size: 9px; padding: 1px 5px; display: block; margin: 2px auto 0;",
                     onclick=(
-                        "Shiny.setInputValue('copy_sp0_to_all', Date.now(), {priority: 'event'})"
+                        f"Shiny.setInputValue('{copy_event}', Date.now(), {{priority: 'event'}})"
                     ),
                     title="Copy all species 0 values to other species",
                 )
