@@ -12,8 +12,12 @@ from osmose.config.multivalue import is_multi_value
 from osmose.logging import setup_logging
 from osmose.runner import RunResult
 from osmose.schema import build_registry
-from osmose.schema.base import OsmoseField, ParamType
-from ui.components.param_form import input_id_for_key
+from ui.components.param_form import (  # noqa: F401  (re-exported: pages and tests use them)
+    input_id_for_key,
+    same_config_value,
+    shows_field_default,
+    untouched_unset,
+)
 
 
 class ShinyInputs(Protocol):
@@ -152,57 +156,11 @@ class AppState:
         self.dirty.set(False)
 
 
-def same_config_value(old: str | None, new: str, field: OsmoseField | None = None) -> bool:
-    """True when writing ``new`` over ``old`` would not change the value of ``field``: equal as
-    text; for a numeric field, equal as numbers ("110.0" vs the numeric input's "110"); for a
-    boolean field, the same boolean in another case ("true" vs a switch's "True"). Any other field
-    (or none) compares as exact text, so a name edited from "001" to "1" is kept. Syncs skip such
-    writes, so viewing a tab neither rewrites the loaded file's formatting nor marks the config
-    as changed."""
-    if old is None:
-        return False
-    if old == new:
-        return True
-    if field is None:
-        return False
-    a, b = old.strip(), new.strip()
-    if field.param_type == ParamType.BOOL:
-        return a.lower() in ("true", "false") and a.lower() == b.lower()
-    # Compare in the field's own type, and only when the OLD value parses as it: an INT field
-    # holding "50.0" is shown as raw text to be fixed, and the user's "50" must then be written
-    # (float equality would call them equal and drop the fix; Java's parseInt rejects "50.0").
-    parse = int if field.param_type == ParamType.INT else float
-    if field.param_type in (ParamType.FLOAT, ParamType.INT):
-        try:
-            return parse(a) == parse(b)
-        except ValueError:
-            return False
-    return False
-
-
-def shows_field_default(field: OsmoseField | None, value: str) -> bool:
-    """True when ``value`` is what a rendered input shows for an unset key: the field's schema
-    default (a numeric field without one renders 0, a switch without one renders False)."""
-    if field is None:
-        return False
-    default = field.default
-    if default is None:
-        default = (
-            0
-            if field.param_type in (ParamType.FLOAT, ParamType.INT)
-            else False
-            if field.param_type == ParamType.BOOL
-            else ""
-        )
-    return value == str(default) or same_config_value(str(default), value, field)
-
-
 def sync_inputs(
     input: ShinyInputs,
     state: AppState,
     keys: list[str],
     rendered: str | tuple[str, ...] | None = None,
-    materialize: bool = True,
 ) -> dict[str, str]:
     """Read Shiny inputs for the given OSMOSE keys and update state.config.
 
@@ -216,10 +174,10 @@ def sync_inputs(
     While any of them was built for an earlier config load, nothing is written: the inputs hold
     the previous config's values.
 
-    ``materialize=False`` stops a key the config does not set from being written while its input
-    still shows the field's default (untouched): the Grid page, visible during every load, wrote
-    e.g. ``grid.java.classname = OriginalGrid`` into each loaded config once its sync stopped
-    aborting. A real edit (a value other than the default) is still written.
+    Viewing a page never writes: an input that still shows what the form renders for a key the
+    config leaves unset (the schema default, or a placeholder) is untouched and skipped
+    (``untouched_unset``). Defaults reach a config only by explicit seeding (``seed_new_species``
+    when the species count goes up) or ``AppState.reset_to_defaults``. A real edit is written.
 
     Every input is READ before either gate (busy, stale render) is checked. A reactive effect
     re-runs only on what it read last time, so returning before the reads would drop its
@@ -264,7 +222,7 @@ def sync_inputs(
                     new_val,
                 )
                 continue
-            if not materialize and key not in cfg and shows_field_default(field, new_val):
+            if untouched_unset(field, key, cfg, new_val):
                 continue
             changed[key] = new_val
     # Gate only the WRITE (the reads above keep this effect subscribed to its inputs).

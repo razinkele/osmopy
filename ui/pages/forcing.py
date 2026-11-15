@@ -12,7 +12,7 @@ from osmose.schema.ltl import LTL_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import copy_species0_to_all, render_field, render_species_table
 from ui.pages._helpers import parse_nspecies
-from ui.state import REGISTRY, AppState, same_config_value, sync_inputs
+from ui.state import REGISTRY, AppState, same_config_value, sync_inputs, untouched_unset
 
 FORCING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in LTL_FIELDS if not f.indexed]
 _TEMP_KEYS: list[str] = [
@@ -48,7 +48,7 @@ def collect_resource_table_updates(
                 val = read_input(f"spt_{base_key}_{sp_idx}")
             except (AttributeError, SilentException):
                 continue
-            if val is not None:
+            if val is not None and not untouched_unset(field, config_key, config, str(val)):
                 updates[config_key] = str(val)
     return updates
 

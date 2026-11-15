@@ -551,10 +551,10 @@ def _maturity_cell(html: str, key: str, idx: int) -> str | None:
 
 
 def test_absent_maturity_age_renders_the_engine_default_not_a_minimum_age():
-    """The table renders every visible field and sync_species_inputs writes the rendered value back,
-    so an absent species.maturity.age gets materialized. The engine reads an absent key as 0 (no age
-    condition; Java ignores the age whenever a size is set). A schema default of 3.0 made every
-    species of a UI-launched Python run wait until age 3 to mature."""
+    """The table shows the schema default for an absent species.maturity.age, and a species added
+    by raising the count is seeded with it (until 2026-11-15 every viewed table wrote it back). The
+    engine reads an absent key as 0 (no age condition; Java ignores the age whenever a size is set).
+    A schema default of 3.0 made every species of a UI-launched Python run wait until age 3."""
     from osmose.schema.species import SPECIES_FIELDS
 
     cfg = {"species.maturity.size.sp0": "38.0"}
@@ -572,8 +572,9 @@ def test_maturity_age_schema_default_matches_the_engine_default():
 
 def test_age_only_species_gets_no_maturity_size_input():
     """A species with a maturity age and no maturity size matures by age (Java: size and age are
-    alternatives, size wins when set). Rendering a size input would materialize the schema default
-    (50 cm) and stop that species maturing in both engines, so the cell is read-only instead."""
+    alternatives, size wins when set). A size input would show the schema default (50 cm), which
+    the sync wrote back until 2026-11-15 and which stops that species maturing in both engines, so
+    the cell is read-only instead."""
     from osmose.schema.species import SPECIES_FIELDS
 
     cfg = {
