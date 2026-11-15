@@ -493,7 +493,7 @@ SPECIES_FIELDS: list[OsmoseField] = [
         min_val=1e-9,
         # No upper bound: ref is in the units of the series' spawning_rv column, which the
         # schema cannot know. The Baltic series is in km^3 (48-380) and the Baltic config uses
-        # 150; a former max_val=1.0 flagged it on every load and capped the form's input.
+        # 150; a former max_val=1.0 made that a validation error, which blocks UI runs.
         description=(
             "Reference RV at which raw_cap saturates to 1.0, in the units of the series' "
             "spawning_rv column (Baltic: km^3, ref 150). Must be > 0."
