@@ -396,6 +396,8 @@ def seed_new_species(
         for field in fields:
             if not field.indexed or field.default is None:
                 continue
+            if _age_based_maturity(field, config, i):
+                continue  # a species re-added with its maturity age kept: a size would override it
             key = field.resolve_key(i)
             if key not in config:
                 seeded[key] = str(field.default)

@@ -1,5 +1,8 @@
 """Species & Simulation setup page."""
 
+from collections.abc import Callable
+from typing import Any
+
 from shiny import reactive, render, ui
 
 from osmose.config.validator import summarize_config_validation
@@ -16,12 +19,37 @@ from ui.components.param_form import (
     seed_new_species,
 )
 from ui.pages._helpers import parse_nspecies
-from ui.state import REGISTRY, AppState, same_config_value, sync_inputs
+from ui.state import REGISTRY, AppState, same_config_value, sync_inputs, untouched_unset
 
 _log = setup_logging("osmose.setup")
 
 # Keys for non-indexed simulation fields (synced automatically)
 SETUP_GLOBAL_KEYS: list[str] = [f.key_pattern for f in SIMULATION_FIELDS if not f.advanced]
+
+
+def collect_setup_species_updates(
+    n: int,
+    cfg: dict[str, str],
+    read_input: Callable[[str], Any],
+    show_advanced: bool = False,
+) -> dict[str, str]:
+    """What the Species tab's sync writes for a species count of ``n`` (before its busy and
+    stale-render gates, which decide whether it is written at all).
+
+    Raising the count is the one place defaults enter the config untyped: the added species get
+    the schema defaults they need to run (``seed_new_species``). Only an increase from a count the
+    config actually sets seeds: an empty config (a fresh session) parses as 0 species, and viewing
+    the tab would otherwise seed the input's starting 3. Table cells are applied after the seed, so
+    a value the user typed wins over it.
+    """
+    updates: dict[str, str] = {}
+    key = "simulation.nspecies"
+    if not untouched_unset(REGISTRY.match_field(key), key, cfg, str(n)):
+        updates[key] = str(n)
+    if key in cfg:
+        updates.update(seed_new_species(SPECIES_FIELDS, parse_nspecies(cfg), n, cfg))
+    updates.update(collect_species_table_updates(SPECIES_FIELDS, n, cfg, read_input, show_advanced))
+    return updates
 
 
 def setup_ui():
@@ -160,18 +188,10 @@ def setup_server(input, output, session, state: AppState):
         with reactive.isolate():
             cfg = dict(state.config.get())
 
-        # Collect all updates before touching reactive state. The config decides which cells are
-        # synced (an age-based species' maturity size is never written back).
-        updates: dict[str, str] = {"simulation.nspecies": str(n)}
-        # Raising the species count is the one place defaults enter the config untyped: the added
-        # species get the schema defaults they need to run. Measured against the config and
-        # written only past the gates below, so a load (stale render) never seeds. Table cells are
-        # applied after, so a value the user typed wins over the seed.
-        updates.update(seed_new_species(SPECIES_FIELDS, parse_nspecies(cfg), n, cfg))
-        updates.update(
-            collect_species_table_updates(
-                SPECIES_FIELDS, n, cfg, lambda input_id: getattr(input, input_id)(), show_adv
-            )
+        # Collect all updates before touching reactive state (the reads keep this effect
+        # subscribed; the gates below decide whether anything is written).
+        updates = collect_setup_species_updates(
+            n, cfg, lambda input_id: getattr(input, input_id)(), show_adv
         )
 
         # Gate only the WRITE: the cell reads above keep this effect subscribed to them (a return

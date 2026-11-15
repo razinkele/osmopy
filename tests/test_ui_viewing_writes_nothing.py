@@ -208,3 +208,37 @@ def test_raising_the_species_count_seeds_only_the_new_species():
         assert f"growth.gompertz.linf.sp{i}" not in seeded  # no default: not seeded
     assert seed_new_species(SPECIES_FIELDS, 3, 3, cfg) == {}
     assert seed_new_species(SPECIES_FIELDS, 3, 2, cfg) == {}  # lowering seeds nothing
+
+
+def test_seeding_keeps_a_re_added_age_based_species_age_based():
+    """Lowering the count keeps the dropped species' keys. Raising it again must not seed a
+    maturity size next to a kept maturity age: Java lets a size win, so the species would stop
+    maturing by age (CodeRabbit, PR #274)."""
+    cfg = {"simulation.nspecies": "1", "species.maturity.age.sp1": "2.0"}
+    seeded = seed_new_species(SPECIES_FIELDS, 1, 2, cfg)
+    assert "species.maturity.size.sp1" not in seeded
+    assert "species.linf.sp1" in seeded  # the rest of the species is still seeded
+
+
+def test_viewing_setup_on_a_config_without_a_species_count_writes_nothing():
+    """A fresh session's config is empty, so it parses as 0 species while the count input starts
+    at 3. Viewing the Species tab then must not "raise" the count and seed three species, nor
+    write the count itself (CodeRabbit, PR #274)."""
+    from ui.pages.setup import collect_setup_species_updates
+
+    table = render_species_table(SPECIES_FIELDS, 3, ["a", "b", "c"], config={})
+    values = _values(table)
+    reader = _Inputs(values)
+    updates = collect_setup_species_updates(3, {}, lambda i: getattr(reader, i)())
+    assert updates == {}
+
+
+def test_raising_a_configured_species_count_seeds_through_the_setup_sync():
+    from ui.pages.setup import collect_setup_species_updates
+
+    cfg = {"simulation.nspecies": "2", "species.linf.sp0": "50", "species.linf.sp1": "40"}
+    reader = _Inputs({})  # the new species' cells are not rendered yet
+    updates = collect_setup_species_updates(3, cfg, lambda i: getattr(reader, i)())
+    assert updates["simulation.nspecies"] == "3"
+    assert updates["species.linf.sp2"] == "100.0"
+    assert not any(k.endswith((".sp0", ".sp1")) for k in updates)
