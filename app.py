@@ -565,6 +565,28 @@ app_ui = ui.page_fillable(
             });
         });
 
+        // ── Lock the config tabs while a run is busy (server-driven) ───
+        // inert blocks clicks AND keyboard focus (pointer-events alone would let a user tab
+        // into a field and type); the class and data-lock-reason drive the CSS banner.
+        var _editLockRegistered = false;
+        document.addEventListener('shiny:connected', function() {
+            if (_editLockRegistered) return;
+            _editLockRegistered = true;
+            Shiny.addCustomMessageHandler('osm-edit-lock', function(msg) {
+                (msg.panels || []).forEach(function(value) {
+                    var pane = document.querySelector('.tab-pane[data-value="' + value + '"]');
+                    if (!pane) return;
+                    pane.inert = !!msg.locked;
+                    pane.classList.toggle('osm-edit-locked', !!msg.locked);
+                    if (msg.locked) {
+                        pane.setAttribute('data-lock-reason', msg.reason || 'Busy');
+                    } else {
+                        pane.removeAttribute('data-lock-reason');
+                    }
+                });
+            });
+        });
+
         // ── Pause caustic animation when tab is hidden ───────────
         document.addEventListener('visibilitychange', function() {
             if (document.hidden) {
@@ -624,6 +646,20 @@ app_ui = ui.page_fillable(
 )
 
 
+# Tabs whose inputs write the config. They are locked while state.busy is set (see
+# _lock_editing_while_busy). Run stays live (Cancel), and so do Results, Scenarios and the rest.
+_EDIT_PANELS = (
+    "grid",
+    "setup",
+    "forcing",
+    "fishing",
+    "movement",
+    "genetics",
+    "economic",
+    "advanced",
+)
+
+
 def server(input, output, session):
     _ensure_cleanup_registered()
     state = AppState()
@@ -670,6 +706,20 @@ def server(input, output, session):
             ui.div(class_="osm-spinner osm-spinner-sm"),
             ui.span(msg),
             class_="osm-busy-pill",
+        )
+
+    @reactive.effect
+    async def _lock_editing_while_busy():
+        """Lock the config-editing tabs while a run (or a load, a copy, ...) is in progress.
+
+        Every sync drops its writes while ``state.busy`` is set, so an edit made then was lost
+        silently: the input showed the new value and the config kept the old one. The tabs are
+        made ``inert`` (no clicks, no keyboard focus) with a banner giving the reason.
+        """
+        msg = state.busy.get()
+        await session.send_custom_message(
+            "osm-edit-lock",
+            {"locked": msg is not None, "reason": msg or "", "panels": list(_EDIT_PANELS)},
         )
 
     setup_server(input, output, session, state)

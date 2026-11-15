@@ -19,6 +19,8 @@ on:
       - "osmose/demo.py"
       - "tests/test_e2e_config_reload.py"
       - "tests/test_e2e_species_tab_*.py"
+      - "tests/test_e2e_edit_lock.py"
+      - "www/**"
       - ".github/workflows/e2e.yml"
   workflow_dispatch:
 
@@ -57,4 +59,5 @@ jobs:
           tests/test_e2e_config_reload.py
           tests/test_e2e_species_tab_maturity.py
           tests/test_e2e_species_tab_multivalue.py
+          tests/test_e2e_edit_lock.py
           -m e2e -o addopts="" -ra --reruns 1 --only-rerun TimeoutError

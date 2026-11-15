@@ -1253,6 +1253,29 @@ hr {
 }
 .osm-spinner-sm { width: 1rem; height: 1rem; border-width: 2px; }
 
+/* Config tabs locked while a run is busy (app.py _lock_editing_while_busy). The pane is inert;
+   the banner says why, so a frozen form is not mistaken for a broken one. */
+.tab-pane.osm-edit-locked > * { opacity: 0.55; }
+.tab-pane.osm-edit-locked::before {
+  content: "Editing is paused: " attr(data-lock-reason) " Changes can be made again when it finishes.";
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--osm-accent-dim);
+  border-left: 3px solid var(--osm-accent);
+  color: var(--osm-accent);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+[data-theme="light"] .tab-pane.osm-edit-locked::before {
+  background: rgba(212, 148, 46, 0.1);
+  border-left-color: #d4942e;
+  color: #9a6a1c;
+}
+
 /* ── Dirty changes banner ───────────────────────────────────── */
 .osm-dirty-banner {
     background: rgba(232, 168, 56, 0.15);
