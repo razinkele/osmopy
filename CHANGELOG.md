@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.4] - 2026-11-15
+
+### Bug Fixes
+
+- **ui,config:** never replace an unparseable value with the default; accept a lone separator on array fields (8a761da)
+- make comma arrays key-aware; keep bounds usable as calibration ranges (6b51111)
+- **ui,config:** treat per-stage arrays as the engine does; correct two schema bounds (33804fb)
+
+### Other
+
+- Merge pull request #269 from razinkele/fix/multivalue-comma (b15ec41)
+
 ## [1.10.3] - 2026-11-15
 
 ### Bug Fixes
