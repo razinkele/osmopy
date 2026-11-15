@@ -1,8 +1,12 @@
 """Environmental forcing / LTL configuration page."""
 
+from collections.abc import Callable
+from typing import Any
+
 from shiny import reactive, render, ui
 from shiny.types import SilentException
 
+from osmose.config.multivalue import is_multi_value
 from osmose.schema.bioenergetics import BIOENERGETICS_FIELDS
 from osmose.schema.ltl import LTL_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
@@ -16,6 +20,37 @@ _TEMP_KEYS: list[str] = [
     for f in BIOENERGETICS_FIELDS
     if f.key_pattern.startswith("temperature.") and not f.indexed
 ]
+
+
+def collect_resource_table_updates(
+    n_resources: int,
+    n_focal: int,
+    config: dict[str, str],
+    read_input: Callable[[str], Any],
+) -> dict[str, str]:
+    """Config updates from the resource table's inputs (what ``sync_resource_inputs`` applies).
+
+    A per-stage array cell has no input (``render_species_table`` shows it read-only) and is
+    skipped, decided from the config: Shiny keeps the last value of an input removed from the
+    page, so a stale input would otherwise write a scalar over the array.
+    """
+    updates: dict[str, str] = {}
+    for i in range(n_resources):
+        sp_idx = n_focal + i
+        for field in (f for f in LTL_FIELDS if f.indexed):
+            config_key = field.resolve_key(sp_idx)
+            if is_multi_value(config.get(config_key), field):
+                continue
+            base_key = (
+                field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
+            )
+            try:
+                val = read_input(f"spt_{base_key}_{sp_idx}")
+            except (AttributeError, SilentException):
+                continue
+            if val is not None:
+                updates[config_key] = str(val)
+    return updates
 
 
 def forcing_ui():
@@ -105,24 +140,11 @@ def forcing_server(input, output, session, state: AppState):
                 return
             cfg = dict(state.config.get())
         n_focal = parse_nspecies(cfg)
-        indexed_fields = [f for f in LTL_FIELDS if f.indexed]
 
         # Collect all updates before touching reactive state.
-        updates: dict[str, str] = {}
-        for i in range(n):
-            sp_idx = n_focal + i
-            for field in indexed_fields:
-                config_key = field.resolve_key(sp_idx)
-                base_key = (
-                    field.key_pattern.replace(".sp{idx}", "").replace("{idx}", "").replace(".", "_")
-                )
-                input_id = f"spt_{base_key}_{sp_idx}"
-                try:
-                    val = getattr(input, input_id)()
-                except (AttributeError, SilentException):
-                    continue
-                if val is not None:
-                    updates[config_key] = str(val)
+        updates = collect_resource_table_updates(
+            n, n_focal, cfg, lambda input_id: getattr(input, input_id)()
+        )
 
         # Apply all updates in a single config.set() call.
         actual_changes = {k: v for k, v in updates.items() if cfg.get(k) != v}

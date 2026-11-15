@@ -346,20 +346,30 @@ SPECIES_FIELDS: list[OsmoseField] = [
         param_type=ParamType.FLOAT,
         default=3.5,
         min_val=1.0,
-        max_val=1000.0,
+        # Filter feeders need large ratios: the official Benguela config gives sardine's
+        # adult stage 200-4000 (prey of 0.05-1 mm at 20 cm), so the cap is 1e4 (was 1e3).
+        # This bound is ALSO the calibration/sensitivity range (get_calibratable_params,
+        # sampled linearly), which therefore widened with it.
+        max_val=10000.0,
         description="Maximum predator/prey size ratio",
         category="predation",
         indexed=True,
+        array=True,  # per-stage: the engine splits on ';' and ','
     ),
     OsmoseField(
         key_pattern="predation.predprey.sizeratio.min.sp{idx}",
         param_type=ParamType.FLOAT,
         default=1.5,
         min_val=1.0,
-        max_val=1000.0,
+        # Filter feeders need large ratios: the official Benguela config gives sardine's
+        # adult stage 200-4000 (prey of 0.05-1 mm at 20 cm), so the cap is 1e4 (was 1e3).
+        # This bound is ALSO the calibration/sensitivity range (get_calibratable_params,
+        # sampled linearly), which therefore widened with it.
+        max_val=10000.0,
         description="Minimum predator/prey size ratio",
         category="predation",
         indexed=True,
+        array=True,  # per-stage: the engine splits on ';' and ','
     ),
     # ── Mortality ────────────────────────────────────────────────────────
     OsmoseField(

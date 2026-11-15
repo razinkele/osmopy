@@ -23,6 +23,18 @@ def test_get_calibratable_params():
     assert "species.k.sp2" in keys
 
 
+def test_schema_bounds_double_as_calibration_ranges():
+    """get_calibratable_params needs BOTH bounds, and samples between them. Dropping a cap to
+    admit a shipped value silently removes the parameter from the Calibration/Sensitivity picker,
+    so a widened bound must stay finite (2026-11-15: maturity.r, size ratios)."""
+    from ui.state import REGISTRY
+
+    ranges = {p["key"]: (p["lower"], p["upper"]) for p in get_calibratable_params(REGISTRY, 1)}
+    assert ranges["species.maturity.r.sp0"] == (0.0, 10.0)
+    assert ranges["predation.predprey.sizeratio.max.sp0"] == (1.0, 10000.0)
+    assert ranges["predation.predprey.sizeratio.min.sp0"] == (1.0, 10000.0)
+
+
 def test_make_convergence_chart():
     history = [10.0, 5.0, 3.0, 2.0, 1.5]
     fig = make_convergence_chart(history)

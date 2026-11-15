@@ -7,6 +7,7 @@ from pathlib import Path
 
 from shiny import reactive, render, ui
 
+from osmose.config.multivalue import is_multi_value
 from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
 from ui.components.collapsible import collapsible_card_header, expand_tab
@@ -37,12 +38,14 @@ def compute_import_diff(
 
 
 def multi_value_keys(cfg: dict[str, str]) -> list[str]:
-    """Config keys whose value is a ``;``-separated array (e.g. per-stage parameters).
+    """Config keys whose value is a per-stage array: ``;``-separated on any key, or
+    ``,``-separated numbers on an array-capable field (see ``osmose.config.multivalue``).
 
-    The schema-driven form tabs render these read-only (see ``render_field``);
-    this page is the one place they can be edited, so it needs the same test.
+    The schema-driven form tabs and the species table render these read-only (see ``render_field``
+    and ``render_species_table``); this page is the one place they can be edited, so it needs the
+    same test.
     """
-    return sorted(k for k, v in cfg.items() if isinstance(v, str) and ";" in v)
+    return sorted(k for k, v in cfg.items() if is_multi_value(v, REGISTRY.match_field(k)))
 
 
 def advanced_ui():
@@ -224,7 +227,8 @@ def advanced_server(input, output, session, state: AppState):
         return ui.div(
             ui.tags.strong(f"{len(keys)} multi-value parameter(s)"),
             ui.p(
-                "';'-separated arrays (e.g. per-stage values) are shown read-only in the "
+                "Per-stage arrays (';'-separated; ',' also for size ratios and stage thresholds) are "
+                "shown read-only in the "
                 "form tabs. Edit them here — the full array is written back verbatim.",
                 class_="mb-2 small",
             ),
@@ -232,7 +236,7 @@ def advanced_server(input, output, session, state: AppState):
                 ui.input_select(
                     "adv_mv_key", "Parameter", choices={k: k for k in keys}, selected=selected
                 ),
-                ui.input_text("adv_mv_value", "Value (';'-separated)", value=cfg[selected]),
+                ui.input_text("adv_mv_value", "Value (array)", value=cfg[selected]),
                 ui.div(
                     ui.input_action_button("adv_mv_apply", "Apply", class_="btn-primary w-100"),
                     style="display: flex; align-items: flex-end; height: 100%;",
@@ -258,9 +262,12 @@ def advanced_server(input, output, session, state: AppState):
         raw = (input.adv_mv_value() or "").strip()
         if not key:
             return
-        if ";" not in raw:
+        # Key-aware: ',' is accepted only for array-capable fields. movement.steps.map{i}, for
+        # one, is read on ';' alone by the Python engine (movement_maps._parse_semicolon_ints).
+        if not is_multi_value(raw, REGISTRY.match_field(key)):
             ui.notification_show(
-                "Value must remain a ';'-separated array — use the form tabs for scalars.",
+                "Value must remain an array (';'-separated; ',' also for size ratios and stage "
+                "thresholds) — use the form tabs for scalars.",
                 type="warning",
                 duration=6,
             )

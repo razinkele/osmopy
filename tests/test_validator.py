@@ -222,3 +222,30 @@ def test_summarize_matches_inline_composition_dry_lock(tmp_path):
         helper_err, helper_warn = summarize_config_validation(config, registry, config_dir)
         assert helper_err == inline_err
         assert helper_warn == inline_warn
+
+
+def test_validate_config_checks_each_part_of_a_comma_array(registry):
+    """The engine splits per-stage arrays on ',' as well as ';' (Benguela: "15, 5"). Each part is
+    validated like a ';' array: no "expected number" for the whole string, bounds per element."""
+    ok = {"predation.predprey.sizeratio.max.sp0": "15, 5"}
+    errors, _ = validate_config(ok, registry)
+    assert errors == []
+    bad = {"predation.predprey.sizeratio.max.sp0": "15, 20000"}  # field max is 1e4
+    errors, _ = validate_config(bad, registry)
+    assert errors == [
+        "predation.predprey.sizeratio.max.sp0[1]: value 20000.0 above maximum 10000.0"
+    ]
+
+
+def test_validate_config_still_reports_a_decimal_comma_on_a_scalar_key(registry):
+    """',' separates arrays only on array-capable fields. On a scalar key the engine reads the
+    value with float() and fails, so "0,2" must stay an error here, not pass as an array."""
+    errors, _ = validate_config({"species.linf.sp0": "25,5"}, registry)
+    assert errors == ["species.linf.sp0: expected number, got '25,5'"]
+
+
+@pytest.mark.parametrize("value", ["2.3,", ",5", "2.3;"])
+def test_validate_config_accepts_a_lone_separator_on_an_array_field(registry, value):
+    """The engine reads "2.3," as [2.3] on an array-capable field, so it is valid there."""
+    errors, _ = validate_config({"predation.predprey.sizeratio.max.sp0": value}, registry)
+    assert errors == []

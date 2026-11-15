@@ -1,5 +1,7 @@
 """Tests for auto-generated parameter form components."""
 
+import pytest
+
 from osmose.config.validator import validate_field
 from osmose.schema.base import OsmoseField, ParamType
 from ui.components.param_form import (
@@ -653,3 +655,134 @@ def test_copying_an_age_based_species_0_makes_the_others_age_based():
     for i in (0, 1, 2):
         assert _maturity_cell(html, "species_maturity_size", i) is None
     assert html.count("age-based") >= 3
+
+
+# ── Multi-value (per-stage) cells in the species table ───────────────────────
+# EEC full's sp5 size ratios are "2.3;1.8" / "50;20"; Benguela writes "15, 5". A numeric cell cannot
+# hold an array: rendering one showed the schema default, and sync_species_inputs wrote it back as
+# soon as the table rendered, so the engine refused the run (size-ratio count != stages).
+
+_SR_MAX = "predation.predprey.sizeratio.max.sp{}"
+_SR_MIN = "predation.predprey.sizeratio.min.sp{}"
+
+
+@pytest.mark.parametrize("array", ["2.3;1.8", "15, 5"])
+def test_species_table_shows_a_multi_value_cell_read_only(array):
+    from osmose.schema.species import SPECIES_FIELDS
+
+    cfg = {_SR_MAX.format(0): "3.5", _SR_MAX.format(1): array}
+    html = str(render_species_table(SPECIES_FIELDS, 2, ["a", "b"], config=cfg))
+    assert _maturity_cell(html, "predation_predprey_sizeratio_max", 1) is None  # no input
+    assert array in html
+    assert float(_maturity_cell(html, "predation_predprey_sizeratio_max", 0)) == 3.5
+
+
+@pytest.mark.parametrize("array", ["2.3;1.8", "15, 5"])
+def test_sync_skips_a_multi_value_cell_even_with_a_stale_input(array):
+    """Decided from the config: Shiny keeps the last value of an input removed from the page."""
+    from osmose.schema.species import SPECIES_FIELDS
+    from ui.components.param_form import collect_species_table_updates
+
+    cfg = {_SR_MAX.format(0): "3.5", _SR_MAX.format(1): array}
+    stale = {
+        "spt_predation_predprey_sizeratio_max_0": 4.0,
+        "spt_predation_predprey_sizeratio_max_1": 3.5,  # the default an old render showed
+    }
+
+    def read(input_id):
+        if input_id not in stale:
+            raise AttributeError(input_id)
+        return stale[input_id]
+
+    updates = collect_species_table_updates(SPECIES_FIELDS, 2, cfg, read)
+    assert _SR_MAX.format(1) not in updates
+    assert updates[_SR_MAX.format(0)] == "4.0"
+
+
+def test_copy_species_0_never_touches_a_multi_value_cell():
+    """Stage thresholds are not table fields, so copying a single value onto a staged species, or
+    a staged species 0 onto others, would break the engine's stage count. Such cells are left."""
+    from unittest.mock import MagicMock
+
+    from osmose.schema.species import SPECIES_FIELDS
+    from ui.components.param_form import copy_species0_to_all
+
+    cfg = {
+        _SR_MAX.format(0): "3.5",
+        _SR_MAX.format(1): "2.3;1.8",  # staged destination
+        _SR_MAX.format(2): "3.0",
+        _SR_MIN.format(0): "15, 5",  # staged source
+        _SR_MIN.format(1): "1.2",
+        _SR_MIN.format(2): "1.4",
+    }
+    values = {
+        "spt_predation_predprey_sizeratio_max_0": 3.5,
+        "spt_predation_predprey_sizeratio_min_0": 1.5,  # stale default under the staged source
+    }
+
+    class _Input:
+        def __getattr__(self, name):
+            if name not in values:
+                raise AttributeError(name)
+            return lambda: values[name]
+
+    copy_species0_to_all(SPECIES_FIELDS, 3, cfg, _Input(), MagicMock())
+    assert cfg[_SR_MAX.format(1)] == "2.3;1.8"  # staged destination untouched
+    assert cfg[_SR_MAX.format(2)] == "3.5"  # plain destination copied
+    assert cfg[_SR_MIN.format(1)] == "1.2"  # staged source: nothing copied
+    assert cfg[_SR_MIN.format(2)] == "1.4"
+
+
+@pytest.mark.parametrize("array", [True, False])
+def test_render_field_treats_a_comma_as_an_array_only_on_an_array_field(array):
+    """On an array-capable field "15, 5" is two stages; on a scalar field a comma is a typo, which
+    stays an editable input so it can be fixed (it is not shown read-only)."""
+    field = OsmoseField(
+        key_pattern="species.size.threshold.sp{idx}",
+        param_type=ParamType.FLOAT,
+        default=10.0,
+        category="species",
+        indexed=True,
+        array=array,
+    )
+    rendered = str(
+        render_field(field, species_idx=0, config={"species.size.threshold.sp0": "15, 5"})
+    )
+    assert ("multi-value" in rendered.lower()) is array
+
+
+# ── Values that do not parse must survive the sync unchanged ─────────────────
+# Falling back to the schema default for an unparseable value let the sync write the default over
+# it. The cell shows the raw text instead, so it round-trips until the user fixes it.
+
+
+@pytest.mark.parametrize(
+    ("key", "raw"),
+    [(_SR_MAX.format(0), "2.3,"), (_SR_MAX.format(0), ",5"), ("species.linf.sp0", "25,5")],
+)
+def test_species_table_keeps_an_unparseable_value_as_raw_text(key, raw):
+    from osmose.schema.species import SPECIES_FIELDS
+    from ui.components.param_form import collect_species_table_updates
+
+    cfg = {key: raw}
+    html = str(render_species_table(SPECIES_FIELDS, 1, ["a"], config=cfg))
+    base = key.rsplit(".sp", 1)[0].replace(".", "_")
+    assert _maturity_cell(html, base, 0) == raw  # an input holding the raw text, not the default
+
+    # The browser returns what the input holds; syncing it back changes nothing.
+    updates = collect_species_table_updates(
+        SPECIES_FIELDS, 1, cfg, lambda input_id: raw if input_id == f"spt_{base}_0" else 0
+    )
+    assert updates.get(key, raw) == raw
+
+
+def test_render_field_keeps_an_unparseable_value_as_raw_text():
+    field = OsmoseField(
+        key_pattern="simulation.time.nyear",
+        param_type=ParamType.INT,
+        default=50,
+        category="simulation",
+    )
+    rendered = str(render_field(field, config={"simulation.time.nyear": "50,5"}))
+    assert 'value="50,5"' in rendered
+    assert "not a number" in rendered
