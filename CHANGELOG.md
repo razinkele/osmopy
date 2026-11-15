@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.2] - 2026-11-15
+
+### Bug Fixes
+
+- **perf-probe:** undefined occupancy statistics are null, never NaN (6fe002f)
+- **perf-probe:** count steps with no school as zero in per-step means (70f3f14)
+- **calibration:** DE checkpoint re-eval runs in a forked child with forked workers (c176197)
+- **perf:** sweep harness rejects worker counts outside the pool's 1..32 clamp (a9dcab1)
+- **perf:** apply the worker thread rule in the children, never a forking parent (a70fdb3)
+
+### Performance
+
+- engine worker pools apply max(1, physical // W) Numba threads per worker (3e370bd)
+- worker x threads-per-worker sweep harness (perf plan item 1) (a3404c1)
+
+### Documentation
+
+- **perf:** qualify #264's coverage and the Phase 1a ceilings; probe scrubs GIT_* env (e768ea0)
+- **perf:** split Phase 1a into testing vs eligible-prey work; prefilter ceiling 11-13% (1c04fd9)
+- **perf:** Phase 1a scan costs ~25% of one-thread mortality time (perf plan item 6) (f3b8fce)
+- **perf:** item 4 note cites only the checks that can see the collector (bdc56da)
+- **perf:** Baltic serial tail profile; life-stage bincount not shipping (perf plan item 4) (124646a)
+- **perf:** years 6-10 eligible fraction is 11.8%, not 11.9% (84d9682)
+- **perf:** Baltic cell occupancy and predation pairs (perf plan item 3) (61de752)
+- **perf:** plan item 2 -- Baltic movement is the serial seeded kernel; no code change (9548ef2)
+- **perf:** pre-state the worker x thread sweep (perf plan item 1) (a2d9b1b)
+- **baltic:** v1.10.1 notes -- herring C4 row unattributed, ratio bound, seeding mode measured (3d56a9f)
+- **baltic:** SMS v1.10.1 section does not attribute sprat's juvenile-rate change (b49e109)
+- **baltic:** re-run the stale Baltic results on v1.10.1 (5d56ee4)
+- **perf:** review the performance plan; revise it to the findings (c526eef)
+- **perf:** add the performance optimization plan draft as received (0119c53)
+
+### Other
+
+- Merge pull request #265 from razinkele/docs/perf-item6-phase1a-cost (0bc1509)
+- Merge pull request #263 from razinkele/docs/perf-item4-serial-tail (62d7fda)
+- Merge pull request #262 from razinkele/docs/perf-item3-occupancy (4e117d5)
+- Merge pull request #264 from razinkele/test/output-parity-baseline (819ddef)
+- Merge pull request #260 from razinkele/fix/de-checkpoint-fork-safety (dd19643)
+- Merge pull request #261 from razinkele/docs/perf-item2-movement (40250ae)
+- Merge pull request #259 from razinkele/perf/worker-thread-sweep (f288de7)
+- Merge pull request #258 from razinkele/docs/baltic-refresh-v1.10.1 (07681b9)
+- Merge pull request #257 from razinkele/docs/perf-plan-review (664be2e)
+
+### Tests
+
+- fixed-seed parity for every output the core baseline omits (c52210d)
+- check the checkpoint's evaluator through run_calibration, not by substring (bef9603)
+
 ## [1.10.1] - 2026-11-14
 
 ### Bug Fixes
