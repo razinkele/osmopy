@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.3] - 2026-11-15
+
+### Bug Fixes
+
+- **schema:** drop the 1.0 cap on reproduction.rv.gate.ref (29add34)
+
+### Other
+
+- Merge pull request #267 from razinkele/fix/rv-gate-ref-bound (dbdd75a)
+
+### Tests
+
+- validate demos the way the UI does; excuse only benguela's known errors (03abb92)
+
 ## [1.10.2] - 2026-11-15
 
 ### Bug Fixes
