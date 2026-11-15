@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.6] - 2026-11-16
+
+### Bug Fixes
+
+- **ui:** seed only indices the config has no key for; three more write paths (1710d1b)
+- **ui:** seed only from a configured count, keep re-added age-based maturity (e1efc98)
+- **ui:** lock the config tabs while a run is in progress (3e3c144)
+- **ui:** viewing a tab never writes an untouched input (ed8dc04)
+
+### CI/CD
+
+- run the edit-lock browser test in the E2E job (a1bd9f6)
+- run the UI config-integrity browser tests on UI pull requests (fb5123b)
+
+### Other
+
+- Merge pull request #276 from razinkele/fix/lock-editing-while-busy (88b8333)
+- Merge pull request #274 from razinkele/fix/tab-defaults-engine-equivalent (8ff3ca7)
+- Merge branch 'master' of https://github.com/razinkele/osmopy into fix/tab-defaults-engine-equivalent (8744c70)
+- Merge branch 'master' of https://github.com/razinkele/osmopy into fix/lock-editing-while-busy (112fc00)
+- Merge pull request #275 from razinkele/ci/e2e-config-integrity (0cc9640)
+
 ## [1.10.5] - 2026-11-15
 
 ### Bug Fixes
