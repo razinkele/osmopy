@@ -849,7 +849,8 @@ def grid_server(input, output, session, state: AppState):
 
     @reactive.effect
     def sync_grid_inputs():
-        sync_inputs(input, state, GRID_GLOBAL_KEYS, rendered="grid.fields")
+        # materialize=False: this page is visible during every load; it must not write defaults.
+        sync_inputs(input, state, GRID_GLOBAL_KEYS, rendered="grid.fields", materialize=False)
 
     @reactive.effect
     @reactive.event(input.btn_example_info)

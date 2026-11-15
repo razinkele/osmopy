@@ -180,11 +180,29 @@ def same_config_value(old: str | None, new: str, field: OsmoseField | None = Non
     return False
 
 
+def shows_field_default(field: OsmoseField | None, value: str) -> bool:
+    """True when ``value`` is what a rendered input shows for an unset key: the field's schema
+    default (a numeric field without one renders 0, a switch without one renders False)."""
+    if field is None:
+        return False
+    default = field.default
+    if default is None:
+        default = (
+            0
+            if field.param_type in (ParamType.FLOAT, ParamType.INT)
+            else False
+            if field.param_type == ParamType.BOOL
+            else ""
+        )
+    return value == str(default) or same_config_value(str(default), value, field)
+
+
 def sync_inputs(
     input: ShinyInputs,
     state: AppState,
     keys: list[str],
     rendered: str | tuple[str, ...] | None = None,
+    materialize: bool = True,
 ) -> dict[str, str]:
     """Read Shiny inputs for the given OSMOSE keys and update state.config.
 
@@ -197,6 +215,11 @@ def sync_inputs(
     ``rendered`` names the render output(s) that build these inputs (``state.mark_rendered``).
     While any of them was built for an earlier config load, nothing is written: the inputs hold
     the previous config's values.
+
+    ``materialize=False`` stops a key the config does not set from being written while its input
+    still shows the field's default (untouched): the Grid page, visible during every load, wrote
+    e.g. ``grid.java.classname = OriginalGrid`` into each loaded config once its sync stopped
+    aborting. A real edit (a value other than the default) is still written.
 
     Every input is READ before either gate (busy, stale render) is checked. A reactive effect
     re-runs only on what it read last time, so returning before the reads would drop its
@@ -235,6 +258,8 @@ def sync_inputs(
                     old_val,
                     new_val,
                 )
+                continue
+            if not materialize and key not in cfg and shows_field_default(field, new_val):
                 continue
             changed[key] = new_val
     # Gate only the WRITE (the reads above keep this effect subscribed to its inputs).

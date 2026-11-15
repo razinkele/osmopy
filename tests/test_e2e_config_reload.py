@@ -34,7 +34,7 @@ from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
 from osmose.config.reader import OsmoseConfigReader
-from osmose.demo import osmose_demo
+from osmose.demo import list_demos, osmose_demo
 from osmose.schema import build_registry
 from osmose.schema.base import ParamType
 from tests._e2e_support import dismiss_changelog_modal
@@ -211,5 +211,24 @@ def test_the_resource_copy_button_does_not_copy_stale_species(
         assert not wrong, (
             f"species values changed by the resource copy: {dict(list(wrong.items())[:4])}"
         )
+    finally:
+        shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)
+
+
+@pytest.mark.parametrize("demo", list_demos())
+def test_a_plain_load_gives_exactly_the_file(page: Page, app: ShinyAppProc, tmp_path, demo):
+    """Loading happens on the Grid page, which is visible during the load, so its sync runs then.
+    Once that sync stopped aborting it wrote the Grid fields' defaults into every loaded config
+    (e.g. grid.java.classname = OriginalGrid). A plain load must give exactly the file: no
+    changed key and no added key."""
+    expected = _expected(demo, tmp_path)
+    name = f"e2e_plain_{demo}_{uuid.uuid4().hex[:8]}"
+    try:
+        _start(page, app)
+        _load_example(page, demo)
+        saved = _save_scenario(page, name)
+        added = sorted(set(saved) - set(expected) - _IGNORED)
+        assert not _differences(expected, saved), f"{demo}: changed {_differences(expected, saved)}"
+        assert not added, f"{demo}: the load added keys {added}"
     finally:
         shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)

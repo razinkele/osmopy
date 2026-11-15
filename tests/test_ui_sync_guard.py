@@ -180,3 +180,25 @@ def test_an_unrendered_input_does_not_abort_the_other_keys():
         state.mark_rendered("grid.fields")
         sync_inputs(_Partial(), state, ["grid.mask.file", "grid.nlon"], rendered="grid.fields")
         assert state.config.get()["grid.nlon"] == "51"
+
+
+def test_materialize_false_writes_edits_but_not_untouched_defaults():
+    """The Grid page is visible during every load. Its sync must not write defaults for keys the
+    loaded config leaves unset (it wrote grid.java.classname = OriginalGrid into every load), but a
+    real edit must still be saved."""
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"grid.netcdf.file": "grid.nc"})
+        state.mark_rendered("grid.fields")
+        sync_inputs(
+            _RecordingInput("fr.ird.osmose.grid.OriginalGrid"),
+            state,
+            ["grid.java.classname"],
+            rendered="grid.fields",
+            materialize=False,
+        )
+        assert "grid.java.classname" not in state.config.get()  # untouched default: not written
+        sync_inputs(
+            _RecordingInput("40"), state, ["grid.nlon"], rendered="grid.fields", materialize=False
+        )
+        assert state.config.get()["grid.nlon"] == "40"  # an edit (not the default 30): written
