@@ -12,7 +12,7 @@ from osmose.schema.ltl import LTL_FIELDS
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.components.param_form import copy_species0_to_all, render_field, render_species_table
 from ui.pages._helpers import parse_nspecies
-from ui.state import AppState, sync_inputs
+from ui.state import AppState, same_config_value, sync_inputs
 
 FORCING_GLOBAL_KEYS: list[str] = [f.key_pattern for f in LTL_FIELDS if not f.indexed]
 _TEMP_KEYS: list[str] = [
@@ -91,6 +91,7 @@ def forcing_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
+        state.mark_rendered("forcing.global")
         return ui.div(
             ui.h5("Global LTL Settings"),
             *[render_field(f, config=cfg) for f in global_ltl],
@@ -101,6 +102,7 @@ def forcing_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
+        state.mark_rendered("forcing.temp")
         return ui.div(
             ui.h5("Temperature"),
             *[render_field(f, config=cfg) for f in temp_fields if not f.advanced],
@@ -115,6 +117,7 @@ def forcing_server(input, output, session, state: AppState):
         n_focal = parse_nspecies(cfg)
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
         names = [cfg.get(f"species.name.sp{n_focal + i}", f"Resource {i}") for i in range(n)]
+        state.mark_rendered("forcing.resources")
         return render_species_table(
             indexed_fields,
             n_species=n,
@@ -125,7 +128,12 @@ def forcing_server(input, output, session, state: AppState):
 
     @reactive.effect
     def sync_forcing_inputs():
-        sync_inputs(input, state, FORCING_GLOBAL_KEYS + _TEMP_KEYS)
+        sync_inputs(
+            input,
+            state,
+            FORCING_GLOBAL_KEYS + _TEMP_KEYS,
+            rendered=("forcing.global", "forcing.temp"),
+        )
 
     @reactive.effect
     def sync_resource_inputs():
@@ -136,8 +144,6 @@ def forcing_server(input, output, session, state: AppState):
         """
         n = input.n_resources()
         with reactive.isolate():
-            if state.busy.get():
-                return
             cfg = dict(state.config.get())
         n_focal = parse_nspecies(cfg)
 
@@ -146,8 +152,15 @@ def forcing_server(input, output, session, state: AppState):
             n, n_focal, cfg, lambda input_id: getattr(input, input_id)()
         )
 
+        # Gate only the WRITE: the cell reads above keep this effect subscribed to them.
+        with reactive.isolate():
+            if state.busy.get():
+                return
+        if not state.rendered_current("forcing.resources"):
+            return  # the table still holds an earlier config's values (tab hidden during a load)
+
         # Apply all updates in a single config.set() call.
-        actual_changes = {k: v for k, v in updates.items() if cfg.get(k) != v}
+        actual_changes = {k: v for k, v in updates.items() if not same_config_value(cfg.get(k), v)}
         if actual_changes:
             cfg.update(actual_changes)
             with reactive.isolate():

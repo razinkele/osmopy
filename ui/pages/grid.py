@@ -213,6 +213,7 @@ def grid_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
+        state.mark_rendered("grid.fields")
         return ui.div(
             render_field(grid_type_field, config=cfg) if grid_type_field else ui.div(),
             ui.hr(),
@@ -848,7 +849,7 @@ def grid_server(input, output, session, state: AppState):
 
     @reactive.effect
     def sync_grid_inputs():
-        sync_inputs(input, state, GRID_GLOBAL_KEYS)
+        sync_inputs(input, state, GRID_GLOBAL_KEYS, rendered="grid.fields")
 
     @reactive.effect
     @reactive.event(input.btn_example_info)

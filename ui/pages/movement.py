@@ -42,6 +42,7 @@ def movement_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
+        state.mark_rendered("movement.global")
         return ui.div(*[render_field(f, config=cfg) for f in global_fields if not f.advanced])
 
     @render.ui
@@ -54,6 +55,7 @@ def movement_server(input, output, session, state: AppState):
         panels = []
         for i in range(n_species):
             panels.extend([render_field(f, species_idx=i, config=cfg) for f in per_species])
+        state.mark_rendered("movement.species")
         return ui.div(*panels)
 
     @render.ui
@@ -70,11 +72,12 @@ def movement_server(input, output, session, state: AppState):
                 *[render_field(f, species_idx=i, config=cfg) for f in map_fields],
             )
             panels.append(card)
+        state.mark_rendered("movement.maps")
         return ui.div(*panels)
 
     @reactive.effect
     def sync_movement_inputs():
-        sync_inputs(input, state, MOVEMENT_GLOBAL_KEYS)
+        sync_inputs(input, state, MOVEMENT_GLOBAL_KEYS, rendered="movement.global")
 
     @reactive.effect
     def sync_species_movement_inputs():
@@ -84,7 +87,7 @@ def movement_server(input, output, session, state: AppState):
         all_keys = []
         for i in range(n_species):
             all_keys.extend(f.resolve_key(i) for f in per_species)
-        sync_inputs(input, state, all_keys)
+        sync_inputs(input, state, all_keys, rendered="movement.species")
 
     @reactive.effect
     def sync_map_inputs():
@@ -93,7 +96,7 @@ def movement_server(input, output, session, state: AppState):
         all_keys = []
         for i in range(n):
             all_keys.extend(f.resolve_key(i) for f in map_fields)
-        sync_inputs(input, state, all_keys)
+        sync_inputs(input, state, all_keys, rendered="movement.maps")
 
     @reactive.effect
     def sync_n_maps_from_config():

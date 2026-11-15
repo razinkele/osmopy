@@ -42,6 +42,7 @@ def fishing_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
+        state.mark_rendered("fishing.global")
         return ui.div(*[render_field(f, config=cfg) for f in global_fields])
 
     @render.ui
@@ -58,6 +59,7 @@ def fishing_server(input, output, session, state: AppState):
                 *[render_field(f, species_idx=i, config=cfg) for f in fishery_fields],
             )
             panels.append(card)
+        state.mark_rendered("fishing.fisheries")
         return ui.div(*panels)
 
     @render.ui
@@ -74,20 +76,23 @@ def fishing_server(input, output, session, state: AppState):
                 *[render_field(f, species_idx=i, config=cfg) for f in mpa_fields],
             )
             panels.append(card)
+        state.mark_rendered("fishing.mpas")
         return ui.div(*panels)
 
     @reactive.effect
     def sync_fishing_inputs():
-        sync_inputs(input, state, FISHING_GLOBAL_KEYS)
+        sync_inputs(input, state, FISHING_GLOBAL_KEYS, rendered="fishing.global")
 
     @reactive.effect
     def sync_fishery_inputs():
         n = input.n_fisheries()
         fishery_fields = [f for f in FISHING_FIELDS if f.indexed and "fsh" in f.key_pattern]
-        sync_inputs(input, state, collect_resolved_keys(fishery_fields, n))
+        sync_inputs(
+            input, state, collect_resolved_keys(fishery_fields, n), rendered="fishing.fisheries"
+        )
 
     @reactive.effect
     def sync_mpa_inputs():
         n = input.n_mpas()
         mpa_fields = [f for f in FISHING_FIELDS if f.indexed and "mpa" in f.key_pattern]
-        sync_inputs(input, state, collect_resolved_keys(mpa_fields, n))
+        sync_inputs(input, state, collect_resolved_keys(mpa_fields, n), rendered="fishing.mpas")

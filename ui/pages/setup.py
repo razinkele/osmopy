@@ -14,7 +14,7 @@ from ui.components.param_form import (
     render_category,
     render_species_table,
 )
-from ui.state import AppState, sync_inputs
+from ui.state import AppState, same_config_value, sync_inputs
 
 _log = setup_logging("osmose.setup")
 
@@ -111,6 +111,7 @@ def setup_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
+        state.mark_rendered("setup.simulation")
         return render_category(
             [f for f in SIMULATION_FIELDS if not f.advanced],
             config=cfg,
@@ -129,6 +130,7 @@ def setup_server(input, output, session, state: AppState):
         with reactive.isolate():
             cfg = state.config.get()
         names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
+        state.mark_rendered("setup.species")
         return render_species_table(
             SPECIES_FIELDS,
             n_species=n,
@@ -140,7 +142,7 @@ def setup_server(input, output, session, state: AppState):
     @reactive.effect
     def sync_simulation_inputs():
         """Auto-sync simulation fields to state.config."""
-        sync_inputs(input, state, SETUP_GLOBAL_KEYS)
+        sync_inputs(input, state, SETUP_GLOBAL_KEYS, rendered="setup.simulation")
 
     @reactive.effect
     def sync_species_inputs():
@@ -150,9 +152,6 @@ def setup_server(input, output, session, state: AppState):
         calls state.config.set() once instead of once per parameter.  With
         20 species × 30+ fields this avoids 600+ individual reactive updates.
         """
-        with reactive.isolate():
-            if state.busy.get():
-                return
         n = input.n_species()
         show_adv = input.show_advanced_species()
 
@@ -168,8 +167,16 @@ def setup_server(input, output, session, state: AppState):
             )
         )
 
+        # Gate only the WRITE: the cell reads above keep this effect subscribed to them (a return
+        # before reading would leave it with no dependencies, so it would never sync again).
+        with reactive.isolate():
+            if state.busy.get():
+                return
+        if not state.rendered_current("setup.species"):
+            return  # the table still holds an earlier config's values (tab hidden during a load)
+
         # Apply all updates in a single config.set() call.
-        actual_changes = {k: v for k, v in updates.items() if cfg.get(k) != v}
+        actual_changes = {k: v for k, v in updates.items() if not same_config_value(cfg.get(k), v)}
         if actual_changes:
             cfg.update(actual_changes)
             state.config.set(cfg)

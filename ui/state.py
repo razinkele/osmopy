@@ -67,6 +67,31 @@ class AppState:
         self.results_loaded: reactive.Value[bool] = reactive.Value(False)
         self.key_case_map: reactive.Value[dict[str, str]] = reactive.Value({})
         self.engine_mode: reactive.Value[str] = reactive.Value("python")
+        # load_trigger generation each render output last built its inputs for (see
+        # mark_rendered). A plain dict ON PURPOSE, not reactive: see mark_rendered.
+        self._rendered_gen: dict[str, int] = {}
+
+    def mark_rendered(self, name: str) -> None:
+        """Record that render output ``name`` just built its inputs from the current config.
+
+        Call it from the render function. A sync effect then writes that output's inputs only
+        while ``rendered_current(name)``: a tab that is hidden during a load does not re-render
+        (Shiny suspends hidden outputs), so its inputs still hold the PREVIOUS config's values,
+        and writing them corrupted the new config (2026-11-15: load EEC full, view Setup, load
+        Baltic -> 169 Baltic keys overwritten with EEC full's).
+
+        Deliberately not reactive: if marking invalidated the sync, the sync would run right
+        after the render, before the browser has sent the new inputs' values, and write the
+        stale ones.
+        """
+        with reactive.isolate():
+            self._rendered_gen[name] = self.load_trigger.get()
+
+    def rendered_current(self, *names: str) -> bool:
+        """True when every named render output was built for the current config load."""
+        with reactive.isolate():
+            gen = self.load_trigger.get()
+        return all(self._rendered_gen.get(n) == gen for n in names)
 
     def get_config_value(self, key: str, default: str = "") -> str:
         """Read a single config value without copying the entire dict.
@@ -126,10 +151,29 @@ class AppState:
         self.dirty.set(False)
 
 
+def same_config_value(old: str | None, new: str) -> bool:
+    """True when writing ``new`` over ``old`` would not change the value: equal as text, equal as
+    numbers ("110.0" vs the numeric input's "110"), or the same boolean in another case ("true"
+    vs a switch's "True"). Syncs skip such writes, so viewing a tab neither rewrites the loaded
+    file's formatting nor marks the config as changed."""
+    if old is None:
+        return False
+    if old == new:
+        return True
+    a, b = old.strip(), new.strip()
+    if a.lower() in ("true", "false") and b.lower() in ("true", "false"):
+        return a.lower() == b.lower()
+    try:
+        return float(a) == float(b)
+    except ValueError:
+        return False
+
+
 def sync_inputs(
     input: ShinyInputs,
     state: AppState,
     keys: list[str],
+    rendered: str | tuple[str, ...] | None = None,
 ) -> dict[str, str]:
     """Read Shiny inputs for the given OSMOSE keys and update state.config.
 
@@ -139,18 +183,17 @@ def sync_inputs(
     Batches all updates into a single config.set() to avoid repeated
     reactive invalidations.
 
+    ``rendered`` names the render output(s) that build these inputs (``state.mark_rendered``).
+    While any of them was built for an earlier config load, nothing is written: the inputs hold
+    the previous config's values.
+
+    Every input is READ before either gate (busy, stale render) is checked. A reactive effect
+    re-runs only on what it read last time, so returning before the reads would drop its
+    dependencies and stop the page's edits from ever syncing again.
+
     Returns:
         Dict of keys that were actually updated with their new values.
     """
-    # M10: skip while a busy operation is in flight (was state.loading.get();
-    # bool(state.busy.get()) is the same condition since busy is non-None
-    # iff something is actively blocking user input). Isolated read so
-    # sync effects don't re-run when busy toggles, which would overwrite
-    # config with stale input values before ui.update_* reaches the client.
-    with reactive.isolate():
-        if state.busy.get():
-            _log.debug("sync_inputs: skipping — busy in progress")
-            return {}
     changed: dict[str, str] = {}
     with reactive.isolate():
         cfg = dict(state.config.get())
@@ -178,9 +221,20 @@ def sync_inputs(
                 )
                 continue
             changed[key] = new_val
+    # Gate only the WRITE (the reads above keep this effect subscribed to its inputs).
+    # M10: skip while a busy operation is in flight; isolated so toggling busy does not re-run
+    # the effect and write input values before ui.update_* reaches the client.
+    with reactive.isolate():
+        if state.busy.get():
+            _log.debug("sync_inputs: skipping — busy in progress")
+            return {}
+    names = (rendered,) if isinstance(rendered, str) else rendered
+    if names and not state.rendered_current(*names):
+        _log.debug("sync_inputs: skipping — %s rendered for an earlier config load", names)
+        return {}
     if changed:
-        # Only set config if values actually differ
-        actual_changes = {k: v for k, v in changed.items() if cfg.get(k) != v}
+        # Only set config if values actually differ (by value: see same_config_value)
+        actual_changes = {k: v for k, v in changed.items() if not same_config_value(cfg.get(k), v)}
         if actual_changes:
             cfg.update(actual_changes)
             state.config.set(cfg)
