@@ -116,16 +116,22 @@ def test_every_page_sync_is_guarded_by_a_marked_render():
     assert used <= marked, f"render names used by a sync but never marked: {used - marked}"
 
 
-def test_same_config_value_compares_by_value():
-    from ui.state import same_config_value
+def test_same_config_value_compares_by_value_per_field_type():
+    from ui.state import REGISTRY, same_config_value
 
-    assert same_config_value("110.0", "110")  # numeric input returns an int when integral
-    assert same_config_value("true", "True")  # switch returns a bool
-    assert same_config_value("1e-3", "0.001")
-    assert not same_config_value("0.5", "0.6")
-    assert not same_config_value(None, "1")  # absent key: still written
-    assert not same_config_value("2.3;1.8", "2.3")
-    assert not same_config_value("cod", "Cod")  # only booleans ignore case
+    num = REGISTRY.match_field("species.linf.sp0")
+    flag = REGISTRY.match_field("movement.salinity.gate.species.enabled.sp0") or next(
+        f for f in REGISTRY.all_fields() if f.param_type.name == "BOOL"
+    )
+    text = REGISTRY.match_field("species.name.sp0")
+    assert same_config_value("110.0", "110", num)  # numeric input returns an int when integral
+    assert same_config_value("1e-3", "0.001", num)
+    assert not same_config_value("0.5", "0.6", num)
+    assert same_config_value("true", "True", flag)  # switch returns a bool
+    assert not same_config_value("001", "1", text)  # a name is text: the edit must be kept
+    assert not same_config_value("cod", "Cod", text)
+    assert not same_config_value("110.0", "110", None)  # unknown key: exact text only
+    assert not same_config_value(None, "1", num)  # absent key: still written
 
 
 def test_viewing_a_tab_does_not_rewrite_a_value_in_another_format():
@@ -133,9 +139,44 @@ def test_viewing_a_tab_does_not_rewrite_a_value_in_another_format():
     config as changed (it did: every re-render normalised the loaded file's formatting)."""
     state = AppState()
     with reactive.isolate():
-        state.config.set({"simulation.time.nyear": "50.0"})
+        state.config.set({"species.linf.sp0": "110.0"})
         state.dirty.set(False)
         state.mark_rendered("p")
-        sync_inputs(_RecordingInput(50), state, ["simulation.time.nyear"], rendered="p")
-        assert state.config.get()["simulation.time.nyear"] == "50.0"
+        sync_inputs(_RecordingInput(110), state, ["species.linf.sp0"], rendered="p")
+        assert state.config.get()["species.linf.sp0"] == "110.0"
         assert state.dirty.get() is False
+
+
+def test_an_int_fix_typed_over_a_raw_text_value_is_written():
+    """An INT field holding "50.0" renders as raw text to be fixed ("not a number — fix here").
+    The user's "50" must be written: float equality would call them equal and drop the fix."""
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"simulation.time.nyear": "50.0"})
+        state.mark_rendered("p")
+        changed = sync_inputs(_RecordingInput("50"), state, ["simulation.time.nyear"], rendered="p")
+        assert changed == {"simulation.time.nyear": "50"}
+        assert state.config.get()["simulation.time.nyear"] == "50"
+
+
+def test_an_unrendered_input_does_not_abort_the_other_keys():
+    """Reading an input the browser never sent raises SilentException. It used to abort the whole
+    batch, so the Grid and Forcing global syncs (which list unrendered advanced keys) never wrote."""
+    from shiny.types import SilentException
+
+    class _Partial:
+        def __getattr__(self, name):
+            if name == "grid_mask_file":
+
+                def _raise():
+                    raise SilentException()
+
+                return _raise
+            return lambda: "51"
+
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"grid.nlon": "50"})
+        state.mark_rendered("grid.fields")
+        sync_inputs(_Partial(), state, ["grid.mask.file", "grid.nlon"], rendered="grid.fields")
+        assert state.config.get()["grid.nlon"] == "51"

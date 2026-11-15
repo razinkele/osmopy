@@ -12,6 +12,7 @@ from osmose.config.multivalue import is_multi_value
 from osmose.logging import setup_logging
 from osmose.runner import RunResult
 from osmose.schema import build_registry
+from osmose.schema.base import OsmoseField, ParamType
 from ui.components.param_form import input_id_for_key
 
 
@@ -151,22 +152,32 @@ class AppState:
         self.dirty.set(False)
 
 
-def same_config_value(old: str | None, new: str) -> bool:
-    """True when writing ``new`` over ``old`` would not change the value: equal as text, equal as
-    numbers ("110.0" vs the numeric input's "110"), or the same boolean in another case ("true"
-    vs a switch's "True"). Syncs skip such writes, so viewing a tab neither rewrites the loaded
-    file's formatting nor marks the config as changed."""
+def same_config_value(old: str | None, new: str, field: OsmoseField | None = None) -> bool:
+    """True when writing ``new`` over ``old`` would not change the value of ``field``: equal as
+    text; for a numeric field, equal as numbers ("110.0" vs the numeric input's "110"); for a
+    boolean field, the same boolean in another case ("true" vs a switch's "True"). Any other field
+    (or none) compares as exact text, so a name edited from "001" to "1" is kept. Syncs skip such
+    writes, so viewing a tab neither rewrites the loaded file's formatting nor marks the config
+    as changed."""
     if old is None:
         return False
     if old == new:
         return True
-    a, b = old.strip(), new.strip()
-    if a.lower() in ("true", "false") and b.lower() in ("true", "false"):
-        return a.lower() == b.lower()
-    try:
-        return float(a) == float(b)
-    except ValueError:
+    if field is None:
         return False
+    a, b = old.strip(), new.strip()
+    if field.param_type == ParamType.BOOL:
+        return a.lower() in ("true", "false") and a.lower() == b.lower()
+    # Compare in the field's own type, and only when the OLD value parses as it: an INT field
+    # holding "50.0" is shown as raw text to be fixed, and the user's "50" must then be written
+    # (float equality would call them equal and drop the fix; Java's parseInt rejects "50.0").
+    parse = int if field.param_type == ParamType.INT else float
+    if field.param_type in (ParamType.FLOAT, ParamType.INT):
+        try:
+            return parse(a) == parse(b)
+        except ValueError:
+            return False
+    return False
 
 
 def sync_inputs(
@@ -203,6 +214,11 @@ def sync_inputs(
             continue
         try:
             val = getattr(input, input_id)()
+        except SilentException:
+            # An input the page lists but never rendered (advanced/unrendered fields, keys for a
+            # species added since the last render). Skip THIS key: letting it propagate aborted
+            # the whole batch, so the Grid and Forcing global syncs never wrote anything.
+            continue
         except TypeError:
             _log.warning("sync_inputs: TypeError reading input '%s'", input_id)
             continue
@@ -234,7 +250,11 @@ def sync_inputs(
         return {}
     if changed:
         # Only set config if values actually differ (by value: see same_config_value)
-        actual_changes = {k: v for k, v in changed.items() if not same_config_value(cfg.get(k), v)}
+        actual_changes = {
+            k: v
+            for k, v in changed.items()
+            if not same_config_value(cfg.get(k), v, REGISTRY.match_field(k))
+        }
         if actual_changes:
             cfg.update(actual_changes)
             state.config.set(cfg)

@@ -14,7 +14,7 @@ from ui.components.param_form import (
     render_category,
     render_species_table,
 )
-from ui.state import AppState, same_config_value, sync_inputs
+from ui.state import REGISTRY, AppState, same_config_value, sync_inputs
 
 _log = setup_logging("osmose.setup")
 
@@ -176,7 +176,11 @@ def setup_server(input, output, session, state: AppState):
             return  # the table still holds an earlier config's values (tab hidden during a load)
 
         # Apply all updates in a single config.set() call.
-        actual_changes = {k: v for k, v in updates.items() if not same_config_value(cfg.get(k), v)}
+        actual_changes = {
+            k: v
+            for k, v in updates.items()
+            if not same_config_value(cfg.get(k), v, REGISTRY.match_field(k))
+        }
         if actual_changes:
             cfg.update(actual_changes)
             state.config.set(cfg)
@@ -190,8 +194,8 @@ def setup_server(input, output, session, state: AppState):
     @reactive.event(input.copy_sp0_to_all)
     def handle_copy_sp0():
         n = input.n_species()
-        if n < 2:
-            return
+        if n < 2 or not state.rendered_current("setup.species"):
+            return  # never copy from inputs rendered for an earlier config load
         state.busy.set("Copying species 0 parameters to all species…")
         try:
             with reactive.isolate():
