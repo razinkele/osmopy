@@ -10,11 +10,10 @@ until the tab has re-rendered for the current load.
 The other arm matters as much: a sync that never ran would pass the first test, so an edit made
 after the reload must still be saved.
 
-The instrument is the saved config (a scenario), checked two ways against the example's own file:
-every key the file sets keeps its value, and no extra key carries the FIRST example's value. Extra
-keys are otherwise allowed: rendering a tab writes the schema default for keys the example leaves
-unset (pre-existing, and inert here: a config saved after these sequences runs bit-identically to
-the file over 2 years, measured 2026-11-15).
+The instrument is the saved config (a scenario), which must be exactly the example's own file: no
+changed key and no added key. Added keys were tolerated until 2026-11-15 (viewing a tab wrote the
+schema default of every key the example left unset), and that is how species.lmax = 120 reached
+every demo (unset means no length cap); since then no page writes an untouched input.
 
 Run explicitly:
     .venv/bin/python -m pytest tests/test_e2e_config_reload.py -m e2e -o addopts="" \
@@ -35,8 +34,6 @@ from shiny.run import ShinyAppProc
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import list_demos, osmose_demo
-from osmose.schema import build_registry
-from osmose.schema.base import ParamType
 from tests._e2e_support import dismiss_changelog_modal
 
 pytestmark = pytest.mark.e2e
@@ -90,42 +87,19 @@ def _differences(expected: dict[str, str], saved: dict[str, str]) -> dict[str, t
     }
 
 
-_REGISTRY = build_registry()
+_FORM_TABS = ["setup", "movement", "fishing", "forcing", "grid"]  # every page that syncs inputs
 
 
-def _is_rendered_default(key: str, value: str) -> bool:
-    """The value a rendered input writes for a key the config leaves unset (its schema default;
-    a numeric field without one renders 0)."""
-    field = _REGISTRY.match_field(key)
-    if field is None:
-        return False
-    if field.param_type in (ParamType.FLOAT, ParamType.INT):
-        try:
-            return float(value) == float(field.default if field.default is not None else 0)
-        except (TypeError, ValueError):
-            return False
-    if field.param_type == ParamType.BOOL:
-        return value.lower() == str(bool(field.default)).lower()
-    return value == ("" if field.default is None else str(field.default))
+def _added(expected: dict[str, str], saved: dict[str, str]) -> list[str]:
+    return sorted(set(saved) - set(expected) - _IGNORED)
 
 
-def _leaked(first: dict[str, str], expected: dict[str, str], saved: dict[str, str]) -> list[str]:
-    """Saved-only keys that carry the first example's value (and are not a rendered default)."""
-    extras = set(saved) - set(expected) - _IGNORED
-    return sorted(
-        k
-        for k in extras
-        if k in first and saved[k] == first[k] and not _is_rendered_default(k, saved[k])
-    )
-
-
-@pytest.mark.parametrize("tab", ["setup", "movement", "fishing", "forcing", "grid"])
+@pytest.mark.parametrize("tab", _FORM_TABS)
 @pytest.mark.parametrize(("first", "second"), [("eec_full", "baltic"), ("baltic", "eec_full")])
 def test_second_load_is_not_corrupted_by_a_viewed_tab(
     page: Page, app: ShinyAppProc, tmp_path, tab, first, second
 ):
     expected = _expected(second, tmp_path / "second")
-    first_cfg = _expected(first, tmp_path / "first")
     name = f"e2e_reload_{tab}_{uuid.uuid4().hex[:8]}"
     try:
         _start(page, app)
@@ -139,8 +113,8 @@ def test_second_load_is_not_corrupted_by_a_viewed_tab(
             f"{first} -> {tab} -> {second}: {len(wrong)} keys differ from {second}'s file, "
             f"e.g. {dict(list(wrong.items())[:4])}"
         )
-        leaked = _leaked(first_cfg, expected, saved)
-        assert not leaked, f"{first} -> {tab} -> {second}: {first}'s values leaked: {leaked[:6]}"
+        added = _added(expected, saved)
+        assert not added, f"{first} -> {tab} -> {second}: keys added: {added[:8]}"
     finally:
         shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)
 
@@ -160,7 +134,6 @@ def test_an_edit_after_the_reload_is_still_saved(
     page: Page, app: ShinyAppProc, tmp_path, tab, input_id, key, value
 ):
     expected = _expected("baltic", tmp_path / "second")
-    first_cfg = _expected("eec_full", tmp_path / "first")
     name = f"e2e_reload_edit_{tab}_{uuid.uuid4().hex[:8]}"
     try:
         _start(page, app)
@@ -176,8 +149,8 @@ def test_an_edit_after_the_reload_is_still_saved(
         others = {k: v for k, v in saved.items() if k != key}
         wrong = _differences({k: v for k, v in expected.items() if k != key}, others)
         assert not wrong, f"{len(wrong)} other keys changed, e.g. {dict(list(wrong.items())[:4])}"
-        leaked = _leaked(first_cfg, {k: v for k, v in expected.items() if k != key}, others)
-        assert not leaked, f"EEC full's values leaked: {leaked[:6]}"
+        added = _added({k: v for k, v in expected.items() if k != key}, others)
+        assert not added, f"keys added besides the edit: {added[:8]}"
     finally:
         shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)
 
@@ -227,8 +200,58 @@ def test_a_plain_load_gives_exactly_the_file(page: Page, app: ShinyAppProc, tmp_
         _start(page, app)
         _load_example(page, demo)
         saved = _save_scenario(page, name)
-        added = sorted(set(saved) - set(expected) - _IGNORED)
+        added = _added(expected, saved)
         assert not _differences(expected, saved), f"{demo}: changed {_differences(expected, saved)}"
         assert not added, f"{demo}: the load added keys {added}"
+    finally:
+        shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)
+
+
+@pytest.mark.parametrize("demo", list_demos())
+def test_viewing_every_tab_gives_exactly_the_file(page: Page, app: ShinyAppProc, tmp_path, demo):
+    """Opening a tab must not change the run. Before 2026-11-15 the Setup tab alone wrote ~200
+    schema defaults into each demo, species.lmax = 120 among them (unset: no length cap), and on
+    baltic_a2 mortality rates over keys the engine reads as 0. The no-browser version of this check
+    is tests/test_ui_viewing_writes_nothing.py."""
+    expected = _expected(demo, tmp_path)
+    name = f"e2e_view_{demo}_{uuid.uuid4().hex[:8]}"
+    try:
+        _start(page, app)
+        _load_example(page, demo)
+        for tab in _FORM_TABS:
+            _visit(page, tab)
+        saved = _save_scenario(page, name)
+        assert not _differences(expected, saved), f"{demo}: changed {_differences(expected, saved)}"
+        assert not _added(expected, saved), f"{demo}: viewing added keys {_added(expected, saved)}"
+    finally:
+        shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)
+
+
+def test_raising_the_species_count_seeds_only_the_new_species(
+    page: Page, app: ShinyAppProc, tmp_path
+):
+    """Defaults now enter a config only by explicit seeding: raising the species count gives the
+    added species the schema defaults it needs to run, and touches no existing species. Uses the
+    minimal demo, which has no background species or resource groups at the next indices."""
+    expected = _expected("minimal", tmp_path)
+    n = int(expected["simulation.nspecies"])
+    name = f"e2e_seed_{uuid.uuid4().hex[:8]}"
+    try:
+        _start(page, app)
+        _load_example(page, "minimal")
+        _visit(page, "setup")
+        page.locator("#n_species").fill(str(n + 1), timeout=_T)
+        page.locator("#n_species").press("Tab")
+        page.wait_for_timeout(4_000)
+        saved = _save_scenario(page, name)
+        assert saved["simulation.nspecies"] == str(n + 1)
+        assert saved[f"species.linf.sp{n}"] == "100.0"  # seeded with its schema default
+        rest = {k: v for k, v in saved.items() if not k.endswith(f".sp{n}")}
+        rest.pop("simulation.nspecies")
+        unchanged = {k: v for k, v in expected.items() if k != "simulation.nspecies"}
+        assert not _differences(unchanged, rest), f"changed: {_differences(unchanged, rest)}"
+        assert not _added(unchanged, rest), (
+            f"added outside the new species: {_added(unchanged, rest)}"
+        )
     finally:
         shutil.rmtree(_SCENARIOS_DIR / name, ignore_errors=True)

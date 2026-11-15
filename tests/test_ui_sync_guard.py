@@ -182,10 +182,11 @@ def test_an_unrendered_input_does_not_abort_the_other_keys():
         assert state.config.get()["grid.nlon"] == "51"
 
 
-def test_materialize_false_writes_edits_but_not_untouched_defaults():
-    """The Grid page is visible during every load. Its sync must not write defaults for keys the
-    loaded config leaves unset (it wrote grid.java.classname = OriginalGrid into every load), but a
-    real edit must still be saved."""
+def test_an_untouched_default_is_never_written_but_an_edit_is():
+    """No page writes an input that still shows its schema default for a key the config leaves
+    unset: viewing a tab must not change the run. The Grid page, visible during every load, wrote
+    grid.java.classname = OriginalGrid into each loaded config; the Setup species table wrote
+    species.lmax = 120 (unset: no length cap). A real edit is still saved."""
     state = AppState()
     with reactive.isolate():
         state.config.set({"grid.netcdf.file": "grid.nc"})
@@ -195,13 +196,29 @@ def test_materialize_false_writes_edits_but_not_untouched_defaults():
             state,
             ["grid.java.classname"],
             rendered="grid.fields",
-            materialize=False,
         )
         assert "grid.java.classname" not in state.config.get()  # untouched default: not written
-        sync_inputs(
-            _RecordingInput("40"), state, ["grid.nlon"], rendered="grid.fields", materialize=False
-        )
+        sync_inputs(_RecordingInput("40"), state, ["grid.nlon"], rendered="grid.fields")
         assert state.config.get()["grid.nlon"] == "40"  # an edit (not the default 30): written
+
+
+def test_a_placeholder_for_a_field_without_a_default_is_never_written():
+    """A field with no schema default shows a placeholder for a key the config leaves unset (0 in
+    a numeric input, "" in a text input). The placeholder is not a value, and writing it changes
+    what the engines do: Java reads movement.distribution.ncell = 0 as a one-cell patch where unset
+    means the whole domain, and temperature.value = 0 replaces a temperature file."""
+    keys = ["movement.distribution.ncell.sp0", "temperature.value", "fisheries.name.fsh0"]
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"simulation.nspecies": "1"})
+        state.mark_rendered("p")
+        sync_inputs(_RecordingInput(0), state, keys[:2], rendered="p")
+        sync_inputs(_RecordingInput(""), state, keys[2:], rendered="p")
+        assert state.config.get() == {"simulation.nspecies": "1"}
+        sync_inputs(_RecordingInput(50), state, keys[:1], rendered="p")
+        assert state.config.get()["movement.distribution.ncell.sp0"] == "50"  # an edit: written
+        sync_inputs(_RecordingInput(0), state, keys[:1], rendered="p")
+        assert state.config.get()["movement.distribution.ncell.sp0"] == "0"  # set key: written
 
 
 def test_a_file_upload_value_never_overwrites_a_path():

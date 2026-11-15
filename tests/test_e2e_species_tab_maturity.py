@@ -1,8 +1,9 @@
 """Opening the Species tab must not change what a run computes.
 
-The Species table renders every visible field and ``sync_species_inputs`` (ui/pages/setup.py) writes
-each rendered value back into the loaded config, so a key the config omits is materialized at its
-schema default. ``species.maturity.age`` used to default to 3.0, and the Python engine requires
+The Species table renders every visible field, and until 2026-11-15 ``sync_species_inputs``
+(ui/pages/setup.py) wrote each rendered value back into the loaded config, so a key the config
+omitted was materialized at its schema default. ``species.maturity.age`` used to default to 3.0,
+and the Python engine requires
 ``length >= size AND age >= age``: after this tab rendered, every species of a UI-launched Python run
 waited until age 3 to mature. On the Baltic that collapsed cod_west (19 kt -> 14 t, seed 42, 50 yr).
 

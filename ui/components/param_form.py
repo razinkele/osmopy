@@ -324,6 +324,84 @@ def render_species_params(
     )
 
 
+def same_config_value(old: str | None, new: str, field: OsmoseField | None = None) -> bool:
+    """True when writing ``new`` over ``old`` would not change the value of ``field``: equal as
+    text; for a numeric field, equal as numbers ("110.0" vs the numeric input's "110"); for a
+    boolean field, the same boolean in another case ("true" vs a switch's "True"). Any other field
+    (or none) compares as exact text, so a name edited from "001" to "1" is kept. Syncs skip such
+    writes, so viewing a tab neither rewrites the loaded file's formatting nor marks the config
+    as changed."""
+    if old is None:
+        return False
+    if old == new:
+        return True
+    if field is None:
+        return False
+    a, b = old.strip(), new.strip()
+    if field.param_type == ParamType.BOOL:
+        return a.lower() in ("true", "false") and a.lower() == b.lower()
+    # Compare in the field's own type, and only when the OLD value parses as it: an INT field
+    # holding "50.0" is shown as raw text to be fixed, and the user's "50" must then be written
+    # (float equality would call them equal and drop the fix; Java's parseInt rejects "50.0").
+    parse = int if field.param_type == ParamType.INT else float
+    if field.param_type in (ParamType.FLOAT, ParamType.INT):
+        try:
+            return parse(a) == parse(b)
+        except ValueError:
+            return False
+    return False
+
+
+def shows_field_default(field: OsmoseField | None, value: str) -> bool:
+    """True when ``value`` is what a rendered input shows for an unset key: the field's schema
+    default (a numeric field without one renders 0, a switch without one renders False)."""
+    if field is None:
+        return False
+    default = field.default
+    if default is None:
+        if field.param_type in (ParamType.FLOAT, ParamType.INT):
+            default = 0
+        elif field.param_type == ParamType.BOOL:
+            default = False
+        elif field.param_type == ParamType.ENUM:
+            default = (field.choices or [""])[0]  # a select with no selection shows its first
+        else:
+            default = ""
+    return value == str(default) or same_config_value(str(default), value, field)
+
+
+def untouched_unset(
+    field: OsmoseField | None, key: str, config: dict[str, str], value: str
+) -> bool:
+    """True when ``value`` is an input the user has not touched, for a key ``config`` leaves
+    unset: it still shows what the form renders for an unset key (the schema default, or a
+    placeholder for a field without one). No sync writes it. Writing it made a run depend on which
+    tabs had been opened: the Setup tab wrote species.lmax = 120 (unset: no length cap), and a
+    placeholder movement.distribution.ncell = 0 is a one-cell patch in Java (unset: whole domain).
+    """
+    return key not in config and shows_field_default(field, value)
+
+
+def seed_new_species(
+    fields: list[OsmoseField], old_n: int, new_n: int, config: dict[str, str]
+) -> dict[str, str]:
+    """Schema defaults for the species a count increase from ``old_n`` to ``new_n`` adds.
+
+    The one place defaults enter a config without the user typing them, and an explicit one: it
+    runs when the species count goes up, so a new species gets the keys it needs to run. Keys the
+    config already sets are left alone, and so are fields without a default.
+    """
+    seeded: dict[str, str] = {}
+    for i in range(old_n, new_n):
+        for field in fields:
+            if not field.indexed or field.default is None:
+                continue
+            key = field.resolve_key(i)
+            if key not in config:
+                seeded[key] = str(field.default)
+    return seeded
+
+
 def _unparseable_number(field: OsmoseField, raw: object) -> bool:
     """A numeric field's config value that is present but does not parse as its type, and is not a
     multi-value array (those are handled read-only). Such a cell must show the raw text: falling
@@ -389,8 +467,9 @@ def collect_species_table_updates(
                 val = read_input(f"spt_{base_key}_{i}")
             except (AttributeError, SilentException):
                 continue
-            if val is not None:
-                updates[field.resolve_key(i)] = str(val)
+            key = field.resolve_key(i)
+            if val is not None and not untouched_unset(field, key, config, str(val)):
+                updates[key] = str(val)
     return updates
 
 

@@ -13,7 +13,9 @@ from ui.components.param_form import (
     copy_species0_to_all,
     render_category,
     render_species_table,
+    seed_new_species,
 )
+from ui.pages._helpers import parse_nspecies
 from ui.state import REGISTRY, AppState, same_config_value, sync_inputs
 
 _log = setup_logging("osmose.setup")
@@ -161,6 +163,11 @@ def setup_server(input, output, session, state: AppState):
         # Collect all updates before touching reactive state. The config decides which cells are
         # synced (an age-based species' maturity size is never written back).
         updates: dict[str, str] = {"simulation.nspecies": str(n)}
+        # Raising the species count is the one place defaults enter the config untyped: the added
+        # species get the schema defaults they need to run. Measured against the config and
+        # written only past the gates below, so a load (stale render) never seeds. Table cells are
+        # applied after, so a value the user typed wins over the seed.
+        updates.update(seed_new_species(SPECIES_FIELDS, parse_nspecies(cfg), n, cfg))
         updates.update(
             collect_species_table_updates(
                 SPECIES_FIELDS, n, cfg, lambda input_id: getattr(input, input_id)(), show_adv
