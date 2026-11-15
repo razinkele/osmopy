@@ -749,3 +749,40 @@ def test_render_field_treats_a_comma_as_an_array_only_on_an_array_field(array):
         render_field(field, species_idx=0, config={"species.size.threshold.sp0": "15, 5"})
     )
     assert ("multi-value" in rendered.lower()) is array
+
+
+# ── Values that do not parse must survive the sync unchanged ─────────────────
+# Falling back to the schema default for an unparseable value let the sync write the default over
+# it. The cell shows the raw text instead, so it round-trips until the user fixes it.
+
+
+@pytest.mark.parametrize(
+    ("key", "raw"),
+    [(_SR_MAX.format(0), "2.3,"), (_SR_MAX.format(0), ",5"), ("species.linf.sp0", "25,5")],
+)
+def test_species_table_keeps_an_unparseable_value_as_raw_text(key, raw):
+    from osmose.schema.species import SPECIES_FIELDS
+    from ui.components.param_form import collect_species_table_updates
+
+    cfg = {key: raw}
+    html = str(render_species_table(SPECIES_FIELDS, 1, ["a"], config=cfg))
+    base = key.rsplit(".sp", 1)[0].replace(".", "_")
+    assert _maturity_cell(html, base, 0) == raw  # an input holding the raw text, not the default
+
+    # The browser returns what the input holds; syncing it back changes nothing.
+    updates = collect_species_table_updates(
+        SPECIES_FIELDS, 1, cfg, lambda input_id: raw if input_id == f"spt_{base}_0" else 0
+    )
+    assert updates.get(key, raw) == raw
+
+
+def test_render_field_keeps_an_unparseable_value_as_raw_text():
+    field = OsmoseField(
+        key_pattern="simulation.time.nyear",
+        param_type=ParamType.INT,
+        default=50,
+        category="simulation",
+    )
+    rendered = str(render_field(field, config={"simulation.time.nyear": "50,5"}))
+    assert 'value="50,5"' in rendered
+    assert "not a number" in rendered

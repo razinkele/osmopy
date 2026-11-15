@@ -143,6 +143,14 @@ def render_field(
                 value=cfg_val,
                 placeholder="multi-value array (read-only here)",
             )
+        if _unparseable_number(field, cfg_val):
+            # Never show the default in place of a value that does not parse ("25,5", "2.3,"):
+            # sync_inputs would write the default back and silently replace it. The raw text stays
+            # in an editable input, round-trips unchanged, and the validator reports it.
+            base_label = field.description or field.key_pattern
+            return ui.input_text(
+                input_id, f"{base_label} (not a number — fix here)", value=str(cfg_val)
+            )
 
     # Resolve initial value: config takes priority over field.default
     default = field.default
@@ -314,6 +322,22 @@ def render_species_params(
         ui.card_header(f"Species {species_idx}: {species_name}"),
         ui.accordion(*panels, id=f"species_{species_idx}_accordion", open=False),
     )
+
+
+def _unparseable_number(field: OsmoseField, raw: object) -> bool:
+    """A numeric field's config value that is present but does not parse as its type, and is not a
+    multi-value array (those are handled read-only). Such a cell must show the raw text: falling
+    back to the default would let the sync write the default over the user's value."""
+    if field.param_type not in (ParamType.FLOAT, ParamType.INT) or raw is None:
+        return False
+    text = str(raw).strip()
+    if not text or is_multi_value(text, field):
+        return False
+    try:
+        float(text) if field.param_type == ParamType.FLOAT else int(text)
+    except ValueError:
+        return True
+    return False
 
 
 def _age_based_maturity(field: OsmoseField, config: dict[str, str] | None, sp_idx: int) -> bool:
@@ -537,6 +561,13 @@ def render_species_table(
                         title="Per-stage values: edit in the Advanced tab",
                         class_="osm-multivalue-readonly-label",
                         style="color: #5a6a7a; font-size: 11px; font-family: monospace;",
+                    )
+                elif config and _unparseable_number(field, config.get(config_key)):
+                    # Raw text, not the default: the sync would write a default back over a value
+                    # that merely fails to parse ("2.3,", "25,5"). It round-trips unchanged until
+                    # edited, and the validator reports it.
+                    widget = ui.input_text(
+                        input_id, "", value=str(config[config_key]), width="90px"
                     )
                 elif field.param_type in (ParamType.FLOAT, ParamType.INT):
                     widget = ui.input_numeric(

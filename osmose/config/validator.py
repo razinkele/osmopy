@@ -33,9 +33,10 @@ def validate_config(
             continue
 
         # Validate each value of a multi-value (per-stage) param. An array-capable field is split
-        # on ';' AND ',' as the engine does (Benguela "15, 5" is two values, not one bad number);
-        # any other field on ';' alone, so "0,2" on a scalar key is still reported.
-        if is_multi_value(value, field):
+        # on ';' AND ',' as the engine does (Benguela "15, 5" is two values, not one bad number),
+        # including a lone trailing/leading separator ("2.3," reads as [2.3]); any other field on
+        # ';' alone, so "0,2" on a scalar key is still reported.
+        if is_multi_value(value, field) or (field.array and "," in value):
             for idx, sub_val in enumerate(split_multi_value(value, field, keep_empty=True)):
                 if not sub_val:
                     continue

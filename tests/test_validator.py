@@ -242,3 +242,10 @@ def test_validate_config_still_reports_a_decimal_comma_on_a_scalar_key(registry)
     value with float() and fails, so "0,2" must stay an error here, not pass as an array."""
     errors, _ = validate_config({"species.linf.sp0": "25,5"}, registry)
     assert errors == ["species.linf.sp0: expected number, got '25,5'"]
+
+
+@pytest.mark.parametrize("value", ["2.3,", ",5", "2.3;"])
+def test_validate_config_accepts_a_lone_separator_on_an_array_field(registry, value):
+    """The engine reads "2.3," as [2.3] on an array-capable field, so it is valid there."""
+    errors, _ = validate_config({"predation.predprey.sizeratio.max.sp0": value}, registry)
+    assert errors == []
