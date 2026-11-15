@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.5] - 2026-11-15
+
+### Bug Fixes
+
+- **ui:** never sync a file-upload value over a configured path (b73ec09)
+- **ui:** the Grid sync must not write defaults into every loaded config (27d6135)
+- **ui:** Grid/Forcing edits now save; per-table copy events; type-aware value check (3aa8e3f)
+- **ui:** never sync inputs rendered for an earlier config load (8ca88a5)
+
+### Other
+
+- Merge pull request #271 from razinkele/fix/stale-inputs-on-reload (16d1892)
+
+### Tests
+
+- **e2e:** live-movement test selects cod_west (Baltic cod was split E/W) (bb40f65)
+
 ## [1.10.4] - 2026-11-15
 
 ### Bug Fixes
