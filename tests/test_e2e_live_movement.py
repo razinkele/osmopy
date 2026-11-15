@@ -131,11 +131,14 @@ def test_live_movement_cancel_path(page: Page, app: ShinyAppProc):
     expect(card).not_to_have_class("osm-body-collapsed")  # expanded
     page.wait_for_timeout(250)  # let Shiny.setInputValue('live_view_expanded', true) round-trip
     page.locator("#btn_run").click()
-    # Gate the cancel on a REAL emitted frame — "running step N/M" appears only after the
-    # observer has pushed a snapshot (bare "running" is set pre-dispatch and would not prove
-    # the run is mid-flight; #live_map is a static basemap that resolves instantly).
+    # Gate the cancel on a REAL emitted frame — "running · <date> step N/M" appears only after
+    # the observer has pushed a snapshot (bare "running" is set pre-dispatch and would not prove
+    # the run is mid-flight; #live_map is a static basemap that resolves instantly). The date
+    # label sits between the two since live_movement_status gained it; a pattern without it
+    # ("running step N") never matched, so the gate waited out the whole run and the cancel
+    # came after it had finished ("done · Y10 ... step 240/240").
     expect(page.locator("#live_movement_status")).to_contain_text(
-        re.compile(r"running step \d+"), timeout=_RUN_TIMEOUT
+        re.compile(r"running\b.*\bstep \d+/\d+"), timeout=_RUN_TIMEOUT
     )
     page.locator("#btn_cancel").click()
     expect(page.locator("#live_movement_status")).to_contain_text("cancelled", timeout=_RUN_TIMEOUT)

@@ -1,0 +1,60 @@
+name: E2E
+
+# Browser tests for UI config integrity: viewing a tab, switching models or editing must leave the
+# config exactly as loaded or edited. The unit suite cannot see this (it needs Shiny's real
+# rendering and reactivity); three releases in November 2026 fixed corruption of this kind that
+# only a browser run reproduced (#269, #271, #274).
+#
+# Opt-in like visual.yml: PRs to master that touch the UI or the config pipeline, plus manual
+# dispatch. ADVISORY -- do NOT add `config-integrity` to branch-protection required checks (a
+# path-filtered job reports no status on unrelated PRs and would deadlock merges).
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "ui/**"
+      - "app.py"
+      - "osmose/config/**"
+      - "osmose/schema/**"
+      - "osmose/demo.py"
+      - "tests/test_e2e_config_reload.py"
+      - "tests/test_e2e_species_tab_*.py"
+      - ".github/workflows/e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  config-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Same digest-pinned Playwright image as visual.yml; the version-assert step keeps the
+    # [viztest] playwright pin and the image's bundled browsers in step.
+    container: mcr.microsoft.com/playwright/python@sha256:678457c4c323b981d8b4befc57b95366bb1bb6aa30057b1269f6b171e8d9975a  # v1.58.0-noble
+    steps:
+      - uses: actions/checkout@v5
+      - name: Trust the workspace (container runs as root vs checkout UID)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install package with the browser-test extra
+        run: pip install -e ".[viztest]"
+      - name: Assert playwright wheel matches the container image
+        run: |
+          python - <<'PY'
+          import sys
+          from importlib.metadata import version
+          installed = version("playwright")
+          expected = "1.58.0"  # must equal the image tag (v1.58.0-noble) above
+          if installed != expected:
+              sys.exit(f"playwright {installed} != image-pinned {expected}; bump the [viztest] pin, the digest, and this expected together")
+          print("playwright", installed, "matches image")
+          PY
+      - name: Run the config-integrity browser tests (retry transient timeouts only)
+        # Name the files: collecting the whole suite pulls in modules whose deps are in [dev], not
+        # [viztest]. -o addopts="" drops the ini's `-m 'not e2e ...'` filter and `--dist loadfile`.
+        run: >-
+          python -m pytest
+          tests/test_e2e_config_reload.py
+          tests/test_e2e_species_tab_maturity.py
+          tests/test_e2e_species_tab_multivalue.py
+          -m e2e -o addopts="" -ra --reruns 1 --only-rerun TimeoutError
