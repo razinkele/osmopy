@@ -365,7 +365,9 @@ as a default.
   saving, and on EEC full there is little to skip.
 - **The first two versions were slower and are recorded in the note.** In v1 the bookkeeping
   (about 5 s) ate the full 4.9 s saving.
-- **Left:** a `prange` build for the multi-thread path, kept away from forked one-thread workers.
+- **Left:** a `prange` build for the multi-thread path was tried and does not ship. It cost
+  +1.0 s at one thread, and the multi-thread side could not be measured on a loaded box. See the
+  note's "Left" section for what a retry needs.
 
 **Goal.** Decide whether the mortality kernel can be made faster for the one-thread worker
 regime, where it is 78% of the run (measured).
