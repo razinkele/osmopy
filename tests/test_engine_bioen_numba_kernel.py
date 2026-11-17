@@ -797,6 +797,18 @@ def _probe_kernel_draw_shape(
         arm.eta_school,
         arm.state.is_background,
         arm.eff_foraging,
+        *M._cell_prey_candidates(
+            sorted_indices,
+            boundaries,
+            n_cells,
+            arm.state.length,
+            arm.state.species_id,
+            arm.state.feeding_stage,
+            config.size_ratio_min,
+            config.size_ratio_max,
+            arm.state.age_dt,
+            arm.state.first_feeding_age_dt,
+        ),
     )
     return _candidates_from_stream_position(float(_nb_next_random()), n_local, seed)
 
@@ -1134,6 +1146,18 @@ def run_batch_both_paths(
             cand.eta_school,
             cand.state.is_background,
             cand.eff_foraging,
+            *M._cell_prey_candidates(
+                sorted_indices,
+                boundaries,
+                n_cells,
+                cand.state.length,
+                cand.state.species_id,
+                cand.state.feeding_stage,
+                config.size_ratio_min,
+                config.size_ratio_max,
+                cand.state.age_dt,
+                cand.state.first_feeding_age_dt,
+            ),
         )
     finally:
         if prev_threads is not None:
