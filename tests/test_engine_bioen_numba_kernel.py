@@ -797,6 +797,7 @@ def _probe_kernel_draw_shape(
         arm.eta_school,
         arm.state.is_background,
         arm.eff_foraging,
+        *M._cell_length_index(sorted_indices, boundaries, n_cells, arm.state.length),
     )
     return _candidates_from_stream_position(float(_nb_next_random()), n_local, seed)
 
@@ -1134,6 +1135,7 @@ def run_batch_both_paths(
             cand.eta_school,
             cand.state.is_background,
             cand.eff_foraging,
+            *M._cell_length_index(sorted_indices, boundaries, n_cells, cand.state.length),
         )
     finally:
         if prev_threads is not None:

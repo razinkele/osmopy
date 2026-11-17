@@ -830,6 +830,10 @@ def _run_single_predation_step_numba(r: float, shape: int, k: float):
         np.zeros(n_schools, dtype=np.float64),  # raw_preyed
         np.zeros(n_schools, dtype=np.float64),  # e_net
         np.zeros(n_schools, dtype=np.bool_),  # is_background
+        # Phase 1a length index, as every caller builds it per cell.
+        length[cell_indices][np.argsort(length[cell_indices])],  # sorted_len
+        np.argsort(length[cell_indices]),  # len_order
+        np.empty(len(cell_indices), dtype=np.int64),  # cand_buf
     )
     eaten = float(preyed_biomass[0])
     return eaten, max_eatable
