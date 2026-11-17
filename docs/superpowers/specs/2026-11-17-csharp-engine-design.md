@@ -384,6 +384,19 @@ the next cell.
 
 So the two loop orders compute the same thing for the same draws.
 
+*Re-checked independently on 2026-11-17 by the session that reviewed this spec, by reading
+`mortality()` (`osmose/engine/processes/mortality.py`) and the batch kernel's writes.*
+- Between two batch-kernel calls the only work is per-school egg release, computed from the
+  step-start abundance, not from `inst_abd`, plus one `rng.integers` seed draw.
+- Resource biomass is read and written at `[r, cell_id]`.
+- The diet and trophic-level accumulators are indexed by the predator school.
+- Out-of-domain mortality, the starvation-rate update and the TL update all run after the
+  sub-step loop.
+
+The per-cell oracle of task 0.6 cannot see a cross-cell coupling. If one were ever added, only
+the Phase 1 ensemble would catch it, so any later change to `mortality()` that adds work
+between kernel calls must be re-read against this section.
+
 **Why do it.** A cell's schools stay in cache across ten sub-steps instead of being evicted
 ten times. There is one fork/join per step instead of ten. The length-window results are
 reused across sub-steps (section 4.6). Expected gain is unmeasured.
@@ -1346,8 +1359,16 @@ engine is always chosen explicitly and recorded in the run's log.
 
 1. Find the assembly: `OSMOSE_CSHARP_ENGINE_DIR`, else `osmose/engine_cs/bin`.
 2. Find the runtime: `DOTNET_ROOT`, else `~/.dotnet`, else `dotnet` on `PATH`.
-3. `pythonnet.load("coreclr", runtime_config=<bin>/Osmose.Engine.runtimeconfig.json)`, then
-   `clr.AddReference(<bin>/Osmose.Engine.dll)`.
+3. `pythonnet.load("coreclr", runtime_config=<bin>/Osmose.Engine.runtimeconfig.json,
+   dotnet_root=<root from step 2>)`, then `clr.AddReference(<bin>/Osmose.Engine.dll)`.
+   **Pass both arguments.** In clr_loader 0.3.1, `get_coreclr` ignores `dotnet_root` when no
+   `runtime_config` is given: it then calls `find_runtimes()`, which re-discovers the root from
+   `DOTNET_ROOT` or `PATH` alone. Measured 2026-11-17 with the SDK in `~/.dotnet` and nothing on
+   `PATH`: `load("coreclr", dotnet_root="~/.dotnet")` failed ("Can not determine dotnet root"),
+   and the same call succeeded with `DOTNET_ROOT` exported (.NET 10.0.15). Bridge-spike check 1
+   uses the exact form above with `DOTNET_ROOT` unset, which proves the `~/.dotnet` fallback. The
+   production systemd unit gets the same treatment: the wrapper resolves the root, and nothing
+   relies on the service's environment.
 4. Compare the assembly's contract versions with the bundle builder's; mismatch is an error
    that names both versions and the build command.
 
@@ -1630,6 +1651,15 @@ machine image, at any thread count.
 - **D12's sequencing:** calibration and scripts in Phase 1, the UI in Phase 2.
 
 Q4 takes its recommendation (refuse), which follows from D11 (fail closed). The rest stand as recommended until the owner says otherwise.
+
+**Which gate Q2 makes go/no-go.** There are two, at different times:
+- **G0, the kernel spike (plan, Phase 0).** Go if the best kernel variant is at least 1.0x
+  Numba. Stop if it is below 0.8x after one tuning pass. Between the two, the owner decides.
+- **The end-to-end gate (section 10.4).** Baltic 10 yr at one thread must reach 1.15x, checked
+  when Phase 2 is declared done.
+
+When the owner was asked, the question quoted "at least 1.15x" as the kernel spike's gate. That
+was a misquote of the second gate. The thresholds above are the ones that apply.
 
 ---
 
