@@ -53,3 +53,42 @@ def test_shipped_master_passes_the_ui_validation(master):
     cfg = OsmoseConfigReader().read(master)
     errors, _warnings = summarize_config_validation(cfg, build_registry(), master.parent)
     assert errors == [], f"{master}: {errors}"
+
+
+@pytest.mark.parametrize("demo", list_demos())
+def test_every_focal_species_has_additional_mortality(demo, tmp_path):
+    """Python reads a missing additional or larval mortality rate as 0 and Java refuses the config
+    (no mortality scenario). baltic_a2's overlay predated the cod split and left cod_east (sp8)
+    with neither for four months (#273). A rate counts if any scenario sets it (the plain key or a
+    file variant such as `mortality.additional.rate.bytdt.file.sp{i}`)."""
+    info = osmose_demo(demo, tmp_path)
+    cfg = dict(OsmoseConfigReader().read(Path(info["config_file"])))
+    n = int(cfg["simulation.nspecies"])
+
+    def has(prefix: str, i: int) -> bool:
+        return any(k.startswith(prefix) and k.endswith(f".sp{i}") for k in cfg)
+
+    missing = [
+        (i, cfg.get(f"species.name.sp{i}"), kind)
+        for i in range(n)
+        for kind, prefix in (
+            ("adult", "mortality.additional.rate"),
+            ("larval", "mortality.additional.larva.rate"),
+        )
+        if not has(prefix, i)
+    ]
+    assert not missing, f"{demo}: focal species without additional mortality: {missing}"
+
+
+@pytest.mark.parametrize("demo", list_demos())
+def test_no_resource_key_lands_on_a_focal_species(demo, tmp_path):
+    """Resource parameters are indexed like species (resources follow the focal species), so a
+    species added before them shifts every resource index. baltic_a2's depletion overlay kept its
+    pre-split indices and gave cod_east (sp8) a plankton regrowth rate (#273)."""
+    info = osmose_demo(demo, tmp_path)
+    cfg = dict(OsmoseConfigReader().read(Path(info["config_file"])))
+    n = int(cfg["simulation.nspecies"])
+    on_focal = sorted(
+        k for k in cfg if k.startswith("species.regrowth.rate.sp") and int(k.rsplit("sp", 1)[1]) < n
+    )
+    assert not on_focal, f"{demo}: resource keys on focal species: {on_focal}"

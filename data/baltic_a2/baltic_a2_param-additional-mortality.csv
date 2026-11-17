@@ -28,3 +28,10 @@ mortality.additional.rate.sp4;0.005680413608708062
 mortality.additional.rate.sp5;0.855951786667689
 mortality.additional.rate.sp6;0.0036156979635421347
 mortality.additional.rate.sp7;0.19494616193531136
+# cod_east (sp8): NOT A2-calibrated. A2 was calibrated on 2026-07-11, before the cod split
+# (2026-07-25) added cod_east, so this overlay had no sp8 rates and the Python engine ran cod_east
+# with zero additional and larval mortality (#273). These are baltic's production values, copied
+# verbatim (same storage convention as above). sp0 is cod_west since the split; its A2 values were
+# calibrated for the aggregate cod stock.
+mortality.additional.rate.sp8;0.9
+mortality.additional.larva.rate.sp8;243.7646732526793
