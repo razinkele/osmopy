@@ -446,10 +446,13 @@ def _unrepresentable(field: OsmoseField, raw: object) -> bool:
         except ValueError:
             return True
         return False
+    # Unstripped from here: the widgets render the raw value, so " true " shows a switch OFF and
+    # " maps " matches no select option (CodeRabbit, PR #286). Numbers are fine stripped: the
+    # numeric input parses them, and same_config_value compares stripped text.
     if field.param_type == ParamType.BOOL:
-        return text.lower() not in ("true", "false")
+        return str(raw).lower() not in ("true", "false")
     if field.param_type == ParamType.ENUM:
-        return bool(field.choices) and text not in field.choices
+        return bool(field.choices) and str(raw) not in field.choices
     return False
 
 

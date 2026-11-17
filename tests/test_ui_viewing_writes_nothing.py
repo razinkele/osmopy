@@ -312,6 +312,8 @@ def test_raising_a_configured_species_count_seeds_through_the_setup_sync():
         ("simulation.fishing.mortality.enabled", "0"),
         ("movement.distribution.method.sp0", "Random"),  # a select fell back to its first choice
         ("predation.predprey.stage.structure", "Size"),
+        ("simulation.fishing.mortality.enabled", " true "),  # padded: the switch shows OFF
+        ("movement.distribution.method.sp0", " maps "),  # padded: matches no option
     ],
 )
 def test_a_value_its_widget_cannot_show_is_not_rewritten(key, value):
