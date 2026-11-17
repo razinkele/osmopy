@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.7] - 2026-11-17
+
+### Bug Fixes
+
+- **ui:** the browser confirms a render before its inputs are written (#283) (2e1f040)
+- **calibration:** phase 14 builds on the production base (#243); pre-state the rerun (c248980)
+- **data:** baltic_a2 after the cod split: cod_east mortality, resource indices (9f79d6b)
+- **engine:** candidate builder falls back on NaN lengths, clamps inverted windows (b92e762)
+
+### Performance
+
+- **engine:** per-predator Phase 1a candidate lists, built once per step (9493ef8)
+- **engine:** Phase 1a length prefilter, v2 checkpoint (index built once per step) (9371ceb)
+
+### Documentation
+
+- **diagnostics:** phase-14 FR identifiability rerun on the production base (#232) (bbb69e2)
+- **perf:** prange candidate build does not ship; correct the prange note (44b174f)
+
+### Other
+
+- Merge pull request #284 from razinkele/fix/client-confirmed-render-gen (078cd1a)
+- Merge pull request #282 from razinkele/fix/phase14-production-base (04e1070)
+- Merge pull request #281 from razinkele/fix/baltic-a2-post-split (de8a97b)
+- Merge pull request #280 from razinkele/docs/phase1a-prange-result (f442c3d)
+- Merge pull request #279 from razinkele/perf/phase1a-prefilter (1a254f2)
+
 ## [1.10.6] - 2026-11-16
 
 ### Bug Fixes
