@@ -103,9 +103,23 @@ A predator too young to feed gets an empty list, as the kernel returns before it
 ## Left
 
 - **At the automatic thread count the serial 0.60 s build cancels the scan saving.** A `prange`
-  build could take most of it back (about 0.5 s of a 13.9 s Baltic run). It needs its own parallel
-  variant: calibration's forked one-thread workers must not call a `prange` function (see the
-  worker-thread note).
+  build was tried the same day (branch `perf/phase1a-prange-build`, kept, not merged). It
+  does not ship:
+  - **It is bit-identical.** The exact suites pass (237), and the serial and parallel builds give
+    equal arrays.
+  - **It is slower at one thread.** Two interleaved pairs, one-thread Baltic `mortality()`: 23.48
+    and 23.24 s for the `prange` build against 22.38 and 22.30 s for the serial one, about +1.0 s.
+    The `prange` loops cost more than they save when only one thread runs them.
+  - **The multi-thread side could not be measured.** At 28 threads one clean pair showed
+    −0.49 s, but repeats of the same code spanned 6.4–14.2 s while the shared box was under load
+    (load average 4.9–5.8, a production session active).
+  - **What a retry needs.** Choose the build by the live thread count. Measure at 14 threads, the
+    physical-core budget single runs use (`apply_single_run_threads`), not Numba's 28, on a quiet
+    box.
+  - **Correction to an earlier draft of this note.** It said one-thread workers must not call a
+    `prange` function. They already do: `mortality()` defaults to `parallel=True`, so every run
+    takes the `prange` batch kernel. The GNU OpenMP hazard in `osmose/engine/thread_policy.py` is
+    about a parent that forks after starting the threading layer.
 - **EEC gains nothing.** Its cells are sparser (median 15 schools), so there is less to skip.
 
 ## Reproduce
