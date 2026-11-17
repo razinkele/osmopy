@@ -1677,6 +1677,102 @@ if _HAS_NUMBA:
                     )
 
     @njit(cache=True)
+    def _candidate_ranges_in_cell(
+        cell,
+        sorted_indices,
+        boundaries,
+        length,
+        species_id,
+        feeding_stage,
+        size_ratio_min,
+        size_ratio_max,
+        age_dt,
+        first_feeding_age_dt,
+        lo,
+        hi,
+        len_order,
+        sorted_len,
+    ):
+        """One cell of ``_cell_prey_candidates``: sort it by length, then set each school's range.
+
+        Writes only the cell's own slice ``[start, end)`` of ``lo``, ``hi``, ``len_order`` and
+        ``sorted_len``, so cells can run in parallel.
+        """
+        start = boundaries[cell]
+        end = boundaries[cell + 1]
+        if end <= start:
+            return
+        n_local = end - start
+        cell_len = length[sorted_indices[start:end]]
+        order = np.argsort(cell_len)
+        for k in range(n_local):
+            len_order[start + k] = order[k]
+            sorted_len[start + k] = cell_len[order[k]]
+        cell_sorted = sorted_len[start:end]
+        # A NaN length defeats a length window: the exact test accepts a NaN-length prey (both
+        # ratio comparisons are False) and every prey of a NaN-length predator. Such a cell lists
+        # every school, so the exact tests decide, as in the full scan.
+        cell_has_nan = False
+        for k in range(n_local):
+            if np.isnan(cell_len[k]):
+                cell_has_nan = True
+                break
+        for p in range(n_local):
+            p_idx = sorted_indices[start + p]
+            if age_dt[p_idx] < first_feeding_age_dt[p_idx]:
+                continue
+            if cell_has_nan:
+                lo[start + p] = start
+                hi[start + p] = end
+                continue
+            sp = species_id[p_idx]
+            stage = feeding_stage[p_idx]
+            r_min = size_ratio_min[sp, stage]
+            r_max = size_ratio_max[sp, stage]
+            pred_len = length[p_idx]
+            if np.isnan(r_min) or np.isnan(r_max):  # the exact tests decide everything
+                i0 = 0
+                i1 = n_local
+            elif r_max <= 0:  # ratio >= r_max for every positive ratio: none can pass
+                i0 = 0
+                i1 = 0
+            else:
+                i0 = np.searchsorted(cell_sorted, (pred_len / r_max) * (1.0 - 1e-9))
+                if r_min > 0:
+                    i1 = np.searchsorted(
+                        cell_sorted, (pred_len / r_min) * (1.0 + 1e-9), side="right"
+                    )
+                else:
+                    i1 = n_local
+                # An inverted window (r_min > r_max, or a negative predator length) accepts
+                # nothing in the exact test, and a negative range would size cand_pos too small.
+                # EngineConfig swaps inverted ratios, so this guards memory, not results.
+                i1 = max(i1, i0)
+            lo[start + p] = start + i0
+            hi[start + p] = start + i1
+
+    @njit(cache=True)
+    def _fill_candidates(j, lo, hi, len_order, cand_ptr, cand_pos):
+        """One school of ``_cell_prey_candidates``: copy its range, sorted back into cell order.
+
+        Writes only ``cand_pos[cand_ptr[j]:cand_ptr[j + 1]]``, so schools can run in parallel.
+        """
+        base = cand_ptr[j]
+        m = hi[j] - lo[j]
+        for k in range(m):
+            cand_pos[base + k] = len_order[lo[j] + k]
+        if m > 32:
+            cand_pos[base : base + m] = np.sort(cand_pos[base : base + m])
+        else:
+            for a in range(1, m):  # insertion sort back into cell order
+                v = cand_pos[base + a]
+                c = a - 1
+                while c >= 0 and cand_pos[base + c] > v:
+                    cand_pos[base + c + 1] = cand_pos[base + c]
+                    c -= 1
+                cand_pos[base + c + 1] = v
+
+    @njit(cache=True)
     def _cell_prey_candidates(
         sorted_indices,
         boundaries,
@@ -1699,6 +1795,9 @@ if _HAS_NUMBA:
         is a superset of the schools the kernel's exact tests accept (see
         ``_apply_predation_numba``). Schools too young to feed get an empty list: the kernel
         returns before its scan for them.
+
+        ``_cell_prey_candidates_parallel`` is the same build with its two loops over cells and
+        schools in ``prange``; the results are identical (each iteration writes only its own slice).
         """
         n = len(sorted_indices)
         lo = np.zeros(n, dtype=np.int64)
@@ -1706,78 +1805,79 @@ if _HAS_NUMBA:
         len_order = np.empty(n, dtype=np.int64)
         sorted_len = np.empty(n, dtype=np.float64)
         for cell in range(n_cells):
-            start = boundaries[cell]
-            end = boundaries[cell + 1]
-            if end <= start:
-                continue
-            n_local = end - start
-            cell_len = length[sorted_indices[start:end]]
-            order = np.argsort(cell_len)
-            for k in range(n_local):
-                len_order[start + k] = order[k]
-                sorted_len[start + k] = cell_len[order[k]]
-            cell_sorted = sorted_len[start:end]
-            # A NaN length defeats a length window: the exact test accepts a NaN-length prey
-            # (both ratio comparisons are False) and every prey of a NaN-length predator. Such a
-            # cell lists every school, so the exact tests decide, as in the full scan.
-            cell_has_nan = False
-            for k in range(n_local):
-                if np.isnan(cell_len[k]):
-                    cell_has_nan = True
-                    break
-            for p in range(n_local):
-                p_idx = sorted_indices[start + p]
-                if age_dt[p_idx] < first_feeding_age_dt[p_idx]:
-                    continue
-                if cell_has_nan:
-                    lo[start + p] = start
-                    hi[start + p] = end
-                    continue
-                sp = species_id[p_idx]
-                stage = feeding_stage[p_idx]
-                r_min = size_ratio_min[sp, stage]
-                r_max = size_ratio_max[sp, stage]
-                pred_len = length[p_idx]
-                if np.isnan(r_min) or np.isnan(r_max):  # the exact tests decide everything
-                    i0 = 0
-                    i1 = n_local
-                elif r_max <= 0:  # ratio >= r_max for every positive ratio: none can pass
-                    i0 = 0
-                    i1 = 0
-                else:
-                    i0 = np.searchsorted(cell_sorted, (pred_len / r_max) * (1.0 - 1e-9))
-                    if r_min > 0:
-                        i1 = np.searchsorted(
-                            cell_sorted, (pred_len / r_min) * (1.0 + 1e-9), side="right"
-                        )
-                    else:
-                        i1 = n_local
-                    # An inverted window (r_min > r_max, or a negative predator length) accepts
-                    # nothing in the exact test, and a negative range would size cand_pos too
-                    # small. EngineConfig swaps inverted ratios, so this guards memory, not results.
-                    i1 = max(i1, i0)
-                lo[start + p] = start + i0
-                hi[start + p] = start + i1
+            _candidate_ranges_in_cell(
+                cell,
+                sorted_indices,
+                boundaries,
+                length,
+                species_id,
+                feeding_stage,
+                size_ratio_min,
+                size_ratio_max,
+                age_dt,
+                first_feeding_age_dt,
+                lo,
+                hi,
+                len_order,
+                sorted_len,
+            )
         cand_ptr = np.empty(n + 1, dtype=np.int64)
         cand_ptr[0] = 0
         for j in range(n):
             cand_ptr[j + 1] = cand_ptr[j] + (hi[j] - lo[j])
         cand_pos = np.empty(cand_ptr[n], dtype=np.int64)
         for j in range(n):
-            base = cand_ptr[j]
-            m = hi[j] - lo[j]
-            for k in range(m):
-                cand_pos[base + k] = len_order[lo[j] + k]
-            if m > 32:
-                cand_pos[base : base + m] = np.sort(cand_pos[base : base + m])
-            else:
-                for a in range(1, m):  # insertion sort back into cell order
-                    v = cand_pos[base + a]
-                    c = a - 1
-                    while c >= 0 and cand_pos[base + c] > v:
-                        cand_pos[base + c + 1] = cand_pos[base + c]
-                        c -= 1
-                    cand_pos[base + c + 1] = v
+            _fill_candidates(j, lo, hi, len_order, cand_ptr, cand_pos)
+        return cand_ptr, cand_pos
+
+    @njit(cache=True, parallel=True)
+    def _cell_prey_candidates_parallel(
+        sorted_indices,
+        boundaries,
+        n_cells,
+        length,
+        species_id,
+        feeding_stage,
+        size_ratio_min,
+        size_ratio_max,
+        age_dt,
+        first_feeding_age_dt,
+    ):
+        """``_cell_prey_candidates`` with its cell and school loops in ``prange``.
+
+        Used with the parallel batch kernel, which every run takes by default: serially the
+        0.60 s build of a 10-yr Baltic run cancelled the scan saving at the automatic thread
+        count. Each iteration writes only its own slice, so the result is identical.
+        """
+        n = len(sorted_indices)
+        lo = np.zeros(n, dtype=np.int64)
+        hi = np.zeros(n, dtype=np.int64)
+        len_order = np.empty(n, dtype=np.int64)
+        sorted_len = np.empty(n, dtype=np.float64)
+        for cell in prange(n_cells):
+            _candidate_ranges_in_cell(
+                cell,
+                sorted_indices,
+                boundaries,
+                length,
+                species_id,
+                feeding_stage,
+                size_ratio_min,
+                size_ratio_max,
+                age_dt,
+                first_feeding_age_dt,
+                lo,
+                hi,
+                len_order,
+                sorted_len,
+            )
+        cand_ptr = np.empty(n + 1, dtype=np.int64)
+        cand_ptr[0] = 0
+        for j in range(n):
+            cand_ptr[j + 1] = cand_ptr[j] + (hi[j] - lo[j])
+        cand_pos = np.empty(cand_ptr[n], dtype=np.int64)
+        for j in prange(n):
+            _fill_candidates(j, lo, hi, len_order, cand_ptr, cand_pos)
         return cand_ptr, cand_pos
 
     @njit(cache=True)
@@ -2777,7 +2877,8 @@ def mortality(
     # Phase 1a candidate lists for every predator, once per step: lengths, stages and size
     # windows do not change during mortality, so all n_subdt batch calls share them.
     if _HAS_NUMBA and len(valid_indices) > 0:
-        cand_ptr_all, cand_pos_all = _cell_prey_candidates(
+        _build = _cell_prey_candidates_parallel if parallel else _cell_prey_candidates
+        cand_ptr_all, cand_pos_all = _build(
             sorted_indices,
             boundaries,
             n_cells,
