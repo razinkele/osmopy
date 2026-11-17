@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Osmose.Engine</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- pythonnet hosts the CLR through hostfxr, which needs Osmose.Engine.runtimeconfig.json.
+         A class library emits one only when asked (spec section 9.4). -->
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Osmose.Engine.Tests" />
+    <InternalsVisibleTo Include="Osmose.Engine.Bench" />
+  </ItemGroup>
+
+</Project>
