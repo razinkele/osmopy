@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Protocol
 
+from htmltools import Tag
 from shiny import reactive
+from shiny import ui as shiny_ui
 from shiny.types import SilentException
 
 from osmose.config.multivalue import is_multi_value
@@ -18,6 +20,11 @@ from ui.components.param_form import (  # noqa: F401  (re-exported: pages and te
     shows_field_default,
     untouched_unset,
 )
+
+
+def render_gen_input_id(name: str) -> str:
+    """Input id of the hidden input that carries render ``name``'s load generation (#283)."""
+    return "osm_render_gen_" + name.replace(".", "_")
 
 
 class ShinyInputs(Protocol):
@@ -76,27 +83,54 @@ class AppState:
         # mark_rendered). A plain dict ON PURPOSE, not reactive: see mark_rendered.
         self._rendered_gen: dict[str, int] = {}
 
-    def mark_rendered(self, name: str) -> None:
-        """Record that render output ``name`` just built its inputs from the current config.
+    def mark_rendered(self, name: str) -> Tag:
+        """Record that render output ``name`` just built its inputs from the current config, and
+        return the hidden input that carries this load generation. The render MUST include the
+        returned tag in its UI.
 
-        Call it from the render function. A sync effect then writes that output's inputs only
-        while ``rendered_current(name)``: a tab that is hidden during a load does not re-render
-        (Shiny suspends hidden outputs), so its inputs still hold the PREVIOUS config's values,
-        and writing them corrupted the new config (2026-11-15: load EEC full, view Setup, load
-        Baltic -> 169 Baltic keys overwritten with EEC full's).
+        A sync effect writes that output's inputs only while ``rendered_current(name, input=...)``:
+        a tab that is hidden during a load does not re-render (Shiny suspends hidden outputs), so
+        its inputs still hold the PREVIOUS config's values, and writing them corrupted the new
+        config (2026-11-15: load EEC full, view Setup, load Baltic -> 169 Baltic keys overwritten
+        with EEC full's).
+
+        The server-side mark alone is not enough (#283): it is set the moment the server builds the
+        render, while the browser can still deliver values from the previous render afterwards. The
+        Grid page, visible during every load, wrote a fresh session's placeholder corners over a
+        loaded config that way. The browser binds a render's inputs together and sends their values
+        in one batch with this generation input, so a value that arrives with the current
+        generation belongs to the current render.
 
         Deliberately not reactive: if marking invalidated the sync, the sync would run right
-        after the render, before the browser has sent the new inputs' values, and write the
-        stale ones.
+        after the render, before the browser has sent the new inputs' values.
         """
         with reactive.isolate():
-            self._rendered_gen[name] = self.load_trigger.get()
+            gen = self.load_trigger.get()
+            self._rendered_gen[name] = gen
+        return shiny_ui.div(
+            shiny_ui.input_text(render_gen_input_id(name), None, value=str(gen)),
+            style="display:none",
+        )
 
-    def rendered_current(self, *names: str) -> bool:
-        """True when every named render output was built for the current config load."""
+    def rendered_current(self, *names: str, input: ShinyInputs | None = None) -> bool:
+        """True when every named render output was built for the current config load and, given
+        ``input``, the browser reports that generation for each of them (see ``mark_rendered``).
+
+        With ``input`` this READS the generation inputs, so a sync effect that calls it re-runs
+        when a new render's values arrive. Call it before any early return, like the other reads.
+        """
+        client: list[object] = []
+        if input is not None:
+            for n in names:
+                try:
+                    client.append(getattr(input, render_gen_input_id(n))())
+                except (AttributeError, SilentException):
+                    client.append(None)
         with reactive.isolate():
             gen = self.load_trigger.get()
-        return all(self._rendered_gen.get(n) == gen for n in names)
+        if not all(self._rendered_gen.get(n) == gen for n in names):
+            return False
+        return input is None or all(str(c) == str(gen) for c in client)
 
     def get_config_value(self, key: str, default: str = "") -> str:
         """Read a single config value without copying the entire dict.
@@ -228,13 +262,15 @@ def sync_inputs(
     # Gate only the WRITE (the reads above keep this effect subscribed to its inputs).
     # M10: skip while a busy operation is in flight; isolated so toggling busy does not re-run
     # the effect and write input values before ui.update_* reaches the client.
+    names = (rendered,) if isinstance(rendered, str) else rendered
+    # Read the render generations with the other inputs, before either gate (see the docstring).
+    current = state.rendered_current(*names, input=input) if names else True
     with reactive.isolate():
         if state.busy.get():
             _log.debug("sync_inputs: skipping — busy in progress")
             return {}
-    names = (rendered,) if isinstance(rendered, str) else rendered
-    if names and not state.rendered_current(*names):
-        _log.debug("sync_inputs: skipping — %s rendered for an earlier config load", names)
+    if not current:
+        _log.debug("sync_inputs: skipping — %s not yet current in the browser", names)
         return {}
     if changed:
         # Only set config if values actually differ (by value: see same_config_value)

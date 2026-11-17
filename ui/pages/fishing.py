@@ -42,8 +42,9 @@ def fishing_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
-        state.mark_rendered("fishing.global")
-        return ui.div(*[render_field(f, config=cfg) for f in global_fields])
+        gen_input = state.mark_rendered("fishing.global")
+        content = ui.div(*[render_field(f, config=cfg) for f in global_fields])
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @render.ui
     def fishery_panels():
@@ -59,8 +60,9 @@ def fishing_server(input, output, session, state: AppState):
                 *[render_field(f, species_idx=i, config=cfg) for f in fishery_fields],
             )
             panels.append(card)
-        state.mark_rendered("fishing.fisheries")
-        return ui.div(*panels)
+        gen_input = state.mark_rendered("fishing.fisheries")
+        content = ui.div(*panels)
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @render.ui
     def mpa_panels():
@@ -76,8 +78,9 @@ def fishing_server(input, output, session, state: AppState):
                 *[render_field(f, species_idx=i, config=cfg) for f in mpa_fields],
             )
             panels.append(card)
-        state.mark_rendered("fishing.mpas")
-        return ui.div(*panels)
+        gen_input = state.mark_rendered("fishing.mpas")
+        content = ui.div(*panels)
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @reactive.effect
     def sync_fishing_inputs():

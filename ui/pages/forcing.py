@@ -91,22 +91,24 @@ def forcing_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
-        state.mark_rendered("forcing.global")
-        return ui.div(
+        gen_input = state.mark_rendered("forcing.global")
+        content = ui.div(
             ui.h5("Global LTL Settings"),
             *[render_field(f, config=cfg) for f in global_ltl],
         )
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @render.ui
     def forcing_temp_fields():
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
-        state.mark_rendered("forcing.temp")
-        return ui.div(
+        gen_input = state.mark_rendered("forcing.temp")
+        content = ui.div(
             ui.h5("Temperature"),
             *[render_field(f, config=cfg) for f in temp_fields if not f.advanced],
         )
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @render.ui
     def resource_panels():
@@ -117,8 +119,8 @@ def forcing_server(input, output, session, state: AppState):
         n_focal = parse_nspecies(cfg)
         indexed_fields = [f for f in LTL_FIELDS if f.indexed]
         names = [cfg.get(f"species.name.sp{n_focal + i}", f"Resource {i}") for i in range(n)]
-        state.mark_rendered("forcing.resources")
-        return render_species_table(
+        gen_input = state.mark_rendered("forcing.resources")
+        content = render_species_table(
             indexed_fields,
             n_species=n,
             species_names=names,
@@ -126,6 +128,7 @@ def forcing_server(input, output, session, state: AppState):
             config=cfg,
             copy_event="copy_rsc0_to_all",
         )
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @reactive.effect
     def sync_forcing_inputs():
@@ -155,11 +158,13 @@ def forcing_server(input, output, session, state: AppState):
         )
 
         # Gate only the WRITE: the cell reads above keep this effect subscribed to them.
+        # The render generation the browser reports is read here too, before the gates (#283).
+        current = state.rendered_current("forcing.resources", input=input)
         with reactive.isolate():
             if state.busy.get():
                 return
-        if not state.rendered_current("forcing.resources"):
-            return  # the table still holds an earlier config's values (tab hidden during a load)
+        if not current:
+            return  # the browser's cells are not from the current render (yet)
 
         # Apply all updates in a single config.set() call.
         actual_changes = {
@@ -177,7 +182,7 @@ def forcing_server(input, output, session, state: AppState):
     @reactive.event(input.copy_rsc0_to_all)
     def handle_copy_sp0_resources():
         n = input.n_resources()
-        if n < 2 or not state.rendered_current("forcing.resources"):
+        if n < 2 or not state.rendered_current("forcing.resources", input=input):
             return  # never copy from inputs rendered for an earlier config load
         state.busy.set("Copying resource 0 parameters to all resources…")
         try:

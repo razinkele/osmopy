@@ -141,11 +141,12 @@ def setup_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
-        state.mark_rendered("setup.simulation")
-        return render_category(
+        gen_input = state.mark_rendered("setup.simulation")
+        content = render_category(
             [f for f in SIMULATION_FIELDS if not f.advanced],
             config=cfg,
         )
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     # Bumped after "copy species 0 to all": the copy can change which cells render as inputs (an
     # age-based species 0 makes the destinations age-based), so the table must re-render.
@@ -160,14 +161,15 @@ def setup_server(input, output, session, state: AppState):
         with reactive.isolate():
             cfg = state.config.get()
         names = [cfg.get(f"species.name.sp{i}", f"Species {i}") for i in range(n)]
-        state.mark_rendered("setup.species")
-        return render_species_table(
+        gen_input = state.mark_rendered("setup.species")
+        content = render_species_table(
             SPECIES_FIELDS,
             n_species=n,
             species_names=names,
             show_advanced=show_adv,
             config=cfg,
         )
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @reactive.effect
     def sync_simulation_inputs():
@@ -196,11 +198,13 @@ def setup_server(input, output, session, state: AppState):
 
         # Gate only the WRITE: the cell reads above keep this effect subscribed to them (a return
         # before reading would leave it with no dependencies, so it would never sync again).
+        # The render generation the browser reports is read here too, before the gates (#283).
+        current = state.rendered_current("setup.species", input=input)
         with reactive.isolate():
             if state.busy.get():
                 return
-        if not state.rendered_current("setup.species"):
-            return  # the table still holds an earlier config's values (tab hidden during a load)
+        if not current:
+            return  # the browser's cells are not from the current render (yet)
 
         # Apply all updates in a single config.set() call.
         actual_changes = {
@@ -221,7 +225,7 @@ def setup_server(input, output, session, state: AppState):
     @reactive.event(input.copy_sp0_to_all)
     def handle_copy_sp0():
         n = input.n_species()
-        if n < 2 or not state.rendered_current("setup.species"):
+        if n < 2 or not state.rendered_current("setup.species", input=input):
             return  # never copy from inputs rendered for an earlier config load
         state.busy.set("Copying species 0 parameters to all species…")
         try:

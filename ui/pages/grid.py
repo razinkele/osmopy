@@ -213,8 +213,8 @@ def grid_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
-        state.mark_rendered("grid.fields")
-        return ui.div(
+        gen_input = state.mark_rendered("grid.fields")
+        content = ui.div(
             render_field(grid_type_field, config=cfg) if grid_type_field else ui.div(),
             ui.hr(),
             ui.h5("Regular Grid Settings"),
@@ -223,6 +223,7 @@ def grid_server(input, output, session, state: AppState):
             ui.h5("NetCDF Grid Settings"),
             *[render_field(f, config=cfg) for f in netcdf_fields if not f.advanced],
         )
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @render.ui
     def grid_overlay_selector():
