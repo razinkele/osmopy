@@ -196,7 +196,7 @@ jobs:
         # No coverage here: the CLR-hosting checks run in a subprocess (the CLR never enters the
         # pytest process, which may fork), so pytest-cov could not see bridge.py anyway. Its
         # load path is pinned by mutation instead (PR description).
-        run: pytest -p no:cacheprovider -q tests/test_csharp_bridge_spike.py tests/test_csharp_engine_runtime.py
+        run: pytest -p no:cacheprovider -q tests/test_csharp_*.py
 
   apptainer-smoke:
     # Pinned: setup-apptainer's apptainer 1.3.6 .deb depends on libfuse3-3, which is not
