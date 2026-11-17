@@ -25,6 +25,7 @@ MUTATED arrays (indices in LEAF_ARG_ORDER, also passed as snapshot args):
 
 from __future__ import annotations
 
+import numpy as np
 from numba import njit  # type: ignore[import-untyped]
 
 from osmose.engine.processes import mortality as _mortality_mod
@@ -94,6 +95,9 @@ def _driver_with_leaf(
     snap_diet_matrix,
 ):
     """Loop n_iter times: reset 7 mutated arrays from snapshots, then call leaf."""
+    # The leaf now takes the predator's Phase 1a candidate list (PR #279). A whole-cell list
+    # reproduces the full scan this spike measured.
+    all_pos = np.arange(cell_indices.shape[0])
     for _ in range(n_iter):
         inst_abd[:] = snap_inst_abd
         n_dead[:, :] = snap_n_dead
@@ -150,6 +154,9 @@ def _driver_with_leaf(
             raw_preyed,
             e_net,
             is_background,
+            all_pos,
+            0,
+            all_pos.shape[0],
         )
 
 

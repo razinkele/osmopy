@@ -135,3 +135,23 @@ def test_a_prey_the_rounding_admits_is_on_the_list(pred, r_min, r_max, prey):
     assert prey > pred / r_min and _exact_accepts(pred, prey, r_min, r_max)  # the case holds
     _, _, ptr, pos = _build([[pred, prey]], r_min, r_max)
     assert 1 in pos[ptr[0] : ptr[1]].tolist()
+
+
+def test_a_cell_with_a_nan_length_falls_back_to_the_full_scan():
+    """The exact test accepts a NaN-length prey (both ratio comparisons are False), and every prey
+    of a NaN-length predator. A length-sorted window cannot represent either: a NaN prey sorts past
+    the upper bound, a NaN predator's bounds are NaN (CodeRabbit, PR #279)."""
+    rng = np.random.default_rng(5)
+    cell = rng.uniform(0.5, 60.0, size=40)
+    cell[[4, 17]] = np.nan  # a NaN school is both a prey and a predator
+    lengths, boundaries, ptr, pos = _build([cell, rng.uniform(0.5, 60.0, size=30)], 1.0, 3.5)
+    _check(lengths, boundaries, ptr, pos, 1.0, 3.5)
+
+
+def test_an_inverted_window_lists_nothing_and_stays_in_bounds():
+    """r_min > r_max accepts nothing in the exact test. Unclamped, its negative range shrank
+    cand_pos and the fill wrote past its end (an independent review of PR #279 reproduced it with
+    NUMBA_BOUNDSCHECK=1). EngineConfig swaps inverted ratios, so this is memory safety."""
+    lengths, boundaries, ptr, pos = _build([[35.0, 20.0, 15.0, 50.0, 12.0, 30.0]], 3.5, 1.0)
+    assert ptr[-1] == 0 and len(pos) == 0
+    _check(lengths, boundaries, ptr, pos, 3.5, 1.0)

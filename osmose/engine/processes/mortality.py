@@ -1717,9 +1717,21 @@ if _HAS_NUMBA:
                 len_order[start + k] = order[k]
                 sorted_len[start + k] = cell_len[order[k]]
             cell_sorted = sorted_len[start:end]
+            # A NaN length defeats a length window: the exact test accepts a NaN-length prey
+            # (both ratio comparisons are False) and every prey of a NaN-length predator. Such a
+            # cell lists every school, so the exact tests decide, as in the full scan.
+            cell_has_nan = False
+            for k in range(n_local):
+                if np.isnan(cell_len[k]):
+                    cell_has_nan = True
+                    break
             for p in range(n_local):
                 p_idx = sorted_indices[start + p]
                 if age_dt[p_idx] < first_feeding_age_dt[p_idx]:
+                    continue
+                if cell_has_nan:
+                    lo[start + p] = start
+                    hi[start + p] = end
                     continue
                 sp = species_id[p_idx]
                 stage = feeding_stage[p_idx]
@@ -1740,6 +1752,10 @@ if _HAS_NUMBA:
                         )
                     else:
                         i1 = n_local
+                    # An inverted window (r_min > r_max, or a negative predator length) accepts
+                    # nothing in the exact test, and a negative range would size cand_pos too
+                    # small. EngineConfig swaps inverted ratios, so this guards memory, not results.
+                    i1 = max(i1, i0)
                 lo[start + p] = start + i0
                 hi[start + p] = start + i1
         cand_ptr = np.empty(n + 1, dtype=np.int64)
