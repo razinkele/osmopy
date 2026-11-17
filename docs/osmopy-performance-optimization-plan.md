@@ -355,7 +355,17 @@ transient.
 Only then decide whether a staged workflow (screen → surrogate → re-rank) is worth wiring
 as a default.
 
-### Item 6 — Single-thread mortality kernel (open, not scheduled)
+### Item 6 — Single-thread mortality kernel
+
+**Status: first change DONE 2026-11-17** (`docs/perf/2026-11-17-phase1a-prefilter.md`).
+- **What shipped:** a bit-identical length prefilter for the Phase 1a scan. Each predator's
+  candidate list is built once per step (`_cell_prey_candidates`), and a visit walks only that
+  list. Measured on a one-thread 10-yr Baltic run: wall −10.6%, `mortality()` −13.3%.
+- **Neutral elsewhere:** at the automatic thread count, the serial 0.60 s build cancels the
+  saving, and on EEC full there is little to skip.
+- **The first two versions were slower and are recorded in the note.** In v1 the bookkeeping
+  (about 5 s) ate the full 4.9 s saving.
+- **Left:** a `prange` build for the multi-thread path, kept away from forked one-thread workers.
 
 **Goal.** Decide whether the mortality kernel can be made faster for the one-thread worker
 regime, where it is 78% of the run (measured).

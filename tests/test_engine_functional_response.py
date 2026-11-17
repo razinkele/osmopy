@@ -780,6 +780,18 @@ def _run_single_predation_step_numba(r: float, shape: int, k: float):
     prey_id_buf = np.zeros(max_prey, dtype=np.int64)
     prey_eligible_buf = np.zeros(max_prey, dtype=np.float64)
 
+    cand_ptr, cand_pos = _mort._cell_prey_candidates(
+        cell_indices,
+        np.array([0, len(cell_indices)], dtype=np.int64),
+        1,
+        length,
+        species_id,
+        feeding_stage,
+        size_ratio_min,
+        size_ratio_max,
+        age_dt,
+        first_feeding_age_dt,
+    )
     _mort._apply_predation_numba(
         0,  # p_idx = predator
         cell_indices,
@@ -830,10 +842,10 @@ def _run_single_predation_step_numba(r: float, shape: int, k: float):
         np.zeros(n_schools, dtype=np.float64),  # raw_preyed
         np.zeros(n_schools, dtype=np.float64),  # e_net
         np.zeros(n_schools, dtype=np.bool_),  # is_background
-        # Phase 1a length index, as every caller builds it per cell.
-        length[cell_indices][np.argsort(length[cell_indices])],  # sorted_len
-        np.argsort(length[cell_indices]),  # len_order
-        np.empty(len(cell_indices), dtype=np.int64),  # cand_buf
+        # Phase 1a candidate list of the predator (cell position 0), as the callers build it.
+        cand_pos,
+        cand_ptr[0],
+        cand_ptr[1],
     )
     eaten = float(preyed_biomass[0])
     return eaten, max_eatable

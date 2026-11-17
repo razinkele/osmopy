@@ -1103,9 +1103,9 @@ if _HAS_NUMBA:
         raw_preyed,
         e_net,
         is_background,
-        sorted_len,
-        len_order,
-        cand_buf,
+        cand_pos,
+        cand_lo,
+        cand_hi,
     ):
         """Numba-compiled single-predator predation (schools + resources).
 
@@ -1145,8 +1145,6 @@ if _HAS_NUMBA:
         if max_eatable <= 0:
             return
 
-        n_local = len(cell_indices)
-
         # Phase 1: Scan all prey using caller-provided scratch buffers.
         prey_type = prey_type_buf
         prey_id = prey_id_buf
@@ -1156,38 +1154,14 @@ if _HAS_NUMBA:
 
         # 1a: School prey
         # Only schools whose length can pass the size window are tested (perf plan item 6).
-        # `sorted_len`/`len_order` are the cell's lengths in ascending order and their cell
-        # positions, built once per cell by the caller (lengths do not change during
-        # mortality). The binary-search bounds are widened by 1e-9 relative, far above the
-        # rounding of pred_len / prey_len, so the candidates are a SUPERSET of the schools
-        # that pass; the exact tests below then run on them unchanged and in the cell's own
-        # order (the candidate positions are sorted back). So the eligible set, its visit
-        # order (total_available is a running sum) and every output stay bit-identical.
-        if np.isnan(r_min) or np.isnan(r_max):  # NaN ratio: the exact tests decide everything
-            i0 = 0
-            i1 = n_local
-        elif r_max <= 0:  # ratio >= r_max for every positive ratio: no school can pass
-            i0 = 0
-            i1 = 0
-        else:
-            i0 = np.searchsorted(sorted_len, (pred_len / r_max) * (1.0 - 1e-9))
-            if r_min > 0:
-                i1 = np.searchsorted(sorted_len, (pred_len / r_min) * (1.0 + 1e-9), side="right")
-            else:
-                i1 = n_local
-        n_cand = 0
-        for j in range(i0, i1):
-            cand_buf[n_cand] = len_order[j]
-            n_cand += 1
-        for a in range(1, n_cand):  # insertion sort back into cell order (few candidates)
-            v = cand_buf[a]
-            b = a - 1
-            while b >= 0 and cand_buf[b] > v:
-                cand_buf[b + 1] = cand_buf[b]
-                b -= 1
-            cand_buf[b + 1] = v
-        for c_i in range(n_cand):
-            q_pos = cand_buf[c_i]
+        # cand_pos[cand_lo:cand_hi] lists them as cell positions in the cell's own order, built
+        # once per step by _cell_prey_candidates (a predator's length, stage and window do not
+        # change during mortality). Its length bounds are widened by 1e-9 relative, far above
+        # the rounding of pred_len / prey_len, so the list is a SUPERSET of the schools that
+        # pass; the exact tests below run on it unchanged. So the eligible set, its visit order
+        # (total_available is a running sum) and every output stay bit-identical.
+        for c_i in range(cand_lo, cand_hi):
+            q_pos = cand_pos[c_i]
             q_idx = cell_indices[q_pos]
             if q_idx == p_idx:
                 continue
@@ -1538,11 +1512,20 @@ if _HAS_NUMBA:
         prey_type_buf = np.empty(max_prey_cell, dtype=np.int32)
         prey_id_buf = np.empty(max_prey_cell, dtype=np.int32)
         prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
-        # Phase 1a length index (see _apply_predation_numba): built once per cell.
-        cell_len = length[cell_indices]
-        len_order = np.argsort(cell_len)
-        sorted_len = cell_len[len_order]
-        cand_buf = np.empty(n_local, dtype=np.int64)
+        # Phase 1a candidate lists (see _apply_predation_numba) for this one cell.
+        cand_ptr, cand_pos = _cell_prey_candidates(
+            cell_indices,
+            np.array([0, n_local], dtype=np.int64),
+            1,
+            length,
+            species_id,
+            feeding_stage,
+            size_ratio_min,
+            size_ratio_max,
+            age_dt,
+            first_feeding_age_dt,
+        )
+        start = 0
 
         for i in range(n_local):
             for c in range(n_causes):
@@ -1596,9 +1579,9 @@ if _HAS_NUMBA:
                         raw_preyed,
                         e_net,
                         is_background,
-                        sorted_len,
-                        len_order,
-                        cand_buf,
+                        cand_pos,
+                        cand_ptr[start + seq_pred[i]],
+                        cand_ptr[start + seq_pred[i] + 1],
                     )
                 elif cause == 1:
                     idx = cell_indices[seq_starv[i]]
@@ -1694,27 +1677,92 @@ if _HAS_NUMBA:
                     )
 
     @njit(cache=True)
-    def _cell_length_index(sorted_indices, boundaries, n_cells, length):
-        """Every cell's Phase 1a length index, built once per mortality step.
+    def _cell_prey_candidates(
+        sorted_indices,
+        boundaries,
+        n_cells,
+        length,
+        species_id,
+        feeding_stage,
+        size_ratio_min,
+        size_ratio_max,
+        age_dt,
+        first_feeding_age_dt,
+    ):
+        """Each predator's Phase 1a candidate list, built once per mortality step.
 
-        For each cell slice ``[start, end)`` of ``sorted_indices``: ``len_order[start + k]`` is
-        the cell position of the k-th shortest school and ``sorted_len[start + k]`` its length.
-        Lengths do not change during the mortality step, so one build serves every sub-step.
+        For the school at position ``p`` of a cell slice ``[start, end)`` of ``sorted_indices``,
+        ``cand_pos[cand_ptr[start + p]:cand_ptr[start + p + 1]]`` are the cell positions of the
+        schools whose length can pass its size window, in the cell's own order. A predator's
+        length, feeding stage and size window do not change during the mortality step, so one
+        build serves every sub-step. The window bounds are widened by 1e-9 relative, so each list
+        is a superset of the schools the kernel's exact tests accept (see
+        ``_apply_predation_numba``). Schools too young to feed get an empty list: the kernel
+        returns before its scan for them.
         """
         n = len(sorted_indices)
-        sorted_len = np.empty(n, dtype=np.float64)
+        lo = np.zeros(n, dtype=np.int64)
+        hi = np.zeros(n, dtype=np.int64)
         len_order = np.empty(n, dtype=np.int64)
+        sorted_len = np.empty(n, dtype=np.float64)
         for cell in range(n_cells):
             start = boundaries[cell]
             end = boundaries[cell + 1]
             if end <= start:
                 continue
+            n_local = end - start
             cell_len = length[sorted_indices[start:end]]
             order = np.argsort(cell_len)
-            for k in range(end - start):
+            for k in range(n_local):
                 len_order[start + k] = order[k]
                 sorted_len[start + k] = cell_len[order[k]]
-        return sorted_len, len_order
+            cell_sorted = sorted_len[start:end]
+            for p in range(n_local):
+                p_idx = sorted_indices[start + p]
+                if age_dt[p_idx] < first_feeding_age_dt[p_idx]:
+                    continue
+                sp = species_id[p_idx]
+                stage = feeding_stage[p_idx]
+                r_min = size_ratio_min[sp, stage]
+                r_max = size_ratio_max[sp, stage]
+                pred_len = length[p_idx]
+                if np.isnan(r_min) or np.isnan(r_max):  # the exact tests decide everything
+                    i0 = 0
+                    i1 = n_local
+                elif r_max <= 0:  # ratio >= r_max for every positive ratio: none can pass
+                    i0 = 0
+                    i1 = 0
+                else:
+                    i0 = np.searchsorted(cell_sorted, (pred_len / r_max) * (1.0 - 1e-9))
+                    if r_min > 0:
+                        i1 = np.searchsorted(
+                            cell_sorted, (pred_len / r_min) * (1.0 + 1e-9), side="right"
+                        )
+                    else:
+                        i1 = n_local
+                lo[start + p] = start + i0
+                hi[start + p] = start + i1
+        cand_ptr = np.empty(n + 1, dtype=np.int64)
+        cand_ptr[0] = 0
+        for j in range(n):
+            cand_ptr[j + 1] = cand_ptr[j] + (hi[j] - lo[j])
+        cand_pos = np.empty(cand_ptr[n], dtype=np.int64)
+        for j in range(n):
+            base = cand_ptr[j]
+            m = hi[j] - lo[j]
+            for k in range(m):
+                cand_pos[base + k] = len_order[lo[j] + k]
+            if m > 32:
+                cand_pos[base : base + m] = np.sort(cand_pos[base : base + m])
+            else:
+                for a in range(1, m):  # insertion sort back into cell order
+                    v = cand_pos[base + a]
+                    c = a - 1
+                    while c >= 0 and cand_pos[base + c] > v:
+                        cand_pos[base + c + 1] = cand_pos[base + c]
+                        c -= 1
+                    cand_pos[base + c + 1] = v
+        return cand_ptr, cand_pos
 
     @njit(cache=True)
     def _mortality_all_cells_numba(
@@ -1769,8 +1817,8 @@ if _HAS_NUMBA:
         eta_school,
         is_background,
         eff_foraging,
-        sorted_len_all,
-        len_order_all,
+        cand_ptr,
+        cand_pos,
     ):
         """Numba-compiled batch mortality for ALL cells in one call.
 
@@ -1820,11 +1868,6 @@ if _HAS_NUMBA:
             prey_type_buf = np.empty(max_prey_cell, dtype=np.int32)
             prey_id_buf = np.empty(max_prey_cell, dtype=np.int32)
             prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
-            # Phase 1a length index (see _apply_predation_numba): this cell's slice of the
-            # index built once per step (_cell_length_index).
-            sorted_len = sorted_len_all[start:end]
-            len_order = len_order_all[start:end]
-            cand_buf = np.empty(n_local, dtype=np.int64)
 
             for i in range(n_local):
                 for c in range(n_causes):
@@ -1878,9 +1921,9 @@ if _HAS_NUMBA:
                             raw_preyed,
                             e_net,
                             is_background,
-                            sorted_len,
-                            len_order,
-                            cand_buf,
+                            cand_pos,
+                            cand_ptr[start + seq_pred[i]],
+                            cand_ptr[start + seq_pred[i] + 1],
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -2028,8 +2071,8 @@ if _HAS_NUMBA:
         eta_school,
         is_background,
         eff_foraging,
-        sorted_len_all,
-        len_order_all,
+        cand_ptr,
+        cand_pos,
     ):
         """Parallel batch mortality — prange over cells for multi-core execution.
 
@@ -2109,11 +2152,6 @@ if _HAS_NUMBA:
             prey_type_buf = np.empty(max_prey_cell, dtype=np.int32)
             prey_id_buf = np.empty(max_prey_cell, dtype=np.int32)
             prey_eligible_buf = np.empty(max_prey_cell, dtype=np.float64)
-            # Phase 1a length index (see _apply_predation_numba): this cell's slice of the
-            # index built once per step (_cell_length_index).
-            sorted_len = sorted_len_all[start:end]
-            len_order = len_order_all[start:end]
-            cand_buf = np.empty(n_local, dtype=np.int64)
 
             for i in range(n_local):
                 for c in range(n_causes):
@@ -2167,9 +2205,9 @@ if _HAS_NUMBA:
                             raw_preyed,
                             e_net,
                             is_background,
-                            sorted_len,
-                            len_order,
-                            cand_buf,
+                            cand_pos,
+                            cand_ptr[start + seq_pred[i]],
+                            cand_ptr[start + seq_pred[i] + 1],
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -2720,11 +2758,20 @@ def mortality(
     k_cap = cap_fish if cap_fish is not None else _DUMMY_RSC_1D
     k_raw = raw_preyed if raw_preyed is not None else _DUMMY_RSC_1D
 
-    # Phase 1a length index for every cell, once per step: lengths do not change during
-    # mortality, so all n_subdt batch calls share it (see _apply_predation_numba).
+    # Phase 1a candidate lists for every predator, once per step: lengths, stages and size
+    # windows do not change during mortality, so all n_subdt batch calls share them.
     if _HAS_NUMBA and len(valid_indices) > 0:
-        sorted_len_all, len_order_all = _cell_length_index(
-            sorted_indices, boundaries, n_cells, work_state.length
+        cand_ptr_all, cand_pos_all = _cell_prey_candidates(
+            sorted_indices,
+            boundaries,
+            n_cells,
+            work_state.length,
+            work_state.species_id,
+            work_state.feeding_stage,
+            config.size_ratio_min,
+            config.size_ratio_max,
+            work_state.age_dt,
+            work_state.first_feeding_age_dt,
         )
 
     for _sub in range(n_subdt):
@@ -2810,8 +2857,8 @@ def mortality(
                 eta_school,
                 work_state.is_background,
                 eff_for,
-                sorted_len_all,
-                len_order_all,
+                cand_ptr_all,
+                cand_pos_all,
             )
         else:
             # Python fallback: per-cell dispatch (unchanged)
