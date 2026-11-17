@@ -1622,6 +1622,15 @@ machine image, at any thread count.
 | Q10 | Is the live map needed on the C# engine? | Not in scope. Later through an opt-in snapshot buffer. |
 | Q11 | Ensemble margins of 1.25x and 1.05x with a Python-versus-Python control arm, 32 replicates: acceptable as the equivalence criterion? | **Yes**, fixed before the first run. |
 
+**Answered by the owner, 2026-11-17:**
+- **Q1:** .NET 10 LTS.
+- **Q2:** performance; the gates are go/no-go.
+- **Q6:** build on the server.
+- **Q11:** the margins are accepted.
+- **D12's sequencing:** calibration and scripts in Phase 1, the UI in Phase 2.
+
+Q4 takes its recommendation (refuse), which follows from D11 (fail closed). The rest stand as recommended until the owner says otherwise.
+
 ---
 
 ## Appendix A. What was read for this document
