@@ -57,3 +57,16 @@ Cormorant, not "unidentifiable", and no parameter is dropped.
 Production `data/baltic` sets no `predation.functional.response.*` key, so no phase-14 K is live
 in any shipped configuration. Whatever the verdict, this changes only the calibration script's
 free set, not the model.
+
+## Addendum 2026-11-17, written before the rerun
+
+The 2026-11-11 run found the base above was not a viable ecosystem on the post-split config
+(cod_east and flounder extinct, cod_west at 1.1–1.7 Mt; #243). The maintainer chose to build
+phase 14 on the certified production parameters instead. So the rerun changes **only the base**:
+production Baltic plus type III on the four FR predators (`apply_phase14_base`, which now adds
+nothing else; production already runs Shepherd on all 9 focal species).
+
+These stand exactly as written above: the treatment, the predators, the cod_west positive control,
+40 years, seeds 42/1/7/11 paired, both instruments, the criterion (|mean Δ| > 2 × pooled SD on
+the objective), the validity gate and the decision table. Output:
+`docs/diagnostics/phase14_fr_identifiability_2026-11-17.json`.

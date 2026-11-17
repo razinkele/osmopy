@@ -8,9 +8,10 @@ K = 1.0, move ONE predator's K from the lower bound to the upper bound, and ask 
 phase-14 objective (and the assessed stocks it scores) moves by more than the seed-to-seed
 spread at the calibration horizon.
 
-The base config is built exactly as ``run_calibration`` builds it for ``--phase 14``:
-production Baltic + the frozen phase-13 parameters + Shepherd recruitment on every focal
-species + type III on the four FR predators. cod_west (sp0) is run as a POSITIVE CONTROL:
+The base config is built exactly as ``run_calibration`` builds it for ``--phase 14``: the
+certified production Baltic + type III on the four FR predators. (The 2026-11-11 run used the old
+base, production + the frozen phase-13 parameters + Shepherd on every focal species, which was
+not a viable ecosystem post-split; #243.) cod_west (sp0) is run as a POSITIVE CONTROL:
 its K is known to move realized predation strongly, so if it reads as unidentifiable the
 instrument is blind and no verdict on the background predators can be drawn.
 

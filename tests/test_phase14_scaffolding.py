@@ -133,40 +133,31 @@ def _build_phase14_base_config(cal) -> tuple[dict, list[str]]:
     below check the copy instead of the calibrator."""
     from osmose.config.reader import OsmoseConfigReader
 
-    _ensure_phase13_results()
     param_keys, _, _ = cal.get_phase14_params()
     base_config = OsmoseConfigReader().read(cal.BALTIC_CONFIG)
     cal.apply_phase14_base(base_config)
     return base_config, param_keys
 
 
-def test_phase14_base_config_freezes_and_sets_fr(cal):
-    base_config, param_keys = _build_phase14_base_config(cal)
+def test_phase14_base_is_production_plus_type3_fr(cal):
+    """Phase 14 calibrates FR K on top of the certified production model (#243, 2026-11-17).
+    The base must be production with exactly the four FR shape keys added: the old base also
+    froze 40 phase-13 parameters, and on the post-split config that collapsed cod_east and
+    flounder to zero while cod_west reached 1.1-1.7 Mt."""
+    from osmose.config.reader import OsmoseConfigReader
 
-    # All 9 focal species on Shepherd (cod_east sp8 included after the disaggregation)
+    base_config, param_keys = _build_phase14_base_config(cal)
+    production = OsmoseConfigReader().read(cal.BALTIC_CONFIG)
+
+    fr_keys = {f"predation.functional.response.shape.sp{i}" for i in (0, 5, 15, 16)}
+    assert set(base_config) - set(production) == fr_keys
+    assert all(base_config[k] == "type3" for k in fr_keys)
+    changed = {k for k in production if base_config.get(k) != production[k]}
+    assert not changed, f"the base must not change production values: {sorted(changed)[:6]}"
+    # The production model runs Shepherd on every focal species already.
     for sp_idx in range(9):
         assert base_config[f"stock.recruitment.type.sp{sp_idx}"] == "shepherd"
-    # FR type3 on the 4 calibrated predators: cod_west, pikeperch, GreySeal, Cormorant
-    for sp_idx in (0, 5, 15, 16):
-        assert base_config[f"predation.functional.response.shape.sp{sp_idx}"] == "type3"
-    # ...and not on Benthos (sp14), where the pre-split indices used to put it
-    assert "predation.functional.response.shape.sp14" not in base_config
-    # 39+ frozen phase-13 params present (40 minus cod ssbhalf.sp0 which would also be
-    # set explicitly in phase 13; here it comes through the reconstructed JSON)
-    frozen = [
-        k
-        for k in base_config
-        if k.startswith(
-            (
-                "mortality.additional",
-                "fisheries.rate.base",
-                "stock.recruitment.ssbhalf",
-                "stock.recruitment.shape",
-            )
-        )
-    ]
-    assert len(frozen) >= 39, f"expected >=39 frozen phase-13 params, got {len(frozen)}"
-    # The 4 free halfsat keys must be DISJOINT from base_config
+    # The 4 free halfsat keys must be DISJOINT from base_config.
     for k in param_keys:
         assert k not in base_config, f"free param {k} must not be pre-set in base_config"
 
@@ -190,3 +181,17 @@ def test_phase14_single_objective_eval_is_finite(cal):
         "objective returned the failed-simulation sentinel (1e6) — a single phase-14 "
         "eval should produce real biomass stats, not a validation/run failure."
     )
+
+
+def test_phase14_base_is_viable_at_ten_years(cal):
+    """The 2-yr eval above passes any base that runs. It passed the old frozen phase-13 base,
+    which was not a viable ecosystem post-split (#243): cod_east and flounder died out and the
+    40-yr objective hit the ~1026 extinction class. At 10 years that base already scores 31.8 (72
+    at 20). The production base scores 4.81-5.13 over five seeds, so 15 separates the two with
+    room on both sides (measured 2026-11-17)."""
+    base_config, param_keys = _build_phase14_base_config(cal)
+    objective = cal.make_objective(
+        base_config, cal.load_targets(), param_keys, n_years=10, seed=42, use_log_space=True
+    )
+    val = objective(np.zeros(len(param_keys)))
+    assert val < 15.0, f"the phase-14 base is not viable: 10-yr objective {val:.1f} (production ~5)"
