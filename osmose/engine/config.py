@@ -940,7 +940,7 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
     cutoff_vals.extend([0.0] * n_bkg)
     cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
 
-    return {
+    flags = {
         "output_record_frequency": output_record_freq,
         "diet_output_enabled": diet_output,
         "output_step0_include": step0,
@@ -1000,6 +1000,19 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
             cfg.get("output.bioen.sizeinf.enabled", "false").lower() == "true"
         ),
     }
+    # output.minimal.enabled (perf plan item 4): collect only what a calibration objective reads,
+    # i.e. per-species biomass, abundance and yield. Every optional output is switched off here,
+    # so the existing gates skip its collector, its writer and (for the diet) the tracking inside
+    # the mortality kernel; the life-stage split and the age/size distributions, which have no
+    # flag, check ``output_minimal`` in simulate. ``output_step0_include`` decides which steps are
+    # recorded, so it is not an output to skip.
+    minimal = _enabled(cfg, "output.minimal.enabled")
+    if minimal:
+        for key, value in flags.items():
+            if isinstance(value, bool) and key != "output_step0_include":
+                flags[key] = False
+    flags["output_minimal"] = minimal
+    return flags
 
 
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
@@ -2004,6 +2017,9 @@ class EngineConfig:
     #: the linear quantity used directly). Not scalings of each other: linear is proportional, the
     #: recruitment curve saturates, so they diverge most far from the curve's linear region.
     seeding_mode: str = "stock_recruitment"
+    # output.minimal.enabled (perf plan item 4): biomass, abundance and yield only. Defaulted, so it
+    # sits after every required field.
+    output_minimal: bool = False
 
     @cached_property
     def movement_is_random(self) -> NDArray[np.bool_]:
@@ -2773,6 +2789,7 @@ class EngineConfig:
             output_record_frequency=_output["output_record_frequency"],
             diet_output_enabled=_output["diet_output_enabled"],
             output_step0_include=_output["output_step0_include"],
+            output_minimal=_output["output_minimal"],
             movement_seed_fixed=movement_seed_fixed,
             mortality_seed_fixed=mortality_seed_fixed,
             java_compat_rng=java_compat_rng,

@@ -1535,6 +1535,17 @@ def _collect_outputs(
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
     mortality_by_cause = _collect_mortality(state, config)
+    yield_by_species = _collect_yield(state, config)
+    if config.output_minimal:
+        # output.minimal.enabled (perf plan item 4): biomass, abundance and yield only. The
+        # optional outputs are already off (EngineConfig); these have no flag of their own.
+        return StepOutput(
+            step=step,
+            biomass=biomass,
+            abundance=abundance,
+            mortality_by_cause=mortality_by_cause,
+            yield_by_species=yield_by_species,
+        )
     # Deaths must be binned by the stage held AT TIME OF DEATH. Reproduction increments ages and
     # clears is_egg before this runs, so classifying here would charge egg deaths to Juvenil. The
     # caller snapshots the split before reproduction and passes it in; recomputing is the fallback
@@ -1547,7 +1558,6 @@ def _collect_outputs(
     mortality_rate_by_cause_stage = mortality_rates_from_counts(
         mortality_by_cause_stage.transpose(0, 2, 1), abundance_by_stage
     ).transpose(0, 2, 1)
-    yield_by_species = _collect_yield(state, config)
     biomass_by_age, abundance_by_age, biomass_by_size, abundance_by_size = _collect_distributions(
         state, config
     )
@@ -2151,7 +2161,7 @@ def simulate(
         state = _aging_mortality(state, config)
         # Snapshot the life-stage split BEFORE reproduction: it increments ages and clears is_egg,
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
-        stage_split = _collect_by_life_stage(state, config)
+        stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)
         n_before_repro = len(state)
         bioen_seeded: dict[str, NDArray[np.bool_]] = {}
         if config.bioen_enabled:
