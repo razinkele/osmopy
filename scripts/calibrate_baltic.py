@@ -305,6 +305,12 @@ def run_simulation(
 
     cfg = dict(config)
     cfg["simulation.time.nyear"] = str(n_years)
+    # Perf plan item 4: the objective reads biomass and yield only, so every other output is
+    # skipped (diet tracking alone was 5.4% of a one-thread Baltic run). The recruitment
+    # diagnostic reads abundance by age, so it keeps the full outputs. Set before the overrides,
+    # which can turn it off.
+    if not recruitment_ages:
+        cfg["output.minimal.enabled"] = "true"
     cfg.update(overrides)
 
     with tempfile.TemporaryDirectory(prefix="baltic_cal_") as tmpdir:

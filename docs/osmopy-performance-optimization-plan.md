@@ -310,7 +310,11 @@ Baltic runs `mortality.subdt = 10`.
     bioenergetics, which neither config enables.
   - **Local-only, like the core suite:** it compares exactly on CPython 3.12 and skips those
     comparisons on CI.
-- **Left:** an opt-in mode that skips output collectors a calibration objective does not read.
+- **Left, now DONE 2026-11-17** (`docs/perf/2026-11-17-output-minimal.md`): an opt-in mode that skips
+  output collectors a calibration objective does not read. `output.minimal.enabled` makes a one-thread
+  Baltic run 8.7% faster with biomass, abundance and yield bit-identical. Most of the saving is the
+  diet tracking inside the mortality kernel (5.4%), which the tail profile above never saw.
+  `calibrate_baltic.run_simulation` uses it.
 
 **Goal.** Reduce state initialisation, loop overhead and output collection, which together
 are about 14% of a threaded Baltic run (10.5% loop overhead plus 4.0%
