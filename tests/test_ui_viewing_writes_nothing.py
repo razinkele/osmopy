@@ -302,3 +302,51 @@ def test_raising_a_configured_species_count_seeds_through_the_setup_sync():
     assert updates["simulation.nspecies"] == "3"
     assert updates["species.linf.sp2"] == "100.0"
     assert not any(k.endswith((".sp0", ".sp1")) for k in updates)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("simulation.fishing.mortality.enabled", "1"),  # both engines read this as false
+        ("simulation.fishing.mortality.enabled", "yes"),
+        ("simulation.fishing.mortality.enabled", "0"),
+        ("movement.distribution.method.sp0", "Random"),  # a select fell back to its first choice
+        ("predation.predprey.stage.structure", "Size"),
+        ("simulation.fishing.mortality.enabled", " true "),  # padded: the switch shows OFF
+        ("movement.distribution.method.sp0", " maps "),  # padded: matches no option
+    ],
+)
+def test_a_value_its_widget_cannot_show_is_not_rewritten(key, value):
+    """#277. A switch showed "1"/"yes" as ON (both engines read them as false) and wrote "True",
+    turning the setting on; a select showed a value outside its choices ("Random") as its FIRST
+    choice and wrote that. Such a value now renders as raw text and round-trips unchanged."""
+    field = _REGISTRY.match_field(key)
+    idx = 0 if field.indexed else None
+    cfg = {"simulation.nspecies": "1", key: value}
+    values = _values(render_field(field, species_idx=idx, config=cfg))
+    state = AppState()
+    with reactive.isolate():
+        state.config.set(dict(cfg))
+        sync_inputs(_Inputs(values), state, [key])
+        assert state.config.get()[key] == value
+
+
+def test_the_species_table_keeps_values_its_widgets_cannot_show():
+    """#277 through the species table's own render path (it does not use render_field)."""
+    cfg = {
+        "simulation.nspecies": "1",
+        "species.name.sp0": "cod",
+        "stock.recruitment.type.sp0": "Shepherd",  # not exactly a choice
+        "reproduction.rv.gate.species.enabled.sp0": "yes",  # not true/false
+    }
+    table = render_species_table(SPECIES_FIELDS, 1, ["cod"], show_advanced=True, config=cfg)
+    values = _values(table)
+    updates = collect_species_table_updates(
+        SPECIES_FIELDS, 1, cfg, lambda i: getattr(_Inputs(values), i)(), show_advanced=True
+    )
+    changed = {
+        k: (cfg.get(k), v)
+        for k, v in updates.items()
+        if not same_config_value(cfg.get(k), v, _REGISTRY.match_field(k))
+    }
+    assert not changed, changed
