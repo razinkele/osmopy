@@ -119,7 +119,7 @@ class NumbaStep:
         self.tl_ws = np.zeros(self.n_state)
         self.rsc = self.rsc0.copy()
 
-    def run(self, seed: int) -> None:
+    def run(self, seed: int, parallel: bool = True) -> None:
         s, w, t = self.static, self.w, self.tables
         cell_ids = self.cell_of
         valid = np.where(cell_ids >= 0)[0].astype(np.int32)
@@ -136,7 +136,12 @@ class NumbaStep:
         for _ in range(self.n_subdt):
             release = np.where(s["is_egg"] & (egg > 0), w["abundance"] / self.n_subdt, 0.0)
             egg = np.maximum(0, egg - release)
-            mort._mortality_all_cells_numba(
+            # mortality() defaults to parallel=True and simulate never overrides it, so the
+            # production kernel is the prange one, even at one thread (per-cell MT reseed).
+            kernel = (
+                mort._mortality_all_cells_parallel if parallel else mort._mortality_all_cells_numba
+            )
+            kernel(
                 int(rng.integers(0, 2**63)), sorted_idx, boundaries, self.n_cells, inst,
                 self.n_dead, s["eff_s"], s["eff_a"], s["eff_f"], s["disc"], s["species_id"],
                 s["length"], s["weight"], s["age_dt"], s["ffa"], s["stage"], w["psr"], w["preyed"],
@@ -161,40 +166,62 @@ def main() -> None:
     engine = bridge.load()
     spike = engine.Spike.KernelSpike.Load(a.fixture)
 
-    def time_numba(seed: int) -> float:
-        numba_step.reset()
-        t0 = time.perf_counter()
-        numba_step.run(seed)
-        return time.perf_counter() - t0
+    totals: dict[str, list[tuple[float, float]]] = {}
 
-    def time_cs(layout: str, filt: str, seed: int) -> float:
-        spike.Reset()
-        t0 = time.perf_counter()
-        if layout == "regrouped":
-            spike.Regroup()
-        spike.RunStep(layout, filt, "philox", seed)
-        return time.perf_counter() - t0
+    def time_arm(name: str, v, seed: int) -> float:
+        if v is None or isinstance(v, bool):
+            numba_step.reset()
+            t0 = time.perf_counter()
+            numba_step.run(seed, parallel=v is None)
+            dt = time.perf_counter() - t0
+            work = (float(numba_step.n_dead[:, 0].sum()), float(numba_step.w["preyed"].sum()))
+        else:
+            spike.Reset()
+            t0 = time.perf_counter()
+            if v[0] == "regrouped":
+                spike.Regroup()
+            spike.RunStep(v[0], v[1], "philox", seed)
+            dt = time.perf_counter() - t0
+            work = tuple(float(x) for x in str(spike.Totals()).split())
+        totals.setdefault(name, []).append(work)  # type: ignore[arg-type]
+        return dt
 
-    arms = [("numba", None)] + [(f"cs-{lay}-{f}", (lay, f)) for lay, f in VARIANTS]
-    for _, v in arms:  # warm-up: JIT on both sides
-        time_numba(0) if v is None else time_cs(*v, 0)
+    # numba-parallel is the gate: production's kernel at one thread. numba-serial is shown too.
+    arms: list[tuple[str, object]] = [("numba-parallel", None), ("numba-serial", False)]
+    arms += [(f"cs-{lay}-{f}", (lay, f)) for lay, f in VARIANTS]
+    warmup: dict[str, list[float]] = {}
+    for name, v in arms:  # tiered JIT / PGO on .NET, compile + cache load on Numba
+        warmup[name] = [time_arm(name, v, 0) for _ in range(12 if name.startswith("cs") else 3)]
     times: dict[str, list[float]] = {name: [] for name, _ in arms}
     for r in range(a.rounds):
         rotated = arms[r % len(arms) :] + arms[: r % len(arms)]
         for name, v in rotated:
-            times[name].append(time_numba(r + 1) if v is None else time_cs(*v, r + 1))
+            times[name].append(time_arm(name, v, r + 1))
 
     med = {k: statistics.median(v) for k, v in times.items()}
-    print(f"{'arm':24s} {'median s':>9s} {'Numba / arm':>12s}  per-round ratio range")
+    gate = "numba-parallel"
+    print(f"{'arm':24s} {'median s':>9s} {'gate/arm':>9s} {'serial/arm':>10s}  gate/arm per round")
     for name, _ in arms:
-        ratios = [n / c for n, c in zip(times["numba"], times[name], strict=True)]
+        ratios = [n / c for n, c in zip(times[gate], times[name], strict=True)]
         print(
-            f"{name:24s} {med[name]:9.4f} {med['numba'] / med[name]:12.3f}  [{min(ratios):.3f}, {max(ratios):.3f}]"
+            f"{name:24s} {med[name]:9.4f} {med[gate] / med[name]:9.3f} "
+            f"{med['numba-serial'] / med[name]:10.3f}  [{min(ratios):.3f}, {max(ratios):.3f}]"
         )
+    print("work per arm, median over timed runs (predation deaths, preyed biomass):")
+    for name, _ in arms:
+        d = [w[0] for w in totals[name][-a.rounds :]]
+        b = [w[1] for w in totals[name][-a.rounds :]]
+        print(f"  {name:24s} {statistics.median(d):.6g} {statistics.median(b):.6g}")
+    env = {k: v for k, v in os.environ.items() if k.startswith(("DOTNET_", "NUMBA_"))}
+    print("env:", env)
     if a.json:
         Path(a.json).write_text(
-            json.dumps({"rounds": a.rounds, "times": times, "median": med}, indent=1)
-        )
+            json.dumps(
+                {"rounds": a.rounds, "times": times, "median": med, "warmup": warmup,
+                 "totals": totals, "env": env, "fixture": a.fixture},
+                indent=1,
+            )
+        )  # fmt: skip
     spike.Dispose()
 
 

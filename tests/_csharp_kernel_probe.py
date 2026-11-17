@@ -27,8 +27,13 @@ try:
             spike.RunStep(layout, filt, "injected", 0)
             rows = {}
             for line in str(spike.Compare()).strip().splitlines():
-                name, ndiff, max_abs, max_rel = line.split()
-                rows[name] = {"n_diff": int(ndiff), "max_abs": max_abs, "max_rel": float(max_rel)}
+                name, ndiff, max_abs, max_rel, max_scaled = line.split()
+                rows[name] = {
+                    "n_diff": int(ndiff),
+                    "max_abs": float(max_abs),
+                    "max_rel": float(max_rel),
+                    "max_scaled": float(max_scaled),
+                }
             result["runs"][f"{layout}/{filt}"] = rows
             result["digests"][f"{layout}/{filt}"] = str(spike.ResultDigest())
 finally:

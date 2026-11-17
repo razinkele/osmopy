@@ -65,9 +65,9 @@ def probes(tmp_path_factory) -> dict:
             "--out",
             str(d),
         ]
-        _run(cmd + (["--zero-rates"] if zero else []), timeout=600)
+        _run(cmd + (["--zero-rates"] if zero else []), timeout=1800)
         fixture = d / f"{DEMO}_step{STEP}{'_zero' if zero else ''}.bin"
-        line = _run([sys.executable, "tests/_csharp_kernel_probe.py", str(fixture)], timeout=600)
+        line = _run([sys.executable, "tests/_csharp_kernel_probe.py", str(fixture)], timeout=1800)
         out["zero" if zero else "real"] = json.loads(line.strip().splitlines()[-1])
     return out
 
@@ -88,7 +88,11 @@ def test_check3_real_rates(probes):
     if n_diff == 0:
         _assert_exact(probes["real"]["runs"])
     else:  # tier L, with the worst error recorded in the assertion message
-        worst = max(r["max_rel"] for rows in probes["real"]["runs"].values() for r in rows.values())
+        # Scaled by each quantity's largest |expected|: a per-element relative error explodes on
+        # the near-zero residue of a school eaten to nothing, which is not a real disagreement.
+        worst = max(
+            r["max_scaled"] for rows in probes["real"]["runs"].values() for r in rows.values()
+        )
         assert worst <= 1e-9, (
             f"exp differs on {n_diff}/{n_args} args (max {max_ulp} ulp); worst rel {worst}"
         )

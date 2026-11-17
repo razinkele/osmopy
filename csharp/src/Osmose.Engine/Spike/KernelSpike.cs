@@ -331,19 +331,24 @@ public sealed class KernelSpike : IDisposable
 
     /// <summary>
     /// Compares the last run's outputs with the oracle's. One line per quantity:
-    /// <c>name n_bit_diff max_abs max_rel</c>. Bit differences are counted with NaN == NaN.
+    /// <c>name n_bit_diff max_abs max_rel max_scaled</c>, where <c>max_scaled</c> is the largest
+    /// absolute difference over the largest |expected| of that quantity (robust to near-zero values). Bit differences are counted with NaN == NaN.
     /// </summary>
     public string Compare()
     {
         var sb = new StringBuilder();
-        double[] got = new double[_n];
         void Row(string name, string expectedName, Func<int, double> pick, int cols = 1, int col = 0)
         {
             ReadOnlySpan<double> exp = _fixture.TryGet(expectedName, out BundleEntry e)
                 ? e.AsSpan<double>()
                 : throw new InvalidOperationException($"fixture lacks {expectedName}");
             int diff = 0;
-            double maxAbs = 0, maxRel = 0;
+            double maxAbs = 0, maxRel = 0, scale = 0;
+            for (int i = 0; i < _n; i++)
+            {
+                scale = Math.Max(scale, Math.Abs(exp[(i * cols) + col]));
+            }
+
             for (int i = 0; i < _n; i++)
             {
                 double a = pick(i), b = exp[(i * cols) + col];
@@ -356,7 +361,8 @@ public sealed class KernelSpike : IDisposable
                 }
             }
 
-            sb.Append(CultureInfo.InvariantCulture, $"{name} {diff} {maxAbs:R} {maxRel:R}\n");
+            double scaled = scale > 0 ? maxAbs / scale : maxAbs;
+            sb.Append(CultureInfo.InvariantCulture, $"{name} {diff} {maxAbs:R} {maxRel:R} {scaled:R}\n");
         }
 
         bool idx = _lastLayout == "indexed";
@@ -377,22 +383,40 @@ public sealed class KernelSpike : IDisposable
         _fixture.TryGet("expected.resources_biomass", out BundleEntry re);
         ReadOnlySpan<double> rexp = re.AsSpan<double>();
         int rdiff = 0;
-        double rmax = 0;
+        double rmax = 0, rabs = 0, rscale = 0;
         for (int rr = 0; rr < _nRsc; rr++)
         {
             for (int c = 0; c < _nCells; c++)
             {
                 double a = _rsc[(c * _nRsc) + rr], b = rexp[(rr * _nCells) + c];
+                rscale = Math.Max(rscale, Math.Abs(b));
                 if (BitConverter.DoubleToInt64Bits(a) != BitConverter.DoubleToInt64Bits(b))
                 {
                     rdiff++;
+                    rabs = Math.Max(rabs, Math.Abs(a - b));
                     rmax = Math.Max(rmax, Math.Abs(a - b) / Math.Max(Math.Abs(b), double.Epsilon));
                 }
             }
         }
 
-        sb.Append(CultureInfo.InvariantCulture, $"resources_biomass {rdiff} - {rmax:R}\n");
+        double rscaled = rscale > 0 ? rabs / rscale : rabs;
+        sb.Append(CultureInfo.InvariantCulture, $"resources_biomass {rdiff} {rabs:R} {rmax:R} {rscaled:R}\n");
         return sb.ToString();
+    }
+
+    /// <summary>Work done by the last run, "predation_deaths preyed_biomass" (sums over schools), so a
+    /// timed arm can be checked to have done as much eating as the Numba arm.</summary>
+    public string Totals()
+    {
+        bool idx = _lastLayout == "indexed";
+        double dead = 0, preyed = 0;
+        for (int i = 0; i < _n; i++)
+        {
+            dead += idx ? _icore[_pythonIndex[i]].DeadPredation : _core[i].DeadPredation;
+            preyed += idx ? _istep[_pythonIndex[i]].PreyedBiomass : _stepArr[i].PreyedBiomass;
+        }
+
+        return string.Create(CultureInfo.InvariantCulture, $"{dead:R} {preyed:R}");
     }
 
     /// <summary>SHA-256 over the bits of every output of the last run, in state-index order, so two
