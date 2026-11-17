@@ -42,8 +42,9 @@ def movement_server(input, output, session, state: AppState):
         state.load_trigger.get()
         with reactive.isolate():
             cfg = state.config.get()
-        state.mark_rendered("movement.global")
-        return ui.div(*[render_field(f, config=cfg) for f in global_fields if not f.advanced])
+        gen_input = state.mark_rendered("movement.global")
+        content = ui.div(*[render_field(f, config=cfg) for f in global_fields if not f.advanced])
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @render.ui
     def species_movement_panels():
@@ -55,8 +56,9 @@ def movement_server(input, output, session, state: AppState):
         panels = []
         for i in range(n_species):
             panels.extend([render_field(f, species_idx=i, config=cfg) for f in per_species])
-        state.mark_rendered("movement.species")
-        return ui.div(*panels)
+        gen_input = state.mark_rendered("movement.species")
+        content = ui.div(*panels)
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @render.ui
     def map_panels():
@@ -72,8 +74,9 @@ def movement_server(input, output, session, state: AppState):
                 *[render_field(f, species_idx=i, config=cfg) for f in map_fields],
             )
             panels.append(card)
-        state.mark_rendered("movement.maps")
-        return ui.div(*panels)
+        gen_input = state.mark_rendered("movement.maps")
+        content = ui.div(*panels)
+        return ui.TagList(gen_input, content)  # see mark_rendered
 
     @reactive.effect
     def sync_movement_inputs():

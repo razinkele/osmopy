@@ -23,16 +23,23 @@ _PAGES = Path(__file__).resolve().parent.parent / "ui" / "pages"
 
 
 class _RecordingInput:
-    """Fake Shiny input that answers every id and records which ids were read."""
+    """Fake Shiny input that answers every id and records which ids were read.
 
-    def __init__(self, value):
+    A render-generation input (``render_gen_input_id``) answers ``gen``, the browser's view of
+    the load generation: the default 0 is a fresh ``AppState``'s, so these tests model a browser
+    that has the current render unless they say otherwise (#283)."""
+
+    def __init__(self, value, gen=0):
         self.value = value
+        self.gen = gen
         self.read: list[str] = []
 
     def __getattr__(self, name):
-        if name in ("value", "read"):
+        if name in ("value", "read", "gen"):
             raise AttributeError(name)
         self.read.append(name)
+        if name.startswith("osm_render_gen_"):
+            return lambda: str(self.gen)
         return lambda: self.value
 
 
@@ -172,6 +179,8 @@ def test_an_unrendered_input_does_not_abort_the_other_keys():
                     raise SilentException()
 
                 return _raise
+            if name.startswith("osm_render_gen_"):
+                return lambda: "0"  # the browser has the current render (generation 0)
             return lambda: "51"
 
     state = AppState()
@@ -235,3 +244,63 @@ def test_a_file_upload_value_never_overwrites_a_path():
         )
         assert changed == {}
         assert state.config.get()["grid.netcdf.file"] == "baltic_grid.nc"
+
+
+class _Inputs:
+    """Fake Shiny ``input`` answering only the ids given (others raise, like a missing input)."""
+
+    def __init__(self, values):
+        self._v = values
+
+    def __getattr__(self, name):
+        if name.startswith("_") or name not in self._v:
+            raise AttributeError(name)
+        return lambda: self._v[name]
+
+
+def test_values_from_an_older_render_are_never_written():
+    """#283. The server marks a render current the moment it builds it, but the browser can still
+    deliver values from the PREVIOUS render afterwards: on the Grid page, visible during every load,
+    a fresh session's placeholder corners (0) arrived after minimal's render and were written over
+    "45.0" (then "45" when the real values came: the file's value reformatted). Each render now
+    carries its load generation in a hidden input, and a sync writes only values that arrive with
+    the current one."""
+    from ui.state import render_gen_input_id
+
+    gen_id = render_gen_input_id("grid.fields")
+    state = AppState()
+    with reactive.isolate():
+        state.config.set({"grid.upleft.lat": "45.0"})
+        state.load_trigger.set(2)
+        state.mark_rendered("grid.fields")  # the server built generation 2
+        stale = _Inputs({"grid_upleft_lat": 0, gen_id: "1"})  # the browser is still on 1
+        sync_inputs(stale, state, ["grid.upleft.lat"], rendered="grid.fields")
+        assert state.config.get()["grid.upleft.lat"] == "45.0"
+        fresh = _Inputs({"grid_upleft_lat": 46, gen_id: "2"})
+        sync_inputs(fresh, state, ["grid.upleft.lat"], rendered="grid.fields")
+        assert state.config.get()["grid.upleft.lat"] == "46"
+
+
+def test_every_render_includes_its_generation_input():
+    """Static guard (#283): ``mark_rendered`` returns the hidden input that carries the render's
+    load generation, and the browser must receive it. A render that drops the return value never
+    sends its generation, so ``rendered_current(..., input=)`` stays False and every edit on that
+    page is silently dropped. Every call must be assigned, and every call that the pages make to
+    ``rendered_current`` must pass ``input=``."""
+    bare: list[str] = []
+    no_input: list[str] = []
+    for path in sorted(_PAGES.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                func = node.value.func
+                if getattr(func, "attr", "") == "mark_rendered":
+                    bare.append(f"{path.name}:{node.lineno}")
+            if (
+                isinstance(node, ast.Call)
+                and getattr(node.func, "attr", "") == "rendered_current"
+                and "input" not in {k.arg for k in node.keywords}
+            ):
+                no_input.append(f"{path.name}:{node.lineno}")
+    assert bare == [], f"mark_rendered() return value dropped (generation never sent): {bare}"
+    assert no_input == [], f"rendered_current() without input= (server-side check only): {no_input}"
