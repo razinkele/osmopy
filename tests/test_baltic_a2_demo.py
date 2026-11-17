@@ -53,16 +53,42 @@ STORED_LARVA = {
     "mortality.additional.larva.rate.sp6": "9.099437588514068",
     "mortality.additional.larva.rate.sp7": "6.555567116822193",
 }
-EXPECTED_MORTALITY_RAW = {**STORED_LARVA, **CONVERGED_ADULT}  # what the CSV literally contains
+# cod_east (sp8) did not exist when A2 was calibrated (the cod split came two weeks later, #273):
+# it carries baltic's production rates, uncalibrated under A2, read from baltic's own file.
+COD_EAST_PRODUCTION = {
+    k: v
+    for k, v in (
+        line.split(";", 1)
+        for line in (DATA / "baltic" / "baltic_param-additional-mortality.csv")
+        .read_text()
+        .split("\n")
+        if line.strip() and not line.startswith("#") and ";" in line
+    )
+    if k.endswith(".sp8")
+}
+EXPECTED_MORTALITY_RAW = {**STORED_LARVA, **CONVERGED_ADULT, **COD_EAST_PRODUCTION}
+ZOO_REGROWTH = "1.0580953986747008"
+# Post-split resource indices (baltic_param-ltl.csv): phytoplankton sp9-10 regrow fast, the three
+# zooplankton groups and benthos (sp11-14) at the converged A2 rate. The pre-split file used
+# sp8-13, so after the split it gave cod_east a regrowth rate, Dinoflagellates the zooplankton
+# rate and Benthos none (#273).
 EXPECTED_DEPLETION = {
     "ltl.depletable.enabled": "true",
     "ltl.depletable.floor": "0.05",
-    "species.regrowth.rate.sp8": "5.0",
     "species.regrowth.rate.sp9": "5.0",
-    "species.regrowth.rate.sp10": "1.0580953986747008",
-    "species.regrowth.rate.sp11": "1.0580953986747008",
-    "species.regrowth.rate.sp12": "1.0580953986747008",
-    "species.regrowth.rate.sp13": "1.0580953986747008",
+    "species.regrowth.rate.sp10": "5.0",
+    "species.regrowth.rate.sp11": ZOO_REGROWTH,
+    "species.regrowth.rate.sp12": ZOO_REGROWTH,
+    "species.regrowth.rate.sp13": ZOO_REGROWTH,
+    "species.regrowth.rate.sp14": ZOO_REGROWTH,
+}
+REGROWTH_BY_RESOURCE = {
+    "Diatoms": "5.0",
+    "Dinoflagellates": "5.0",
+    "Microzooplankton": ZOO_REGROWTH,
+    "Mesozooplankton": ZOO_REGROWTH,
+    "Macrozooplankton": ZOO_REGROWTH,
+    "Benthos": ZOO_REGROWTH,
 }
 
 
@@ -163,3 +189,25 @@ def test_java_guard_depletion_check_direct():
     # Non-depletable config with no background is still Java-runnable (regression guard).
     assert java_engine_block_reason({"ltl.depletable.enabled": "false"}) is None
     assert java_engine_block_reason({}) is None
+
+
+def test_a2_regrowth_rates_land_on_the_right_resources(tmp_path):
+    """Matched by NAME, so an index shift (a species added before the resources) fails here
+    instead of silently moving rates onto the wrong groups, as the cod split did (#273)."""
+    out = osmose_demo("baltic_a2", tmp_path)
+    loaded = dict(OsmoseConfigReader().read(str(out["config_file"])))
+    got = {
+        loaded[f"species.name.sp{k.rsplit('sp', 1)[1]}"]: v
+        for k, v in loaded.items()
+        if k.startswith("species.regrowth.rate.sp")
+    }
+    assert got == REGROWTH_BY_RESOURCE
+
+
+def test_a2_cod_east_has_production_mortality(tmp_path):
+    out = osmose_demo("baltic_a2", tmp_path)
+    loaded = dict(OsmoseConfigReader().read(str(out["config_file"])))
+    baltic = dict(OsmoseConfigReader().read(str(DATA / "baltic" / "baltic_all-parameters.csv")))
+    assert loaded["species.name.sp8"] == "cod_east"
+    for key in ("mortality.additional.rate.sp8", "mortality.additional.larva.rate.sp8"):
+        assert loaded[key] == baltic[key], key

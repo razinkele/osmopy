@@ -159,17 +159,19 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "(background staging).",
     },
     "baltic_a2": {
-        "title": "Baltic Sea (A2-calibrated)",
+        "title": "Baltic Sea (A2-calibrated, pre-split)",
         "region": "Central/Eastern Baltic",
-        "species": "8 focal species",
+        "species": "9 focal species (cod as cod_west + cod_east)",
         "resources": "6 LTL (depletable plankton) + 2 background groups",
         "engine": "Python",
-        "summary": "The Baltic demo with depletable plankton (Chunk A2) and the converged DE "
-        "mortality calibration. Best-achievable community fit, NOT fully ICES-calibrated: "
-        "herring, sprat and stickleback land in-band and cod sits just above band, while the "
-        "coastal percids (perch/pike-perch) stay structurally over at this grid resolution. A2 "
-        "compresses the A2-off overshoot (17-400x) down to near-band. Python engine only "
-        "(depletable plankton has no Java equivalent).",
+        "summary": "The Baltic demo with depletable plankton (Chunk A2) and its converged DE "
+        "mortality calibration. That calibration PREDATES the July 2026 cod split: cod_west "
+        "carries the values fitted to the aggregate cod stock, and cod_east runs on the "
+        "production Baltic mortality, uncalibrated under A2. The fit it reached before the split "
+        "was the best achievable community fit, NOT fully ICES-calibrated: herring, sprat and "
+        "stickleback in-band, cod just above band, coastal percids (perch/pike-perch) "
+        "structurally over at this grid resolution. Python engine only (depletable plankton has "
+        "no Java equivalent).",
     },
     "baltic_depensation": {
         "title": "Baltic Sea (depensation/Allee)",
