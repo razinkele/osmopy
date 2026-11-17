@@ -143,13 +143,15 @@ def render_field(
                 value=cfg_val,
                 placeholder="multi-value array (read-only here)",
             )
-        if _unparseable_number(field, cfg_val):
-            # Never show the default in place of a value that does not parse ("25,5", "2.3,"):
-            # sync_inputs would write the default back and silently replace it. The raw text stays
-            # in an editable input, round-trips unchanged, and the validator reports it.
+        if _unrepresentable(field, cfg_val):
+            # Never show something else in place of a value the widget cannot represent: the sync
+            # would write it back and silently replace the user's value. The raw text stays in an
+            # editable input, round-trips unchanged, and the validator reports it.
             base_label = field.description or field.key_pattern
             return ui.input_text(
-                input_id, f"{base_label} (not a number — fix here)", value=str(cfg_val)
+                input_id,
+                f"{base_label} ({_unrepresentable_note(field)} — fix here)",
+                value=str(cfg_val),
             )
 
     # Resolve initial value: config takes priority over field.default
@@ -419,20 +421,44 @@ def seed_new_species(
     return seeded
 
 
-def _unparseable_number(field: OsmoseField, raw: object) -> bool:
-    """A numeric field's config value that is present but does not parse as its type, and is not a
-    multi-value array (those are handled read-only). Such a cell must show the raw text: falling
-    back to the default would let the sync write the default over the user's value."""
-    if field.param_type not in (ParamType.FLOAT, ParamType.INT) or raw is None:
+def _unrepresentable(field: OsmoseField, raw: object) -> bool:
+    """A config value that is set but that the field's widget cannot show exactly, so the cell
+    must show the raw text: the widget would show something else, and the sync would write that
+    back over the user's value.
+
+    - A number that does not parse as its type ("25,5", "2.3,"). A multi-value array is handled
+      read-only elsewhere.
+    - A boolean other than true/false in any case (#277). A switch showed "1" or "yes" as ON while
+      both engines read them as false, and wrote "True", turning the setting on.
+    - An enum value that is not exactly one of the choices (#277). A select fell back to its FIRST
+      choice: "Random" became "maps".
+
+    An empty or "null" value counts as unset (see ``untouched_unset``), not as unrepresentable.
+    """
+    if raw is None:
         return False
     text = str(raw).strip()
-    if not text or is_multi_value(text, field):
+    if not text or text.lower() == "null" or is_multi_value(text, field):
         return False
-    try:
-        float(text) if field.param_type == ParamType.FLOAT else int(text)
-    except ValueError:
-        return True
+    if field.param_type in (ParamType.FLOAT, ParamType.INT):
+        try:
+            float(text) if field.param_type == ParamType.FLOAT else int(text)
+        except ValueError:
+            return True
+        return False
+    if field.param_type == ParamType.BOOL:
+        return text.lower() not in ("true", "false")
+    if field.param_type == ParamType.ENUM:
+        return bool(field.choices) and text not in field.choices
     return False
+
+
+def _unrepresentable_note(field: OsmoseField) -> str:
+    if field.param_type in (ParamType.FLOAT, ParamType.INT):
+        return "not a number"
+    if field.param_type == ParamType.BOOL:
+        return "not true/false"
+    return "not one of the choices"
 
 
 def _age_based_maturity(field: OsmoseField, config: dict[str, str] | None, sp_idx: int) -> bool:
@@ -662,10 +688,11 @@ def render_species_table(
                         class_="osm-multivalue-readonly-label",
                         style="color: #5a6a7a; font-size: 11px; font-family: monospace;",
                     )
-                elif config and _unparseable_number(field, config.get(config_key)):
-                    # Raw text, not the default: the sync would write a default back over a value
-                    # that merely fails to parse ("2.3,", "25,5"). It round-trips unchanged until
-                    # edited, and the validator reports it.
+                elif config and _unrepresentable(field, config.get(config_key)):
+                    # Raw text, not what the widget would show instead: the sync would write that
+                    # back over a value it cannot represent ("2.3,", a "yes" switch, an enum value
+                    # outside the choices). It round-trips unchanged until edited, and the
+                    # validator reports it.
                     widget = ui.input_text(
                         input_id, "", value=str(config[config_key]), width="90px"
                     )
