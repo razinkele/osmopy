@@ -79,7 +79,9 @@ def capture(cfg: dict[str, str], seed: int, step: int) -> dict:
                 fleet_state=None if ctx is None else copy.deepcopy(ctx.fleet_state),
             )
             raise _Captured
-        return real(state, resources, config_, rng_, grid_, step=step, species_rngs=species_rngs, ctx=ctx)
+        return real(
+            state, resources, config_, rng_, grid_, step=step, species_rngs=species_rngs, ctx=ctx
+        )
 
     target = step
     sim._mortality = spy
@@ -117,7 +119,9 @@ def build(snap: dict, zero_rates: bool, draw_seed: int) -> Bundle:
         access = config.accessibility_matrix if has_access else mort._DUMMY_ACCESS
         use_stage = False
     if snap["prey_density_scale"] is not None and has_access:
-        raise SystemExit("dynamic accessibility (prey-density scaling) is outside the spike's scope")
+        raise SystemExit(
+            "dynamic accessibility (prey-density scaling) is outside the spike's scope"
+        )
 
     cell_ids = state.cell_y * grid.nx + state.cell_x
     valid_idx = np.where((state.cell_x >= 0) & (state.cell_y >= 0))[0].astype(np.int32)
@@ -185,11 +189,14 @@ def build(snap: dict, zero_rates: bool, draw_seed: int) -> Bundle:
         "fixture.n_species": config.n_species, "fixture.n_cells": n_cells, "fixture.n_resources": n_rsc,
         "fixture.has_access": int(has_access), "fixture.use_stage_access": int(use_stage),
         "fixture.zero_rates": int(zero_rates), "fixture.mortality_sha": int(sha[:15], 16),
+        "fixture.n_state": len(state), "fixture.bioen": int(config.bioen_enabled),
     }.items():  # fmt: skip
         b.set_int(name, int(value))
 
     def school(name, arr, dtype):
-        b.set_array(f"school.{name}", np.ascontiguousarray(np.asarray(arr)[sorted_idx], dtype=dtype))
+        b.set_array(
+            f"school.{name}", np.ascontiguousarray(np.asarray(arr)[sorted_idx], dtype=dtype)
+        )
 
     for name, arr, dt in [
         ("species_id", state.species_id, np.int32), ("length", state.length, np.float64),
@@ -206,13 +213,23 @@ def build(snap: dict, zero_rates: bool, draw_seed: int) -> Bundle:
     ]:  # fmt: skip
         school(name, arr, dt)
     b.set_array("cell.start", boundaries.astype(np.int64))
-    b.set_array("species.size_ratio_min", np.ascontiguousarray(config.size_ratio_min, dtype=np.float64))
-    b.set_array("species.size_ratio_max", np.ascontiguousarray(config.size_ratio_max, dtype=np.float64))
+    b.set_array("school.python_index", sorted_idx.astype(np.int32))  # state index of each school
+    b.set_array(
+        "species.size_ratio_min", np.ascontiguousarray(config.size_ratio_min, dtype=np.float64)
+    )
+    b.set_array(
+        "species.size_ratio_max", np.ascontiguousarray(config.size_ratio_max, dtype=np.float64)
+    )
     b.set_array("species.ingestion_rate", np.asarray(config.ingestion_rate, dtype=np.float64))
     b.set_array("species.fr_shape", np.asarray(config.fr_shape, dtype=np.int32))
     b.set_array("species.fr_halfsat", np.asarray(config.fr_halfsat, dtype=np.float64))
     b.set_array("access.matrix", np.ascontiguousarray(access, dtype=np.float64))
-    b.set_array("resources.biomass", np.ascontiguousarray(resources.biomass if resources is not None else rsc_bio, dtype=np.float64))
+    b.set_array(
+        "resources.biomass",
+        np.ascontiguousarray(
+            resources.biomass if resources is not None else rsc_bio, dtype=np.float64
+        ),
+    )
     b.set_array("resources.size_min", np.asarray(rsc_sm, dtype=np.float64).reshape(-1))
     b.set_array("resources.size_max", np.asarray(rsc_sx, dtype=np.float64).reshape(-1))
     b.set_array("resources.trophic_level", np.asarray(rsc_tl, dtype=np.float64).reshape(-1))
