@@ -278,6 +278,11 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--draw-seed", type=int, default=20261117)
     p.add_argument("--zero-rates", action="store_true", help="tier-E fixture: no exp anywhere")
+    p.add_argument(
+        "--both",
+        action="store_true",
+        help="write the real-rate AND the zero-rate fixture from one capture",
+    )
     p.add_argument("--out", required=True, help="output directory")
     a = p.parse_args()
 
@@ -286,14 +291,18 @@ def main() -> None:
         ndt = int(cfg.get("simulation.time.ndtperyear", "24"))
         cfg["simulation.time.nyear"] = str(a.step // ndt + 1)
         snap = capture(cfg, a.seed, a.step)
-        bundle = build(snap, a.zero_rates, a.draw_seed)
+        variants = [False, True] if a.both else [a.zero_rates]
+        # build() works on its own copies, but deep-copy anyway: the two fixtures must start
+        # from the identical snapshot.
+        bundles = {z: build(copy.deepcopy(snap), z, a.draw_seed) for z in variants}
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     stem = a.demo or Path(a.config).stem
-    path = out / f"{stem}_step{a.step}{'_zero' if a.zero_rates else ''}.bin"
-    bundle.save(path)
-    n = len(bundle.get("school.length"))  # type: ignore[arg-type]
-    print(f"wrote {path} ({n} located schools, {path.stat().st_size / 1e6:.1f} MB)")
+    for zero, bundle in bundles.items():
+        path = out / f"{stem}_step{a.step}{'_zero' if zero else ''}.bin"
+        bundle.save(path)
+        n = len(bundle.get("school.length"))  # type: ignore[arg-type]
+        print(f"wrote {path} ({n} located schools, {path.stat().st_size / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":
