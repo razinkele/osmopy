@@ -77,10 +77,11 @@ class _EvalSpec:
 _WORKER_PROBLEM: OsmoseCalibrationProblem | None = None
 
 # Threads per C# evaluation. Calibration scales across candidates (the pool's W workers), so
-# each run gets one thread and W workers never oversubscribe the cores: plan task 1.12 and the
-# calibration row of spec 10.4, "W workers x 1 thread". C# results are identical at any thread
-# count (task 1.9), so this changes speed only, never a score. Explicit, so a change to
-# CSharpEngine's own default cannot move calibration.
+# each run gets one thread and the pool uses W threads in all: plan task 1.12 and the
+# calibration row of spec 10.4, "W workers x 1 thread". (The worker count is set elsewhere and
+# can still exceed the cores.) C# results are identical at any thread count (task 1.9), so this
+# changes speed only, never a score. Explicit, so a change to CSharpEngine's own default cannot
+# move calibration.
 CSHARP_THREADS_PER_EVAL = 1
 
 

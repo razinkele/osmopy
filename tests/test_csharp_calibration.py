@@ -56,14 +56,19 @@ def _problem(cfg, work, obs, cache, **kw) -> OsmoseCalibrationProblem:
     )  # fmt: skip
 
 
-def test_a_csharp_generation_runs_on_forkserver_workers_and_never_reuses_python_results(tmp_path):
+def test_a_csharp_generation_runs_on_forkserver_workers_and_never_reuses_python_results(
+    tmp_path, monkeypatch
+):
     _need_engine()
+    monkeypatch.setenv("OSMOSE_NSGA2_WORKERS", "2")  # an inherited value would resize the pool
     from osmose.engine_cs import bridge
 
     cfg, cache = _base_config(tmp_path), tmp_path / "cache"
     # "Observed" = the Python engine's own unmodified run, so every objective is finite.
     base = _problem(cfg, tmp_path / "base", None, None)
-    with base._run_python_engine({}, run_id=0) as r:
+    baseline = base._run_python_engine({}, run_id=0)
+    assert baseline is not None, "the Python baseline run failed (see the log)"
+    with baseline as r:
         obs = _biomass_long(r.biomass())
 
     py = _problem(cfg, tmp_path / "py", obs, cache)  # in this process: Python is safe here
@@ -79,19 +84,19 @@ def test_a_csharp_generation_runs_on_forkserver_workers_and_never_reuses_python_
         cs._evaluate(X, out_cs)
         assert cs._executor is not None
         assert cs._executor._mp_context.get_start_method() == "forkserver"
+        assert cs._executor._max_workers == 2
     finally:
         cs.shutdown_pool()
 
     # The workers ran the C# engine; this process never hosted the CLR.
     assert "clr" not in sys.modules and bridge._engine is None
     assert np.all(np.isfinite(out_cs["F"]))
-    # Not served from the Python cache: four new entries, and scores the Python engine did not
-    # produce (the engines share no random stream, so no score coincides).
-    assert len(set(cache.iterdir()) - py_entries) == len(X)
-    assert not np.any(np.isclose(out_cs["F"], out_py["F"], rtol=1e-12, atol=0.0)), (
-        out_cs["F"],
-        out_py["F"],
-    )
+    # Not served from the Python cache: each candidate's C# entry was absent after the Python
+    # generation and is present after the C# one (the candidates' overrides, as the problem
+    # builds them), and nothing else was added.
+    cs_entries = {cache / f"{cs._cache_key({PARAMS[0].key: str(x[0])})}.json" for x in X}
+    assert not cs_entries & py_entries
+    assert set(cache.iterdir()) - py_entries == cs_entries
 
 
 def test_each_csharp_evaluation_asks_for_one_thread(tmp_path, monkeypatch):
