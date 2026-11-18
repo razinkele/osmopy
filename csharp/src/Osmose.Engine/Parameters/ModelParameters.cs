@@ -169,6 +169,37 @@ public sealed class ResourceParameters
 
 /// <summary>Reads the model groups from a bundle through one <see cref="BundleReader"/>, so every
 /// missing entry or wrong shape lands in the same problem list as the header's.</summary>
+/// <summary>Reproduction (bundle group <c>reproduction</c>, focal species, spec 6.8).</summary>
+public sealed class ReproductionParameters
+{
+    public double[] SexRatio { get; init; } = [];
+
+    public double[] RelativeFecundity { get; init; } = [];
+
+    public double[] MaturitySize { get; init; } = [];
+
+    public int[] MaturityAgeDt { get; init; } = [];
+
+    public double[] SeedingBiomass { get; init; } = [];
+
+    /// <summary>Seeding applies while <c>step &lt; SeedingMaxStep</c>.</summary>
+    public int[] SeedingMaxStep { get; init; } = [];
+
+    /// <summary><c>[step, species]</c>: the spawning-season share of the step.</summary>
+    public double[] SeasonByStep { get; init; } = [];
+
+    public double[] EggLength { get; init; } = [];
+
+    /// <summary>Egg weight in tonnes, resolved by the builder exactly as <c>create_egg_schools</c>.</summary>
+    public double[] EggWeight { get; init; } = [];
+
+    /// <summary>Stock-recruitment curve per species: 0 none (phase 1); others are phase 2.</summary>
+    public byte[] SrType { get; init; } = [];
+
+    /// <summary>0 stock_recruitment, 1 linear.</summary>
+    public int SeedingMode { get; init; }
+}
+
 /// <summary>Movement (bundle group <c>movement</c>, spec 6.11).</summary>
 public sealed class MovementParameters
 {
@@ -349,6 +380,21 @@ internal static class ModelReader
             AccessByStep = r.Array("resources.accessibility_by_step", DType.F8, nSteps, n)?.ToArray<double>() ?? [],
         };
     }
+
+    public static ReproductionParameters Reproduction(BundleReader r, int nSteps, int nFocal) => new()
+    {
+        SexRatio = F8(r, "reproduction.sex_ratio", nFocal),
+        RelativeFecundity = F8(r, "reproduction.relative_fecundity", nFocal),
+        MaturitySize = F8(r, "reproduction.maturity_size", nFocal),
+        MaturityAgeDt = I4(r, "reproduction.maturity_age_dt", nFocal),
+        SeedingBiomass = F8(r, "reproduction.seeding_biomass", nFocal),
+        SeedingMaxStep = I4(r, "reproduction.seeding_max_step", nFocal),
+        SeasonByStep = r.Array("reproduction.season_by_step", DType.F8, nSteps, nFocal)?.ToArray<double>() ?? [],
+        EggLength = F8(r, "reproduction.egg_length", nFocal),
+        EggWeight = F8(r, "reproduction.egg_weight", nFocal),
+        SrType = r.Array("reproduction.sr.type", DType.U1, nFocal)?.ToArray<byte>() ?? [],
+        SeedingMode = (int)r.Int("reproduction.seeding_mode"),
+    };
 
     public static MovementParameters Movement(BundleReader r, int nFocal, int nTotal, int ny, int nx, byte[] ocean)
     {
