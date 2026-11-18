@@ -23,6 +23,7 @@ pooled Python replicates, and picks the first constants on a fixed ladder whose 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from scipy import stats
@@ -65,7 +66,10 @@ def tost(x, y, delta: float, floor: float = COLLAPSE, with_ks: bool = True):
     p_upper = stats.t.cdf((d - delta) / se, df)  # H0: d >= +delta
     p_tost = float(max(p_lower, p_upper))
     ci = float(stats.t.ppf(0.95, df) * se)
-    ks_p = float(stats.ks_2samp(x, y).pvalue) if with_ks else np.nan
+    ks_p = np.nan
+    if with_ks:
+        ks: Any = stats.ks_2samp(x, y)  # scipy's stub does not type the result's fields
+        ks_p = float(ks.pvalue)
     vy = ly.var(ddof=1)
     vr = float(lx.var(ddof=1) / vy) if vy > 0 else np.inf
     return d, ci, p_tost, p_tost < 0.05, ks_p, vr
@@ -249,7 +253,9 @@ def calibrate(
     n_a = len(next(iter(next(iter(arm_a.values())).values())))
     rng = np.random.default_rng(seed)
     fails = dict.fromkeys(ladder, 0)
-    by_criterion = {rung: dict.fromkeys((1, 2, 3, 4), 0) for rung in ladder}
+    by_criterion: dict[Constants, dict[int, int]] = {
+        rung: {c: 0 for c in (1, 2, 3, 4)} for rung in ladder
+    }
     for _ in range(n_splits):
         control = compare(*_split(pool, n_a, rng), margins, with_ks=False)
         treatment = compare(*_split(pool, n_a, rng), margins, with_ks=False)
