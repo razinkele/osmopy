@@ -293,6 +293,24 @@ public sealed class MovementParameters
 
     /// <summary>The grid's ocean mask (1 ocean, 0 land), copied for the walk's hot loop.</summary>
     public byte[] Ocean { get; init; } = [];
+
+    /// <summary>Feature <c>salinity_gate</c>: 1 for each gated focal species; empty without the
+    /// feature.</summary>
+    public byte[] SalinitySpecies { get; init; } = [];
+
+    /// <summary><c>[frame * nCells + cell]</c>: the occupancy weight of each salinity frame
+    /// (<c>salinity_weight</c>), NaN where the field is.</summary>
+    public double[] SalinityWeight { get; init; } = [];
+
+    /// <summary><c>[step]</c>: the salinity frame of each step.</summary>
+    public int[] SalinityFrameByStep { get; init; } = [];
+
+    /// <summary><c>[map * SalinityFrames + frame]</c>: the largest non-NaN <c>map * weight</c>,
+    /// 0 when there is none (then the gate does not apply to that map this step).</summary>
+    public double[] SalinityWmax { get; init; } = [];
+
+    /// <summary>Number of salinity frames (rows of <see cref="SalinityWeight"/>).</summary>
+    public int SalinityFrames { get; init; }
 }
 
 internal static class ModelReader
@@ -548,7 +566,8 @@ internal static class ModelReader
         Families = r.Int("output.families"),
     };
 
-    public static MovementParameters Movement(BundleReader r, int nFocal, int nTotal, int ny, int nx, byte[] ocean)
+    public static MovementParameters Movement(
+        BundleReader r, int nSteps, int nFocal, int nTotal, int ny, int nx, byte[] ocean, bool salinityGate)
     {
         byte[] method = r.Array("movement.method", DType.U1, nTotal)?.ToArray<byte>() ?? [];
         int[] walk = I4(r, "movement.walk_range", nTotal);
@@ -570,10 +589,45 @@ internal static class ModelReader
             index = I4(r, "movement.maps.index", indexOffsets[^1]);
         }
 
+        // The salinity gate's tables follow the declared feature: required with it, a problem
+        // without it.
+        byte[] gateSpecies = [];
+        double[] gateWeight = [], gateWmax = [];
+        int[] gateFrame = [];
+        int gateFrames = 0;
+        if (salinityGate)
+        {
+            gateSpecies = r.Array("movement.salinity.species", DType.U1, nFocal)?.ToArray<byte>() ?? [];
+            BundleEntry? w = r.Array("movement.salinity.weight", DType.F8, BundleReader.Any, ny * nx);
+            gateFrames = w is null ? 0 : (int)w.Shape[0];
+            gateWeight = w?.ToArray<double>() ?? [];
+            gateFrame = I4(r, "movement.salinity.frame_by_step", nSteps);
+            gateWmax = r.Array("movement.salinity.wmax", DType.F8, nMaps, gateFrames)?.ToArray<double>() ?? [];
+            if (w is not null && gateFrame.Any(f => f < 0 || f >= gateFrames))
+            {
+                r.Problem($"movement.salinity.frame_by_step: values must be in [0, {gateFrames})");
+            }
+        }
+        else
+        {
+            Undeclared(
+                r,
+                "salinity_gate",
+                "movement.salinity.species",
+                "movement.salinity.weight",
+                "movement.salinity.frame_by_step",
+                "movement.salinity.wmax");
+        }
+
         int[] domainOffsets = I4(r, "movement.random.domain.offsets", nFocal + 1);
         long nDomain = domainOffsets.Length == nFocal + 1 ? domainOffsets[^1] : 0;
         return new MovementParameters
         {
+            SalinitySpecies = gateSpecies,
+            SalinityWeight = gateWeight,
+            SalinityFrameByStep = gateFrame,
+            SalinityWmax = gateWmax,
+            SalinityFrames = gateFrames,
             Method = method,
             WalkRange = walk,
             MaxWalkRange = walk.Length == 0 ? 0 : Math.Max(0, walk.Max()),

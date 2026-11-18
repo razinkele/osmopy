@@ -17,8 +17,9 @@ Tier S: placement and walk frequencies (chi-square, each with a control arm that
 Synthetic cases cover what no shipped config shows: a proportional map (every shipped map is
 presence/absence), a positive land cell (placement ignores the ocean mask), a map with no
 placeable cell (10,000 failures), an ``ncell`` patch (a school placed this step does not walk),
-pre-set ``is_out`` flags, and the same-map guards. Baltic is compared with its salinity gate off:
-the gate is phase 2 (refused), and a must-differ arm shows production's gated walk is weighted.
+pre-set ``is_out`` flags, and the same-map guards. Baltic is compared with its salinity gate off
+here; the gate (task 2.4) has its own file, tests/test_csharp_salinity_gate.py, and a must-differ
+arm here shows production's gated walk is weighted.
 
 The test needs the built engine. It skips without it unless ``OSMOSE_REQUIRE_CSHARP=1``.
 """
@@ -620,10 +621,10 @@ def test_random_placement_stays_in_its_patch_and_does_not_walk(tmp_path):
     assert chisquare(obs).pvalue > 1e-4
 
 
-def test_salinity_gate_changes_the_walk_and_is_refused(tmp_path):
-    """Must-differ arm for the Baltic comparison run with the gate off: with the gate on,
-    production's walk for gated species is WEIGHTED (it draws a uniform, not an index), which the
-    phase-1 C# engine does not do, and the engine must refuse the config."""
+def test_salinity_gate_changes_the_walk(tmp_path):
+    """Must-differ arm for the Baltic comparisons above, which run with the gate off: with the
+    gate on, production's walk for gated species is WEIGHTED (it draws a uniform, not an index).
+    The gate itself (task 2.4) is tested in tests/test_csharp_salinity_gate.py."""
     if not csharp_engine_available()[0]:
         pytest.skip("C# engine unavailable")
     got = _capture(_raw("baltic", tmp_path), CASES["baltic"])

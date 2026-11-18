@@ -36,6 +36,7 @@ import osmose.results  # noqa: F401
 raw = dict(OsmoseConfigReader().read({cfg!r}))
 raw["simulation.time.nyear"] = "1"
 raw["output.minimal.enabled"] = "true"
+raw.update(json.loads(sys.argv[2]))
 cfg = EngineConfig.from_dict(raw)
 bundle = build_bundle(cfg, raw, PythonEngine()._resolve_grid(raw), seed=1)
 allocate_results(bundle, cfg)
@@ -47,18 +48,32 @@ print(json.dumps({{"loaded": loaded[:5], "n_steps": int(cfg.n_steps)}}))
 """
 
 
-def _probe(tmp_path: Path, mode: str) -> dict:
+# A salinity gate and an oxygen coupling, on constant fields: the builder then also runs the
+# engine's weight and factor helpers, which must come from Numba-free modules too.
+GATES = {
+    "movement.salinity.gate.enabled": "true",
+    "movement.salinity.field.constant": "4.5",
+    "movement.salinity.gate.species.enabled.sp0": "true",
+    "ltl.oxygen.benthos.enabled": "true",
+    "ltl.oxygen.benthos.rsc": "Mesozoo",
+    "oxygen.value": "45.0",
+}
+
+
+def _probe(tmp_path: Path, mode: str, overrides: dict | None = None) -> dict:
     script = tmp_path / "probe.py"
     script.write_text(_PROBE.format(root=str(ROOT), cfg=str(CFG)))
     proc = subprocess.run(
-        [sys.executable, str(script), mode], capture_output=True, text=True, timeout=600, cwd=ROOT
-    )
+        [sys.executable, str(script), mode, json.dumps(overrides or {})],
+        capture_output=True, text=True, timeout=600, cwd=ROOT,
+    )  # fmt: skip
     assert proc.returncode == 0, proc.stderr[-4000:]
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
-def test_the_bundle_builder_does_not_import_numba(tmp_path):
-    out = _probe(tmp_path, "build")
+@pytest.mark.parametrize("overrides", [{}, GATES], ids=["plain", "salinity gate and oxygen"])
+def test_the_bundle_builder_does_not_import_numba(overrides, tmp_path):
+    out = _probe(tmp_path, "build", overrides)
     assert out["n_steps"] == 24  # the probe really built a bundle
     assert out["loaded"] == [], f"the C# build path imported {out['loaded']}"
 

@@ -128,4 +128,107 @@ public static class MovementProbe
             }
         }
     }
+
+    /// <summary>
+    /// The salinity gate's tier-E pieces (plan task 2.4), per school of <paramref name="statePath"/>
+    /// in input order: <c>gate.branch</c> (0 not a live map school, 1 placed ungated, 2 placed
+    /// gated, 3 walks ungated, 4 walks gated), the map's <c>gate.wmax</c> this step, and for a
+    /// gated walker its candidate cells, their total weight, and the cell the weighted choice
+    /// picks for each uniform of <paramref name="uniforms"/> (comma-separated; <c>r = u * total</c>).
+    /// </summary>
+    public static void Gate(string modelPath, string statePath, int step, string uniforms, string outPath)
+    {
+        using SimulationConfig model = SimulationConfig.Load(modelPath);
+        using SimulationConfig state = SimulationConfig.Load(statePath);
+        EngineParameters p = EngineParameters.From(model, checkFeatures: false);
+        MovementParameters m = p.Movement;
+        var r = new BundleReader(state, 1);
+        long n = r.Array("state.species_id", DType.I4, BundleReader.Any)!.Length;
+        int[] species = r.Array("state.species_id", DType.I4, n)!.ToArray<int>();
+        int[] age = r.Array("state.age_dt", DType.I4, n)!.ToArray<int>();
+        int[] cx = r.Array("state.cell_x", DType.I4, n)!.ToArray<int>();
+        int[] cy = r.Array("state.cell_y", DType.I4, n)!.ToArray<int>();
+        r.ThrowIfProblems();
+        double[] us = [.. uniforms.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(u => double.Parse(u, System.Globalization.CultureInfo.InvariantCulture))];
+
+        int nx = p.Nx, ny = p.Ny, nCells = ny * nx;
+        byte[] branch = new byte[n];
+        double[] wmaxOut = new double[n], total = new double[n];
+        int nu = Math.Max(1, us.Length);
+        int[] choice = new int[Math.Max(1, n * nu)];
+        Array.Fill(choice, -1);
+        long[] candOffsets = new long[n + 1];
+        var candCells = new List<int>();
+        int[] scratch = new int[Math.Max(1, Movement.ScratchLength(m))];
+        for (int i = 0; i < n; i++)
+        {
+            int sp = species[i];
+            candOffsets[i + 1] = candOffsets[i];
+            byte method = sp < m.Method.Length ? m.Method[sp] : MovementParameters.MethodNone;
+            if (method != MovementParameters.MethodMaps)
+            {
+                continue;
+            }
+
+            int idx = Movement.MapIndex(m, sp, age[i], step);
+            int off = m.MapSpeciesOffset[sp];
+            if (idx < 0 || off < 0 || off + idx >= m.NMaps || m.MapIsNull[off + idx] != 0)
+            {
+                continue;
+            }
+
+            int g = off + idx;
+            int cell = cx[i] >= 0 && cy[i] >= 0 ? (cy[i] * nx) + cx[i] : -1;
+            bool gated = Movement.Gate(m, sp, g, step, nCells, out ReadOnlySpan<double> weight, out double wmax);
+            wmaxOut[i] = wmax;
+            bool walks = Movement.SameMap(m, sp, age[i], step, idx) && cell >= 0;
+            branch[i] = (byte)((walks ? 3 : 1) + (gated ? 1 : 0));
+            if (!walks || !gated)
+            {
+                continue;
+            }
+
+            int count = Movement.GatedWalkCandidates(m, ny, nx, g, cell, m.WalkRange[sp], weight, scratch, out total[i]);
+            for (int k = 0; k < count; k++)
+            {
+                candCells.Add(scratch[k]);
+            }
+
+            candOffsets[i + 1] = candOffsets[i] + count;
+            ReadOnlySpan<double> map = m.MapStack.AsSpan(g * nCells, nCells);
+            for (int j = 0; j < us.Length && count > 0; j++)
+            {
+                choice[(i * nu) + j] = Movement.WeightedChoice(map, weight, scratch.AsSpan(0, count), us[j] * total[i]);
+            }
+        }
+
+        int[] cand = candCells.Count > 0 ? candCells.ToArray() : [0];
+        var handles = new List<GCHandle>();
+        try
+        {
+            long Pin(Array a)
+            {
+                GCHandle h = GCHandle.Alloc(a, GCHandleType.Pinned);
+                handles.Add(h);
+                return h.AddrOfPinnedObject();
+            }
+
+            var output = new SimulationConfig(1);
+            output.SetArray("gate.branch", DType.U1, Pin(branch), n);
+            output.SetArray("gate.wmax", DType.F8, Pin(wmaxOut), n);
+            output.SetArray("gate.total", DType.F8, Pin(total), n);
+            output.SetArray("gate.choice", DType.I4, Pin(choice), n, nu);
+            output.SetArray("gate.cand.offsets", DType.I8, Pin(candOffsets), n + 1);
+            output.SetArray("gate.cand.cells", DType.I4, Pin(cand), cand.Length);
+            output.Save(outPath);
+        }
+        finally
+        {
+            foreach (GCHandle h in handles)
+            {
+                h.Free();
+            }
+        }
+    }
 }

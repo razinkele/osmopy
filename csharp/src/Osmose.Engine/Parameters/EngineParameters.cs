@@ -243,7 +243,15 @@ public sealed class EngineParameters
             curves: features.Contains(FeatureCatalog.Named("stock_recruitment")),
             rvGate: features.Contains(FeatureCatalog.Named("rv_gate")),
             seedingLinear: features.Contains(FeatureCatalog.Named("seeding_linear")));
-        MovementParameters movement = ModelReader.Movement(model, species.NFocal, nTotal, (int)ny, (int)nx, mask);
+        MovementParameters movement = ModelReader.Movement(
+            model,
+            (int)nSteps,
+            species.NFocal,
+            nTotal,
+            (int)ny,
+            (int)nx,
+            mask,
+            salinityGate: features.Contains(FeatureCatalog.Named("salinity_gate")));
         model.ThrowIfProblems();
 
         return new EngineParameters
