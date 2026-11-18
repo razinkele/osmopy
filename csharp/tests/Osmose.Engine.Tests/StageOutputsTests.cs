@@ -60,7 +60,7 @@ public sealed class StageOutputsTests : IDisposable
 
         OutputCollector c = Collector();
         c.SnapshotStages(MaturitySize, MaturityAgeDt, store);
-        c.Collect(Cutoff, 24.0, store, [], []);
+        c.Collect(Cutoff, 24, store, [], []);
         var r = new RunResults(1, NTotal, NFocal, OutputFamilies.Stage);
         c.Flush(r, 0, 0);
 
@@ -142,7 +142,7 @@ public sealed class StageOutputsTests : IDisposable
             var store = new SchoolStore(4);
             Add(store, 0, juveniles[t], 5.0, 10, 0, fishing: fished[t]);
             c.SnapshotStages(MaturitySize, MaturityAgeDt, store);
-            c.Collect(Cutoff, 24.0, store, [], []);
+            c.Collect(Cutoff, 24, store, [], []);
             perStep[t] = -Math.Log(juveniles[t] / (juveniles[t] + fished[t]));
         }
 
@@ -159,7 +159,7 @@ public sealed class StageOutputsTests : IDisposable
             var store = new SchoolStore(4);
             Add(store, 0, juveniles[t], 5.0, 10, 0, fishing: fished[t]);
             c.SnapshotStages(MaturitySize, MaturityAgeDt, store);
-            c.Collect(Cutoff, 24.0, store, [], []);
+            c.Collect(Cutoff, 24, store, [], []);
         }
 
         c.Flush(r, 0, 1);
@@ -172,14 +172,14 @@ public sealed class StageOutputsTests : IDisposable
         var store = new SchoolStore(4);
         Add(store, 0, 10.0, 5.0, 10, 0);
         OutputCollector on = Collector();
-        InvalidOperationException missing = Assert.Throws<InvalidOperationException>(() => on.Collect(Cutoff, 24.0, store, [], []));
+        InvalidOperationException missing = Assert.Throws<InvalidOperationException>(() => on.Collect(Cutoff, 24, store, [], []));
         Assert.Contains("life-stage snapshot", missing.Message, StringComparison.Ordinal);
         on.SnapshotStages(MaturitySize, MaturityAgeDt, store);
         Assert.Throws<InvalidOperationException>(() => on.SnapshotStages(MaturitySize, MaturityAgeDt, store));
 
         var off = new OutputCollector(NTotal, NFocal, 1);
         off.SnapshotStages(MaturitySize, MaturityAgeDt, store); // no family: nothing to do
-        off.Collect(Cutoff, 24.0, store, [], []);
+        off.Collect(Cutoff, 24, store, [], []);
         var r = new RunResults(1, NTotal, NFocal);
         off.Flush(r, 0, 0);
         Assert.Empty(r.AbundanceByStage);
@@ -273,7 +273,7 @@ public sealed class StageOutputsTests : IDisposable
     private static (OutputParameters Output, IReadOnlyList<string> Problems) Read(SimulationConfig c, bool feature)
     {
         var r = new BundleReader(c, 1);
-        return (ModelReader.Output(r, NTotal, feature), r.Problems);
+        return (ModelReader.Output(r, NTotal, NFocal, feature), r.Problems);
     }
 
     [Fact]

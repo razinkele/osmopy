@@ -277,6 +277,17 @@ public sealed class OutputParameters
     /// <summary>Output families beyond the minimal set; none = <c>output.minimal.enabled</c>.</summary>
     public Step.OutputFamilies Families { get; init; }
 
+    /// <summary>Per focal species, where its age classes start in a by-age record (focal + 1
+    /// values); empty without a by-age family.</summary>
+    public int[] AgeBinOffsets { get; init; } = [];
+
+    /// <summary>The left edges of the length classes; empty without a by-size family.</summary>
+    public double[] SizeEdges { get; init; } = [];
+
+    /// <summary>The collector's layout for a model with these species counts.</summary>
+    public Step.OutputLayout Layout(int nTotal, int nFocal) =>
+        new(nTotal, nFocal, Families) { AgeBinOffsets = AgeBinOffsets, SizeEdges = SizeEdges };
+
     /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
     public int Records(int nSteps) => (Step0Include ? 1 : 0) + ((nSteps + RecordFrequency - 1) / RecordFrequency);
 }
@@ -595,8 +606,10 @@ internal static class ModelReader
 
     /// <summary><c>output.families</c> follows the declared feature <c>full_outputs</c>: with it
     /// the mask holds the life-stage family (every run that is not minimal has it) and only
-    /// families this engine collects; without it the mask is 0.</summary>
-    public static OutputParameters Output(BundleReader r, int nTotal, bool feature)
+    /// families this engine collects; without it the mask is 0. The two binning tables exist
+    /// exactly with their families: <c>output.age_bin_offsets</c> with a by-age family,
+    /// <c>output.size_edges</c> with a by-size one.</summary>
+    public static OutputParameters Output(BundleReader r, int nTotal, int nFocal, bool feature)
     {
         long families = r.Int("output.families");
         long unknown = families & ~(long)Step.OutputFamilies.Known;
@@ -617,12 +630,69 @@ internal static class ModelReader
             r.Problem("output.families: the life-stage family (bit 0) is part of every run that is not minimal");
         }
 
+        Step.OutputFamilies on = feature ? (Step.OutputFamilies)(families & (long)Step.OutputFamilies.Known) : Step.OutputFamilies.None;
+        int[] ageOffsets = [];
+        if ((on & Step.OutputFamilies.ByAge) != 0)
+        {
+            ageOffsets = I4(r, "output.age_bin_offsets", nFocal + 1);
+            bool ok = ageOffsets.Length == nFocal + 1 && ageOffsets[0] == 0;
+            for (int sp = 0; ok && sp < nFocal; sp++)
+            {
+                ok = ageOffsets[sp + 1] > ageOffsets[sp];
+            }
+
+            if (ageOffsets.Length == nFocal + 1 && !ok)
+            {
+                r.Problem("output.age_bin_offsets: must start at 0 and increase (every species has an age class)");
+                ageOffsets = [];
+            }
+        }
+        else if (r.Has("output.age_bin_offsets"))
+        {
+            r.Problem("output.age_bin_offsets: present, but output.families has no by-age family");
+        }
+
+        double[] edges = [];
+        if ((on & Step.OutputFamilies.BySize) != 0)
+        {
+            edges = r.Array("output.size_edges", DType.F8, BundleReader.Any)?.ToArray<double>() ?? [];
+            bool ok = edges.Length > 0 && !double.IsNaN(edges[0]);
+            for (int i = 1; ok && i < edges.Length; i++)
+            {
+                ok = edges[i] > edges[i - 1];
+            }
+
+            if (r.Has("output.size_edges") && !ok)
+            {
+                r.Problem("output.size_edges: needs at least one edge, strictly increasing");
+                edges = [];
+            }
+        }
+        else if (r.Has("output.size_edges"))
+        {
+            r.Problem("output.size_edges: present, but output.families has no by-size family");
+        }
+
+        // A family whose table is missing or broken is dropped here: the problem is reported, and
+        // the layout stays one the collector can build.
+        if (ageOffsets.Length == 0)
+        {
+            on &= ~Step.OutputFamilies.ByAge;
+        }
+
+        if (edges.Length == 0)
+        {
+            on &= ~Step.OutputFamilies.BySize;
+        }
+
         return new()
         {
             CutoffAge = F8(r, "output.cutoff_age", nTotal),
             RecordFrequency = (int)Math.Max(1, r.Int("output.record_frequency")),
             Step0Include = r.Int("output.step0_include") != 0,
-            Families = feature ? (Step.OutputFamilies)(families & (long)Step.OutputFamilies.Known) : Step.OutputFamilies.None,
+            Families = on,
+            AgeBinOffsets = ageOffsets,
+            SizeEdges = edges,
         };
     }
 

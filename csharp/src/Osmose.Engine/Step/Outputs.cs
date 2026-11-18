@@ -13,30 +13,147 @@ public enum OutputFamilies : long
     /// per-step mortality rates. Part of every run that is not minimal.</summary>
     Stage = 1,
 
+    /// <summary>Biomass by age class (years), every focal school, no cutoff.</summary>
+    BiomassByAge = 2,
+
+    AbundanceByAge = 4,
+
+    /// <summary>Biomass by length class, every focal school, no cutoff.</summary>
+    BiomassBySize = 8,
+
+    AbundanceBySize = 16,
+
+    /// <summary>Biomass-weighted mean trophic level; a species with no qualifying school is absent.</summary>
+    MeanTl = 32,
+
+    /// <summary>Fishing deaths in numbers.</summary>
+    YieldN = 64,
+
+    /// <summary>Abundance-weighted mean length; a species with no qualifying school is absent.</summary>
+    MeanSize = 128,
+
+    /// <summary>Spawning-stock biomass.</summary>
+    Ssb = 256,
+
+    ByAge = BiomassByAge | AbundanceByAge,
+    BySize = BiomassBySize | AbundanceBySize,
+
     /// <summary>Every family this engine can collect.</summary>
-    Known = Stage,
+    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb,
+}
+
+/// <summary>How a record window folds a family's per-step rows (<c>_average_step_outputs</c>).</summary>
+public enum WindowFold
+{
+    /// <summary><c>np.mean(rows, axis=0)</c>.</summary>
+    Mean,
+
+    /// <summary><c>np.sum(rows, axis=0)</c>.</summary>
+    Sum,
+
+    /// <summary>Per value, the mean over the steps where it is present (not NaN); absent (NaN)
+    /// when no step has it. <c>_avg_scalar_dict</c>: a dict that omits a species.</summary>
+    MeanOfPresent,
+}
+
+/// <summary>One output family beyond the minimal set: its name (the result buffer is
+/// <c>result.&lt;name&gt;</c> and the <c>StepOutput</c> field has the same name), the shape of one
+/// record, its window rule, and the blocks NumPy reduces separately (one array per species for
+/// the distributions; the whole record otherwise).</summary>
+public sealed record FamilySpec(string Name, OutputFamilies Bit, WindowFold Fold, int[] Shape, int[] Blocks)
+{
+    public int Width { get; } = Shape.Aggregate(1, (a, b) => a * b);
+}
+
+/// <summary>What the collector needs to lay the families out: the species counts, the mask, and
+/// the two tables the distributions are binned with.</summary>
+public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Families = OutputFamilies.None)
+{
+    /// <summary>Per focal species, where its age classes start in a by-age record (length
+    /// <c>NFocal + 1</c>); species <c>s</c> has <c>ceil(lifespan / steps per year) + 1</c> of
+    /// them. Needed with a by-age family.</summary>
+    public int[] AgeBinOffsets { get; init; } = [];
+
+    /// <summary>The left edges of the length classes. Needed with a by-size family.</summary>
+    public double[] SizeEdges { get; init; } = [];
+
+    /// <summary>Every family name, on or off, in record order.</summary>
+    public static readonly string[] AllNames =
+    [
+        "abundance_by_stage", "mortality_by_cause_stage", "mortality_rate_by_cause_stage",
+        "biomass_by_age", "abundance_by_age", "biomass_by_size", "abundance_by_size",
+        "mean_tl", "yield_n", "mean_size", "ssb",
+    ];
+
+    /// <summary>The families that are on, in the order of <see cref="AllNames"/>.</summary>
+    public IReadOnlyList<FamilySpec> Specs()
+    {
+        const int stages = OutputCollector.Stages, causes = RunResults.MortalityCauses;
+        var specs = new List<FamilySpec>();
+        void Add(string name, OutputFamilies bit, WindowFold fold, int[] shape, int[]? blocks = null)
+        {
+            if ((Families & bit) != 0)
+            {
+                int width = shape.Aggregate(1, (a, b) => a * b);
+                specs.Add(new FamilySpec(name, bit, fold, shape, blocks ?? [0, width]));
+            }
+        }
+
+        if ((Families & OutputFamilies.ByAge) != 0 && (AgeBinOffsets.Length != NFocal + 1 || AgeBinOffsets[0] != 0))
+        {
+            throw new ArgumentException("a by-age family needs AgeBinOffsets (NFocal + 1 values, from 0)");
+        }
+
+        if ((Families & OutputFamilies.BySize) != 0 && SizeEdges.Length == 0)
+        {
+            throw new ArgumentException("a by-size family needs SizeEdges");
+        }
+
+        int nSize = SizeEdges.Length;
+        int[] sizeBlocks = [.. Enumerable.Range(0, NFocal + 1).Select(sp => sp * nSize)];
+        Add("abundance_by_stage", OutputFamilies.Stage, WindowFold.Mean, [NFocal, stages]);
+        Add("mortality_by_cause_stage", OutputFamilies.Stage, WindowFold.Sum, [NFocal, causes, stages]);
+        Add("mortality_rate_by_cause_stage", OutputFamilies.Stage, WindowFold.Sum, [NFocal, causes, stages]);
+        Add("biomass_by_age", OutputFamilies.BiomassByAge, WindowFold.Mean, [AgeBinOffsets.Length > 0 ? AgeBinOffsets[^1] : 0], AgeBinOffsets);
+        Add("abundance_by_age", OutputFamilies.AbundanceByAge, WindowFold.Mean, [AgeBinOffsets.Length > 0 ? AgeBinOffsets[^1] : 0], AgeBinOffsets);
+        Add("biomass_by_size", OutputFamilies.BiomassBySize, WindowFold.Mean, [NFocal, nSize], sizeBlocks);
+        Add("abundance_by_size", OutputFamilies.AbundanceBySize, WindowFold.Mean, [NFocal, nSize], sizeBlocks);
+        Add("mean_tl", OutputFamilies.MeanTl, WindowFold.MeanOfPresent, [NFocal]);
+        Add("yield_n", OutputFamilies.YieldN, WindowFold.Sum, [NFocal]);
+        Add("mean_size", OutputFamilies.MeanSize, WindowFold.MeanOfPresent, [NFocal]);
+        Add("ssb", OutputFamilies.Ssb, WindowFold.Mean, [NFocal]);
+        return specs;
+    }
 }
 
 /// <summary>The output families for every record (spec 8.4), owned by the run: the minimal set
-/// always, the others (empty arrays otherwise) when <see cref="Families"/> has them.</summary>
+/// always, and the families of <see cref="Layout"/> in <see cref="Extra"/>.</summary>
 public sealed class RunResults
 {
+    private readonly Dictionary<string, double[]> _extra = new(StringComparer.Ordinal);
+
     public RunResults(int nRecords, int nTotal, int nFocal, OutputFamilies families = OutputFamilies.None)
+        : this(nRecords, new OutputLayout(nTotal, nFocal, families))
+    {
+    }
+
+    public RunResults(int nRecords, OutputLayout layout)
     {
         NRecords = nRecords;
-        NTotal = nTotal;
-        NFocal = nFocal;
-        Families = families;
+        Layout = layout;
+        NTotal = layout.NTotal;
+        NFocal = layout.NFocal;
         RecordStep = new int[nRecords];
         WindowSteps = new int[nRecords];
-        Biomass = new double[nRecords * nTotal];
-        Abundance = new double[nRecords * nTotal];
-        Mortality = new double[nRecords * nFocal * MortalityCauses];
-        Yield = new double[nRecords * nFocal];
-        bool stage = (families & OutputFamilies.Stage) != 0;
-        AbundanceByStage = new double[stage ? nRecords * nFocal * OutputCollector.Stages : 0];
-        DeathsByStage = new double[stage ? nRecords * nFocal * MortalityCauses * OutputCollector.Stages : 0];
-        RatesByStage = new double[stage ? nRecords * nFocal * MortalityCauses * OutputCollector.Stages : 0];
+        Biomass = new double[nRecords * NTotal];
+        Abundance = new double[nRecords * NTotal];
+        Mortality = new double[nRecords * NFocal * MortalityCauses];
+        Yield = new double[nRecords * NFocal];
+        Specs = layout.Specs();
+        foreach (FamilySpec spec in Specs)
+        {
+            _extra[spec.Name] = new double[nRecords * spec.Width];
+        }
     }
 
     /// <summary>Columns of <see cref="Mortality"/>, in <c>MortalityCause</c> order.</summary>
@@ -48,7 +165,12 @@ public sealed class RunResults
 
     public int NFocal { get; }
 
-    public OutputFamilies Families { get; }
+    public OutputLayout Layout { get; }
+
+    public OutputFamilies Families => Layout.Families;
+
+    /// <summary>The families beyond the minimal set that this run collects.</summary>
+    public IReadOnlyList<FamilySpec> Specs { get; }
 
     /// <summary>Last step of each record's window; -1 for the initial record.</summary>
     public int[] RecordStep { get; }
@@ -67,28 +189,35 @@ public sealed class RunResults
     /// <summary><c>[record, focal species]</c>, the window sum, tonnes.</summary>
     public double[] Yield { get; }
 
+    /// <summary>The records of a family, <c>[record * spec.Width + j]</c>; empty when it is off.</summary>
+    public double[] Extra(string name) => _extra.TryGetValue(name, out double[]? v) ? v : [];
+
     /// <summary><c>[record, focal species, stage]</c>, the window mean.</summary>
-    public double[] AbundanceByStage { get; }
+    public double[] AbundanceByStage => Extra("abundance_by_stage");
 
     /// <summary><c>[record, focal species, cause, stage]</c>, the window sum of deaths.</summary>
-    public double[] DeathsByStage { get; }
+    public double[] DeathsByStage => Extra("mortality_by_cause_stage");
 
     /// <summary><c>[record, focal species, cause, stage]</c>, the window SUM of the per-step
     /// instantaneous rates (Java's convention): <c>inf</c> when a step emptied the stage.</summary>
-    public double[] RatesByStage { get; }
+    public double[] RatesByStage => Extra("mortality_rate_by_cause_stage");
 }
 
 /// <summary>
-/// Collects each step's outputs (<c>_collect_outputs</c>, the <c>output.minimal</c> branch) and
-/// folds a record window as <c>_average_step_outputs</c> does: biomass and abundance are window
-/// means, mortality and yield window sums, and a one-step window passes through. The window keeps
-/// every step's row so that the sums reproduce NumPy's: <c>np.sum(rows, axis=0)</c> adds the rows
-/// in order, except when a row holds a single value, where the reduction axis is contiguous and
-/// NumPy uses its pairwise sum (verified against NumPy on random data, 2026-11-18).
+/// Collects each step's outputs (<c>_collect_outputs</c>) and folds a record window as
+/// <c>_average_step_outputs</c> does: biomass and abundance are window means, mortality and yield
+/// window sums, and a one-step window passes through. The window keeps every step's row so that
+/// the sums reproduce NumPy's: <c>np.sum(rows, axis=0)</c> adds the rows in order, except when a
+/// row holds a single value, where the reduction axis is contiguous and NumPy uses its pairwise
+/// sum (verified against NumPy on random data, 2026-11-18).
 /// <para>With <see cref="OutputFamilies.Stage"/>, each step also has a life-stage snapshot
 /// (<see cref="SnapshotStages(EngineParameters, SchoolStore)"/>), taken BEFORE reproduction so
 /// that a death is binned by the stage the school held when it died. Its window rule: abundance
 /// a mean, deaths a sum, and the rates a sum of the per-step rates.</para>
+/// <para>The other families are collected with the minimal set, from the state after
+/// reproduction: the distributions (every focal school, eggs included, no cutoff age), SSB,
+/// yield in numbers, and the two weighted means, which a species with no qualifying school is
+/// absent from (NaN).</para>
 /// </summary>
 public sealed class OutputCollector
 {
@@ -97,26 +226,57 @@ public sealed class OutputCollector
 
     private const int DeathCells = RunResults.MortalityCauses * Stages;
 
-    private readonly int _nTotal, _nFocal;
-    private readonly bool _stage;
+    private readonly OutputLayout _layout;
+    private readonly int _nTotal, _nFocal, _rowsCapacity;
+    private readonly bool _stage, _full;
     private readonly double[] _biomass, _abundance, _mortality, _yield;
+    private readonly IReadOnlyList<FamilySpec> _specs;
+    private readonly Dictionary<string, double[]> _rows = new(StringComparer.Ordinal);
     private readonly double[] _stageAbundance, _stageDeaths, _stageRates;
+    private readonly double[] _biomassByAge, _abundanceByAge, _biomassBySize, _abundanceBySize, _meanTl, _yieldN, _meanSize, _ssb;
+    private readonly double[] _weighted, _weight; // scratch of the two weighted means, per focal species
+    private readonly double[] _present; // scratch of a fold: one value per step of the window
     private int _k;
     private bool _stageTaken;
 
     public OutputCollector(int nTotal, int nFocal, int recordFrequency, OutputFamilies families = OutputFamilies.None)
+        : this(new OutputLayout(nTotal, nFocal, families), recordFrequency)
     {
-        _nTotal = nTotal;
-        _nFocal = nFocal;
-        _stage = (families & OutputFamilies.Stage) != 0;
-        int rows = Math.Max(1, recordFrequency);
-        _biomass = new double[rows * nTotal];
-        _abundance = new double[rows * nTotal];
-        _mortality = new double[rows * nFocal * RunResults.MortalityCauses];
-        _yield = new double[rows * nFocal];
-        _stageAbundance = new double[_stage ? rows * nFocal * Stages : 0];
-        _stageDeaths = new double[_stage ? rows * nFocal * DeathCells : 0];
-        _stageRates = new double[_stage ? rows * nFocal * DeathCells : 0];
+    }
+
+    public OutputCollector(OutputLayout layout, int recordFrequency)
+    {
+        _layout = layout;
+        _nTotal = layout.NTotal;
+        _nFocal = layout.NFocal;
+        _stage = (layout.Families & OutputFamilies.Stage) != 0;
+        _full = (layout.Families & ~OutputFamilies.Stage) != 0;
+        _rowsCapacity = Math.Max(1, recordFrequency);
+        _biomass = new double[_rowsCapacity * _nTotal];
+        _abundance = new double[_rowsCapacity * _nTotal];
+        _mortality = new double[_rowsCapacity * _nFocal * RunResults.MortalityCauses];
+        _yield = new double[_rowsCapacity * _nFocal];
+        _specs = layout.Specs();
+        foreach (FamilySpec spec in _specs)
+        {
+            _rows[spec.Name] = new double[_rowsCapacity * spec.Width];
+        }
+
+        double[] Rows(string name) => _rows.TryGetValue(name, out double[]? v) ? v : [];
+        _stageAbundance = Rows("abundance_by_stage");
+        _stageDeaths = Rows("mortality_by_cause_stage");
+        _stageRates = Rows("mortality_rate_by_cause_stage");
+        _biomassByAge = Rows("biomass_by_age");
+        _abundanceByAge = Rows("abundance_by_age");
+        _biomassBySize = Rows("biomass_by_size");
+        _abundanceBySize = Rows("abundance_by_size");
+        _meanTl = Rows("mean_tl");
+        _yieldN = Rows("yield_n");
+        _meanSize = Rows("mean_size");
+        _ssb = Rows("ssb");
+        _weighted = new double[_full ? 2 * _nFocal : 0];
+        _weight = new double[_full ? 2 * _nFocal : 0];
+        _present = new double[_specs.Count > 0 ? _rowsCapacity : 0];
     }
 
     /// <summary>Steps collected into the open window.</summary>
@@ -148,7 +308,7 @@ public sealed class OutputCollector
             throw new InvalidOperationException("the life-stage snapshot was already taken for this step");
         }
 
-        if (_k * _nTotal >= _biomass.Length)
+        if (_k >= _rowsCapacity)
         {
             throw new InvalidOperationException("the record window is full: flush before collecting");
         }
@@ -237,13 +397,27 @@ public sealed class OutputCollector
     /// species, indexed by species like the outputs, taken before those schools were removed and
     /// added WITHOUT the cutoff age. Empty spans add nothing.</summary>
     public void Collect(EngineParameters p, SchoolStore store, ReadOnlySpan<double> backgroundBiomass, ReadOnlySpan<double> backgroundAbundance) =>
-        Collect(p.Output.CutoffAge, p.NDtPerYear, store, backgroundBiomass, backgroundAbundance);
+        Collect(p.Output.CutoffAge, p.NDtPerYear, p.Reproduction.MaturitySize, p.Reproduction.MaturityAgeDt, store, backgroundBiomass, backgroundAbundance);
 
     /// <summary>As <see cref="Collect(EngineParameters, SchoolStore, ReadOnlySpan{double}, ReadOnlySpan{double})"/>,
-    /// on the cutoff ages (years, per species) and the steps per year alone.</summary>
-    public void Collect(ReadOnlySpan<double> cutoff, double ndt, SchoolStore store, ReadOnlySpan<double> backgroundBiomass, ReadOnlySpan<double> backgroundAbundance)
+    /// on the cutoff ages (years, per species) and the steps per year alone: enough for the
+    /// minimal and the life-stage families.</summary>
+    public void Collect(ReadOnlySpan<double> cutoff, int ndt, SchoolStore store, ReadOnlySpan<double> backgroundBiomass, ReadOnlySpan<double> backgroundAbundance) =>
+        Collect(cutoff, ndt, [], [], store, backgroundBiomass, backgroundAbundance);
+
+    /// <summary>As <see cref="Collect(EngineParameters, SchoolStore, ReadOnlySpan{double}, ReadOnlySpan{double})"/>,
+    /// on the tables it reads: the cutoff ages, the steps per year, and the maturity thresholds
+    /// (for SSB).</summary>
+    public void Collect(
+        ReadOnlySpan<double> cutoff,
+        int ndt,
+        ReadOnlySpan<double> maturitySize,
+        ReadOnlySpan<int> maturityAgeDt,
+        SchoolStore store,
+        ReadOnlySpan<double> backgroundBiomass,
+        ReadOnlySpan<double> backgroundAbundance)
     {
-        if (_k * _nTotal >= _biomass.Length)
+        if (_k >= _rowsCapacity)
         {
             throw new InvalidOperationException("the record window is full: flush before collecting");
         }
@@ -261,6 +435,7 @@ public sealed class OutputCollector
         abundance.Clear();
         mortality.Clear();
         yield.Clear();
+        double stepsPerYear = ndt;
         ReadOnlySpan<SchoolCore> core = store.Core;
         ReadOnlySpan<SchoolLedger> ledger = store.Ledger;
         for (int i = 0; i < core.Length; i++)
@@ -272,7 +447,7 @@ public sealed class OutputCollector
                 continue;
             }
 
-            if (c.AgeDt / ndt >= cutoff[sp])
+            if (c.AgeDt / stepsPerYear >= cutoff[sp])
             {
                 biomass[sp] += c.Abundance * c.Weight;
                 abundance[sp] += c.Abundance;
@@ -297,8 +472,156 @@ public sealed class OutputCollector
             abundance[sp] += backgroundAbundance[sp];
         }
 
+        if (_full)
+        {
+            CollectFull(cutoff, ndt, maturitySize, maturityAgeDt, store);
+        }
+
         _k++;
         _stageTaken = false;
+    }
+
+    /// <summary>
+    /// The families collected with the minimal set, in a pass of their own so that a minimal run
+    /// pays nothing for them:
+    /// <list type="bullet">
+    /// <item>by age (<c>_collect_distributions</c>): the class is <c>age // steps per year</c>,
+    /// clipped to the species' classes; every focal school counts, eggs and empty schools too;</item>
+    /// <item>by size: the class is the last edge at or below the length
+    /// (<c>searchsorted(edges, length, side="right") - 1</c>), clipped to the classes;</item>
+    /// <item>SSB (<c>_collect_ssb</c>): <c>A * W</c> of schools with
+    /// <c>length >= maturity size AND age >= maturity age AND A > 0</c>;</item>
+    /// <item>yield in numbers (<c>_collect_yield_n</c>): the fishing deaths;</item>
+    /// <item>mean trophic level (<c>_collect_mean_tl</c>): <c>sum(B * TL) / sum(B)</c> over schools
+    /// with <c>TL > 0</c>, <c>B > 0</c> and at or above the cutoff age;</item>
+    /// <item>mean size (<c>_collect_mean_size</c>): <c>sum(A * L) / sum(A)</c> over schools with
+    /// <c>A > 0</c>, <c>L > 0</c> and at or above the cutoff age.</item>
+    /// </list>
+    /// </summary>
+    private void CollectFull(ReadOnlySpan<double> cutoff, int ndt, ReadOnlySpan<double> maturitySize, ReadOnlySpan<int> maturityAgeDt, SchoolStore store)
+    {
+        Span<double> Row(double[] rows, int width) => rows.Length == 0 ? default : rows.AsSpan(_k * width, width);
+        int[] ageOffsets = _layout.AgeBinOffsets;
+        ReadOnlySpan<double> edges = _layout.SizeEdges;
+        int nAge = ageOffsets.Length > 0 ? ageOffsets[^1] : 0, nSize = edges.Length;
+        Span<double> bAge = Row(_biomassByAge, nAge), aAge = Row(_abundanceByAge, nAge);
+        Span<double> bSize = Row(_biomassBySize, _nFocal * nSize), aSize = Row(_abundanceBySize, _nFocal * nSize);
+        Span<double> meanTl = Row(_meanTl, _nFocal), yieldN = Row(_yieldN, _nFocal), meanSize = Row(_meanSize, _nFocal), ssb = Row(_ssb, _nFocal);
+        bAge.Clear();
+        aAge.Clear();
+        bSize.Clear();
+        aSize.Clear();
+        yieldN.Clear();
+        ssb.Clear();
+        Span<double> tlSum = _weighted.AsSpan(0, _nFocal), tlWeight = _weight.AsSpan(0, _nFocal);
+        Span<double> sizeSum = _weighted.AsSpan(_nFocal, _nFocal), sizeWeight = _weight.AsSpan(_nFocal, _nFocal);
+        _weighted.AsSpan().Clear();
+        _weight.AsSpan().Clear();
+        bool byAge = bAge.Length + aAge.Length > 0, bySize = bSize.Length + aSize.Length > 0;
+        if (!ssb.IsEmpty && maturitySize.Length < _nFocal)
+        {
+            throw new InvalidOperationException("SSB needs the maturity thresholds: use a Collect overload that takes them");
+        }
+
+        double stepsPerYear = ndt;
+        ReadOnlySpan<SchoolCore> core = store.Core;
+        ReadOnlySpan<SchoolLedger> ledger = store.Ledger;
+        for (int i = 0; i < core.Length; i++)
+        {
+            SchoolCore c = core[i];
+            int sp = c.SpeciesId;
+            if (sp >= _nFocal || (c.Flags & SchoolFlags.IsBackground) != 0)
+            {
+                continue;
+            }
+
+            double b = c.Abundance * c.Weight;
+            if (byAge)
+            {
+                int at = ageOffsets[sp] + Math.Clamp(c.AgeDt / ndt, 0, ageOffsets[sp + 1] - ageOffsets[sp] - 1);
+                if (!bAge.IsEmpty)
+                {
+                    bAge[at] += b;
+                }
+
+                if (!aAge.IsEmpty)
+                {
+                    aAge[at] += c.Abundance;
+                }
+            }
+
+            if (bySize)
+            {
+                int at = (sp * nSize) + SizeClass(edges, c.Length);
+                if (!bSize.IsEmpty)
+                {
+                    bSize[at] += b;
+                }
+
+                if (!aSize.IsEmpty)
+                {
+                    aSize[at] += c.Abundance;
+                }
+            }
+
+            if (!ssb.IsEmpty && c.Length >= maturitySize[sp] && c.AgeDt >= maturityAgeDt[sp] && c.Abundance > 0)
+            {
+                ssb[sp] += b;
+            }
+
+            if (!yieldN.IsEmpty)
+            {
+                yieldN[sp] += ledger[i].DeadFishing;
+            }
+
+            if (c.AgeDt / stepsPerYear >= cutoff[sp])
+            {
+                if (c.TrophicLevel > 0 && b > 0)
+                {
+                    tlSum[sp] += b * c.TrophicLevel;
+                    tlWeight[sp] += b;
+                }
+
+                if (c.Abundance > 0 && c.Length > 0)
+                {
+                    sizeSum[sp] += c.Abundance * c.Length;
+                    sizeWeight[sp] += c.Abundance;
+                }
+            }
+        }
+
+        for (int sp = 0; sp < meanTl.Length; sp++)
+        {
+            meanTl[sp] = tlWeight[sp] > 0 ? tlSum[sp] / tlWeight[sp] : double.NaN;
+        }
+
+        for (int sp = 0; sp < meanSize.Length; sp++)
+        {
+            meanSize[sp] = sizeWeight[sp] > 0 ? sizeSum[sp] / sizeWeight[sp] : double.NaN;
+        }
+    }
+
+    /// <summary>The length class of <paramref name="length"/>: the last edge at or below it
+    /// (<c>np.searchsorted(edges, length, side="right") - 1</c>), clipped to the classes, so a
+    /// length below the first edge falls in the first class and one on an edge in the class that
+    /// edge opens.</summary>
+    public static int SizeClass(ReadOnlySpan<double> edges, double length)
+    {
+        int lo = 0, hi = edges.Length; // the count of edges <= length
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >>> 1;
+            if (edges[mid] <= length)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return Math.Clamp(lo - 1, 0, edges.Length - 1);
     }
 
     /// <summary>Folds the open window into record <paramref name="record"/> and empties it.</summary>
@@ -314,12 +637,20 @@ public sealed class OutputCollector
         int w = _nFocal * RunResults.MortalityCauses;
         Fold(_mortality, w, mean: false, r.Mortality.AsSpan(record * w, w));
         Fold(_yield, _nFocal, mean: false, r.Yield.AsSpan(record * _nFocal, _nFocal));
-        if (_stage)
+        foreach (FamilySpec spec in _specs)
         {
-            int ws = _nFocal * Stages, wd = _nFocal * DeathCells;
-            Fold(_stageAbundance, ws, mean: true, r.AbundanceByStage.AsSpan(record * ws, ws));
-            Fold(_stageDeaths, wd, mean: false, r.DeathsByStage.AsSpan(record * wd, wd));
-            Fold(_stageRates, wd, mean: false, r.RatesByStage.AsSpan(record * wd, wd));
+            Span<double> into = r.Extra(spec.Name).AsSpan(record * spec.Width, spec.Width);
+            double[] rows = _rows[spec.Name];
+            if (spec.Fold == WindowFold.MeanOfPresent)
+            {
+                FoldPresent(rows, _k, spec.Width, _present, into);
+                continue;
+            }
+
+            for (int b = 0; b + 1 < spec.Blocks.Length; b++)
+            {
+                FoldBlock(rows, _k, spec.Width, spec.Blocks[b], spec.Blocks[b + 1] - spec.Blocks[b], spec.Fold == WindowFold.Mean, _present, into);
+            }
         }
 
         r.RecordStep[record] = recordStep;
@@ -358,6 +689,74 @@ public sealed class OutputCollector
             }
 
             into[j] = mean ? s / k : s;
+        }
+    }
+
+    /// <summary>
+    /// As <see cref="FoldWindow"/>, for one block of a wider row: the <paramref name="length"/>
+    /// values from <paramref name="start"/> of each of the <paramref name="k"/> rows of
+    /// <paramref name="width"/>. A block is one array on the Python side (one species'
+    /// distribution, or a whole record), so a block of ONE value is summed pairwise like a
+    /// one-value row. <paramref name="scratch"/> holds at least k values.
+    /// </summary>
+    public static void FoldBlock(ReadOnlySpan<double> rows, int k, int width, int start, int length, bool mean, Span<double> scratch, Span<double> into)
+    {
+        if (k == 1)
+        {
+            rows.Slice(start, length).CopyTo(into.Slice(start, length));
+            return;
+        }
+
+        if (length == 1)
+        {
+            for (int t = 0; t < k; t++)
+            {
+                scratch[t] = rows[(t * width) + start];
+            }
+
+            double s = PairwiseSum(scratch[..k]);
+            into[start] = mean ? s / k : s;
+            return;
+        }
+
+        for (int j = start; j < start + length; j++)
+        {
+            double s = rows[j];
+            for (int t = 1; t < k; t++)
+            {
+                s += rows[(t * width) + j];
+            }
+
+            into[j] = mean ? s / k : s;
+        }
+    }
+
+    /// <summary>
+    /// Folds a family that a species can be absent from (NaN), as <c>_avg_scalar_dict</c>: per
+    /// value, <c>np.mean</c> of the steps that have it (a 1-D array, so the pairwise sum, divided
+    /// by their number), and NaN when no step has it. A single row passes through.
+    /// </summary>
+    public static void FoldPresent(ReadOnlySpan<double> rows, int k, int width, Span<double> scratch, Span<double> into)
+    {
+        if (k == 1)
+        {
+            rows[..width].CopyTo(into);
+            return;
+        }
+
+        for (int j = 0; j < width; j++)
+        {
+            int m = 0;
+            for (int t = 0; t < k; t++)
+            {
+                double v = rows[(t * width) + j];
+                if (!double.IsNaN(v))
+                {
+                    scratch[m++] = v;
+                }
+            }
+
+            into[j] = m == 0 ? double.NaN : PairwiseSum(scratch[..m]) / m;
         }
     }
 
