@@ -35,6 +35,7 @@ public sealed class SimulationRun
     private readonly ResultBuffers? _buffers;
     private double[] _larva = new double[64];
     private readonly long[] _phaseTicks = new long[5];
+    private readonly double[] _bkgByOrdinal, _bkgBiomass, _bkgAbundance;
 
     public SimulationRun(EngineParameters p, SimulationConfig config)
     {
@@ -55,6 +56,10 @@ public sealed class SimulationRun
 
         _cellOrder = new int[nCells];
         _cellCost = new long[nCells];
+        bool hasBackground = p.Background.NSpecies > 0;
+        _bkgByOrdinal = new double[hasBackground ? 2 * Background.SchoolsPerStep(p.Background) : 0];
+        _bkgBiomass = new double[hasBackground ? nTotal : 0];
+        _bkgAbundance = new double[hasBackground ? nTotal : 0];
         _ssb = new double[nFocal];
         _eggs = new double[nFocal];
         _seeded = new bool[nFocal];
@@ -126,14 +131,24 @@ public sealed class SimulationRun
         BeginStep();
         Move(step);
         long t1 = Stopwatch.GetTimestamp();
+
+        // Background schools join after movement and before the regroup that sorts them into
+        // their cells, and leave right after mortality (simulate()'s order).
+        bool background = _p.Background.NSpecies > 0;
+        ulong firstBackground = background ? Background.Inject(_p, Store, step) : 0;
         Regroup();
         long t2 = Stopwatch.GetTimestamp();
         var draws = new PhiloxCellDraws(_key, step);
         Mortality<PhiloxCellDraws, PhiloxDrawSource>(step, ref draws);
+        if (background)
+        {
+            Background.CollectAndRemove(_p, Store, firstBackground, _bkgByOrdinal, _bkgBiomass, _bkgAbundance);
+        }
+
         long t3 = Stopwatch.GetTimestamp();
         AfterMortality(step);
         long t4 = Stopwatch.GetTimestamp();
-        Collector.Collect(_p, Store);
+        Collector.Collect(_p, Store, _bkgBiomass, _bkgAbundance);
         long t5 = Stopwatch.GetTimestamp();
         _phaseTicks[0] += t1 - t0;
         _phaseTicks[1] += t2 - t1;

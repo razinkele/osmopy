@@ -4,7 +4,7 @@
   "features": [
     {"id": 0, "name": "core", "phase": 1, "status": "planned", "implemented": true, "description": "the Phase 1 engine: step loop, VB growth, interleaved mortality (type I), stage accessibility, size-based feeding stages, LTL forcing, constant larva mortality, lagged starvation, fishing by rate (age knife-edge or no selectivity, seasonality, maps, discards), reproduction, map and random movement including out-of-domain schools (null maps, uncovered ages or steps, failed placement) and mortality.out.rate, cutoff age, minimal outputs"},
     {"id": 1, "name": "full_outputs", "phase": 2, "status": "planned", "implemented": false, "description": "any output beyond output.minimal.enabled = true (life-stage, by-age and by-size, SSB, mean TL and size, yield in numbers, diet)"},
-    {"id": 2, "name": "background_species", "phase": 2, "status": "planned", "implemented": false, "description": "background (forced) species"},
+    {"id": 2, "name": "background_species", "phase": 2, "status": "planned", "implemented": true, "description": "background (forced) species"},
     {"id": 3, "name": "lmax_cap", "phase": 2, "status": "planned", "implemented": false, "description": "species.lmax growth cap"},
     {"id": 4, "name": "stock_recruitment", "phase": 2, "status": "planned", "implemented": true, "description": "a stock-recruitment relationship (stock.recruitment.type other than none)"},
     {"id": 5, "name": "rv_gate", "phase": 2, "status": "planned", "implemented": true, "description": "reproductive-volume recruitment gate (series)"},
