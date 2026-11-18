@@ -21,8 +21,15 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
 
 from osmose.config.validator import summarize_config_validation
 from osmose.engine import PythonEngine, SimulationCancelled, reset_run_warnings
-from osmose.engine.thread_policy import apply_single_run_threads
-from osmose.engine_capabilities import describe_engine
+from osmose.engine.select import get_engine
+from osmose.engine.thread_policy import apply_single_run_threads, resolve_engine_threads
+from osmose.engine_capabilities import (
+    describe_engine,
+    engine_label,
+    engine_supports,
+    is_in_process,
+    is_java,
+)
 from osmose.java_staging import (  # noqa: F401  (re-exported: existing importers use ui.pages.run)
     _inject_random_movement_ncell,
     stage_config_for_java,
@@ -131,7 +138,7 @@ def run_ui():
                 body_collapse_header("Run Configuration", "run_config"),
                 ui.output_ui("engine_indicator"),
                 ui.panel_conditional(
-                    "input.engine_mode !== 'python'",
+                    "input.engine_mode === 'java'",  # the jar settings: the Java engine alone
                     ui.output_ui("jar_selector"),
                     ui.input_text(
                         "java_opts",
@@ -149,10 +156,10 @@ def run_ui():
                     ),
                 ),
                 ui.panel_conditional(
-                    "input.engine_mode === 'python'",
+                    "input.engine_mode !== 'java'",  # the in-process engines: Python and C#
                     ui.input_numeric(
                         "py_threads",
-                        "Threads (Numba; 0 = auto — physical cores)",
+                        "Threads (0 = auto — physical cores)",
                         value=0,
                         min=0,
                         max=32,
@@ -241,9 +248,23 @@ class _QueueLogHandler(logging.Handler):
 
 
 def _python_engine_thread(
-    run_config, output_dir, cancel_token, step_observer, done_q, n_threads=0, log_q=None
+    run_config,
+    output_dir,
+    cancel_token,
+    step_observer,
+    done_q,
+    n_threads=0,
+    log_q=None,
+    engine="python",
 ):
-    """Run the Python engine in a background thread; post the outcome to ``done_q``.
+    """Run an in-process engine in a background thread; post the outcome to ``done_q``.
+
+    ``engine`` is ``"python"`` (the default, and the name's origin) or ``"csharp"``. The C#
+    engine takes its thread count as a constructor argument (Numba's setting is not its
+    concern) and no step observer: it does not expose its schools, so there is no live view and
+    no step progress for it. Its refusals and failures arrive as ordinary exceptions and are
+    posted as ``failed``, with the engine's own message; a cancel raises ``SimulationCancelled``
+    from either engine.
 
     Fire-and-forget (the calibration-dashboard pattern): runs OFF the main thread so the event
     handler that launched it returns immediately, letting the reactive poll flush live movement
@@ -255,27 +276,32 @@ def _python_engine_thread(
 
     Touches NO reactive state. Posts ``(kind, result_or_None, message)``.
     """
-    apply_single_run_threads(n_threads)
+    label = engine_label(engine)
+    if engine == "python":
+        apply_single_run_threads(n_threads)
     osmose_logger = logging.getLogger("osmose")
     handler = None
     try:
         if log_q is not None:
             handler = _QueueLogHandler(log_q, threading.get_ident())
             osmose_logger.addHandler(handler)  # first, so the finally always covers it
-        engine = PythonEngine()
-        result = engine.run(
-            run_config,
-            output_dir,
-            seed=0,
-            cancel_token=cancel_token,
-            step_observer=step_observer,
-        )
+        if engine == "python":
+            result = PythonEngine().run(
+                run_config,
+                output_dir,
+                seed=0,
+                cancel_token=cancel_token,
+                step_observer=step_observer,
+            )
+        else:
+            runner = get_engine(engine, threads=resolve_engine_threads(n_threads))
+            result = runner.run(run_config, output_dir, seed=0, cancel_token=cancel_token)
         done_q.put(("done", result, ""))
     except SimulationCancelled as exc:
-        _log.info("Python engine cancelled: %s", exc)
+        _log.info("%s engine cancelled: %s", label, exc)
         done_q.put(("cancelled", None, str(exc) or "user cancelled"))
     except Exception as exc:
-        _log.error("Python engine failed: %s", exc, exc_info=True)
+        _log.error("%s engine failed: %s", label, exc, exc_info=True)
         done_q.put(("failed", None, str(exc)))
     finally:
         if handler is not None:
@@ -611,7 +637,7 @@ def run_server(input, output, session, state: AppState):
         status_v = _live_status_val.get()
         snap = _live_snapshot.get()
         if not status_v:
-            if state.engine_mode.get() != "python":
+            if not engine_supports(state.engine_mode.get(), "live_view"):
                 return ui.p("Live view available for the Python engine.", class_="text-muted")
             return ui.div()
         prog = f"step {snap.step + 1}/{snap.n_steps}" if snap is not None else ""
@@ -705,8 +731,7 @@ def run_server(input, output, session, state: AppState):
 
     @render.ui
     def engine_indicator():
-        mode = state.engine_mode.get()
-        label = "Python" if mode == "python" else "Java"
+        label = engine_label(state.engine_mode.get())
         return ui.p(
             ui.tags.strong("Active engine: "),
             label,
@@ -797,7 +822,7 @@ def run_server(input, output, session, state: AppState):
         # at year 0 because their entries are missing from the (comma-separated) fishery/
         # predation matrices. Block early with a clear message instead of launching a
         # doomed Java subprocess.
-        if engine_mode != "python":
+        if is_java(engine_mode):
             from osmose.config.aliases import target_version_for_jar
 
             block = java_engine_block_reason(
@@ -806,6 +831,17 @@ def run_server(input, output, session, state: AppState):
             if block:
                 run_log.set(["--- RUN BLOCKED (engine not supported) ---", block])
                 status.set("Java engine not supported for this configuration")
+                ui.notification_show(block, type="error", duration=20)
+                return
+        elif engine_mode == "csharp":
+            # The C# engine refuses a config with a feature it does not implement (and says
+            # which), and it may not be installed here. Same shape as the Java guard: block
+            # early with the reason instead of starting a run that can only fail.
+            cap = describe_engine("csharp", config)
+            if not cap.can_run:
+                block = cap.block_reason or "The C# engine cannot run this configuration."
+                run_log.set(["--- RUN BLOCKED (engine not supported) ---", block])
+                status.set("C# engine not supported for this configuration")
                 ui.notification_show(block, type="error", duration=20)
                 return
         errors, warnings = summarize_config_validation(
@@ -841,7 +877,7 @@ def run_server(input, output, session, state: AppState):
             _live_expanded = bool(input.live_view_expanded())
         except Exception:
             _live_expanded = False  # input unset (card never toggled) -> collapsed
-        if _live_expanded and engine_mode == "python":
+        if _live_expanded and engine_supports(engine_mode, "live_view"):
             while True:
                 try:
                     _live_queue.get_nowait()
@@ -856,7 +892,7 @@ def run_server(input, output, session, state: AppState):
             live_observer = make_step_observer(_live_queue, throttle_s=0.5)  # ≤2 fps (was 0.2)
 
         run_t0 = time.monotonic()
-        if engine_mode == "python":
+        if is_in_process(engine_mode):
             # Fire-and-forget: launch the engine in a background thread and RETURN, so the
             # reactive polls (_drain_live_queue + _drain_run_done) flush live frames and the
             # final result on the main thread. Awaiting the run here would suspend handle_run
@@ -871,11 +907,18 @@ def run_server(input, output, session, state: AppState):
             cancel_token = threading.Event()
             state.run_cancel_token.set(cancel_token)
             _active_cancel_token[0] = cancel_token
-            state.busy.set("Running simulation (Python)...")
-            status.set("Running (Python engine)...")
+            label = engine_label(engine_mode)
+            state.busy.set(f"Running simulation ({label})...")
+            status.set(f"Running ({label} engine)...")
             _run_config_cell[0] = config
             _run_start_cell[0] = run_t0
-            run_observer = make_run_observer(_progress_q, live_observer)
+            # Progress and the live map come from a per-step observer, which only the Python
+            # engine offers; the C# engine reports when it has finished.
+            run_observer = (
+                make_run_observer(_progress_q, live_observer)
+                if engine_supports(engine_mode, "step_progress")
+                else None
+            )
             n_threads = int(input.py_threads() or 0)
             reset_run_warnings()  # per-UI-run: clear the engine warning-dedup so this run re-emits
             threading.Thread(
@@ -888,6 +931,7 @@ def run_server(input, output, session, state: AppState):
                     _run_done_q,
                     n_threads,
                     _run_log_q,
+                    engine_mode,
                 ),
                 daemon=True,
             ).start()
@@ -951,4 +995,5 @@ def run_server(input, output, session, state: AppState):
         token = state.run_cancel_token.get()
         if token is not None:
             token.set()
-            status.set("Cancelling Python engine — finishing current step…")
+            label = engine_label(state.engine_mode.get())
+            status.set(f"Cancelling {label} engine — finishing current step…")

@@ -10,6 +10,8 @@ from starlette.routing import Route
 
 from osmose import __version__
 from osmose.cleanup import cleanup_old_temp_dirs, register_cleanup
+from osmose.engine_capabilities import ENGINE_MODES
+from osmose.engine_cs import csharp_engine_available
 from osmose.feedback import check_feedback_token, read_feedback
 from osmose.feedback_review import render_review_html
 from osmose.logging import setup_logging
@@ -37,6 +39,19 @@ from ui.pages.setup import setup_server, setup_ui
 from ui.pages.spatial_results import spatial_results_server, spatial_results_ui
 from ui.state import AppState
 from ui.theme import THEME
+
+#: Whether this installation has the C# engine (an optional build). Decided once, at import: it
+#: is what the header offers and what the server accepts.
+CSHARP_ENGINE_OFFERED = csharp_engine_available()[0]
+
+
+def accepts_engine_mode(mode: object, csharp_offered: bool | None = None) -> bool:
+    """Whether the server takes ``mode`` from the browser as the engine. The value comes from
+    the page (and from the browser's saved setting), so it is checked: one of the three
+    engines, and the C# engine only where it is installed."""
+    offered = CSHARP_ENGINE_OFFERED if csharp_offered is None else csharp_offered
+    return mode in ENGINE_MODES and (mode != "csharp" or offered)
+
 
 # Project repository — same URL the About modal links to (ui/components/help_modal.py).
 _REPO_URL = "https://github.com/razinkele/osmopy"
@@ -296,6 +311,20 @@ app_ui = ui.page_fillable(
                 id="engineBtnPython",
                 onclick="setEngineMode('python')",
             ),
+            # The C# engine is an optional build: offered only where it is installed.
+            *(
+                [
+                    ui.tags.button(
+                        "C#",
+                        class_="osm-engine-btn",
+                        id="engineBtnCsharp",
+                        onclick="setEngineMode('csharp')",
+                        title="The C# engine: the Python engine's model, faster",
+                    )
+                ]
+                if CSHARP_ENGINE_OFFERED
+                else []
+            ),
             class_="osm-engine-toggle",
         ),
         ui.div(
@@ -428,18 +457,23 @@ app_ui = ui.page_fillable(
     (function() {
         // ── Engine mode toggle — must be defined before initOnceElements ──
         window.setEngineMode = function(mode) {
-            localStorage.setItem('osmose-engine', mode);
-            var jBtn = document.getElementById('engineBtnJava');
-            var pBtn = document.getElementById('engineBtnPython');
-            if (jBtn && pBtn) {
-                if (mode === 'java') {
-                    jBtn.classList.add('active');
-                    pBtn.classList.remove('active');
-                } else {
-                    pBtn.classList.add('active');
-                    jBtn.classList.remove('active');
-                }
+            // Three engines, one button each; the C# button exists only where that engine is
+            // installed. A mode with no button (a saved 'csharp' on a server without the
+            // engine, or anything unknown) falls back to Python.
+            var buttons = {
+                java: document.getElementById('engineBtnJava'),
+                python: document.getElementById('engineBtnPython'),
+                csharp: document.getElementById('engineBtnCsharp')
+            };
+            if (!buttons[mode]) {
+                mode = 'python';
             }
+            localStorage.setItem('osmose-engine', mode);
+            Object.keys(buttons).forEach(function(name) {
+                if (buttons[name]) {
+                    buttons[name].classList.toggle('active', name === mode);
+                }
+            });
             if (typeof Shiny !== 'undefined' && Shiny.setInputValue) {
                 Shiny.setInputValue('engine_mode', mode);
             }
@@ -669,7 +703,7 @@ def server(input, output, session):
     @reactive.event(input.engine_mode)
     def _sync_engine_mode():
         mode = input.engine_mode()
-        if mode in ("java", "python"):
+        if accepts_engine_mode(mode):
             state.engine_mode.set(mode)
 
     @render.ui
