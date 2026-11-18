@@ -139,6 +139,24 @@ def interrupted(out: Path) -> None:
     out.write_text(json.dumps(result))
 
 
+def summary(out: Path) -> None:
+    """One run straight through the bridge; writes the RunSummary fields (task 1.11)."""
+    from osmose.engine import PythonEngine
+    from osmose.engine.config import EngineConfig
+    from osmose.engine_cs import bridge
+    from osmose.engine_cs.build import allocate_results, build_bundle
+
+    raw = _raw()
+    cfg = EngineConfig.from_dict(raw)
+    bundle = build_bundle(cfg, raw, PythonEngine()._resolve_grid(raw), seed=5)
+    buffers = allocate_results(bundle, cfg)
+    status, steps, _records, _peak, elapsed, _scheme, phases = bridge.run(bundle, buffers.control)
+    out.write_text(
+        json.dumps({"status": str(status), "steps": int(steps), "n_steps": int(cfg.n_steps),
+                    "elapsed": float(elapsed), "phases": phases})
+    )  # fmt: skip
+
+
 if __name__ == "__main__":
     {
         "memory": memory,
@@ -146,4 +164,5 @@ if __name__ == "__main__":
         "cancel_at": cancel_at,
         "error": expect_error,
         "interrupted": interrupted,
+        "summary": summary,
     }[sys.argv[2]](Path(sys.argv[4]))

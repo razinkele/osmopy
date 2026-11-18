@@ -150,3 +150,47 @@ def test_signals_are_reraised_only_after_the_worker_joined(kind, error, tmp_path
     # thread-liveness probe is not the invariant: the worker may still be exiting.)
     assert r["cancel_slot"] == 1
     assert r["steps_at_catch"] == r["steps_later"] < r["n_steps"]
+
+
+PHASES = ["movement", "regroup", "mortality", "life_cycle", "outputs"]
+
+
+def test_run_summary_carries_the_phase_split(tmp_path):
+    """Task 1.11: RunSummary's per-phase seconds. The phases are intervals of the step loop
+    on the engine's own clock, so they cannot exceed the run's elapsed time; and they are
+    nearly all of it (measured 99.4% on BoB, 99.7% on EEC), so a unit slip or a dropped phase
+    falls outside [0.9, 1] of the elapsed time."""
+    _child("summary", _raw("bay_of_biscay", tmp_path, 1), tmp_path / "s.json")
+    s = json.loads((tmp_path / "s.json").read_text())
+    assert s["steps"] == s["n_steps"] == 24
+    assert list(s["phases"]) == PHASES
+    assert all(v > 0 for v in s["phases"].values()), s["phases"]
+    total = sum(s["phases"].values())
+    assert 0.9 * s["elapsed"] <= total <= s["elapsed"], (total, s["elapsed"])
+
+
+def test_benchmark_and_profile_scripts_run_the_csharp_engine(tmp_path):
+    """``--engine csharp`` in scripts/benchmark_engine.py and scripts/profile_engine.py (task
+    1.11), each in its own process."""
+    env = dict(os.environ, PYTHONPATH=str(ROOT))  # scripts/ has no osmose: this wins (CLAUDE.md)
+
+    def script(*args: str) -> None:
+        proc = subprocess.run(
+            [sys.executable, *args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=900
+        )
+        assert proc.returncode == 0, proc.stderr[-4000:]
+
+    bench, prof = tmp_path / "bench.json", tmp_path / "prof.json"
+    script("scripts/benchmark_engine.py", "--engine", "csharp", "--config", "examples",
+           "--years", "1", "--repeats", "1", "--warmup", "0", "--threads", "2",
+           "--output", str(bench))  # fmt: skip
+    b = json.loads(bench.read_text())
+    assert (b["engine"], b["threads"], b["minimal"]) == ("csharp", 2, True)
+    assert list(b["phases_s"]) == PHASES and b["bundle_s"] > 0 and b["engine_s"] > 0
+    assert set(b["final_biomass"]) and all(v >= 0 for v in b["final_biomass"].values())
+    script("scripts/profile_engine.py", "--engine", "csharp", "--config", "examples",
+           "--years", "1", "--json", str(prof))  # fmt: skip
+    p = json.loads(prof.read_text())
+    assert p["engine"] == "csharp" and list(p["phases_s"]) == PHASES
+    assert p["cold_first_call_s"] > 0 and p["engine_elapsed_s"] > 0
+    assert "bundle build" in p["stages_s"] and "write_outputs()" in p["stages_s"]

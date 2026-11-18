@@ -67,7 +67,8 @@ POLL_SECONDS = 0.05
 
 def run(bundle: Any, control: Any, cancel_token: threading.Event | None = None) -> tuple:
     """Call ``OsmoseEngine.RunSimulation`` on ``bundle`` and return its summary as
-    ``(status, steps, records, peak_schools, elapsed_seconds, rng_scheme)``.
+    ``(status, steps, records, peak_schools, elapsed_seconds, rng_scheme, phase_seconds)``,
+    the last a dict (movement, regroup, mortality, life_cycle, outputs).
 
     The engine runs on a worker thread; this thread waits in a ``join(timeout)`` loop, where a
     ``KeyboardInterrupt`` or a ``SIGALRM``-raised timeout is delivered normally, and forwards
@@ -88,6 +89,7 @@ def run(bundle: Any, control: Any, cancel_token: threading.Event | None = None) 
             outcome["summary"] = (
                 int(s.Status), int(s.StepsCompleted), int(s.RecordsWritten),
                 int(s.PeakSchools), float(s.ElapsedSeconds), int(s.RngScheme),
+                {str(n): float(v) for n, v in zip(s.PhaseNames, s.PhaseSeconds, strict=True)},
             )  # fmt: skip
         except BaseException as exc:  # carried to the caller
             outcome["error"] = exc

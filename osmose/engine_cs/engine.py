@@ -65,7 +65,7 @@ class CSharpEngine:
         )  # fmt: skip
         buffers = allocate_results(bundle, engine_config)
         try:
-            status, steps, records, peak, elapsed, scheme = bridge.run(
+            status, steps, records, peak, elapsed, scheme, phases = bridge.run(
                 bundle, buffers.control, cancel_token
             )
         except bridge.CSharpEngineUnavailable as exc:
@@ -77,8 +77,9 @@ class CSharpEngine:
                 raise CSharpEngineError(f"{type(exc).__name__}: {exc}") from exc
             raise
         logger.info(
-            "C# engine: %d steps, %d records, peak %d schools, %.2f s (rng scheme %d)",
+            "C# engine: %d steps, %d records, peak %d schools, %.2f s (rng scheme %d); phases %s",
             steps, records, peak, elapsed, scheme,
+            ", ".join(f"{name} {sec:.2f}s" for name, sec in phases.items()),
         )  # fmt: skip
         if status == CANCELLED:
             raise SimulationCancelled(f"cancelled at step {steps}/{engine_config.n_steps}")

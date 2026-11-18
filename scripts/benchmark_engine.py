@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark the Python OSMOSE engine for performance regression detection.
+"""Benchmark an in-process OSMOSE engine (Python, or C# with ``--engine csharp``).
 
 Runs the engine on Bay of Biscay config with timing and outputs structured
 JSON results. Use before and after optimization to measure speedup.
@@ -70,8 +70,21 @@ def resolve_config(arg: str | None) -> Path:
     )
 
 
-def run_benchmark(n_years: int, seed: int, config_path: Path = EXAMPLES_CONFIG) -> dict:
-    """Run the Python engine once and return timing + summary stats."""
+def run_benchmark(
+    n_years: int,
+    seed: int,
+    config_path: Path = EXAMPLES_CONFIG,
+    engine: str = "python",
+    threads: int = 1,
+    minimal: bool = False,
+) -> dict:
+    """Run one engine once and return timing + summary stats.
+
+    The timed span is the engine's own work. Python: ``simulate``. C#: the bundle build, the
+    result buffers, ``RunSimulation`` and the ``StepOutput`` list (what ``CSharpEngine`` does
+    after parsing; the CLR is loaded by the warm-up, not inside a timed run). Config parsing and
+    the grid are outside both. The C# engine needs ``output.minimal.enabled``, so it is set for
+    it, and for Python when ``minimal`` asks for a like-for-like comparison."""
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine.config import EngineConfig
     from osmose.engine.grid import Grid
@@ -80,6 +93,8 @@ def run_benchmark(n_years: int, seed: int, config_path: Path = EXAMPLES_CONFIG) 
     reader = OsmoseConfigReader()
     raw = reader.read(config_path)
     raw["simulation.time.nyear"] = str(n_years)
+    if minimal or engine == "csharp":
+        raw["output.minimal.enabled"] = "true"
 
     cfg = EngineConfig.from_dict(raw)
 
@@ -98,11 +113,29 @@ def run_benchmark(n_years: int, seed: int, config_path: Path = EXAMPLES_CONFIG) 
         nx = int(raw.get("grid.ncolumn", "1"))
         grid = Grid.from_dimensions(ny=ny, nx=nx)
 
-    rng = np.random.default_rng(seed)
+    extra: dict = {}
+    if engine == "csharp":
+        from osmose.engine_cs import bridge
+        from osmose.engine_cs.build import allocate_results, build_bundle
+        from osmose.engine_cs.engine import _step_outputs
 
-    start = time.perf_counter()
-    outputs = simulate(cfg, grid, rng)
-    elapsed = time.perf_counter() - start
+        start = time.perf_counter()
+        bundle = build_bundle(cfg, raw, grid, seed=seed, threads=threads)
+        buffers = allocate_results(bundle, cfg)
+        built = time.perf_counter()
+        summary = bridge.run(bundle, buffers.control)
+        outputs = _step_outputs(buffers, summary[2])
+        elapsed = time.perf_counter() - start
+        extra = {
+            "bundle_s": round(built - start, 4),
+            "engine_s": round(summary[4], 4),
+            "phases_s": summary[6],
+        }
+    else:
+        rng = np.random.default_rng(seed)
+        start = time.perf_counter()
+        outputs = simulate(cfg, grid, rng)
+        elapsed = time.perf_counter() - start
 
     # Collect final-step biomass per species. baltic + others may have
     # background species (sp >= n_focal) whose biomass is appended; guard
@@ -121,6 +154,7 @@ def run_benchmark(n_years: int, seed: int, config_path: Path = EXAMPLES_CONFIG) 
         "seed": seed,
         "per_year_s": round(elapsed / n_years, 3),
         "final_biomass": biomass_by_species,
+        **extra,
     }
 
 
@@ -231,7 +265,7 @@ def compare_results(baseline_path: Path, current_path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark Python OSMOSE engine")
+    parser = argparse.ArgumentParser(description="Benchmark an in-process OSMOSE engine")
     parser.add_argument("--years", type=int, default=1, help="Simulation years (default: 1)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed (default: 42)")
     parser.add_argument("--repeats", type=int, default=3, help="Number of runs (default: 3)")
@@ -255,6 +289,16 @@ def main() -> None:
     parser.add_argument(
         "--compare", nargs=2, metavar=("BASELINE", "CURRENT"), help="Compare two result files"
     )
+    parser.add_argument("--engine", choices=("python", "csharp"), default="python")
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        help="threads of the run (default: the single-run thread policy; C# uses the same count)",
+    )
+    parser.add_argument(
+        "--minimal", action="store_true", help="output.minimal.enabled (always on for csharp)"
+    )
     args = parser.parse_args()
 
     if args.compare:
@@ -267,13 +311,17 @@ def main() -> None:
         sys.exit(1)
 
     print(
-        f"Benchmarking Python engine: config={config_path.parent.name}, "
+        f"Benchmarking the {args.engine} engine: config={config_path.parent.name}, "
         f"{args.years}yr, seed={args.seed}, repeats={args.repeats}"
     )
     print()
 
-    n_threads = apply_single_run_threads()
-    print(f"  Numba threads: {n_threads or 'default (numba absent)'}\n")
+    n_threads = apply_single_run_threads(args.threads)
+    engine_threads = args.threads if args.threads is not None else max(1, n_threads)
+    print(
+        f"  Numba threads: {n_threads or 'default (numba absent)'}; engine threads: {engine_threads}\n"
+    )
+    run_kw = {"engine": args.engine, "threads": engine_threads, "minimal": args.minimal}
 
     result = None
     # Warm-up runs are DISCARDED. With a cold numba cache the first run pays
@@ -282,12 +330,12 @@ def main() -> None:
     # 10% "regression" in this repo. One warm-up is enough; --warmup 0 restores
     # the old behaviour.
     for i in range(args.warmup):
-        w = run_benchmark(args.years, args.seed, config_path=config_path)
+        w = run_benchmark(args.years, args.seed, config_path=config_path, **run_kw)
         print(f"  Warm-up {i + 1}/{args.warmup}: {w['elapsed_s']:.3f}s (discarded)")
 
     timings = []
     for i in range(args.repeats):
-        result = run_benchmark(args.years, args.seed, config_path=config_path)
+        result = run_benchmark(args.years, args.seed, config_path=config_path, **run_kw)
         timings.append(result["elapsed_s"])
         print(f"  Run {i + 1}/{args.repeats}: {result['elapsed_s']:.3f}s")
 
@@ -311,7 +359,13 @@ def main() -> None:
         "captured_at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "hostname": socket.gethostname(),
         "numba_threads": n_threads,
+        "engine": args.engine,
+        "threads": engine_threads,
+        "minimal": args.minimal or args.engine == "csharp",
         "final_biomass": result["final_biomass"],
+        # C# only, from the last timed run: bundle build + buffers, the engine's own clock,
+        # and its phase split (RunSummary).
+        **{k: result[k] for k in ("bundle_s", "engine_s", "phases_s") if k in result},
     }
 
     print()

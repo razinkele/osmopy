@@ -34,6 +34,7 @@ public sealed class SimulationRun
     private readonly ControlBlock _control;
     private readonly ResultBuffers? _buffers;
     private double[] _larva = new double[64];
+    private readonly long[] _phaseTicks = new long[5];
 
     public SimulationRun(EngineParameters p, SimulationConfig config)
     {
@@ -115,20 +116,37 @@ public sealed class SimulationRun
             _control.Report(steps, records, Store.Count);
         }
 
-        return new RunSummary(status, steps, records, peak, clock.Elapsed.TotalSeconds, _p.RngScheme);
+        return new RunSummary(status, steps, records, peak, clock.Elapsed.TotalSeconds, _p.RngScheme, PhaseSeconds(), PhaseNames);
     }
 
     /// <summary>Stages 2 to 12 of one step, the record flush excepted.</summary>
     public void RunStep(int step)
     {
+        long t0 = Stopwatch.GetTimestamp();
         BeginStep();
         Move(step);
+        long t1 = Stopwatch.GetTimestamp();
         Regroup();
+        long t2 = Stopwatch.GetTimestamp();
         var draws = new PhiloxCellDraws(_key, step);
         Mortality<PhiloxCellDraws, PhiloxDrawSource>(step, ref draws);
+        long t3 = Stopwatch.GetTimestamp();
         AfterMortality(step);
+        long t4 = Stopwatch.GetTimestamp();
         Collector.Collect(_p, Store);
+        long t5 = Stopwatch.GetTimestamp();
+        _phaseTicks[0] += t1 - t0;
+        _phaseTicks[1] += t2 - t1;
+        _phaseTicks[2] += t3 - t2;
+        _phaseTicks[3] += t4 - t3;
+        _phaseTicks[4] += t5 - t4;
     }
+
+    /// <summary>Names of <see cref="RunSummary.PhaseSeconds"/>, in order.</summary>
+    public static readonly string[] PhaseNames = ["movement", "regroup", "mortality", "life_cycle", "outputs"];
+
+    /// <summary>Seconds spent in each phase so far (<see cref="PhaseNames"/>).</summary>
+    public double[] PhaseSeconds() => [.. _phaseTicks.Select(t => t / (double)Stopwatch.Frequency)];
 
     /// <summary>Stage 2, the per-step reset (<c>_reset_step_variables</c>): no school is out of
     /// the domain until movement says so. Deaths are reset by the mortality step, the step

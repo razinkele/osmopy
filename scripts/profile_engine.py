@@ -23,8 +23,14 @@ take absolute timings from `benchmark_engine.py`. Run with a warm numba cache
 (execute twice and use the second run): a cold cache cost 45.96s against ~5.6s
 warm on EEC 5yr, which swamps everything being measured.
 
+With ``--engine csharp`` the C# engine is profiled instead: a cold first call (runtime load and
+JIT) is reported on its own, then a warm run's stages (bundle build, RunSimulation, StepOutput
+list, write_outputs) and the engine's own phase split from its RunSummary. It runs with
+``output.minimal.enabled``, which the C# engine needs.
+
 Usage:
     .venv/bin/python scripts/profile_engine.py [--config eec_full] [--years 5]
+    .venv/bin/python scripts/profile_engine.py --engine csharp --threads 14
     .venv/bin/python scripts/profile_engine.py --config baltic --json prof.json
 """
 
@@ -99,6 +105,86 @@ def _install_timers(totals: dict[str, float], calls: dict[str, int]) -> list[str
     return wrapped
 
 
+def _profile_csharp(args, cfg_path: Path) -> None:
+    from osmose.engine import PythonEngine
+    from osmose.engine.config import EngineConfig
+    from osmose.engine.output import write_outputs
+    from osmose.engine_cs import bridge
+    from osmose.engine_cs.build import allocate_results, build_bundle
+    from osmose.engine_cs.capabilities import csharp_engine_block_reason
+    from osmose.engine_cs.engine import _step_outputs
+
+    t0 = time.perf_counter()
+    config = OsmoseConfigReader().read(cfg_path)
+    t_parse = time.perf_counter() - t0
+    config["simulation.time.nyear"] = str(args.years)
+    config["output.minimal.enabled"] = "true"
+    reason = csharp_engine_block_reason(config)
+    if reason is not None:
+        raise SystemExit(f"the C# engine cannot run {cfg_path}: {reason}")
+    t0 = time.perf_counter()
+    engine_config = EngineConfig.from_dict(config)
+    grid = PythonEngine()._resolve_grid(config)
+    t_setup = time.perf_counter() - t0
+
+    def one_run(cfg):
+        stages = {}
+        t = time.perf_counter()
+        bundle = build_bundle(cfg, config, grid, seed=args.seed, threads=args.threads)
+        buffers = allocate_results(bundle, cfg)
+        stages["bundle build"] = time.perf_counter() - t
+        t = time.perf_counter()
+        summary = bridge.run(bundle, buffers.control)
+        stages["RunSimulation"] = time.perf_counter() - t
+        t = time.perf_counter()
+        outputs = _step_outputs(buffers, summary[2])
+        stages["StepOutput list"] = time.perf_counter() - t
+        return stages, summary, outputs
+
+    t0 = time.perf_counter()
+    cold_stages, _, _ = one_run(engine_config)  # loads the CLR and JITs; not part of the profile
+    t_cold = time.perf_counter() - t0
+    stages, summary, outputs = one_run(engine_config)
+    out_dir = (
+        Path(args.out_dir)
+        if args.out_dir
+        else Path(__import__("tempfile").mkdtemp(prefix="osmose_profile_"))
+    )
+    t0 = time.perf_counter()
+    write_outputs(outputs, out_dir, engine_config, grid=grid)
+    stages["write_outputs()"] = time.perf_counter() - t0
+    all_stages = {"config parse": t_parse, "engine setup (EngineConfig, grid)": t_setup, **stages}
+    total = sum(all_stages.values())
+    phases = summary[6]
+
+    print(
+        f"\n{args.config} {args.years}yr  (seed {args.seed}, C# engine, {args.threads} thread(s))"
+    )
+    print(f"cold first call (runtime load + JIT, same run length): {t_cold:.3f}s")
+    print(f"{'stage':<34}{'seconds':>10}{'share':>9}")
+    print("-" * 53)
+    for label, secs in all_stages.items():
+        print(f"{label:<34}{secs:>10.3f}{secs / total * 100:>8.1f}%")
+    print("-" * 53)
+    print(f"{'TOTAL':<34}{total:>10.3f}{100.0:>8.1f}%")
+    print(f"\n{'engine phase (RunSummary)':<34}{'seconds':>10}{'share':>9}")
+    print("-" * 53)
+    for name, secs in sorted(phases.items(), key=lambda kv: -kv[1]):
+        print(f"{name:<34}{secs:>10.3f}{secs / summary[4] * 100:>8.1f}%")
+    print("-" * 53)
+    rest = summary[4] - sum(phases.values())
+    print(f"{'other (records, checks)':<34}{rest:>10.3f}{rest / summary[4] * 100:>8.1f}%")
+    if args.json:
+        payload = {
+            "config": args.config, "n_years": args.years, "seed": args.seed, "engine": "csharp",
+            "threads": args.threads, "cold_first_call_s": t_cold, "cold_stages_s": cold_stages,
+            "stages_s": all_stages, "total_s": total, "engine_elapsed_s": summary[4],
+            "phases_s": phases, "peak_schools": summary[3],
+        }  # fmt: skip
+        Path(args.json).write_text(json.dumps(payload, indent=2))
+        print(f"\nWrote {args.json}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Profile an OSMOSE engine run by phase")
     parser.add_argument(
@@ -108,10 +194,15 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out-dir", default=None, help="where to write outputs (default: temp)")
     parser.add_argument("--json", default=None, help="also write the numbers to this JSON file")
+    parser.add_argument("--engine", choices=("python", "csharp"), default="python")
+    parser.add_argument("--threads", type=int, default=1, help="threads of a C# run")
     args = parser.parse_args()
 
     apply_single_run_threads()
     cfg_path = resolve_config(args.config)
+    if args.engine == "csharp":
+        _profile_csharp(args, cfg_path)
+        return
 
     t0 = time.perf_counter()
     config = OsmoseConfigReader().read(cfg_path)

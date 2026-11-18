@@ -20,12 +20,16 @@ public enum RunStatus
 public sealed class RunSummary
 {
     internal RunSummary(RunStatus status, int stepsCompleted, int recordsWritten)
-        : this(status, stepsCompleted, recordsWritten, 0, 0.0, 0)
+        : this(status, stepsCompleted, recordsWritten, 0, 0.0, 0, [], [])
     {
     }
 
-    internal RunSummary(RunStatus status, int stepsCompleted, int recordsWritten, int peakSchools, double elapsedSeconds, int rngScheme)
+    internal RunSummary(
+        RunStatus status, int stepsCompleted, int recordsWritten, int peakSchools, double elapsedSeconds, int rngScheme,
+        double[] phaseSeconds, string[] phaseNames)
     {
+        PhaseSeconds = phaseSeconds;
+        PhaseNames = phaseNames;
         Status = status;
         StepsCompleted = stepsCompleted;
         RecordsWritten = recordsWritten;
@@ -50,4 +54,10 @@ public sealed class RunSummary
 
     /// <summary>The draw scheme the run used (spec 5).</summary>
     public int RngScheme { get; }
+
+    /// <summary>Seconds per phase over the whole run, named by <see cref="PhaseNames"/>
+    /// (movement, regroup, mortality, life cycle, outputs).</summary>
+    public double[] PhaseSeconds { get; }
+
+    public string[] PhaseNames { get; }
 }
