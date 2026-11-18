@@ -16,27 +16,43 @@ The production web app is a **systemd service** running Uvicorn directly:
 
 ## What `deploy.sh` runs as root, and what as `shiny`
 
-`sudo bash deploy.sh` runs as root, but **root never executes, or writes through, anything the service user can modify.** The prod clone (`.git` included) and the shared env (`/opt/micromamba/envs/shiny`, with its `python3`, `pip` and `site-packages`) are owned by `shiny`. Run as root:
+`sudo bash deploy.sh` runs as root, but **root never executes, or writes through, anything the service user can modify.**
+
+**Run it only from the deploy host's own checkout** (`/home/razinka/osmopy`), never from `/srv/shiny-server/osmose` or `osmose-src`. Those trees are `shiny`-writable, so `sudo bash` there would run a script the service account controls. The script's own "not from the prod clone" check runs too late to help: it is part of the script being run. The prod clone (`.git` included) and the shared env (`/opt/micromamba/envs/shiny`, with its `python3`, `pip` and `site-packages`) are owned by `shiny`. Run as root:
 - `git` would execute the clone's hooks, `core.fsmonitor` and filter drivers;
 - the env's interpreter would execute its `.pth` files, or a replaced binary;
 - `cp` into the clone would follow a planted symlink.
 
 Any of those would let a compromised service account get root at the next deploy. So every `git` command on the clone, every run of the env's `python3` and `pip`, and every write into the clone goes through `runuser -u shiny`, under `setsid` so the child has no controlling terminal (it could otherwise inject keystrokes into root's terminal with the `TIOCSTI` ioctl). Root keeps only what it owns: the systemd unit, `/opt/dotnet`, the `/srv/shiny-server/osmose` symlink, and creating the empty clone directory. `tests/test_deploy_privileges.py` enforces this line by line.
 
-Deploys before this change let root operate on the clone through a `safe.directory` grant in root's git config. The deploy now withdraws it, and hands anything those deploys left root-owned in the clone back to `shiny`.
+Deploys before this change let root operate on the clone through a `safe.directory` grant in root's git config. The deploy now withdraws it.
 
-The Python dependencies (Step 0) are installed **before** the checkout. If pip fails, the deploy stops with the old code and the old dependencies still consistent.
+Root does not re-own anything in the clone either: a hard link `shiny` planted there would carry the change to a file outside it. Instead, a read-only check stops the deploy, before the fetch, if anything in the clone is root-owned (the one-time step below covers it). On 2026-11-18 nothing was.
+
+The Python dependencies (Step 0) are installed **before** the checkout. If pip fails, the deploy stops with the previous ref still checked out. Installs that completed before the failure stay in the shared env. They are version floors, which the running code already satisfies.
 
 ### One-time step before the first deploy with this change
-Earlier deploys ran pip as root, so a few packages in the shared env are root-owned, and pip running as `shiny` cannot upgrade them. Measured 2026-11-18: `cma`, `pyarrow` and `shiny_deckgl`, with their `dist-info` directories (`pyodbc` too, but that is installed by conda for another app and not managed here). Nothing fails until one of them needs an upgrade. Then Step 0 stops the deploy, before the checkout, with a pip permission error. To hand them to the env's owner once, do it **with the service stopped**:
+Earlier deploys ran pip as root, so a few packages in the shared env are root-owned, and pip running as `shiny` cannot upgrade them. Measured 2026-11-18: `cma`, `pyarrow` and `shiny_deckgl`, with their `dist-info` directories (`pyodbc` too, but that is installed by conda for another app and not managed here). Nothing fails until one of them needs an upgrade. Then Step 0 stops the deploy, before the checkout, with a pip permission error. To hand them to the env's owner once, do it **with the service stopped**, from the deploy host's checkout:
 
 ```bash
 SP=/opt/micromamba/envs/shiny/lib/python3.13/site-packages
-sudo find "$SP" -maxdepth 1 -user root          # what is root-owned now
+sudo find "$SP" -maxdepth 1 -user root                 # what is root-owned in the env
+sudo find /srv/shiny-server/osmose-src -user root      # and in the clone (empty on 2026-11-18)
 sudo systemctl stop osmose-shiny.service
 sudo chown -R --no-dereference shiny "$SP"/cma "$SP"/cma-*.dist-info "$SP"/pyarrow "$SP"/pyarrow-*.dist-info "$SP"/shiny_deckgl "$SP"/shiny_deckgl-*.dist-info
-sudo bash deploy.sh                              # restarts the service
+sudo bash deploy.sh                                     # restarts the service
 ```
+
+If the clone listing showed anything, add those paths to the `chown`. Any `~`-prefixed leftover in `$SP` is the debris of an interrupted pip install; the deploy reports one it cannot remove, and it can be deleted.
+
+**If that deploy stops before the restart** (for example at Step 0), the service is still stopped. The previous ref is still checked out, so bring it back as it was, and check it:
+
+```bash
+sudo systemctl start osmose-shiny.service
+systemctl status osmose-shiny.service
+```
+
+Step 0 installs only version floors, which the old code already satisfies. If the env is nevertheless broken, repair it with pip, run as `shiny`, before starting the service.
 
 This grants `shiny` nothing new. It owns `site-packages`, so it could already rename those directories away. It is a manual step on purpose: an automatic root `chown` on every deploy would itself be root acting on a path that runs through `shiny`-owned directories.
 

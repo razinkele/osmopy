@@ -145,8 +145,9 @@ as_shiny() { (cd / && setsid -w runuser -u shiny -- env HOME="$SHINY_HOME" "$@")
 # --- Step 0: Install missing + version-floored Python dependencies ---
 # BEFORE the checkout: pip runs as shiny (above), and a failure here (a network error, or a
 # package an older deploy installed as root that shiny cannot upgrade; DEPLOY.md, one-time fix)
-# then stops the deploy with the old code and the old dependencies still consistent, rather than
-# leaving new code on disk under the old process.
+# then stops the deploy with the previous ref still checked out, rather than leaving new code on
+# disk under the old process. Installs that completed before the failure stay in the shared env;
+# they are version floors, which the running code already satisfies.
 # Clean up leftover "~"-prefixed dist-info dirs (broken partial installs from interrupted
 # pip upgrades, e.g. ~inycss2 / ~hinyswatch / ~ma). pip warns "Ignoring invalid distribution"
 # for each on every command; removing them is safe (the real packages are the unprefixed dirs).
@@ -155,7 +156,10 @@ if [[ -d "$SHINY_SITE_PACKAGES" ]]; then
     LEFTOVER=$(find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' 2>/dev/null)
     if [[ -n "$LEFTOVER" ]]; then
         info "Removing leftover partial-install dirs in $SHINY_SITE_PACKAGES"
-        as_shiny find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' -exec rm -rf {} +
+        # Cosmetic (pip only warns about them), so a leftover shiny cannot remove, e.g. one an
+        # older root deploy left root-owned, is reported, not fatal.
+        as_shiny find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' -exec rm -rf {} + \
+            || warn "Could not remove all of: ${LEFTOVER} (root-owned? DEPLOY.md, one-time step)"
     fi
 fi
 
@@ -227,11 +231,15 @@ info "Python dependencies ensured."
 git config --global --fixed-value --unset-all safe.directory "$PROD_SRC" 2>/dev/null || true
 if [[ -d "${PROD_SRC}/.git" ]]; then
     info "Updating prod clone at ${PROD_SRC} (fetch ${DEPLOY_REF})..."
-    # Older deploys ran git as root; make sure nothing in the clone is left root-owned. -h: on a
-    # symlink, change the link itself, never its target (and -R never follows one). Safe as root
-    # here, unlike on the env: the clone's parent (/srv/shiny-server) is root-owned, so shiny
-    # cannot swap the starting path, and chown -R works relative to directory descriptors.
-    chown -hR shiny:shiny "$PROD_SRC"
+    # Root never writes into the clone, not even to re-own it: a hard link shiny planted there
+    # would carry the change to a file outside it. Anything an older, root-git deploy left
+    # root-owned would make git as shiny fail half-way, so refuse first (read-only check);
+    # DEPLOY.md has the one-time fix.
+    ROOT_OWNED="$(find "$PROD_SRC" -xdev -user root -print -quit 2>/dev/null || true)"
+    if [[ -n "$ROOT_OWNED" ]]; then
+        error "Root-owned files in ${PROD_SRC} (first: ${ROOT_OWNED}). See DEPLOY.md, one-time step."
+        exit 1
+    fi
     as_shiny git -C "$PROD_SRC" fetch --quiet --prune origin
 elif [[ -e "$PROD_SRC" ]]; then
     error "${PROD_SRC} exists but is not a git clone. Remove it manually."
@@ -239,8 +247,42 @@ elif [[ -e "$PROD_SRC" ]]; then
 else
     info "Creating prod clone: ${REPO_URL} -> ${PROD_SRC}"
     install -d -o shiny -g shiny "$PROD_SRC"  # root-owned parent: root creates the empty dir
-    as_shiny git clone --quiet "$REPO_URL" "$PROD_SRC"
+    if ! as_shiny git clone --quiet "$REPO_URL" "$PROD_SRC"; then
+        rmdir "$PROD_SRC" 2>/dev/null || true  # the dir made above, only if git left it empty
+        error "git clone of ${REPO_URL} failed; nothing was deployed. Re-run once it is reachable."
+        exit 1
+    fi
 fi
+# The osmose-java JARs are NOT tracked in git (so they are absent from a fresh clone). Provision
+# them from the deploy host's tree so Java-engine runs remain available. Best-effort: a failure is
+# a warning (prod's primary path is the Python engine; a missing JAR only disables Java runs). It
+# runs before the checkout, and each JAR lands under a temporary name and is then renamed, so a
+# failed copy never leaves a truncated JAR. Root reads the JARs (the deploy host's tree may be
+# closed to shiny) into a fresh root-owned directory shiny can read; shiny copies them in.
+provision_jars() {
+    as_shiny mkdir -p "${PROD_SRC}/osmose-java" || return 1
+    local jar name
+    for jar in "$JAR_STAGE"/*.jar; do
+        name="$(basename "$jar")"
+        as_shiny cp -f "$jar" "${PROD_SRC}/osmose-java/.${name}.part" || return 1
+        as_shiny mv -f "${PROD_SRC}/osmose-java/.${name}.part" "${PROD_SRC}/osmose-java/${name}" \
+            || return 1
+    done
+}
+if compgen -G "${SOURCE_DIR}/osmose-java/"*.jar >/dev/null 2>&1; then
+    JAR_STAGE="$(mktemp -d)"
+    chmod 755 "$JAR_STAGE"
+    if install -m 644 "${SOURCE_DIR}/osmose-java/"*.jar "$JAR_STAGE/" && provision_jars; then
+        info "Provisioned Java JAR(s) into ${PROD_SRC}/osmose-java/."
+    else
+        as_shiny find "${PROD_SRC}/osmose-java" -maxdepth 1 -name '.*.part' -delete 2>/dev/null || true
+        warn "Could not provision the Java JAR(s); Java-engine runs may be unavailable in prod."
+    fi
+    rm -rf "$JAR_STAGE"
+else
+    warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."
+fi
+
 # The C# assembly is gitignored, so `checkout --force` keeps the previous ref's build, and
 # csharp_engine_available() only compares the feature catalogue: a stale assembly would load
 # against the new Python code. Remove it on EVERY deploy, BEFORE the checkout, so a failed
@@ -254,23 +296,6 @@ as_shiny git -C "$PROD_SRC" checkout --quiet --force --detach "$DEPLOY_REF"
 DEPLOYED_SHA="$(as_shiny git -C "$PROD_SRC" rev-parse --short HEAD)"
 info "Prod source at ${DEPLOY_REF} (${DEPLOYED_SHA})."
 
-# The osmose-java JAR is NOT tracked in git (so it is absent from a fresh clone).
-# Provision it from the deploy host's tree so Java-engine runs remain available.
-# Best-effort: prod's primary path is the Python engine; missing JAR only disables
-# Java runs (the run page shows "no JAR found").
-# Root reads the JARs (the deploy host's tree may be closed to shiny) into a fresh root-owned
-# directory shiny can read; shiny copies them into the clone, so root never writes into it.
-if compgen -G "${SOURCE_DIR}/osmose-java/"*.jar >/dev/null 2>&1; then
-    JAR_STAGE="$(mktemp -d)"
-    chmod 755 "$JAR_STAGE"
-    install -m 644 "${SOURCE_DIR}/osmose-java/"*.jar "$JAR_STAGE/"
-    as_shiny mkdir -p "${PROD_SRC}/osmose-java"
-    as_shiny cp -f "$JAR_STAGE/"*.jar "${PROD_SRC}/osmose-java/"
-    rm -rf "$JAR_STAGE"
-    info "Provisioned Java JAR(s) into ${PROD_SRC}/osmose-java/."
-else
-    warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."
-fi
 
 # --- Step 1b: Point the served path at the clone (NOT the dev tree) ---
 if [[ -L "$LINK_PATH" ]]; then
