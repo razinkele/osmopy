@@ -84,6 +84,45 @@ public sealed class SchoolStore
 
     internal double[] LaneArray => _lane;
 
+    /// <summary>Prey columns of the per-school diet rows (focal species, then resources);
+    /// 0 when the diet is not tracked.</summary>
+    public int DietCols { get; private set; }
+
+    /// <summary>The per-school diet rows of the current step, <c>[position * DietCols + column]</c>:
+    /// the biomass each school ate of each prey column, in tonnes. Per-step scratch like
+    /// <see cref="Step"/>: valid from <see cref="ClearDiet"/> (the start of a mortality step, on
+    /// the regrouped store) until the store is next reordered or compacted.</summary>
+    internal double[] DietArray { get; private set; } = [];
+
+    /// <summary>The diet rows of the schools, for reading.</summary>
+    public ReadOnlySpan<double> Diet => DietArray.AsSpan(0, Count * DietCols);
+
+    /// <summary>Turns diet tracking on, with <paramref name="columns"/> prey columns.</summary>
+    public void EnableDiet(int columns)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(columns);
+        DietCols = columns;
+    }
+
+    /// <summary>Zeroes the diet rows of every school, growing the array with the store. Nothing
+    /// to do when the diet is not tracked.</summary>
+    public void ClearDiet()
+    {
+        if (DietCols == 0)
+        {
+            return;
+        }
+
+        if (DietArray.Length < Count * DietCols)
+        {
+            DietArray = new double[_core.Length * DietCols];
+        }
+        else
+        {
+            DietArray.AsSpan(0, Count * DietCols).Clear();
+        }
+    }
+
     /// <summary>Appends one school, assigning the next id. Reproduction and incoming flux append
     /// serially, so ids are deterministic. Returns the new school's index.</summary>
     public int Append(in SchoolCore core, in SchoolLife life)

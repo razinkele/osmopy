@@ -89,6 +89,10 @@ def build_bundle(
 
     ``raw`` is the reader's dict the config was parsed from; the capability detectors read the
     few switches the engine takes outside ``EngineConfig``.
+
+    Like ``simulate()``, this publishes the resource names on ``config.resource_names`` (they
+    are discovered by ``ResourceState``): the diet and predator-pressure frames label their
+    prey axis with them.
     """
     b = Bundle(CONTRACT_VERSION)
     _contract(b, config, raw)
@@ -431,6 +435,10 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
     n_rsc, n_cells, n_steps = rs.n_resources, grid.ny * grid.nx, int(config.n_steps)
     ndt = int(config.raw_config.get("simulation.time.ndtperyear", "24"))
     b.set_int("resources.n", n_rsc)
+    # ResourceState is the single source of truth for the resources' names and number;
+    # simulate() publishes them on the config for the diet's prey axis (#146), and so must
+    # this path: _output sizes the diet with them and the output frames label it with them.
+    config.resource_names = [r.name for r in rs.species]
     if n_rsc == 0:
         return
     size_min, size_max, tl, rows, _ = _precompute_resource_arrays(config, rs)
@@ -708,6 +716,8 @@ def _output(b: Bundle, config: Any, n_total: int) -> None:
         b.set_array("output.age_bin_offsets", age_bin_offsets(config))
     if families & (FAMILY_BIOMASS_BY_SIZE | FAMILY_ABUNDANCE_BY_SIZE):
         b.set_array("output.size_edges", size_edges(config))
+    if families & FAMILY_DIET:
+        b.set_int("output.diet_columns", diet_columns(config))
 
 
 N_STAGES = 3  # Eggs, Juvenil, Adult
@@ -723,6 +733,7 @@ FAMILY_MEAN_TL = 32
 FAMILY_YIELD_N = 64
 FAMILY_MEAN_SIZE = 128
 FAMILY_SSB = 256
+FAMILY_DIET = 512  # diet_by_species; predator pressure is derived from it
 
 
 def output_families(config: Any) -> int:
@@ -741,6 +752,7 @@ def output_families(config: Any) -> int:
         (FAMILY_YIELD_N, config.output_yield_abundance or config.output_yield_abundance_netcdf),
         (FAMILY_MEAN_SIZE, config.output_mean_size or config.output_mean_size_netcdf),
         (FAMILY_SSB, config.output_ssb or config.output_ssb_netcdf),
+        (FAMILY_DIET, config.diet_output_enabled),
     ]
     return sum(bit for bit, flag in on if flag)
 
@@ -771,9 +783,17 @@ def size_edges(config: Any) -> np.ndarray:
     return np.ascontiguousarray(edges, dtype=np.float64)
 
 
+def diet_columns(config: Any) -> int:
+    """The diet's prey columns, as ``simulate()`` sizes its diet matrix: the focal species, then
+    the resources ``ResourceState`` discovered. ``config.resource_names`` is published at run
+    time (by ``simulate()``, and by ``build_bundle``), so call this after one of them."""
+    return config.n_species + len(config.resource_names)
+
+
 def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
     """The shape of ONE record of every family that is on, by buffer name (the ``StepOutput``
-    field of the same name), in the engine's order (C# ``OutputLayout.Specs``)."""
+    field of the same name), in the engine's order (C# ``OutputLayout.Specs``). With the diet
+    on, call it after ``build_bundle`` (see :func:`diet_columns`)."""
     families, nf = output_families(config), config.n_species
     shapes: dict[str, tuple[int, ...]] = {}
     if families & FAMILY_STAGE:
@@ -800,6 +820,9 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
     ):
         if families & bit:
             shapes[name] = (nf,)
+    if families & FAMILY_DIET:
+        # Predator rows: every species, background ones included (they eat).
+        shapes["diet_by_species"] = (nf + config.n_background, diet_columns(config))
     return shapes
 
 

@@ -67,7 +67,10 @@ SWITCHES = {
     "ssb": ("output.ssb.enabled", "output.ssb.netcdf.enabled"),
 }
 NAMES = tuple(SWITCHES)
-OFF = {"output.minimal.enabled": "false"} | {k: "false" for keys in SWITCHES.values() for k in keys}
+OFF = (
+    {"output.minimal.enabled": "false", "output.diet.composition.enabled": "false"}  # diet: 2.6c
+    | {k: "false" for keys in SWITCHES.values() for k in keys}
+)
 #: Every family on, with length classes that leave schools below the first and beyond the last.
 ALL = (
     OFF

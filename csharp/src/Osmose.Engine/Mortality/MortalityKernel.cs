@@ -52,6 +52,12 @@ public sealed class CellScratch
     public double[] Gather = [];
     public int[] Bounds = [];
 
+    /// <summary>The store's diet rows and where the current cell's begin; <see cref="DietCols"/>
+    /// 0 when the diet is not tracked (the usual case, and every minimal run).</summary>
+    public double[] Diet = [];
+    public int DietStart;
+    public int DietCols;
+
     /// <summary>Makes every buffer big enough for a cell of <paramref name="n"/> schools.</summary>
     public void Ensure(int n, int nResources)
     {
@@ -376,6 +382,12 @@ public static class MortalityKernel
             eatenTotal = maxEatable * PyMin(cap, gForm);
         }
 
+        // The predator's diet row, when the diet is tracked: one column per focal species, then
+        // one per resource. A school prey is booked under its SPECIES ID, as the reference does
+        // (diet_matrix[p, species_id[q]]), so a background prey of id n_focal + k lands in the
+        // column of resource k; ids beyond the columns are dropped.
+        int dietCols = s.DietCols;
+        Span<double> diet = dietCols > 0 ? s.Diet.AsSpan(s.DietStart + (p * dietCols), dietCols) : default;
         ref SchoolStep ps = ref cell.Step(p);
         for (int k = 0; k < scan.Count; k++)
         {
@@ -401,6 +413,10 @@ public static class MortalityKernel
                 }
 
                 ps.TlWeightedSum += preyTl * eaten;
+                if (qc.SpeciesId < dietCols)
+                {
+                    diet[qc.SpeciesId] += eaten;
+                }
             }
             else
             {
@@ -413,6 +429,10 @@ public static class MortalityKernel
                 }
 
                 ps.TlWeightedSum += rTl * eaten;
+                if (t.NSpeciesFocal + r < dietCols)
+                {
+                    diet[t.NSpeciesFocal + r] += eaten;
+                }
             }
         }
 

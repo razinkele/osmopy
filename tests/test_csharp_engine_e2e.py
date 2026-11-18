@@ -125,10 +125,144 @@ def test_precancel_and_deadline_stop_at_step_zero(kind, error, tmp_path):
     assert r["raised"] == error and "step 0/" in r["message"]
 
 
-def test_stock_configs_are_refused_naming_the_full_output_families(tmp_path):
-    raw = _raw("eec_full", tmp_path, 1, minimal=False)
-    with pytest.raises(CSharpEngineError, match=r"full_outputs \(phase 2\)"):
-        CSharpEngine().run_in_memory(raw)  # refused before the CLR is touched
+# ------------------------------------------------- stock configs: the full outputs (task 2.6c)
+
+STOCK = {"eec_full": 2, "baltic": 1}  # demo: years
+
+
+def _families_row(record, name: str, n_species: int) -> np.ndarray | None:
+    """A ``StepOutput`` field as the row the engine writes (None for a field left None)."""
+    from tests.test_csharp_outputs_families import BY_AGE, BY_SIZE, PRESENT
+
+    v = getattr(record, name)
+    if v is None:
+        return None
+    if name in BY_AGE:
+        return np.concatenate([v[sp] for sp in range(n_species)])
+    if name in BY_SIZE:
+        return np.stack([v[sp] for sp in range(n_species)])
+    if name in PRESENT:
+        row = np.full(n_species, np.nan)
+        for sp, x in v.items():
+            row[sp] = x
+        return row
+    return np.asarray(v, dtype=np.float64)
+
+
+@pytest.mark.parametrize("demo", sorted(STOCK))
+def test_a_stock_run_hands_on_exactly_the_records_the_engine_computed(demo, tmp_path):
+    """The in-memory transport, end to end: a stock config (every output family the demo ships
+    with) through ``CSharpEngine``, against the same bundle run by the probe, which reads the
+    engine's own results without the caller's buffers. Every family of every record must be the
+    same, bit for bit: the shapes the two sides allocate, the names, the order, the conversion
+    into ``StepOutput``."""
+    from osmose.engine.config import EngineConfig
+    from osmose.engine_cs.build import build_bundle, family_shapes
+    from tests.test_csharp_outputs_families import _same
+    from tests.test_csharp_pipeline import FAMILIES, _probe
+
+    extra = {"output.recordfrequency.ndt": "6", "output.step0.include": "true"}
+    raw = _raw(demo, tmp_path, STOCK[demo], minimal=False, extra=extra)
+    _child("outputs", raw, tmp_path / "cs.pkl", "11")
+    got = pickle.loads((tmp_path / "cs.pkl").read_bytes())
+    records = got["records"]
+
+    config = EngineConfig.from_dict(raw)
+    build_bundle(config, raw, PythonEngine()._resolve_grid(raw), seed=11).save(tmp_path / "m.bin")
+    probe = _probe("Run", tmp_path / "m.bin", tmp_path / "probe.bin")
+    names = list(family_shapes(config))
+    assert got["resource_names"] == config.resource_names and config.resource_names
+    assert len(records) == len(probe.get("out.record_step")) == 1 + STOCK[demo] * 4
+    assert [r.step for r in records] == probe.get("out.record_step").tolist()
+    assert [r.window_steps for r in records] == probe.get("out.window_steps").tolist()
+
+    nf = config.n_species
+    for i, r in enumerate(records):
+        for cs_name, py_name in FAMILIES:
+            a, b = probe.get(f"out.{cs_name}")[i], np.asarray(getattr(r, py_name))
+            assert a.tobytes() == b.tobytes(), (cs_name, i)
+        for name in names:
+            row, want = _families_row(r, name, nf), probe.get(f"out.{name}")[i]
+            if row is None:  # only the diet of the initial record, which no step preceded
+                assert name == "diet_by_species" and r.step == -1 and not want.any()
+            else:
+                assert _same(row, want), (name, i)
+
+    # The demo's own switches: every family it ships with came through, and did something.
+    want = {"abundance_by_stage", "mortality_rate_by_cause_stage", "diet_by_species",
+            "biomass_by_age", "biomass_by_size", "abundance_by_size", "mean_tl", "mean_size",
+            "yield_n"} | ({"ssb"} if demo == "baltic" else set())  # fmt: skip
+    assert want <= set(names)
+    last = records[-1]
+    assert last.diet_by_species is not None and last.diet_by_species.sum() > 0
+    assert last.mean_tl and last.mean_size and last.biomass_by_age
+    assert last.abundance_by_stage is not None and last.abundance_by_stage.sum() > 0
+    if demo == "baltic":  # the background predators' rows, and SSB
+        assert last.diet_by_species.shape[0] == nf + 2 and last.diet_by_species[nf:].sum() > 0
+        assert last.ssb is not None and last.ssb.sum() > 0
+
+
+def _structure(frame) -> tuple:
+    return (frame.shape, list(frame.columns), [str(t) for t in frame.dtypes])
+
+
+@pytest.mark.parametrize("demo", sorted(STOCK))
+def test_a_stock_run_gives_the_frames_the_python_engine_gives(demo, tmp_path):
+    """Same keys, shapes, column labels and dtypes as the Python engine's frames for the same
+    config. The values differ (another random stream), the structure must not: it includes the
+    prey labels of the diet frames, which need the resource names the run publishes."""
+    raw = _raw(demo, tmp_path, 1, minimal=False)
+    _child("frames", raw, tmp_path / "cs.pkl", "11")
+    cs = pickle.loads((tmp_path / "cs.pkl").read_bytes())
+    py = PythonEngine().run_in_memory(raw, seed=11)._csv_cache
+    assert sorted(cs) == sorted(py) and len(py) > 10
+    labels: set[str] = set()
+    for key in py:
+        a, b = cs[key], py[key]
+        if isinstance(b, dict):
+            assert sorted(a) == sorted(b), key
+            for sub in b:
+                assert _structure(a[sub]) == _structure(b[sub]), (key, sub)
+                labels.update(map(str, b[sub].columns))
+        else:
+            assert _structure(a) == _structure(b), key
+            labels.update(map(str, b.columns))
+    resources = {"eec_full": "Dinoflagellates", "baltic": "Benthos"}[demo]
+    assert any(resources in label for label in labels)  # a resource is a prey label
+
+
+def _header(path: Path) -> list[str]:
+    """The lines of a CSV before its first data row (a row whose first field is a number)."""
+    head = []
+    for line in path.read_text().splitlines():
+        first = line.split(";")[0].split(",")[0].strip().strip('"')
+        try:
+            float(first)
+        except ValueError:
+            head.append(line)
+            continue
+        break
+    return head
+
+
+@pytest.mark.parametrize("demo", sorted(STOCK))
+def test_a_stock_run_writes_the_files_the_python_engine_writes(demo, tmp_path):
+    raw = _raw(demo, tmp_path, 1, minimal=False)
+    _child("files", raw, tmp_path / "cs")
+    PythonEngine().run(raw, tmp_path / "py", seed=3)
+
+    def tree(root: Path) -> list[str]:
+        return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+
+    files = tree(tmp_path / "py")
+    assert tree(tmp_path / "cs") == files and len(files) > 20
+    assert any("diet" in f.lower() for f in files) and any("mortality" in f.lower() for f in files)
+    for rel in files:
+        if not rel.endswith(".csv"):
+            continue
+        a, b = tmp_path / "cs" / rel, tmp_path / "py" / rel
+        assert _header(a) == _header(b), rel
+        assert len(a.read_text().splitlines()) == len(b.read_text().splitlines()), rel
 
 
 def test_live_map_observer_is_refused(tmp_path):

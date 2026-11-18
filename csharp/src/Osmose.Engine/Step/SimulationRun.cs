@@ -66,6 +66,11 @@ public sealed class SimulationRun
         _key = PhiloxKey.ForRun(p.Seed, p.RngScheme);
         int nRecords = p.Output.Records(p.NSteps);
         OutputLayout layout = p.Output.Layout(nTotal, nFocal);
+        if ((layout.Families & OutputFamilies.Diet) != 0)
+        {
+            Store.EnableDiet(layout.DietColumns);
+        }
+
         Results = new RunResults(nRecords, layout);
         Collector = new OutputCollector(layout, p.Output.RecordFrequency);
         _control = ControlBlock.From(config);
@@ -86,6 +91,7 @@ public sealed class SimulationRun
         if (_p.Output.Step0Include)
         {
             Collector.SnapshotStages(_p, Store); // no step produced this state: split it as it is
+            Collector.SnapshotDiet(Store); // ...and nothing was eaten
             Collector.Collect(_p, Store); // the initial state (empty without a warm start)
             Flush(records++, -1);
         }
@@ -142,15 +148,16 @@ public sealed class SimulationRun
         long t2 = Stopwatch.GetTimestamp();
         var draws = new PhiloxCellDraws(_key, step);
         Mortality<PhiloxCellDraws, PhiloxDrawSource>(step, ref draws);
+        Collector.SnapshotDiet(Store); // before the background schools leave: they have rows
         if (background)
         {
-            Background.CollectAndRemove(_p, Store, firstBackground, _bkgByOrdinal, _bkgBiomass, _bkgAbundance);
+            RemoveBackground(firstBackground);
         }
 
         long t3 = Stopwatch.GetTimestamp();
         AfterMortality(step);
         long t4 = Stopwatch.GetTimestamp();
-        Collector.Collect(_p, Store, _bkgBiomass, _bkgAbundance);
+        CollectStep();
         long t5 = Stopwatch.GetTimestamp();
         _phaseTicks[0] += t1 - t0;
         _phaseTicks[1] += t2 - t1;
@@ -302,6 +309,14 @@ public sealed class SimulationRun
         Collector.SnapshotStages(_p, Store);
         LifeCycle.Reproduction(_p, Store, step, _ssb, _eggs, _seeded);
     }
+
+    /// <summary>The background schools' totals, then their removal (the stage between mortality
+    /// and the life cycle). <paramref name="firstBackground"/> is the id of the first of them.</summary>
+    public void RemoveBackground(ulong firstBackground) =>
+        Background.CollectAndRemove(_p, Store, firstBackground, _bkgByOrdinal, _bkgBiomass, _bkgAbundance);
+
+    /// <summary>The step's collection, with the background totals <see cref="RemoveBackground"/> left.</summary>
+    public void CollectStep() => Collector.Collect(_p, Store, _bkgBiomass, _bkgAbundance);
 
     private void Flush(int record, int recordStep)
     {

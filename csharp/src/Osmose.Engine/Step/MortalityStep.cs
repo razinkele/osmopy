@@ -55,6 +55,7 @@ public static class MortalityStep
     public static void Prepare(EngineParameters p, SchoolStore store, int step, Span<double> rscCellMajor, Span<double> larva)
     {
         int n = store.Count, nFocal = p.Species.NFocal, nsub = p.NSubdt;
+        store.ClearDiet();
         Span<SchoolCore> core = store.Core;
         Span<SchoolStep> st = store.Step;
         Span<SchoolLedger> led = store.Ledger;
@@ -105,6 +106,9 @@ public static class MortalityStep
         var schools = new ContiguousCell(store.CoreArray, store.StepArray, store.LedgerArray, store.LaneArray, start, count);
         TDraws d = draws.ForCell(cell);
         Span<double> rsc = nRsc > 0 ? rscCellMajor.Slice(cell * nRsc, nRsc) : [];
+        scratch.Diet = store.DietArray; // the cell's schools are contiguous: so are their rows
+        scratch.DietStart = start * store.DietCols;
+        scratch.DietCols = store.DietCols;
         MortalityKernel.RunCell<ContiguousCell, MaskPrefilter, TDraws>(t, ref schools, rsc, scratch, ref d);
     }
 

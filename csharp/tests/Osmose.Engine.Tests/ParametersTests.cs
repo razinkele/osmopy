@@ -72,14 +72,17 @@ public sealed class ParametersTests : IDisposable
     {
         int refused = FeatureCatalog.All.First(f => f.Status == "refused").Id;
         int notPlanned = FeatureCatalog.All.First(f => f.Status == "not_planned").Id;
-        int phase2 = FeatureCatalog.All.First(f => f.Status == "planned" && f.Phase == 2).Id;
+        // A planned feature that does not run yet (full_outputs, the first planned one, is
+        // implemented since task 2.6c: it is declared here too, and must not be named).
+        FeatureInfo planned = FeatureCatalog.All.First(f => f.Status == "planned" && !f.Implemented);
+        int implemented = FeatureCatalog.Named("full_outputs").Id;
         var ex = Assert.Throws<UnsupportedFeatureException>(
-            () => EngineParameters.From(Header([0, refused, notPlanned, phase2])));
-        Assert.Equal(3, ex.Features.Count); // core is implemented: not among them
-        Assert.DoesNotContain(ex.Features, f => f.Name == "core");
+            () => EngineParameters.From(Header([0, implemented, refused, notPlanned, planned.Id])));
+        Assert.Equal(3, ex.Features.Count); // core and full_outputs are implemented: not among them
+        Assert.DoesNotContain(ex.Features, f => f.Name is "core" or "full_outputs");
         Assert.Contains("refused: spec Q4", ex.Message, StringComparison.Ordinal);
         Assert.Contains("use the Python engine", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("phase 2", ex.Message, StringComparison.Ordinal);
+        Assert.Contains($"phase {planned.Phase}", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
