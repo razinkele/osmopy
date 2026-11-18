@@ -58,11 +58,13 @@ public sealed class ParametersTests : IDisposable
     }
 
     [Fact]
-    public void NothingIsImplementedYetSoAValidHeaderIsRefusedNamingCore()
+    public void ACoreOnlyHeaderPassesTheFeatureCheck()
     {
-        var ex = Assert.Throws<UnsupportedFeatureException>(() => EngineParameters.From(Header()));
-        Assert.Equal(["core"], ex.Features.Select(f => f.Name));
-        Assert.Contains("core (not implemented yet; phase 1)", ex.Message, StringComparison.Ordinal);
+        // core is implemented (task 1.8): the header and feature checks pass, and the refusal
+        // that remains is the model stage, for the tables this header-only bundle lacks.
+        var ex = Assert.Throws<BundleValidationException>(() => EngineParameters.From(Header()));
+        Assert.DoesNotContain("core", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("species.", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -73,7 +75,8 @@ public sealed class ParametersTests : IDisposable
         int phase2 = FeatureCatalog.All.First(f => f.Status == "planned" && f.Phase == 2).Id;
         var ex = Assert.Throws<UnsupportedFeatureException>(
             () => EngineParameters.From(Header([0, refused, notPlanned, phase2])));
-        Assert.Equal(4, ex.Features.Count);
+        Assert.Equal(3, ex.Features.Count); // core is implemented: not among them
+        Assert.DoesNotContain(ex.Features, f => f.Name == "core");
         Assert.Contains("refused: spec Q4", ex.Message, StringComparison.Ordinal);
         Assert.Contains("use the Python engine", ex.Message, StringComparison.Ordinal);
         Assert.Contains("phase 2", ex.Message, StringComparison.Ordinal);
