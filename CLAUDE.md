@@ -14,6 +14,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the O
 - **Run app:** `.venv/bin/shiny run app.py --host 0.0.0.0 --port 8000`
 - **Lint:** `.venv/bin/ruff check osmose/ ui/ tests/ scripts/ app.py`
 - **Format:** `.venv/bin/ruff format osmose/ ui/ tests/ scripts/ app.py`
+- **C# engine:** build `bash scripts/build_csharp_engine.sh`; tests `OSMOSE_REQUIRE_CSHARP=1 .venv/bin/python -m pytest tests/test_csharp_*.py` plus `dotnet test csharp/Osmose.Engine.sln`; a deployed environment checks itself with `python -m osmose.engine_cs.selftest`
 - **Type-check:** `.venv/bin/pyright` (no flags needed since 2026-09-27 — `pyrightconfig.json` now pins `venvPath`/`venv`; see Gotchas if you get a wall of import errors)
 
 ## Architecture
@@ -28,6 +29,7 @@ osmose/          # Core library (usable without Shiny)
   config/        # Config reader/writer (OSMOSE .csv/.properties format)
   calibration/   # pymoo NSGA-II, GP surrogate, SALib sensitivity
   forcing/       # Pure CMEMS->OSMOSE forcing conversion (grid-general, LTL + physics)
+  engine_cs/     # Bridge to the C# engine (csharp/, .NET 10 via pythonnet); optional
   runner.py      # Async Java subprocess manager
   results.py     # CSV/NetCDF output reader (xarray)
   scenarios.py   # Save/load/compare/fork (JSON)
@@ -179,6 +181,8 @@ When writing bash commands, strictly follow these rules to avoid triggering secu
   - **Why pinning the venv is safe for CI, which has no `.venv` at all.** A missing venv makes pyright print `venv <name> subdirectory not found in venv path <dir>` and fall back to the default interpreter — which in CI, after `pip install -e ".[dev]"` into the runner's system python, is the correct one. Verified rather than assumed, 2026-09-27, by pointing `venv` at a deliberately nonexistent directory: the error breakdown came back **byte-identical** to the no-key case (274/19/1/1), proving the fallback is the same code path as before; and with the notice firing against a resolvable interpreter, pyright exits **0**, so the notice alone cannot red the job.
   - **Don't triage the non-import errors either.** The 295 broke down as 274 `reportMissingImports` plus 21 that look unrelated and real (`reportOptionalSubscript` ×19, `reportArgumentType`, `reportOptionalMemberAccess`). All 21 were **cascades** from the unresolved imports and vanish once the interpreter resolves. Chasing them means "fixing" types that were never wrong.
   - **`PYRIGHT_PYTHON_FORCE_VERSION=latest` does NOT rescue a wrong interpreter** and is easy to misread as the cause, since a forced download plus a bad interpreter also yields 295 — version and interpreter are independent knobs. Version drift is a real but separate hazard: see the 2026-09-12 casts in `osmose/trophic_network.py`, added for errors only CI's newer pyright saw. To check against it: `PYRIGHT_PYTHON_FORCE_VERSION=latest .venv/bin/pyright` (clean at v1.1.411 and v1.1.414).
+
+- **A PR that changes Python engine semantics must either update the C# engine (`csharp/`) or extend `csharp_engine_block_reason` (`osmose/engine_cs/capabilities.py`) so the C# engine refuses the affected configs.** The C# engine reimplements the step loop: nothing makes it follow a Python-side change, and its ensemble-equivalence check only runs when someone runs it. Plan rule 7 / spec risk R3 (`docs/superpowers/specs/2026-11-17-csharp-engine-design.md`). The CLR must never load inside pytest or a process that forks: tests host it in a child process (`tests/_csharp_e2e_child.py`), calibration uses forkserver/spawn workers.
 
 ## Design Docs
 - Design: `docs/plans/2026-02-21-osmose-python-port-design.md`

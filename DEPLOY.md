@@ -14,6 +14,34 @@ The production web app is a **systemd service** running Uvicorn directly:
 - **Behind nginx, set `OSMOSE_TRUSTED_PROXY=1`.** nginx forwards `X-Forwarded-For`, but the app ignores the header unless this variable is set, and then keys the rate limiter on `client.host` — which behind nginx is nginx. Measured consequence: **every user of the feedback form currently shares one bucket of 5 submissions per hour.** The app already logs `X-Forwarded-For present but OSMOSE_TRUSTED_PROXY is unset` once per process when this happens.
 - **Feedback store paths (optional).** The defaults (`<repo>/data/feedback/{feedback,contacts}.jsonl`) work — the tree is service-user writable (see above). Pointing them outside the source tree is hygiene, not a fix — but if you do, note that `/var/lib/osmose` is `root:root` and the service user cannot create a subdirectory there, so the `StateDirectory=osmose/feedback` half is what makes the path writable and is NOT optional (without it `append_feedback`'s `mkdir` fails at the first submission). Set the two paths via the same EnvironmentFile as the token, not `Environment=`; see [`docs/feedback-v2-deploy.md`](docs/feedback-v2-deploy.md). `contacts.jsonl` holds reporter **email addresses** — keep it off any path that gets copied, backed up publicly, or served. Full operator guide: [`docs/feedback-runbook.md`](docs/feedback-runbook.md).
 
+## The C# engine (optional, opt-in)
+
+The third engine (`csharp/`, spec `docs/superpowers/specs/2026-11-17-csharp-engine-design.md` section 9.7) is **off by default**. The web app does not offer it before the Phase 2 UI work, so a plain `sudo bash deploy.sh` installs nothing for it. Every deploy also removes any assembly a previous deploy built, as `shiny` and before the checkout, so an old build never outlives its ref.
+
+To build it on the server:
+
+```bash
+sudo OSMOSE_DEPLOY_CSHARP=1 bash deploy.sh
+```
+
+After the service is up and answering HTTP, the deploy:
+1. installs the .NET 10 SDK into `/opt/dotnet` with Microsoft's `dotnet-install.sh`, if no 10.x SDK is there;
+2. installs `pythonnet` into the shiny env;
+3. builds the assembly from the deployed ref **as `shiny`**, never as root, into a staging directory;
+4. runs the self-test on the staged build **as the service runs**: user `shiny`, the env's interpreter, the working copy and `DOTNET_ROOT=/opt/dotnet`;
+5. only if it passes, moves the build into `osmose/engine_cs/bin` and checks that the service's own path can load it.
+
+The unit always carries `Environment=DOTNET_ROOT=/opt/dotnet`, which is inert when the directory is absent. A failure in any step exits 1 with a `C# engine:` error, and a build that fails never becomes loadable. **The app keeps running the new code without the engine:** the steps run after the restart, so a C# failure can never leave new code on disk under the old process.
+
+To re-check by hand:
+
+```bash
+cd /srv/shiny-server/osmose
+sudo runuser -u shiny -- env DOTNET_ROOT=/opt/dotnet /opt/micromamba/envs/shiny/bin/python3 -m osmose.engine_cs.selftest
+```
+
+`--uninstall` leaves `/opt/dotnet` in place, since other software may use it. The Docker and Apptainer images build the engine unconditionally, and CI runs the same self-test in both.
+
 ## Deploying a change — ALWAYS restart after pulling
 
 ```bash

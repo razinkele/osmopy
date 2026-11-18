@@ -8,6 +8,7 @@
 # Usage:  sudo bash deploy.sh
 #         sudo bash deploy.sh --uninstall
 #         sudo bash deploy.sh --restart      # restart the service only
+#         sudo OSMOSE_DEPLOY_CSHARP=1 bash deploy.sh   # also build + self-test the C# engine
 
 set -euo pipefail
 
@@ -35,6 +36,13 @@ APP_PORT=8838
 REPO_URL="${OSMOSE_REPO_URL:-https://github.com/razinkele/osmopy.git}"  # public → no creds
 DEPLOY_REF="${OSMOSE_DEPLOY_REF:-origin/master}"  # what to ship; override to pin a sha/tag
 PROD_SRC="${SHINY_ROOT}/${APP_NAME}-src"  # the prod clone (real dir; LINK_PATH → here)
+
+# The C# engine (docs/superpowers/specs/2026-11-17-csharp-engine-design.md, section 9.7) is
+# OPT-IN: the web app does not offer it before the Phase 2 UI work, so a plain deploy installs
+# nothing for it. OSMOSE_DEPLOY_CSHARP=1 installs the .NET 10 SDK into DOTNET_DIR if absent,
+# builds the assembly inside the prod clone and self-tests it as the service user (Step 6).
+DEPLOY_CSHARP="${OSMOSE_DEPLOY_CSHARP:-0}"
+DOTNET_DIR="/opt/dotnet"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -133,6 +141,15 @@ elif [[ -e "$PROD_SRC" ]]; then
 else
     info "Creating prod clone: ${REPO_URL} -> ${PROD_SRC}"
     git clone --quiet "$REPO_URL" "$PROD_SRC"
+fi
+# The C# assembly is gitignored, so `checkout --force` keeps the previous ref's build, and
+# csharp_engine_available() only compares the feature catalogue: a stale assembly would load
+# against the new Python code. Remove it on EVERY deploy, BEFORE the checkout, so a failed
+# removal stops the deploy with the previous ref and its build still consistent; Step 6
+# rebuilds it from the new ref when OSMOSE_DEPLOY_CSHARP=1. As shiny, not root: the clone is
+# shiny-writable, and root's rm -rf would follow a symlink planted above bin/ out of the clone.
+if [[ -e "${PROD_SRC}/osmose/engine_cs/bin" || -L "${PROD_SRC}/osmose/engine_cs/bin" ]]; then
+    runuser -u shiny -- rm -rf "${PROD_SRC}/osmose/engine_cs/bin"
 fi
 git -C "$PROD_SRC" checkout --quiet --force --detach "$DEPLOY_REF"
 DEPLOYED_SHA="$(git -C "$PROD_SRC" rev-parse --short HEAD)"
@@ -269,6 +286,9 @@ Environment=PYTHONUNBUFFERED=1
 # should stay -- keeping state out of the source tree survives a redeploy.
 StateDirectory=osmose/calibration_results
 Environment=OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results
+# The C# engine's runtime (Step 6, opt-in). Inert when the directory is absent: the engine is
+# then simply unavailable and the app does not offer it.
+Environment=DOTNET_ROOT=${DOTNET_DIR}
 
 [Install]
 WantedBy=multi-user.target
@@ -311,6 +331,71 @@ else
     warn "HTTP check returned ${HTTP_CODE} after ~40s. Check: journalctl -u ${SERVICE_NAME} --no-pager -n 30"
 fi
 
+# --- Step 6 (opt-in): the C# engine ---
+# Runs AFTER the restart on purpose. Nothing loads the CLR at startup and availability is checked
+# per call, so the service is already serving the new ref without the engine; a failure here only
+# means "no C# engine", reported loudly with exit 1 -- never new code on disk under the old
+# process (the 2026-10-29 failure mode of an abort between checkout and restart).
+CSHARP_RESULT="not built (OSMOSE_DEPLOY_CSHARP=1 builds it)"
+if [[ "$DEPLOY_CSHARP" == "1" ]]; then
+    csharp_fail() {
+        error "C# engine: $*"
+        error "The app is running ${DEPLOYED_SHA} WITHOUT the C# engine."
+        exit 1
+    }
+    if ! "${DOTNET_DIR}/dotnet" --list-sdks 2>/dev/null | grep -q '^10\.'; then
+        info "Installing the .NET 10 SDK into ${DOTNET_DIR} (dotnet-install.sh)..."
+        DOTNET_INSTALLER="$(mktemp)"
+        curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$DOTNET_INSTALLER" \
+            || csharp_fail "could not download dotnet-install.sh"
+        bash "$DOTNET_INSTALLER" --channel 10.0 --install-dir "$DOTNET_DIR" \
+            || csharp_fail "the .NET SDK install failed"
+        rm -f "$DOTNET_INSTALLER"
+    fi
+    "${PIP_INSTALL[@]}" --quiet "pythonnet>=3.2.1" || csharp_fail "pip install pythonnet failed"
+    info "Building the C# engine (as shiny, into a staging directory)..."
+    # AS THE SERVICE USER, never as root: the clone is shiny-writable (Step 1) and MSBuild project
+    # files are code -- an untracked Directory.Build.targets above the project, or a
+    # *.nuget.g.targets in obj/, would otherwise run as root. Built as shiny it gains nothing that
+    # user did not already have. Leftover build state is cleared first (also as shiny: git runs
+    # hooks and core.fsmonitor from the shiny-owned .git/config), and the SDK's first-run and
+    # NuGet files go to a throwaway home, since shiny's own home may not exist.
+    # The build is published to a STAGING directory and self-tested there. Only a build that
+    # passes is moved into osmose/engine_cs/bin, so a failed build never becomes loadable.
+    runuser -u shiny -- git -C "$PROD_SRC" clean -fdxq -- csharp/ \
+        || csharp_fail "could not clear old build state in ${PROD_SRC}/csharp"
+    BUILD_HOME="$(mktemp -d)"
+    chown shiny:shiny "$BUILD_HOME"
+    STAGE="${BUILD_HOME}/engine"
+    LIVE_BIN="${PROD_SRC}/osmose/engine_cs/bin"
+    drop_build_home() { runuser -u shiny -- rm -rf "$BUILD_HOME" || true; }
+    # DOTNET_ROOT explicitly: the build script would otherwise fall back to ~/.dotnet.
+    # OSMOSE_CSHARP_ENGINE_DIR, explicitly: where the build publishes and the self-test loads from.
+    runuser -u shiny -- env HOME="$BUILD_HOME" DOTNET_CLI_HOME="$BUILD_HOME" \
+        NUGET_PACKAGES="${BUILD_HOME}/nuget" DOTNET_ROOT="$DOTNET_DIR" \
+        OSMOSE_CSHARP_ENGINE_DIR="$STAGE" \
+        bash "${PROD_SRC}/scripts/build_csharp_engine.sh" -v quiet \
+        || { drop_build_home; csharp_fail "the build failed"; }
+    # As the SERVICE runs it: its user, interpreter, working copy and DOTNET_ROOT. Run as root it
+    # could find another .NET (resolve_dotnet_root falls back to ~/.dotnet) and pass falsely.
+    SHINY_HOME="$(getent passwd shiny | cut -d: -f6)"
+    as_service() {
+        (cd "$LINK_PATH" && runuser -u shiny -- env HOME="$SHINY_HOME" DOTNET_ROOT="$DOTNET_DIR" "$@")
+    }
+    if ! as_service OSMOSE_CSHARP_ENGINE_DIR="$STAGE" "$SHINY_PYTHON" -m osmose.engine_cs.selftest; then
+        drop_build_home
+        csharp_fail "the self-test failed (its output is above); the build was not activated"
+    fi
+    runuser -u shiny -- rm -rf "$LIVE_BIN" && runuser -u shiny -- mv "$STAGE" "$LIVE_BIN" \
+        || { drop_build_home; csharp_fail "could not move the tested build into ${LIVE_BIN}"; }
+    drop_build_home
+    # The self-test loaded the staged copy; confirm the service's own path (no override) sees it.
+    as_service "$SHINY_PYTHON" -c "from osmose.engine_cs import csharp_engine_available as a
+ok, why = a(); raise SystemExit(0 if ok else why)" \
+        || { runuser -u shiny -- rm -rf "$LIVE_BIN"; csharp_fail "the activated build is not loadable"; }
+    CSHARP_RESULT="built from ${DEPLOYED_SHA}, self-tested, activated"
+fi
+
 # --- Summary ---
 echo ""
 info "Deployment complete!"
@@ -318,6 +403,7 @@ echo "  Service:     ${SERVICE_NAME} (port ${APP_PORT})"
 echo "  Prod source: ${PROD_SRC} @ ${DEPLOY_REF} (${DEPLOYED_SHA})"
 echo "  Served via:  ${LINK_PATH} -> ${PROD_SRC}"
 echo "  Deploy host: ${SOURCE_DIR} (ran this script; JAR source)"
+echo "  C# engine:   ${CSHARP_RESULT}"
 echo "  Service:     ${SERVICE_FILE}"
 echo ""
 echo "  NOTE: Ensure nginx proxies /osmose/ to http://127.0.0.1:${APP_PORT}/"
