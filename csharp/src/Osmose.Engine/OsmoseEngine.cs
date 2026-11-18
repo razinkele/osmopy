@@ -19,7 +19,6 @@ public static class OsmoseEngine
     public static RunSummary RunSimulation(SimulationConfig config)
     {
         EngineParameters parameters = EngineParameters.From(config);
-        throw new NotImplementedException(
-            $"unreachable until core is implemented (task 1.8); bundle declared {parameters.Features.Count} features");
+        return new Step.SimulationRun(parameters, config).Run();
     }
 }

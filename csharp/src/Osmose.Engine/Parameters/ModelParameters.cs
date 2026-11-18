@@ -169,6 +169,56 @@ public sealed class ResourceParameters
 
 /// <summary>Reads the model groups from a bundle through one <see cref="BundleReader"/>, so every
 /// missing entry or wrong shape lands in the same problem list as the header's.</summary>
+/// <summary>Reproduction (bundle group <c>reproduction</c>, focal species, spec 6.8).</summary>
+public sealed class ReproductionParameters
+{
+    public double[] SexRatio { get; init; } = [];
+
+    public double[] RelativeFecundity { get; init; } = [];
+
+    public double[] MaturitySize { get; init; } = [];
+
+    public int[] MaturityAgeDt { get; init; } = [];
+
+    public double[] SeedingBiomass { get; init; } = [];
+
+    /// <summary>Seeding applies while <c>step &lt; SeedingMaxStep</c>.</summary>
+    public int[] SeedingMaxStep { get; init; } = [];
+
+    /// <summary><c>[step, species]</c>: the spawning-season share of the step.</summary>
+    public double[] SeasonByStep { get; init; } = [];
+
+    public double[] EggLength { get; init; } = [];
+
+    /// <summary>Egg weight in tonnes, resolved by the builder exactly as <c>create_egg_schools</c>.</summary>
+    public double[] EggWeight { get; init; } = [];
+
+    /// <summary>Stock-recruitment curve per species: 0 none (phase 1); others are phase 2.</summary>
+    public byte[] SrType { get; init; } = [];
+
+    /// <summary>0 stock_recruitment, 1 linear.</summary>
+    public int SeedingMode { get; init; }
+}
+
+/// <summary>Outputs (bundle group <c>output</c>, spec 6.9).</summary>
+public sealed class OutputParameters
+{
+    /// <summary>Per species (every species): schools younger than this many years are left out of
+    /// biomass and abundance. 0 when unset.</summary>
+    public double[] CutoffAge { get; init; } = [];
+
+    public int RecordFrequency { get; init; } = 1;
+
+    /// <summary>A record of the initial state, at step -1, precedes the run.</summary>
+    public bool Step0Include { get; init; }
+
+    /// <summary>Output families beyond the minimal set; 0 = <c>output.minimal.enabled</c>.</summary>
+    public long Families { get; init; }
+
+    /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
+    public int Records(int nSteps) => (Step0Include ? 1 : 0) + ((nSteps + RecordFrequency - 1) / RecordFrequency);
+}
+
 /// <summary>Movement (bundle group <c>movement</c>, spec 6.11).</summary>
 public sealed class MovementParameters
 {
@@ -349,6 +399,29 @@ internal static class ModelReader
             AccessByStep = r.Array("resources.accessibility_by_step", DType.F8, nSteps, n)?.ToArray<double>() ?? [],
         };
     }
+
+    public static ReproductionParameters Reproduction(BundleReader r, int nSteps, int nFocal) => new()
+    {
+        SexRatio = F8(r, "reproduction.sex_ratio", nFocal),
+        RelativeFecundity = F8(r, "reproduction.relative_fecundity", nFocal),
+        MaturitySize = F8(r, "reproduction.maturity_size", nFocal),
+        MaturityAgeDt = I4(r, "reproduction.maturity_age_dt", nFocal),
+        SeedingBiomass = F8(r, "reproduction.seeding_biomass", nFocal),
+        SeedingMaxStep = I4(r, "reproduction.seeding_max_step", nFocal),
+        SeasonByStep = r.Array("reproduction.season_by_step", DType.F8, nSteps, nFocal)?.ToArray<double>() ?? [],
+        EggLength = F8(r, "reproduction.egg_length", nFocal),
+        EggWeight = F8(r, "reproduction.egg_weight", nFocal),
+        SrType = r.Array("reproduction.sr.type", DType.U1, nFocal)?.ToArray<byte>() ?? [],
+        SeedingMode = (int)r.Int("reproduction.seeding_mode"),
+    };
+
+    public static OutputParameters Output(BundleReader r, int nTotal) => new()
+    {
+        CutoffAge = F8(r, "output.cutoff_age", nTotal),
+        RecordFrequency = (int)Math.Max(1, r.Int("output.record_frequency")),
+        Step0Include = r.Int("output.step0_include") != 0,
+        Families = r.Int("output.families"),
+    };
 
     public static MovementParameters Movement(BundleReader r, int nFocal, int nTotal, int ny, int nx, byte[] ocean)
     {
