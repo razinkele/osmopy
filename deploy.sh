@@ -350,11 +350,23 @@ if [[ "$DEPLOY_CSHARP" == "1" ]]; then
         rm -f "$DOTNET_INSTALLER"
     fi
     "${PIP_INSTALL[@]}" --quiet "pythonnet>=3.2.1" || csharp_fail "pip install pythonnet failed"
-    info "Building the C# engine in ${PROD_SRC}..."
-    # DOTNET_ROOT explicitly: the build script would otherwise fall back to root's ~/.dotnet.
-    DOTNET_ROOT="$DOTNET_DIR" bash "${PROD_SRC}/scripts/build_csharp_engine.sh" -v quiet \
-        || csharp_fail "the build failed"
-    chown -R shiny:shiny "${PROD_SRC}/osmose/engine_cs/bin" "${PROD_SRC}/csharp" 2>/dev/null || true
+    info "Building the C# engine in ${PROD_SRC} (as shiny)..."
+    # AS THE SERVICE USER, never as root: the clone is shiny-writable (Step 1) and MSBuild project
+    # files are code -- an untracked Directory.Build.targets above the project, or a
+    # *.nuget.g.targets in obj/, would otherwise run as root. Built as shiny it gains nothing that
+    # user did not already have. Leftover build state is cleared first (also as shiny: git runs
+    # hooks and core.fsmonitor from the shiny-owned .git/config), and the SDK's first-run and
+    # NuGet files go to a throwaway home, since shiny's own home may not exist.
+    runuser -u shiny -- git -C "$PROD_SRC" clean -fdxq -- csharp/ \
+        || csharp_fail "could not clear old build state in ${PROD_SRC}/csharp"
+    BUILD_HOME="$(mktemp -d)"
+    chown shiny:shiny "$BUILD_HOME"
+    # DOTNET_ROOT explicitly: the build script would otherwise fall back to ~/.dotnet.
+    runuser -u shiny -- env HOME="$BUILD_HOME" DOTNET_CLI_HOME="$BUILD_HOME" \
+        NUGET_PACKAGES="${BUILD_HOME}/nuget" DOTNET_ROOT="$DOTNET_DIR" \
+        bash "${PROD_SRC}/scripts/build_csharp_engine.sh" -v quiet \
+        || { rm -rf "$BUILD_HOME"; csharp_fail "the build failed"; }
+    rm -rf "$BUILD_HOME"
     # As the SERVICE runs it: its user, interpreter, working copy and DOTNET_ROOT. Run as root it
     # could find another .NET (resolve_dotnet_root falls back to ~/.dotnet) and pass falsely.
     SHINY_HOME="$(getent passwd shiny | cut -d: -f6)"
