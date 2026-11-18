@@ -121,7 +121,10 @@ def _worker_init(spec: _EvalSpec) -> None:
     oversubscribe the cores (measured 3.96x slower at the default 8 workers).
     """
     global _WORKER_PROBLEM
-    apply_worker_threads(spec.n_workers)
+    # Numba's thread rule is for Numba: a C# worker runs CSHARP_THREADS_PER_EVAL threads of its
+    # own, and applying the rule would import Numba (~64 MB per worker) for nothing.
+    if spec.engine != "csharp":
+        apply_worker_threads(spec.n_workers)
     reg = build_registry() if spec.use_registry else None
     _WORKER_PROBLEM = OsmoseCalibrationProblem(
         free_params=spec.free_params,

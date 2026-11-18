@@ -1977,7 +1977,7 @@ def simulate(
 
     # Pre-flatten map data for Numba movement path (skip if Numba unavailable)
     from osmose.engine.processes.movement import _HAS_NUMBA as _MV_HAS_NUMBA
-    from osmose.engine.processes.movement import _flatten_all_map_sets
+    from osmose.engine.processes.precompute import _flatten_all_map_sets
 
     flat_map_data = (
         _flatten_all_map_sets(map_sets, config.n_species, grid.ny, grid.nx)
@@ -1988,7 +1988,7 @@ def simulate(
     walk_range_i32 = config.random_walk_range.astype(np.int32) if _MV_HAS_NUMBA else None
 
     # Phase 4: Build random distribution patches
-    from osmose.engine.processes.movement import build_random_patches
+    from osmose.engine.processes.precompute import build_random_patches
 
     random_patches = build_random_patches(config, grid, rng)
 
