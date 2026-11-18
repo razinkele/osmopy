@@ -56,14 +56,17 @@ def resolve_config(name: str) -> tuple[Path, str | None]:
     return path, fixture
 
 
-def _prepare(config: Path, years: int):
+def _prepare(config: Path, years: int, minimal: bool = True):
+    """``minimal`` is the gate's protocol (spec 10.4). Without it the config runs as shipped,
+    with every output family it asks for: for the memory and the cost of the full outputs."""
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine import PythonEngine
     from osmose.engine.config import EngineConfig
 
     raw = dict(OsmoseConfigReader().read(config))
     raw["simulation.time.nyear"] = str(years)
-    raw["output.minimal.enabled"] = "true"
+    if minimal:
+        raw["output.minimal.enabled"] = "true"
     return raw, EngineConfig.from_dict(raw), PythonEngine()._resolve_grid(raw)
 
 
@@ -72,7 +75,9 @@ def _rss_mb() -> float:
         return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 2**20
 
 
-def worker(engine: str, threads: int, years: int, seed: int, config: Path) -> None:
+def worker(
+    engine: str, threads: int, years: int, seed: int, config: Path, minimal: bool = True
+) -> None:
     """Line protocol on stdin/stdout: 'run' -> one JSON result line; 'quit' -> peak RSS."""
     if engine == "python":  # Numba's threads; the C# worker must not import Numba for nothing
         from osmose.engine.thread_policy import apply_single_run_threads
@@ -101,7 +106,7 @@ def worker(engine: str, threads: int, years: int, seed: int, config: Path) -> No
         return {"wall": time.perf_counter() - t0}
 
     out: dict = {"engine": engine, "threads": threads}
-    short, full = _prepare(config, 1), _prepare(config, years)
+    short, full = _prepare(config, 1, minimal), _prepare(config, years, minimal)
     if engine == "python":
         import osmose.engine.simulate  # noqa: F401  (the C# side's imports are its run cost)
     out["rss_baseline_mb"] = _rss_mb()
@@ -120,10 +125,18 @@ def worker(engine: str, threads: int, years: int, seed: int, config: Path) -> No
 
 
 class Worker:
-    def __init__(self, engine: str, threads: int, years: int, seed: int, config: Path):
+    def __init__(
+        self,
+        engine: str,
+        threads: int,
+        years: int,
+        seed: int,
+        config: Path,
+        outputs: str = "minimal",
+    ):
         env = dict(os.environ, NUMBA_NUM_THREADS=str(threads), PYTHONPATH=str(ROOT))
         self.p = subprocess.Popen(
-            [sys.executable, __file__, "--worker", engine, str(threads), str(years), str(seed), str(config)],
+            [sys.executable, __file__, "--worker", engine, str(threads), str(years), str(seed), str(config), outputs],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env, cwd=ROOT,
         )  # fmt: skip
         assert self.p.stdin is not None and self.p.stdout is not None  # both are pipes
@@ -151,9 +164,11 @@ class Worker:
         return rss
 
 
-def measure(threads: int, pairs: int, years: int, seed: int, config: Path) -> dict:
-    py = Worker("python", threads, years, seed, config)  # warm-ups one after the other
-    cs = Worker("csharp", threads, years, seed, config)
+def measure(
+    threads: int, pairs: int, years: int, seed: int, config: Path, outputs: str = "minimal"
+) -> dict:
+    py = Worker("python", threads, years, seed, config, outputs)  # warm-ups one after the other
+    cs = Worker("csharp", threads, years, seed, config, outputs)
     rows = []
     for i in range(pairs):
         order = (py, cs) if i % 2 == 0 else (cs, py)
@@ -187,7 +202,10 @@ def measure(threads: int, pairs: int, years: int, seed: int, config: Path) -> di
 
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--worker":
-        worker(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), Path(sys.argv[6]))
+        worker(
+            sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), Path(sys.argv[6]),
+            minimal=len(sys.argv) < 8 or sys.argv[7] != "full",
+        )  # fmt: skip
         return
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     ap.add_argument("--pairs", type=int, default=7)
@@ -198,26 +216,39 @@ def main() -> None:
     ap.add_argument(
         "--config", default="eec_full", help=f"a fixture ({', '.join(FIXTURES)}) or a config path"
     )
+    ap.add_argument(
+        "--outputs",
+        choices=("minimal", "full"),
+        default="minimal",
+        help="minimal: output.minimal.enabled on both engines, the gate's protocol (default). "
+        "full: the config as shipped, for the cost and the memory of the full outputs "
+        "(informational: the gates are defined on minimal outputs)",
+    )
     args = ap.parse_args()
     config, fixture = resolve_config(args.config)
     if not config.is_file():
         ap.error(f"--config: {args.config!r} is neither a fixture nor a file")
-    gates = GATES.get(fixture or "", {})
-    print(f"config {config} ({fixture or 'not a fixture: gate 1.0'})")
+    gates = GATES.get(fixture or "", {}) if args.outputs == "minimal" else {}
+    print(f"config {config} ({fixture or 'not a fixture: gate 1.0'}); outputs: {args.outputs}")
     load = os.getloadavg()
     print(
         f"load average {load[0]:.2f} {load[1]:.2f} {load[2]:.2f} on {os.cpu_count()} CPUs"
         + ("  (NOT idle)" if load[0] > 2 else "")
     )
-    results = [measure(t, args.pairs, args.years, args.seed, config) for t in args.threads]
+    results = [
+        measure(t, args.pairs, args.years, args.seed, config, args.outputs) for t in args.threads
+    ]
     print()
     for r in results:
         gate = gates.get(r["threads"], 1.0)
         verdict = "PASS" if r["ratio"] >= gate else "FAIL"
-        r["gate"] = gate
+        r["gate"], r["outputs"] = gate, args.outputs
+        judged = (
+            f"gate {gate}x {verdict}" if args.outputs == "minimal" else "full outputs: not a gate"
+        )
         print(
             f"threads {r['threads']}: python {r['median_python_s']:.3f}s  csharp {r['median_csharp_s']:.3f}s  "
-            f"ratio {r['ratio']:.2f}x (gate {gate}x {verdict}); pairs agree: {r['all_pairs_agree']}"
+            f"ratio {r['ratio']:.2f}x ({judged}); pairs agree: {r['all_pairs_agree']}"
         )
         print(
             f"  first call {r['first_call_overhead_s']:.2f}s (budget 2 s); bundle share {r['bundle_share'] * 100:.1f}% (budget 5%); "

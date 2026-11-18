@@ -205,6 +205,29 @@ def test_a_stock_run_hands_on_exactly_the_records_the_engine_computed(demo, tmp_
         assert last.ssb is not None and last.ssb.sum() > 0
 
 
+def test_the_stock_baltic_run_is_the_same_at_1_2_and_14_threads(tmp_path):
+    """The spec's determinism goal on the config AS SHIPPED, every output family on: the diet
+    rows are written per predator school inside the parallel kernel, and the families are folded
+    from what the threads leave behind. The records must not depend on the thread count, and
+    must depend on the seed (or the digest would be blind)."""
+    extra = {"output.recordfrequency.ndt": "6", "output.step0.include": "true"}
+    raw = _raw("baltic", tmp_path, 2, minimal=False, extra=extra)
+    _child("thread_digests", raw, tmp_path / "d.json", "1,7")
+    got = json.loads((tmp_path / "d.json").read_text())
+    assert set(got) == {f"{seed}:{threads}" for seed in (1, 7) for threads in (1, 2, 14)}
+    for seed in (1, 7):
+        one, two, many = (got[f"{seed}:{threads}"] for threads in (1, 2, 14))
+        assert one["records"] == two["records"] == many["records"] > 2
+        assert one["digest"] == two["digest"], f"seed {seed}: 1 and 2 threads differ"
+        assert one["digest"] == many["digest"], f"seed {seed}: 1 and 14 threads differ"
+    assert got["1:1"]["digest"] != got["7:1"]["digest"]
+    # The digest covers the families Baltic ships with, not only the minimal outputs.
+    assert {
+        "biomass", "abundance", "yield_by_species", "mortality_by_cause", "abundance_by_stage",
+        "biomass_by_age", "ssb", "yield_n", "mean_size", "mean_tl", "diet_by_species",
+    } <= set(got["1:1"]["fields"])  # fmt: skip
+
+
 def _structure(frame) -> tuple:
     return (frame.shape, list(frame.columns), [str(t) for t in frame.dtypes])
 

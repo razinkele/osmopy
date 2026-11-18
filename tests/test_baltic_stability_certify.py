@@ -75,3 +75,79 @@ def test_java_table_covers_every_focal_species(certify):
     series = _full_series(certify)
     table = certify.java_table_from_series(series)
     assert set(table) == set(certify.FOCAL)
+
+
+# ---------------------------------------------------------------- the engine option (C# 2.8)
+
+
+def _table(certify, **overrides) -> dict:
+    """A certification table in which every species passes, with ``overrides`` per species."""
+    table = {}
+    for sp in certify.FOCAL:
+        lo, hi = certify.ENVELOPE[sp]
+        mid = (lo + hi) / 2
+        table[sp] = {
+            "persists": True,
+            "in_envelope": True,
+            "min_biomass": mid,
+            "late_mean_range": [mid, mid],
+        }
+        table[sp].update(overrides.get(sp, {}))
+    return table
+
+
+def test_tables_with_the_same_verdicts_have_no_differences(certify):
+    a = _table(certify)
+    b = _table(certify, herring={"late_mean_range": [9e5, 1e6]})  # other numbers, same verdicts
+    assert certify.compare_verdicts(a, b) == []
+    (line,) = certify.cross_engine_lines("Python", "C#", [])
+    assert f"all {2 * len(certify.FOCAL)} verdicts agree with Python's" in line
+
+
+def test_every_differing_verdict_is_listed_with_both_ranges(certify):
+    a = _table(certify)
+    b = _table(
+        certify,
+        cod_east={"in_envelope": False, "late_mean_range": [5.5e4, 5.9e4]},
+        sprat={"persists": False, "in_envelope": False, "late_mean_range": [0.0, 10.0]},
+    )
+    differences = certify.compare_verdicts(a, b)
+    assert [(d["species"], d["criterion"]) for d in differences] == [
+        ("cod_east", "in_envelope"),
+        ("sprat", "persists"),
+        ("sprat", "in_envelope"),
+    ]
+    east = differences[0]
+    assert east["reference"] is True and east["other"] is False
+    assert east["other_range"] == [5.5e4, 5.9e4] and east["envelope"] == (60000, 85000)
+    lines = certify.cross_engine_lines("Python", "C#", differences)
+    assert f"3 of {2 * len(certify.FOCAL)} verdicts DIFFER from Python's" in lines[0]
+    assert sum(line.startswith(("| cod_east ", "| sprat ")) for line in lines) == 3
+    assert certify.compare_verdicts(b, a)[0]["reference"] is False  # the direction is kept
+
+
+@pytest.mark.parametrize("engine", ["python", "csharp"])
+def test_the_certification_runs_on_the_named_engine(certify, engine, monkeypatch):
+    """Same config, same seeds, same criterion: only the engine differs, and it is the one
+    named. The C# engine is given a thread count; the Python engine none."""
+    import pandas as pd
+
+    seen: dict = {"seeds": []}
+
+    class Fake:
+        def run_in_memory(self, cfg, seed=0):
+            seen["seeds"].append(seed)
+            seen["nyear"] = cfg["simulation.time.nyear"]
+            frame = pd.DataFrame({sp: [sum(certify.ENVELOPE[sp]) / 2] * 12 for sp in certify.FOCAL})
+            return type("R", (), {"biomass": lambda self: frame})()
+
+    def get_engine(name, **kwargs):
+        seen.update(name=name, kwargs=kwargs)
+        return Fake()
+
+    monkeypatch.setattr(certify, "get_engine", get_engine)
+    table = certify.certify_python({}, 12, (3, 4), engine=engine)
+    assert seen["name"] == engine and seen["seeds"] == [3, 4] and seen["nyear"] == "12"
+    assert ("threads" in seen["kwargs"]) is (engine == "csharp")
+    assert all(table[sp]["persists"] and table[sp]["in_envelope"] for sp in certify.FOCAL)
+    assert certify.ENGINE_LABELS == {"python": "Python", "csharp": "C#"}
