@@ -60,7 +60,10 @@ def csharp_engine_available() -> tuple[bool, str]:
     # was built from another catalogue: its feature checks would not match this package's.
     built = (bin_dir / CAPABILITIES_FILE).read_bytes()
     if built != (Path(__file__).resolve().parent / "features.json").read_bytes():
-        return False, f"the built engine is stale (its feature catalogue differs); rebuild: {BUILD_COMMAND}"
+        return (
+            False,
+            f"the built engine is stale (its feature catalogue differs); rebuild: {BUILD_COMMAND}",
+        )
     if resolve_dotnet_root() is None:
         return False, "no .NET runtime found ($DOTNET_ROOT, ~/.dotnet or dotnet on PATH)"
     return True, ""
