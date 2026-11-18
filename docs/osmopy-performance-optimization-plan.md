@@ -334,6 +334,13 @@ pair. Record the rest as not-shipping notes in the existing `docs/perf/` format.
 
 ### Item 5 — Calibration: seeding policy and a real-objective comparison
 
+**Status: DONE 2026-11-18.**
+- **(a)** The opt-in CRN mode merged in #288.
+- **(b)** The matched-budget comparison was run: `docs/perf/2026-11-17-optimizer-comparison.md`.
+  - **The pre-stated rule orders no pair.** One surrogate-DE point that is fragile across seeds (re-ranks 2.6 to 682) inflated the pooled SD.
+  - Descriptively, CMA-ES reached production's level (0.71–0.73 against 0.72) in 2 of 3 replicates, and no DE run did.
+- **No default changes.** A larger CMA-ES study, with a robust pooling rule fixed in advance, is the follow-up if calibration throughput binds.
+
 **Goal.** (a) Give the NSGA-II path an opt-in common-random-number mode. (b) Compare DE,
 CMA-ES and surrogate-DE at a matched evaluation budget on one real OSMOSE objective.
 
