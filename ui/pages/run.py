@@ -90,14 +90,22 @@ def parse_overrides(text: str) -> dict[str, str]:
     return result
 
 
+def effective_run_config(config: dict[str, str], overrides_text: str) -> dict[str, str]:
+    """The config an in-process run uses: the loaded one with the run panel's overrides applied.
+
+    One function for the gate and for the run, so the gate cannot check a different config from
+    the one that runs."""
+    effective = dict(config or {})
+    effective.update(parse_overrides(overrides_text or ""))
+    return effective
+
+
 def csharp_block_reason(config: dict[str, str], overrides_text: str) -> str | None:
     """Why the C# engine cannot run ``config`` WITH the run panel's overrides applied, or None.
 
     The overrides are part of what runs: one of them can turn on a feature the engine does not
     implement, and checking the loaded config alone would let that run start and then fail."""
-    effective = dict(config or {})
-    effective.update(parse_overrides(overrides_text or ""))
-    cap = describe_engine("csharp", effective)
+    cap = describe_engine("csharp", effective_run_config(config, overrides_text))
     if cap.can_run:
         return None
     return cap.block_reason or "The C# engine cannot run this configuration."
@@ -911,9 +919,7 @@ def run_server(input, output, session, state: AppState):
             # reactive polls (_drain_live_queue + _drain_run_done) flush live frames and the
             # final result on the main thread. Awaiting the run here would suspend handle_run
             # and Shiny would defer every flush until the run finished (no live updates).
-            overrides = parse_overrides(input.py_param_overrides() or "")
-            run_config = dict(config)
-            run_config.update(overrides)
+            run_config = effective_run_config(config, input.py_param_overrides() or "")
             if source_dir:
                 run_config["_osmose.config.dir"] = str(source_dir)
             output_dir = work_dir / "output"

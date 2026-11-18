@@ -206,6 +206,12 @@ def test_the_csharp_gate_checks_the_config_that_runs_overrides_included(monkeypa
     assert run_mod.csharp_block_reason(config | {"species.lmax.sp0": "25"}, "") is not None
     text = (ROOT / "ui" / "pages" / "run.py").read_text(encoding="utf-8")
     assert 'csharp_block_reason(config, input.py_param_overrides() or "")' in text
+    # The gate and the run build their config with the same function, from the same input.
+    assert 'run_config = effective_run_config(config, input.py_param_overrides() or "")' in text
+    assert text.count("parse_overrides(input.py_param_overrides()") == 0
+    merged = run_mod.effective_run_config(config, "simulation.time.nyear = 3\nnot a pair\n")
+    assert merged["simulation.time.nyear"] == "3" and len(merged) == len(config)
+    assert config["simulation.time.nyear"] != "3"  # the loaded config is not modified
 
 
 def test_the_header_offers_the_csharp_button_only_where_the_engine_is_installed():
