@@ -28,6 +28,7 @@ from osmose.engine_cs import csharp_engine_available
 from osmose.engine_cs.build import STAGE_METRICS, build_bundle
 from osmose.engine_cs.bundle import Bundle
 from osmose.engine_cs.capabilities import load_catalog, required_features
+from tests._csharp_resources import oxygen_coupled, simulation_resources
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -410,31 +411,41 @@ def test_each_species_gets_its_own_fishing_map(runs):
 
 
 @pytest.mark.parametrize("demo", ["eec_full", "bay_of_biscay", "baltic"])
-def test_resource_capacity_from_the_bundle_equals_resource_state_update(runs, demo):
-    from osmose.engine.resources import ResourceState
-
-    config, _, grid, b = runs[demo]
-    rs = ResourceState(config=config.raw_config, grid=grid)
+def test_resource_capacity_from_the_bundle_equals_the_simulations(runs, demo):
+    """Against ResourceState as simulate() builds it, oxygen included (a fresh one drops the
+    coupling, see tests/_csharp_resources.py). Baltic's benthos K is scaled by bottom oxygen,
+    feature oxygen_benthos (phase 2): the bundle leaves it unscaled, so that resource must
+    DIFFER, and the bundle must need the feature the engine refuses."""
+    config, raw, grid, b = runs[demo]
+    rs = simulation_resources(config, grid)
+    coupled = oxygen_coupled(config, rs)
     n = int(b.get("resources.n"))
     assert n == rs.n_resources and n > 0
     frames, fbs, abs_ = (
         b.get(f"resources.{k}") for k in ("forcing", "frame_by_step", "accessibility_by_step")
     )
+    coupled_differs = False
     for step in (0, 1, 11, 23, 24, 40):
         rs.update(step)
         for r in range(n):
             got = frames[r, fbs[step, r]] * abs_[step, r]  # the C# engine's K
-            assert got.tobytes() == rs.biomass[r].tobytes(), f"{demo} step {step} resource {r}"
+            if r == coupled:
+                coupled_differs |= got.tobytes() != rs.biomass[r].tobytes()
+            else:
+                assert got.tobytes() == rs.biomass[r].tobytes(), f"{demo} step {step} resource {r}"
     rs.close()
     assert (frames > 0).any()
+    assert (coupled is not None) == (demo == "baltic")
+    if coupled is not None:
+        assert coupled_differs
+        assert "oxygen_benthos" in required_features(config, raw)
 
 
 def test_resource_access_rows_are_the_kernels(runs):
     from osmose.engine.processes.mortality import _precompute_resource_arrays
-    from osmose.engine.resources import ResourceState
 
     config, _, grid, b = runs["eec_full"]
-    rs = ResourceState(config=config.raw_config, grid=grid)
+    rs = simulation_resources(config, grid)
     *_, rows, _n = _precompute_resource_arrays(config, rs)
     assert np.array_equal(b.get("resources.access_rows"), rows) and (rows >= 0).any()
     rs.close()
@@ -442,8 +453,6 @@ def test_resource_access_rows_are_the_kernels(runs):
 
 def test_resource_multipliers_reach_the_capacity(runs):
     """Every shipped resource has multiplier 1.0, so give EEC's resources other ones."""
-    from osmose.engine.resources import ResourceState
-
     config, raw, grid, _ = runs["eec_full"]
     rsc_keys = [
         k
@@ -457,7 +466,7 @@ def test_resource_multipliers_reach_the_capacity(runs):
         for i, k in enumerate(rsc_keys)
     }
     b = build_bundle(cfg, raw, grid, seed=7)
-    rs = ResourceState(config=cfg.raw_config, grid=grid)
+    rs = simulation_resources(cfg, grid)
     frames, fbs, abs_ = (
         b.get(f"resources.{k}") for k in ("forcing", "frame_by_step", "accessibility_by_step")
     )

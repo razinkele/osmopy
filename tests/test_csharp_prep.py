@@ -28,10 +28,11 @@ from osmose.demo import osmose_demo
 from osmose.engine import PythonEngine
 from osmose.engine.processes.feeding_stage import compute_feeding_stages
 from osmose.engine.processes.mortality import _precompute_effective_rates
-from osmose.engine.resources import ResourceState
 from osmose.engine_cs import csharp_engine_available
 from osmose.engine_cs.build import build_bundle
 from osmose.engine_cs.bundle import Bundle
+from osmose.engine_cs.capabilities import required_features
+from tests._csharp_resources import oxygen_coupled, simulation_resources
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = {"eec_full": 30, "bay_of_biscay": 20, "baltic": 129}
@@ -42,7 +43,8 @@ class _Stop(Exception):
 
 
 def capture_state(demo: str, step: int, workdir: Path):
-    """(config, grid, raw, state) just before step ``step``'s mortality in a real run."""
+    """(config, grid, raw, state, resources) just before step ``step``'s mortality in a real run;
+    ``resources`` is the simulation's own resource biomass at that moment."""
     raw = dict(OsmoseConfigReader().read(Path(osmose_demo(demo, workdir)["config_file"])))
     raw["output.minimal.enabled"] = "true"
     raw["simulation.time.nyear"] = str(step // 24 + 1)
@@ -53,6 +55,7 @@ def capture_state(demo: str, step: int, workdir: Path):
     def spy(state, resources, config_, rng_, grid_, step=0, species_rngs=None, ctx=None):
         if step == target:
             got["state"] = copy.deepcopy(state)
+            got["resources"] = resources.biomass.copy()
             raise _Stop
         return real(
             state, resources, config_, rng_, grid_, step=step, species_rngs=species_rngs, ctx=ctx
@@ -66,7 +69,7 @@ def capture_state(demo: str, step: int, workdir: Path):
         pass
     finally:
         sim._mortality = real
-    return config, grid, raw, got["state"]
+    return config, grid, raw, got["state"], got["resources"]
 
 
 def write_state(st, path: Path) -> None:
@@ -91,7 +94,7 @@ def prepared(tmp_path_factory) -> dict:
     out = {}
     for demo, step in CASES.items():
         d = tmp_path_factory.mktemp(demo)
-        config, grid, raw, st = capture_state(demo, step, d)
+        config, grid, raw, st, live = capture_state(demo, step, d)
         build_bundle(config, raw, grid, seed=11).save(d / "model.bin")
         write_state(st, d / "state.bin")
         code = (
@@ -110,7 +113,7 @@ def prepared(tmp_path_factory) -> dict:
         ]
         proc = subprocess.run(args, capture_output=True, text=True, timeout=300, cwd=ROOT)
         assert proc.returncode == 0, proc.stderr[-4000:]
-        out[demo] = (config, grid, st, step, Bundle.load(d / "prep.bin"), raw, d)
+        out[demo] = (config, grid, st, step, Bundle.load(d / "prep.bin"), raw, d, live)
     return out
 
 
@@ -140,13 +143,22 @@ def test_feeding_stages_and_access_indices_equal_the_engine(prepared, demo):
 
 
 @pytest.mark.parametrize("demo", sorted(CASES))
-def test_resource_capacity_equals_resource_state_update(prepared, demo):
-    config, grid, _, step, prep, *_ = prepared[demo]
-    rs = ResourceState(config=config.raw_config, grid=grid)
-    rs.update(step)
-    got = prep.get("prep.resources")[: rs.n_resources]
-    assert got.tobytes() == rs.biomass.tobytes()
+def test_resource_capacity_equals_the_simulations_own(prepared, demo):
+    """Against the resource biomass the running simulation held at this step (not a fresh
+    ResourceState, which drops the oxygen coupling, see tests/_csharp_resources.py). Baltic's
+    benthos K is scaled by bottom oxygen, feature oxygen_benthos (phase 2): the C# value must
+    DIFFER there, and the engine must refuse the config."""
+    config, grid, _, _, prep, raw, _, live = prepared[demo]
+    got = prep.get("prep.resources")[: live.shape[0]]
+    rs = simulation_resources(config, grid)
+    coupled = oxygen_coupled(config, rs)
     rs.close()
+    for r in range(live.shape[0]):
+        same = got[r].tobytes() == live[r].tobytes()
+        assert same != (r == coupled), (demo, r, coupled)
+    assert (coupled is not None) == (demo == "baltic")
+    if coupled is not None:
+        assert "oxygen_benthos" in required_features(config, raw)
 
 
 def test_baltic_background_schools_are_exempt(prepared):
@@ -172,7 +184,7 @@ def test_finite_last_stage_thresholds_clamp_and_varying_resource_access(prepared
     """Every shipped config ends its stage thresholds at +inf (so the clamp to the last stage
     never fires) and has constant resource accessibility. Give EEC finite thresholds and a
     time-varying accessibility file."""
-    config, grid, st, step, _, raw, d = prepared["eec_full"]
+    config, grid, st, step, _, raw, d, _ = prepared["eec_full"]
     cfg = copy.copy(config)
     sa = copy.deepcopy(config.stage_accessibility)
     for role in ("prey", "pred"):
@@ -200,7 +212,8 @@ def test_finite_last_stage_thresholds_clamp_and_varying_resource_access(prepared
             st.species_id, st.age_dt, cfg.n_dt_per_year, cfg.all_species_names, role=role
         )
         assert np.array_equal(prep.get(name), want), role
-    rs = ResourceState(config=cfg.raw_config, grid=grid)
+    rs = simulation_resources(cfg, grid)
+    assert oxygen_coupled(cfg, rs) is None
     rs.update(step)
     assert prep.get("prep.resources")[: rs.n_resources].tobytes() == rs.biomass.tobytes()
     assert any(s.accessibility_ts is not None for s in rs.species)
