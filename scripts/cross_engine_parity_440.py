@@ -253,7 +253,14 @@ def run_equivalence(args) -> None:
 
     t0 = time.time()
     arms = {}
-    for name in ("python", "python-control", "csharp"):
+    if args.rejudge is not None:  # the saved replicates of an earlier run: no simulation
+        saved = json.loads(args.rejudge.read_text())
+        arms = {
+            name: {m: {sp: np.asarray(v) for sp, v in by.items()} for m, by in data.items()}
+            for name, data in saved["replicates"].items()
+        }
+        print(f"[rejudge] {args.rejudge}: {saved['n']} replicates per arm, {saved['config']}")
+    for name in () if arms else ("python", "python-control", "csharp"):
         t = time.time()
         arms[name] = in_memory_arm(
             name, args.config, args.years, args.n, args.spinup_years, args.csharp_threads
@@ -474,6 +481,9 @@ def main() -> None:
     )
     ap.add_argument("--persist-results", type=Path, default=None)
     ap.add_argument("--csharp-threads", type=int, default=1, help="threads of the C# arm")
+    ap.add_argument(
+        "--rejudge", type=Path, default=None, help="apply the rule to a saved run's replicates"
+    )
     ap.add_argument(
         "--calibration-splits", type=int, default=2000, help="re-splits for the rule's calibration"
     )

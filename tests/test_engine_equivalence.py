@@ -35,8 +35,8 @@ def _arm(rng, spread=0.03, shift=None, noisy=(), zero_yield=()):
     return arm
 
 
-def _cell(metric="biomass", sp="sp0", d=0.0, ci=0.01, eq=True, vr=1.0, vacuous=False):
-    return Cell(metric, sp, d, ci, 0.0, eq, np.nan, vr, vacuous)
+def _cell(metric="biomass", sp="sp0", d=0.0, ci=0.01, eq=True, vr=1.0, vacuous=False, se=0.005):
+    return Cell(metric, sp, d, ci, 0.0, eq, np.nan, vr, vacuous, se, 2 * N - 2)
 
 
 # --------------------------------------------------------------------------- the criteria
@@ -92,7 +92,9 @@ def test_criterion_three_largest_difference():
     treat = dict(ctrl)
     treat[("biomass", "sp0")] = _cell(d=0.09, ci=0.2)  # 9x the control's largest, inside the margin
     assert acceptance(ctrl, treat).passed  # every treatment cell within its margin
-    treat[("biomass", "sp0")] = _cell(d=0.12, ci=0.2)  # beyond the margin, not divergent (ci > d)
+    treat[("biomass", "sp0")] = _cell(
+        d=0.12, ci=0.2, se=0.1
+    )  # beyond the margin, too noisy to diverge
     v = acceptance(ctrl, treat)
     assert not v.passed and not v.divergent and "largest |d|" in v.failures[0]
 
@@ -162,14 +164,29 @@ def test_calibration_loosens_the_tunable_criteria():
     assert rates[LADDER[-1]] <= rates[LADDER[0]]
 
 
-def test_criterion_one_cannot_be_calibrated_for_noisy_cells():
-    """For a cell noisier than its margin, 'divergent' reduces to 'the 90% interval excludes
-    zero', which identical engines do 10% of the time per cell; no constant touches criterion 1,
-    so with several noisy cells no rung reaches 5%, and the attribution names criterion 1."""
+def test_bonferroni_keeps_noisy_cells_from_false_failing():
+    """As specified, criterion 1 used each cell's 90% interval: a noisy cell excludes zero from it
+    10% of the time by construction, so several noisy cells kept identical engines failing at
+    every rung (EEC: 78.5%). Bonferroni over the counted cells (owner decision 2026-11-18)."""
     rng = np.random.default_rng(8)
     noisy = {(m, sp) for m in ("biomass", "abundance") for sp in SPECIES[:4]}
     chosen, rates, attribution = calibrate(
         _arm(rng, noisy=noisy), _arm(rng, noisy=noisy), n_splits=300
     )
-    assert chosen == LADDER[-1] and rates[LADDER[-1]] > 0.05
-    assert attribution[1] == max(attribution.values()) and attribution[1] > 0.3
+    assert rates[chosen] <= 0.05 and attribution[1] <= 0.05
+
+
+def test_a_cell_the_plain_interval_flags_is_not_divergent_under_bonferroni():
+    m = 32
+    d = 0.15  # beyond the 0.097 margin
+    se = d / 2.0  # outside a 90% interval (t ~ 1.67), inside the Bonferroni one (t ~ 3.2 at m = 32)
+    cells = {("biomass", f"sp{i}"): _cell(sp=f"sp{i}", d=0.0) for i in range(m)}
+    treat = dict(cells)
+    treat[("biomass", "sp0")] = _cell(d=d, ci=1.67 * se, se=se)
+    assert acceptance(cells, treat, constants=Constants(99, 1e9, 1e9)).divergent == []
+    treat[("biomass", "sp0")] = _cell(
+        d=d, ci=1.67 * se / 3, se=se / 3
+    )  # a precise shift: divergent
+    assert acceptance(cells, treat, constants=Constants(99, 1e9, 1e9)).divergent == [
+        ("biomass", "sp0")
+    ]

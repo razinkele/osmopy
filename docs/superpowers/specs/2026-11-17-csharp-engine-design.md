@@ -1568,6 +1568,9 @@ at 1.25x (inferred from the t interval). Noisier cells are judged against the co
 
 1. No **divergent** cell: none where the 90% interval excludes zero **and** `|d|` exceeds the
    margin.
+   *Amended by the owner, 2026-11-18: the interval is Bonferroni-adjusted, 1 - 0.10/m with m the
+   counted cells. As written, EEC's noisy species made two identical Python arms fail this 78.5%
+   of the time at any constants (docs/perf/2026-11-18-csharp-ensemble-equivalence.md).*
 2. The count of equivalent cells for Python-versus-C# is at least the count for
    Python-versus-Python minus one.
 3. The largest `|d|` for Python-versus-C# is at most 1.5 times the largest for

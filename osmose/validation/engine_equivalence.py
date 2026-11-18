@@ -7,7 +7,12 @@ compared on the log10 scale by a two-one-sided t-test (TOST) at a per-metric mar
 
 Acceptance (spec 10.2), all of:
 
-1. no DIVERGENT cell: its 90% interval excludes zero and ``|d|`` exceeds the margin;
+1. no DIVERGENT cell: ``|d|`` exceeds the margin AND the Bonferroni half-width
+   ``t(1 - 0.10 / 2m) * se`` over the ``m`` counted cells. As specified this was the plain 90%
+   interval; on EEC that rejected two IDENTICAL Python arms 78.5% of the time (a noisy cell
+   excludes zero from its own 90% interval 10% of the time by construction, and no constant
+   loosens it). Amended by the owner, 2026-11-18: Bonferroni measured 3.2% there
+   (docs/perf/2026-11-18-csharp-ensemble-equivalence.md);
 2. equivalent cells of the treatment >= those of the control minus ``eq_slack``;
 3. the treatment's largest ``|d|`` <= ``max_ratio`` x the control's, or every treatment cell
    within its margin;
@@ -38,6 +43,9 @@ FLOORS = {"biomass": COLLAPSE, "abundance": COLLAPSE, "yield": COLLAPSE, "mean_w
 #: C# spread of 4.7e-17 (its outputs are summed in a seed-dependent store order), and the
 #: variance ratio 0 / 1e-34 failed criterion 4. Such a cell has no variance to compare.
 SPREAD_FLOOR = 1e-12
+#: Family-wise level of criterion 1 (owner decision 2026-11-18): each cell's divergence test runs
+#: at DIVERGENCE_ALPHA / m two-sided, m = the counted cells.
+DIVERGENCE_ALPHA = 0.10
 #: Margins on the log10 scale (spec 10.2): 1.25x for stocks and flows, 1.05x for mean weight.
 MARGINS = {
     "biomass": float(np.log10(1.25)),
@@ -94,6 +102,8 @@ class Cell:
     ks_p: float
     var_ratio: float
     vacuous: bool
+    se: float = 0.0  # standard error of d (log10)
+    df: int = 0  # degrees of freedom of the t interval
 
 
 Arm = dict[str, dict[str, np.ndarray]]  # metric -> species -> replicate values
@@ -111,10 +121,12 @@ def compare(
                 np.asarray(y[metric][sp], dtype=np.float64),
             )
             vacuous = metric == "yield" and not a.any() and not b.any()
-            d, ci, p, eq, ks, vr = tost(
-                a, b, margin, floor=FLOORS.get(metric, COLLAPSE), with_ks=with_ks
-            )
-            cells[(metric, sp)] = Cell(metric, sp, d, ci, p, bool(eq), ks, vr, vacuous)
+            floor = FLOORS.get(metric, COLLAPSE)
+            d, ci, p, eq, ks, vr = tost(a, b, margin, floor=floor, with_ks=with_ks)
+            la, lb = _log(a, floor), _log(b, floor)
+            se = float(np.sqrt(la.var(ddof=1) / len(la) + lb.var(ddof=1) / len(lb)))
+            df = len(la) + len(lb) - 2
+            cells[(metric, sp)] = Cell(metric, sp, d, ci, p, bool(eq), ks, vr, vacuous, se, df)
     return cells
 
 
@@ -158,6 +170,17 @@ class Verdict:
     vacuous: list[tuple[str, str]] = field(default_factory=list)
 
 
+def _divergent(cell: Cell, margin: float, m: int) -> bool:
+    """Criterion 1: beyond the margin and beyond the Bonferroni half-width over ``m`` cells. A
+    cell without spread is divergent exactly when its (genuine) difference exceeds the margin."""
+    if abs(cell.d) <= margin:
+        return False
+    if cell.se < SPREAD_FLOOR:
+        return True
+    half = float(stats.t.ppf(1 - DIVERGENCE_ALPHA / (2 * max(1, m)), cell.df)) * cell.se
+    return abs(cell.d) > half
+
+
 def _var_ok(vr: float, factor: float) -> bool:
     return bool(np.isnan(vr) or (1.0 / factor <= vr <= factor))
 
@@ -180,11 +203,7 @@ def acceptance(
         failures.append(message)
         failed.add(criterion)
 
-    divergent = [
-        k
-        for k in keys
-        if abs(treatment[k].d) > treatment[k].ci and abs(treatment[k].d) > margins[k[0]]
-    ]
+    divergent = [k for k in keys if _divergent(treatment[k], margins[k[0]], len(keys))]
     if divergent:
         fail(1, f"divergent cells: {divergent}")
     n_t = sum(treatment[k].equivalent for k in keys)

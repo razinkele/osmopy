@@ -64,9 +64,9 @@ Also fixed on the way: a species identical across Python seeds read a C# spread 
 log10 (C# sums outputs in a seed-dependent store order), and the variance ratio 0 / 1e-34 failed
 criterion 4. A standard error below 1e-12 in log10 is now treated as no spread (`SPREAD_FLOOR`).
 
-## Decision needed: criterion 1
+## Decision (owner, 2026-11-18): criterion 1 uses Bonferroni
 
-Criterion 1 as specified cannot be used on EEC: it rejects identical engines 79% of the time.
+Criterion 1 as specified could not be used on EEC: it rejected identical engines 79% of the time.
 Measured on the saved replicates (2,000 identical-engine re-splits):
 
 | Criterion 1 | Identical-engine false-fail, EEC | C# on EEC | C# on BoB |
@@ -75,9 +75,17 @@ Measured on the saved replicates (2,000 identical-engine re-splits):
 | Count: at most the 95th percentile of identical engines (8 on EEC) | 2.8% | PASS (5) | PASS |
 | **Bonferroni: a cell's interval at 1 - 0.10/m (m = counted cells)** | **3.2%** | **PASS (0)** | **PASS** |
 
-**Recommendation: Bonferroni.** It keeps the specified meaning ("no divergent cell"), needs no
-threshold estimated from the data, and one strongly divergent species still fails the run,
-which the count option would allow up to eight of. With it, both configs pass all four criteria.
+The owner chose Bonferroni: it keeps the specified meaning ("no divergent cell"), needs no
+threshold estimated from the data, and one strongly divergent species still fails the run.
+
+## Final verdicts (the amended rule, re-judged on the saved replicates)
+
+| | Frozen rung (slack, ratio, variance) | Identical-engine false-fail at that rung | Verdict |
+|---|---|---|---|
+| EEC full | 5, 4.0, 8 | 4.8% (criterion 1: 3.1%) | **PASS**, all four criteria |
+| Bay of Biscay | 6, 5.0, 10 | 2.0% | **PASS**, all four criteria |
+
+Re-judge without simulating: `--rejudge <saved json>` (the raw replicates are in it).
 
 ## Reproduce
 
