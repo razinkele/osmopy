@@ -25,7 +25,7 @@ Two budget lines missed, by small absolute amounts. Neither changes the gate.
 
 **Update, same day:**
 - **Peak memory now passes:** C# 217 MB against Python's 286 MB at one thread, and 218 against 287 at 14. The Numba import is gone from the C# path (see "Peak memory" below).
-- **The bundle share is unchanged,** at 10.6% at 14 threads in a second measurement. Of its 36 ms, 29.5 ms is input resolution the Python engine performs inside its own timed run. **The C#-only remainder is 6.5 ms: 1.8% at 14 threads, 0.4% at one.** Whether the budget should count the shared part is the owner's call.
+- **The bundle share is unchanged,** at 10.6% at 14 threads in a second measurement. Of its 36 ms, 29.5 ms is input resolution the Python engine performs inside its own timed run. **The C#-only remainder is 6.5 ms: 1.8% at 14 threads, 0.4% at one.** **Owner decision, 2026-11-18:** the budget counts the C#-specific overhead, so it passes (spec 10.4).
 
 ## Protocol, and where it departs from spec 10.4
 
