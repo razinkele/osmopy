@@ -37,10 +37,16 @@ Its seed SD of 297 dominates the pooled value.
 
 1. **CMA-ES reached production's level in two of three replicates.** It re-ranked at 0.7146 and
    0.7328, against 0.7190 ± 0.0033 at production's values. Replicate 2 is slightly *below*
-   production on all five seeds. Replicate 1 found 0.961 within its first 28 evaluations and
+   production seed by seed. Against the pre-flight's production values on the same seeds 1–5:
+
+   | seed | 1 | 2 | 3 | 4 | 5 |
+   |---|---:|---:|---:|---:|---:|
+   | production | 0.7169 | 0.7162 | 0.7225 | 0.7167 | 0.7228 |
+   | CMA-ES replicate 2 | 0.7159 | 0.7139 | 0.7154 | 0.7152 | 0.7128 |
+ Replicate 1 found 0.961 within its first 28 evaluations and
    never improved; its later generations kept sampling the collapse plateau.
-2. **No DE replicate reached production's level** in 224 evaluations: 0.98 to 1.28, improving
-   steadily, with the last gains still arriving at evaluation 224.
+2. **No DE replicate reached production's level** in 224 evaluations: 0.98 to 1.28. Two of the three
+   were still improving between evaluations 149 and 224. Replicate 3 was flat at 1.265 over that span.
 3. **Surrogate-DE** ended at 0.99 and 1.34, plus the seed-fragile point above.
 4. **Exploratory only, decided after seeing the data, so not a result.** Without surrogate-DE
    replicate 2 the pooled SD would be 0.015, and 2 × 0.015 = 0.030. CMA-ES's worst replicate
@@ -75,8 +81,9 @@ Its seed SD of 297 dominates the pooled value.
 | cmaes_3 | 4262 | clean |
 
 On the clean runs, CMA-ES takes about 1.3× DE's wall time for the same 224 evaluations: 4262 s
-against 3254–3306 s. A CMA-ES generation is 14 evaluations on 14 workers, so each generation
-waits for its slowest simulation. DE's population of 28 fills the pool twice per generation.
+against 3254–3306 s. *An untested explanation:* a CMA-ES generation is 14 evaluations on 14
+workers, so each generation may wait for its slowest simulation, while DE's population of 28
+fills the pool twice per generation. Per-evaluation timings were not analysed to confirm this.
 Results (`f`) are unaffected by the other load: there is no per-evaluation timeout that load
 could turn into a sentinel.
 
