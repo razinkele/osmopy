@@ -71,9 +71,38 @@ class _EvalSpec:
     use_java_engine: bool
     use_registry: bool
     n_workers: int = 1  # pool size; each worker applies the split thread rule for it
+    engine: str = "python"  # "python", "java" or "csharp"
 
 
 _WORKER_PROBLEM: OsmoseCalibrationProblem | None = None
+
+
+def _check_csharp_runs(base_config_path: Path) -> None:
+    """Refuse a C# calibration up front when the C# engine cannot run its base config: every
+    candidate would otherwise fail, and be scored as a failure, one by one."""
+    from osmose.config import OsmoseConfigReader
+    from osmose.engine_cs import csharp_engine_available
+    from osmose.engine_cs.capabilities import csharp_engine_block_reason
+
+    ok, why = csharp_engine_available()
+    if not ok:
+        raise ValueError(f"engine='csharp': the C# engine is unavailable ({why})")
+    reason = csharp_engine_block_reason(OsmoseConfigReader().read(base_config_path))
+    if reason is not None:
+        raise ValueError(f"engine='csharp': the C# engine cannot run this config: {reason}")
+
+
+def _csharp_build_id() -> str:
+    """The built assembly's content hash: a rebuilt engine never reuses cached results."""
+    import hashlib
+
+    from osmose.engine_cs import ASSEMBLY_NAME, assembly_dir
+
+    dll = assembly_dir() / f"{ASSEMBLY_NAME}.dll"
+    try:
+        return hashlib.sha256(dll.read_bytes()).hexdigest()[:16]
+    except OSError:
+        return "missing"
 
 
 def _worker_init(spec: _EvalSpec) -> None:
@@ -100,7 +129,7 @@ def _worker_init(spec: _EvalSpec) -> None:
         registry=reg,
         subprocess_timeout=spec.subprocess_timeout,
         cleanup_after_eval=spec.cleanup_after_eval,
-        use_java_engine=spec.use_java_engine,
+        engine=spec.engine,
     )
 
 
@@ -180,6 +209,7 @@ class OsmoseCalibrationProblem(Problem):
         use_java_engine: bool = False,
         parallel_backend: Literal["thread", "process"] = "thread",
         crn_seeds: Sequence[int] | None = None,
+        engine: str | None = None,  # "python", "java" or "csharp"; validated below
     ):
         """Set up the calibration problem.
 
@@ -188,14 +218,26 @@ class OsmoseCalibrationProblem(Problem):
         under common random numbers. By default candidate i runs on ``seed=i``, its position in
         the population, which ties the seed noise to position rather than to the candidate; that
         default is kept so past runs stay reproducible. The seed set enters the cache key only in
-        this mode. Python engine only.
+        this mode. In-process engines only (Python, C#).
+
+        ``engine`` names the engine: ``"python"`` (default), ``"java"`` or ``"csharp"``.
+        ``use_java_engine=True`` is the older spelling of ``engine="java"``.
         """
+        if use_java_engine and engine not in (None, "java"):
+            raise ValueError(f"use_java_engine=True contradicts engine={engine!r}")
+        resolved = "java" if use_java_engine else (engine or "python")
+        if resolved not in ("python", "java", "csharp"):
+            raise ValueError(f"unknown engine {resolved!r}: python, java or csharp")
+        self.engine: str = resolved
+        use_java_engine = resolved == "java"
         if use_java_engine and jar_path is None:
             raise ValueError("use_java_engine=True requires jar_path")
+        if resolved == "csharp":
+            _check_csharp_runs(base_config_path)
         if crn_seeds is not None:
             if use_java_engine:
                 raise ValueError(
-                    "crn_seeds is Python-engine only (the Java run takes no seed here)"
+                    "crn_seeds is for the in-process engines (the Java run takes no seed here)"
                 )
             if len(crn_seeds) == 0:
                 raise ValueError("crn_seeds must name at least one seed (or be None)")
@@ -366,6 +408,7 @@ class OsmoseCalibrationProblem(Problem):
             use_java_engine=self.use_java_engine,
             use_registry=self._registry is not None,
             n_workers=_resolve_worker_count(self.n_parallel),
+            engine=self.engine,
         )
 
     def _ensure_pool(self) -> ProcessPoolExecutor:
@@ -479,21 +522,22 @@ class OsmoseCalibrationProblem(Problem):
     def _run_python_engine(
         self, overrides: dict[str, str], run_id: int, seed: int | None = None
     ) -> OsmoseResults | None:
-        """Run the Python engine in-process; return OsmoseResults or None on failure.
+        """Run the in-process engine (Python or C#); return OsmoseResults or None on failure.
 
         ``seed`` defaults to ``run_id`` (the candidate's position); ``crn_seeds`` passes its own.
         """
         from osmose.config import OsmoseConfigReader
-        from osmose.engine import PythonEngine
+        from osmose.engine.select import get_engine
 
         try:
             base_cfg = OsmoseConfigReader().read(self.base_config_path)
             cfg = dict(base_cfg)
             cfg.update(overrides)
-            return PythonEngine().run_in_memory(cfg, seed=run_id if seed is None else seed)
+            return get_engine(self.engine).run_in_memory(cfg, seed=run_id if seed is None else seed)
         except _python_engine_errors as exc:
             _log.warning(
-                "Python-engine run %d failed (%s: %s)",
+                "%s-engine run %d failed (%s: %s)",
+                self.engine,
                 run_id,
                 type(exc).__name__,
                 exc,
@@ -621,7 +665,11 @@ class OsmoseCalibrationProblem(Problem):
     def _cache_key(self, overrides: dict[str, str]) -> str:
         """Deterministic hash of overrides + engine identity + base config hash."""
         parts = sorted(overrides.items())
-        if self.jar_path is not None:
+        if self.engine == "csharp":  # a new branch: the Python and Java keys are unchanged
+            from osmose import __version__
+
+            engine_id = f"csharp-{__version__}-{_csharp_build_id()}"
+        elif self.jar_path is not None:
             try:
                 engine_id = str(self.jar_path.stat().st_mtime)
             except OSError:
