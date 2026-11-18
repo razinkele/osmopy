@@ -81,7 +81,8 @@ PY
 
 %help
     OSMOSE HPC batch image (Python, C# and Java engines, numba).
-    Check the C# engine: apptainer exec osmose.sif python -m osmose.engine_cs.selftest
+    Check the C# engine (--pwd: keep a host checkout in the cwd out of the import path):
+      apptainer exec --pwd /tmp osmose.sif python -m osmose.engine_cs.selftest
     The image is READ-ONLY: bind a writable host dir to /results and send all output there.
       Fmsy sweep:
         apptainer exec -B $CFG:/cfg:ro -B $OUT:/results osmose.sif \

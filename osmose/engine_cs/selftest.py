@@ -50,7 +50,10 @@ def problems(frames: dict[str, pd.DataFrame], expected_rows: int) -> list[str]:
 def main() -> int:
     from osmose.engine_cs import csharp_engine_available, resolve_dotnet_root
 
-    ok, why = csharp_engine_available()
+    try:  # the probe itself can raise (an unreadable capabilities file): report that too
+        ok, why = csharp_engine_available()
+    except Exception as exc:
+        ok, why = False, f"{type(exc).__name__}: {exc}"
     if not ok:
         print(f"FAIL: the C# engine is not available: {why}")
         return 1
@@ -59,16 +62,16 @@ def main() -> int:
         from osmose.demo import osmose_demo
         from osmose.engine.config import EngineConfig
         from osmose.engine_cs import CSharpEngine
+        from osmose.engine_cs.build import n_records
 
         with tempfile.TemporaryDirectory(prefix="osmose_cs_selftest_") as tmp:
             raw = dict(OsmoseConfigReader().read(Path(osmose_demo(DEMO, Path(tmp))["config_file"])))
             raw["simulation.time.nyear"] = str(YEARS)
             raw["output.minimal.enabled"] = "true"
             cfg = EngineConfig.from_dict(raw)
-            n_steps, records = (
-                int(cfg.n_steps),
-                int(cfg.n_steps) // int(cfg.output_record_frequency),
-            )
+            n_steps = int(cfg.n_steps)
+            # The engine's own recording rule (trailing partial window, output.step0.include).
+            records = n_records(n_steps, cfg.output_record_frequency, cfg.output_step0_include)
             start = time.perf_counter()
             result = CSharpEngine().run_in_memory(raw, seed=1)
             elapsed = time.perf_counter() - start

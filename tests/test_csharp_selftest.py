@@ -60,6 +60,21 @@ def test_an_extinct_abundance_alone_is_not_a_failure():
     assert problems({"abundance": zero_end}, expected_rows=3) == []
 
 
+def test_a_probe_that_raises_is_a_fail_line_not_a_traceback(monkeypatch, capsys):
+    """An unreadable capabilities file makes ``csharp_engine_available`` raise. Nothing loads the
+    CLR before the probe, so ``main`` can run in-process here."""
+    from osmose import engine_cs
+    from osmose.engine_cs.selftest import main
+
+    def unreadable():
+        raise PermissionError("Osmose.Engine.capabilities.json")
+
+    monkeypatch.setattr(engine_cs, "csharp_engine_available", unreadable)
+    assert main() == 1
+    out = capsys.readouterr().out
+    assert out.startswith("FAIL: the C# engine is not available: PermissionError"), out
+
+
 def _selftest(env_extra: dict[str, str]) -> subprocess.CompletedProcess:
     env = dict(os.environ, **env_extra)
     return subprocess.run(

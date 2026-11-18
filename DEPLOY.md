@@ -16,7 +16,7 @@ The production web app is a **systemd service** running Uvicorn directly:
 
 ## The C# engine (optional, opt-in)
 
-The third engine (`csharp/`, spec `docs/superpowers/specs/2026-11-17-csharp-engine-design.md` section 9.7) is **off by default**. The web app does not offer it before the Phase 2 UI work, so a plain `sudo bash deploy.sh` installs nothing for it. It also removes any assembly a previous deploy built, so an old build never outlives its ref.
+The third engine (`csharp/`, spec `docs/superpowers/specs/2026-11-17-csharp-engine-design.md` section 9.7) is **off by default**. The web app does not offer it before the Phase 2 UI work, so a plain `sudo bash deploy.sh` installs nothing for it. Every deploy also removes any assembly a previous deploy built, as `shiny` and before the checkout, so an old build never outlives its ref.
 
 To build it on the server:
 
@@ -27,10 +27,11 @@ sudo OSMOSE_DEPLOY_CSHARP=1 bash deploy.sh
 After the service is up and answering HTTP, the deploy:
 1. installs the .NET 10 SDK into `/opt/dotnet` with Microsoft's `dotnet-install.sh`, if no 10.x SDK is there;
 2. installs `pythonnet` into the shiny env;
-3. builds the assembly inside the prod clone from the deployed ref;
-4. runs the self-test **as the service runs**: user `shiny`, the env's interpreter, the working copy and `DOTNET_ROOT=/opt/dotnet`.
+3. builds the assembly from the deployed ref **as `shiny`**, never as root, into a staging directory;
+4. runs the self-test on the staged build **as the service runs**: user `shiny`, the env's interpreter, the working copy and `DOTNET_ROOT=/opt/dotnet`;
+5. only if it passes, moves the build into `osmose/engine_cs/bin` and checks that the service's own path can load it.
 
-The unit always carries `Environment=DOTNET_ROOT=/opt/dotnet`, which is inert when the directory is absent. A failure in any of the four steps exits 1 with a `C# engine:` error. **The app keeps running the new code without the engine:** the steps run after the restart, so a C# failure can never leave new code on disk under the old process.
+The unit always carries `Environment=DOTNET_ROOT=/opt/dotnet`, which is inert when the directory is absent. A failure in any step exits 1 with a `C# engine:` error, and a build that fails never becomes loadable. **The app keeps running the new code without the engine:** the steps run after the restart, so a C# failure can never leave new code on disk under the old process.
 
 To re-check by hand:
 

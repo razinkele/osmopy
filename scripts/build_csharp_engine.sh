@@ -3,7 +3,9 @@
 # portable IL assembly plus the runtimeconfig.json pythonnet hosts it with.
 #
 # Finds dotnet the same way osmose.engine_cs.resolve_dotnet_root does: $DOTNET_ROOT, then
-# ~/.dotnet, then dotnet on PATH. Extra arguments go to `dotnet publish` (e.g. -m:1 on a busy box).
+# ~/.dotnet, then dotnet on PATH. Publishes where the package loads from: $OSMOSE_CSHARP_ENGINE_DIR
+# when set (osmose.engine_cs.assembly_dir), else osmose/engine_cs/bin. Extra arguments go to
+# `dotnet publish` (e.g. -m:1 on a busy box).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,6 +25,7 @@ fi
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_NOLOGO=1
 
+OUT="${OSMOSE_CSHARP_ENGINE_DIR:-$ROOT/osmose/engine_cs/bin}"
 "$DOTNET" publish "$ROOT/csharp/src/Osmose.Engine/Osmose.Engine.csproj" \
-  -c Release -o "$ROOT/osmose/engine_cs/bin" "$@"
-echo "C# engine built into $ROOT/osmose/engine_cs/bin"
+  -c Release -o "$OUT" "$@"
+echo "C# engine built into $OUT"

@@ -142,15 +142,18 @@ else
     info "Creating prod clone: ${REPO_URL} -> ${PROD_SRC}"
     git clone --quiet "$REPO_URL" "$PROD_SRC"
 fi
+# The C# assembly is gitignored, so `checkout --force` keeps the previous ref's build, and
+# csharp_engine_available() only compares the feature catalogue: a stale assembly would load
+# against the new Python code. Remove it on EVERY deploy, BEFORE the checkout, so a failed
+# removal stops the deploy with the previous ref and its build still consistent; Step 6
+# rebuilds it from the new ref when OSMOSE_DEPLOY_CSHARP=1. As shiny, not root: the clone is
+# shiny-writable, and root's rm -rf would follow a symlink planted above bin/ out of the clone.
+if [[ -e "${PROD_SRC}/osmose/engine_cs/bin" || -L "${PROD_SRC}/osmose/engine_cs/bin" ]]; then
+    runuser -u shiny -- rm -rf "${PROD_SRC}/osmose/engine_cs/bin"
+fi
 git -C "$PROD_SRC" checkout --quiet --force --detach "$DEPLOY_REF"
 DEPLOYED_SHA="$(git -C "$PROD_SRC" rev-parse --short HEAD)"
 info "Prod source at ${DEPLOY_REF} (${DEPLOYED_SHA})."
-
-# The C# assembly is gitignored, so `checkout --force` keeps the previous ref's build, and
-# csharp_engine_available() only compares the feature catalogue: a stale assembly would load
-# against the new Python code (and a self-test would pass on it). Remove it on EVERY deploy;
-# Step 6 rebuilds it from this ref when OSMOSE_DEPLOY_CSHARP=1.
-rm -rf "${PROD_SRC}/osmose/engine_cs/bin"
 
 # The osmose-java JAR is NOT tracked in git (so it is absent from a fresh clone).
 # Provision it from the deploy host's tree so Java-engine runs remain available.
@@ -350,32 +353,47 @@ if [[ "$DEPLOY_CSHARP" == "1" ]]; then
         rm -f "$DOTNET_INSTALLER"
     fi
     "${PIP_INSTALL[@]}" --quiet "pythonnet>=3.2.1" || csharp_fail "pip install pythonnet failed"
-    info "Building the C# engine in ${PROD_SRC} (as shiny)..."
+    info "Building the C# engine (as shiny, into a staging directory)..."
     # AS THE SERVICE USER, never as root: the clone is shiny-writable (Step 1) and MSBuild project
     # files are code -- an untracked Directory.Build.targets above the project, or a
     # *.nuget.g.targets in obj/, would otherwise run as root. Built as shiny it gains nothing that
     # user did not already have. Leftover build state is cleared first (also as shiny: git runs
     # hooks and core.fsmonitor from the shiny-owned .git/config), and the SDK's first-run and
     # NuGet files go to a throwaway home, since shiny's own home may not exist.
+    # The build is published to a STAGING directory and self-tested there. Only a build that
+    # passes is moved into osmose/engine_cs/bin, so a failed build never becomes loadable.
     runuser -u shiny -- git -C "$PROD_SRC" clean -fdxq -- csharp/ \
         || csharp_fail "could not clear old build state in ${PROD_SRC}/csharp"
     BUILD_HOME="$(mktemp -d)"
     chown shiny:shiny "$BUILD_HOME"
+    STAGE="${BUILD_HOME}/engine"
+    LIVE_BIN="${PROD_SRC}/osmose/engine_cs/bin"
+    drop_build_home() { runuser -u shiny -- rm -rf "$BUILD_HOME" || true; }
     # DOTNET_ROOT explicitly: the build script would otherwise fall back to ~/.dotnet.
+    # OSMOSE_CSHARP_ENGINE_DIR, explicitly: where the build publishes and the self-test loads from.
     runuser -u shiny -- env HOME="$BUILD_HOME" DOTNET_CLI_HOME="$BUILD_HOME" \
         NUGET_PACKAGES="${BUILD_HOME}/nuget" DOTNET_ROOT="$DOTNET_DIR" \
+        OSMOSE_CSHARP_ENGINE_DIR="$STAGE" \
         bash "${PROD_SRC}/scripts/build_csharp_engine.sh" -v quiet \
-        || { rm -rf "$BUILD_HOME"; csharp_fail "the build failed"; }
-    rm -rf "$BUILD_HOME"
+        || { drop_build_home; csharp_fail "the build failed"; }
     # As the SERVICE runs it: its user, interpreter, working copy and DOTNET_ROOT. Run as root it
     # could find another .NET (resolve_dotnet_root falls back to ~/.dotnet) and pass falsely.
     SHINY_HOME="$(getent passwd shiny | cut -d: -f6)"
-    if (cd "$LINK_PATH" && runuser -u shiny -- env HOME="$SHINY_HOME" DOTNET_ROOT="$DOTNET_DIR" \
-            "$SHINY_PYTHON" -m osmose.engine_cs.selftest); then
-        CSHARP_RESULT="built from ${DEPLOYED_SHA} and self-tested"
-    else
-        csharp_fail "the self-test failed (its output is above)"
+    as_service() {
+        (cd "$LINK_PATH" && runuser -u shiny -- env HOME="$SHINY_HOME" DOTNET_ROOT="$DOTNET_DIR" "$@")
+    }
+    if ! as_service OSMOSE_CSHARP_ENGINE_DIR="$STAGE" "$SHINY_PYTHON" -m osmose.engine_cs.selftest; then
+        drop_build_home
+        csharp_fail "the self-test failed (its output is above); the build was not activated"
     fi
+    runuser -u shiny -- rm -rf "$LIVE_BIN" && runuser -u shiny -- mv "$STAGE" "$LIVE_BIN" \
+        || { drop_build_home; csharp_fail "could not move the tested build into ${LIVE_BIN}"; }
+    drop_build_home
+    # The self-test loaded the staged copy; confirm the service's own path (no override) sees it.
+    as_service "$SHINY_PYTHON" -c "from osmose.engine_cs import csharp_engine_available as a
+ok, why = a(); raise SystemExit(0 if ok else why)" \
+        || { runuser -u shiny -- rm -rf "$LIVE_BIN"; csharp_fail "the activated build is not loadable"; }
+    CSHARP_RESULT="built from ${DEPLOYED_SHA}, self-tested, activated"
 fi
 
 # --- Summary ---
