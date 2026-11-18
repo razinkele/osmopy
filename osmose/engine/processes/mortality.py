@@ -22,6 +22,10 @@ from osmose.engine.processes.natural import (
     larva_mortality,
     out_mortality,
 )
+from osmose.engine.processes.precompute import (  # moved there: Numba-free (precompute.py)
+    _DUMMY_RSC_1D,
+    _precompute_resource_arrays,
+)
 from osmose.engine.processes.starvation import (
     starvation_mortality,  # noqa: F401 — used by tests
     update_starvation_rate,
@@ -661,8 +665,6 @@ def _apply_predation_for_school(
 # Numba-accelerated predation for the interleaved mortality path (Tier 2)
 # ---------------------------------------------------------------------------
 
-_DUMMY_RSC_1D = np.zeros(0, dtype=np.float64)
-_DUMMY_RSC_I1D = np.zeros(0, dtype=np.int32)
 _DUMMY_RSC_2D = np.zeros((0, 0), dtype=np.float64)
 _DUMMY_DIET = np.zeros((1, 1), dtype=np.float64)
 
@@ -731,27 +733,6 @@ def _pre_generate_cell_rng(
             cause_orders_buf[start + i, :] = causes
 
     return seq_bufs, cause_orders_buf
-
-
-def _precompute_resource_arrays(config, resources):
-    """Extract resource metadata into flat Numba-compatible arrays."""
-    if resources is None or resources.n_resources == 0:
-        return _DUMMY_RSC_1D, _DUMMY_RSC_1D, _DUMMY_RSC_1D, _DUMMY_RSC_I1D, 0
-
-    n_rsc = resources.n_resources
-    rsc_size_min = np.array([s.size_min for s in resources.species], dtype=np.float64)
-    rsc_size_max = np.array([s.size_max for s in resources.species], dtype=np.float64)
-    rsc_tl = np.array([s.trophic_level for s in resources.species], dtype=np.float64)
-
-    rsc_access_rows = np.full(n_rsc, -1, dtype=np.int32)
-    if config.stage_accessibility is not None:
-        sa = config.stage_accessibility
-        for r in range(n_rsc):
-            csv_name = sa.resolve_name(resources.species[r].name)
-            if csv_name is not None:
-                rsc_access_rows[r] = sa.get_index(csv_name, 0.0, role="prey")
-
-    return rsc_size_min, rsc_size_max, rsc_tl, rsc_access_rows, n_rsc
 
 
 def _lookup_spatial_factors(
