@@ -84,14 +84,41 @@ def test_unavailable_names_the_missing_assembly_and_the_build_command(
     assert "Osmose.Engine.dll" in why and cs.BUILD_COMMAND in why
 
 
-def test_unavailable_without_runtime(clean_env, monkeypatch, tmp_path):
+def _fake_bin(tmp_path: Path, catalogue: bytes | None = None) -> Path:
+    """A bin dir with the three files the availability check looks for."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name in ("Osmose.Engine.dll", "Osmose.Engine.runtimeconfig.json"):
         (bin_dir / name).write_text("")
+    real = (Path(cs.__file__).resolve().parent / "features.json").read_bytes()
+    (bin_dir / cs.CAPABILITIES_FILE).write_bytes(real if catalogue is None else catalogue)
+    return bin_dir
+
+
+def test_unavailable_without_runtime(clean_env, monkeypatch, tmp_path):
+    bin_dir = _fake_bin(tmp_path)
     monkeypatch.setenv(cs.ENGINE_DIR_ENV, str(bin_dir))
     ok, why = cs.csharp_engine_available()
     if "pythonnet" in why:
         pytest.skip("pythonnet not installed in this environment")
     assert not ok
     assert "no .NET runtime" in why
+
+
+def test_a_build_from_another_catalogue_is_reported_stale(clean_env, monkeypatch, tmp_path):
+    _fake_dotnet(clean_env / ".dotnet")
+    monkeypatch.setenv(cs.ENGINE_DIR_ENV, str(_fake_bin(tmp_path, catalogue=b'{"features": []}')))
+    ok, why = cs.csharp_engine_available()
+    if "pythonnet" in why:
+        pytest.skip("pythonnet not installed in this environment")
+    assert not ok
+    assert "stale" in why and cs.BUILD_COMMAND in why
+
+
+def test_a_current_build_is_available(clean_env, monkeypatch, tmp_path):
+    _fake_dotnet(clean_env / ".dotnet")
+    monkeypatch.setenv(cs.ENGINE_DIR_ENV, str(_fake_bin(tmp_path)))
+    ok, why = cs.csharp_engine_available()
+    if "pythonnet" in why:
+        pytest.skip("pythonnet not installed in this environment")
+    assert ok, why

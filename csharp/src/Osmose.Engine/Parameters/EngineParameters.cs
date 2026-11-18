@@ -1,0 +1,218 @@
+using Osmose.Engine.Rng;
+
+namespace Osmose.Engine;
+
+/// <summary>A bundle needs features this engine does not implement; every one is named.</summary>
+public sealed class UnsupportedFeatureException : Exception
+{
+    /// <summary>Wraps the unsupported features.</summary>
+    public UnsupportedFeatureException(IReadOnlyList<FeatureInfo> features)
+        : base("the C# engine cannot run this bundle: " + string.Join("; ", features.Select(f => f.RefusalReason)))
+    {
+        Features = features;
+    }
+
+    /// <summary>The features the bundle needs and the engine lacks.</summary>
+    public IReadOnlyList<FeatureInfo> Features { get; }
+}
+
+/// <summary>
+/// The typed, validated parameters of one run, built ONCE from a <see cref="SimulationConfig"/> at
+/// the start of <see cref="OsmoseEngine.RunSimulation"/> (spec section 8.2). After this no code
+/// looks an entry up by name.
+/// </summary>
+/// <remarks>
+/// Task 1.1 holds the header groups (contract, run, time, grid) and the feature check. The model
+/// groups arrive with the bundle builder (task 1.2) and the tasks that use them.
+/// </remarks>
+public sealed class EngineParameters
+{
+    private EngineParameters()
+    {
+    }
+
+    /// <summary>The bundle's contract version (its header), one of <see cref="FeatureCatalog.ContractVersions"/>.</summary>
+    public int ContractVersion { get; private init; }
+
+    /// <summary>The features the bundle declares it needs (<c>contract.features</c>, catalogue ids).</summary>
+    public IReadOnlyList<FeatureInfo> Features { get; private init; } = [];
+
+    /// <summary><c>contract.rng.scheme</c>; must equal <see cref="Philox.Scheme"/>.</summary>
+    public int RngScheme { get; private init; }
+
+    /// <summary><c>run.seed</c>.</summary>
+    public long Seed { get; private init; }
+
+    /// <summary><c>run.threads</c>, at least 1.</summary>
+    public int Threads { get; private init; }
+
+    /// <summary><c>run.deadline_seconds</c>; 0 means no deadline.</summary>
+    public double DeadlineSeconds { get; private init; }
+
+    /// <summary><c>run.checks</c>: debug invariants on.</summary>
+    public bool Checks { get; private init; }
+
+    /// <summary><c>time.n_steps</c>.</summary>
+    public int NSteps { get; private init; }
+
+    /// <summary><c>time.n_dt_per_year</c>.</summary>
+    public int NDtPerYear { get; private init; }
+
+    /// <summary><c>time.n_subdt</c>, the mortality sub-steps.</summary>
+    public int NSubdt { get; private init; }
+
+    /// <summary><c>grid.ny</c>.</summary>
+    public int Ny { get; private init; }
+
+    /// <summary><c>grid.nx</c>.</summary>
+    public int Nx { get; private init; }
+
+    /// <summary><c>grid.ocean_mask</c> (ny * nx, row-major), copied: 1 = ocean, 0 = land.</summary>
+    public IReadOnlyList<byte> OceanMask { get; private init; } = [];
+
+    /// <summary>
+    /// Reads and validates the bundle. Every structural problem (missing entry, wrong dtype or
+    /// shape, out-of-range value) is reported in one <see cref="BundleValidationException"/>; a valid
+    /// bundle that needs unimplemented features gets one <see cref="UnsupportedFeatureException"/>.
+    /// </summary>
+    public static EngineParameters From(SimulationConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var r = new BundleReader(config, [.. FeatureCatalog.ContractVersions]);
+        var problems = new List<string>();
+
+        BundleEntry? featureEntry = r.Array("contract.features", DType.I4, BundleReader.Any);
+        int rngScheme = (int)r.Int("contract.rng.scheme");
+        long seed = r.Int("run.seed");
+        long threads = r.Int("run.threads");
+        double deadline = r.Float("run.deadline_seconds");
+        long checks = r.Int("run.checks");
+        long nSteps = r.Int("time.n_steps");
+        long ndt = r.Int("time.n_dt_per_year");
+        long nSubdt = r.Int("time.n_subdt");
+        long ny = r.Int("grid.ny");
+        long nx = r.Int("grid.nx");
+
+        void Range(string name, long value, long min, long max)
+        {
+            if (value < min || value > max)
+            {
+                problems.Add($"{name}: {value} is outside [{min}, {max}]");
+            }
+        }
+
+        if (config.TryGet("run.threads", out _))
+        {
+            Range("run.threads", threads, 1, 4096);
+        }
+
+        if (config.TryGet("time.n_steps", out _))
+        {
+            Range("time.n_steps", nSteps, 1, int.MaxValue);
+        }
+
+        if (config.TryGet("time.n_dt_per_year", out _))
+        {
+            Range("time.n_dt_per_year", ndt, 1, 365 * 24);
+        }
+
+        if (config.TryGet("time.n_subdt", out _))
+        {
+            Range("time.n_subdt", nSubdt, 1, ushort.MaxValue);
+        }
+
+        if (config.TryGet("run.checks", out _))
+        {
+            Range("run.checks", checks, 0, 1);
+        }
+
+        if (config.TryGet("grid.ny", out _))
+        {
+            Range("grid.ny", ny, 1, 100_000);
+        }
+
+        if (config.TryGet("grid.nx", out _))
+        {
+            Range("grid.nx", nx, 1, 100_000);
+        }
+
+        if (config.TryGet("run.deadline_seconds", out _) && !(deadline >= 0 && double.IsFinite(deadline)))
+        {
+            problems.Add($"run.deadline_seconds: {deadline} must be finite and >= 0 (0 = none)");
+        }
+
+        if (config.TryGet("contract.rng.scheme", out _) && rngScheme != Philox.Scheme)
+        {
+            problems.Add($"contract.rng.scheme: {rngScheme}, this engine implements scheme {Philox.Scheme}");
+        }
+
+        byte[] mask = [];
+        if (ny >= 1 && nx >= 1 && ny <= 100_000 && nx <= 100_000)
+        {
+            BundleEntry? maskEntry = r.Array("grid.ocean_mask", DType.U1, ny, nx);
+            if (maskEntry is not null)
+            {
+                mask = maskEntry.ToArray<byte>();
+                if (mask.Any(b => b > 1))
+                {
+                    problems.Add("grid.ocean_mask: values must be 0 (land) or 1 (ocean)");
+                }
+            }
+        }
+
+        var features = new List<FeatureInfo>();
+        if (featureEntry is not null)
+        {
+            var seen = new HashSet<int>();
+            foreach (int id in featureEntry.AsSpan<int>())
+            {
+                if ((uint)id >= (uint)FeatureCatalog.All.Count)
+                {
+                    problems.Add($"contract.features: {id} is not a catalogue id (0..{FeatureCatalog.All.Count - 1})");
+                }
+                else if (!seen.Add(id))
+                {
+                    problems.Add($"contract.features: {FeatureCatalog.All[id].Name} listed twice");
+                }
+                else
+                {
+                    features.Add(FeatureCatalog.All[id]);
+                }
+            }
+
+            if (!seen.Contains(FeatureCatalog.Core.Id))
+            {
+                problems.Add("contract.features: core is missing; a bundle builder always declares it");
+            }
+        }
+
+        problems.InsertRange(0, r.Problems);
+        if (problems.Count > 0)
+        {
+            throw new BundleValidationException(problems);
+        }
+
+        FeatureInfo[] unsupported = [.. features.Where(f => !f.Implemented).OrderBy(f => f.Id)];
+        if (unsupported.Length > 0)
+        {
+            throw new UnsupportedFeatureException(unsupported);
+        }
+
+        return new EngineParameters
+        {
+            ContractVersion = config.ContractVersion,
+            Features = features,
+            RngScheme = rngScheme,
+            Seed = seed,
+            Threads = (int)threads,
+            DeadlineSeconds = deadline,
+            Checks = checks != 0,
+            NSteps = (int)nSteps,
+            NDtPerYear = (int)ndt,
+            NSubdt = (int)nSubdt,
+            Ny = (int)ny,
+            Nx = (int)nx,
+            OceanMask = mask,
+        };
+    }
+}

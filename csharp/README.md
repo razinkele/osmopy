@@ -8,8 +8,10 @@ the config parsing.
 - Design: `docs/superpowers/specs/2026-11-17-csharp-engine-design.md`
 - Plan: `docs/superpowers/specs/2026-11-17-csharp-engine-implementation-plan.md`
 
-**Status: Phase 0.** The skeleton and the pythonnet bridge spike are done. `RunSimulation` throws
-`NotImplementedException` until Phase 1.
+**Status: Phase 1 in progress** (G0 = GO, 2026-11-18).
+- `RunSimulation` validates the bundle and refuses, by name, any feature not yet implemented.
+- Until task 1.8 that includes `core`, so every bundle is refused.
+- Whether a config could run is `osmose.engine_cs.capabilities.csharp_engine_block_reason(raw_config)`.
 
 ## Layout
 

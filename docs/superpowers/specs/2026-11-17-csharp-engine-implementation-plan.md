@@ -72,6 +72,8 @@ Nothing in Phase 1 starts until gate G0 is decided by the owner.
 - **Deliverable:** `docs/perf/<date>-csharp-engine-spikes.md` with the bridge checklist, the
   four kernel numbers and a recommendation.
 
+**Gate G0: decided GO by the owner on 2026-11-18.** The kernel ran 2.15–2.37x production Numba and was bit-exact against the oracle (`docs/perf/2026-11-18-csharp-engine-spikes.md`).
+
 **Gate G0 (owner).** Go if the bridge passes and the best kernel variant is at least 1.0x
 Numba. Stop if the bridge cannot release the GIL or share buffers and the owner does not want
 the NativeAOT fallback, or if the kernel is below 0.8x after one tuning pass. Between 0.8x and
@@ -83,7 +85,7 @@ the NativeAOT fallback, or if the kernel is below 0.8x after one tuning pass. Be
 
 | # | Task | Size | Depends on |
 |---|---|---|---|
-| 1.1 | **Parameters and capabilities.** Typed `EngineParameters` built and validated once from a `SimulationConfig`; feature bits; `UnsupportedFeatureException`; the build-time `capabilities.json`; Python `csharp_engine_block_reason` and `csharp_engine_available` (pure Python). | M | 0.3 |
+| 1.1 | **Parameters and capabilities.** Typed `EngineParameters` built and validated once from a `SimulationConfig` (header groups); the feature catalogue `osmose/engine_cs/features.json` (one source, embedded in C#); `UnsupportedFeatureException`; the build's `capabilities.json` copy with a stale-build check; Python `csharp_engine_block_reason` with per-feature detectors **and key coverage**, so any engine-read key no rule classifies blocks the run (spec 8.6). | M | 0.3 |
 | 1.2 | **Bundle builder, MVP scope.** `osmose/engine_cs/bundle.py::build_bundle`: grid, species, growth, predation and stage tables, stage accessibility with -1 preserved, per-step rate tables, fishing (rate, seasonality, age selectivity, spatial maps, discards), reproduction, resources (regridded frames, `frame_by_step`), movement maps and index tables, random-movement domains, output settings, result buffers, control block. Pure Python; tested in the main CI job. | L | 1.1 |
 | 1.3 | **School store.** Append, id assignment, capacity growth, `Regroup` (compaction, cell sort, tail segment, length lane), pooled buffers. | M | 0.6 |
 | 1.4 | **Per-step preparation.** Resource update (non-depletable), per-school rates, feeding stages, accessibility indices, egg retention. | M | 1.2, 1.3 |

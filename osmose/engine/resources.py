@@ -62,6 +62,18 @@ class ResourceSpeciesInfo:
             raise ValueError(f"trophic_level must be > 0, got {self.trophic_level}")
 
 
+def depletable_enabled(config: dict[str, str]) -> bool:
+    """Whether LTL resources are depletable (``ltl.depletable.enabled``). The one predicate the
+    engine and the C# engine's capability check share (``osmose/engine_cs/capabilities.py``)."""
+    return str(config.get("ltl.depletable.enabled", "false")).lower() == "true"
+
+
+def oxygen_benthos_enabled(config: dict[str, str]) -> bool:
+    """Whether the bottom-oxygen -> benthos carrying-capacity coupling is switched on
+    (``ltl.oxygen.benthos.enabled``). It also needs a loaded oxygen forcing to act."""
+    return str(config.get("ltl.oxygen.benthos.enabled", "false")).lower() == "true"
+
+
 class ResourceState:
     """Container for LTL resource biomass per grid cell.
 
@@ -78,7 +90,7 @@ class ResourceState:
         self.config = config
         self.grid = grid
         self.n_resources = int(config.get("simulation.nresource", "0"))
-        self.depletable = str(config.get("ltl.depletable.enabled", "false")).lower() == "true"
+        self.depletable = depletable_enabled(config)
         self.depletable_floor = float(config.get("ltl.depletable.floor", "0.05"))
         self._regrowth_default = float(config.get("ltl.regrowth.rate.default", "1.0"))
         self.species: list[ResourceSpeciesInfo] = []
@@ -99,9 +111,7 @@ class ResourceState:
         # silently retarget it). `oxygen` is None by default so every pre-existing caller/test
         # is unaffected.
         self._oxygen = oxygen
-        self._oxygen_enabled = (
-            str(config.get("ltl.oxygen.benthos.enabled", "false")).lower() == "true"
-        )
+        self._oxygen_enabled = oxygen_benthos_enabled(config)
         self._oxygen_c50 = float(config.get("ltl.oxygen.benthos.c50", "60.0"))
         self._oxygen_n = float(config.get("ltl.oxygen.benthos.n", "3.0"))
         self._oxygen_rsc_name = config.get("ltl.oxygen.benthos.rsc", "Benthos")

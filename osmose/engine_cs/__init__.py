@@ -17,6 +17,7 @@ from pathlib import Path
 ASSEMBLY_NAME = "Osmose.Engine"
 ENGINE_DIR_ENV = "OSMOSE_CSHARP_ENGINE_DIR"
 BUILD_COMMAND = "bash scripts/build_csharp_engine.sh"
+CAPABILITIES_FILE = f"{ASSEMBLY_NAME}.capabilities.json"  # the build's copy of features.json
 
 
 def assembly_dir() -> Path:
@@ -52,9 +53,14 @@ def csharp_engine_available() -> tuple[bool, str]:
     if importlib.util.find_spec("pythonnet") is None:
         return False, 'pythonnet is not installed (pip install -e ".[csharp]")'
     bin_dir = assembly_dir()
-    for name in (f"{ASSEMBLY_NAME}.dll", f"{ASSEMBLY_NAME}.runtimeconfig.json"):
+    for name in (f"{ASSEMBLY_NAME}.dll", f"{ASSEMBLY_NAME}.runtimeconfig.json", CAPABILITIES_FILE):
         if not (bin_dir / name).is_file():
             return False, f"{name} not found in {bin_dir}; build it with: {BUILD_COMMAND}"
+    # The build copies features.json beside the assembly. A different copy means the assembly
+    # was built from another catalogue: its feature checks would not match this package's.
+    built = (bin_dir / CAPABILITIES_FILE).read_bytes()
+    if built != (Path(__file__).resolve().parent / "features.json").read_bytes():
+        return False, f"the built engine is stale (its feature catalogue differs); rebuild: {BUILD_COMMAND}"
     if resolve_dotnet_root() is None:
         return False, "no .NET runtime found ($DOTNET_ROOT, ~/.dotnet or dotnet on PATH)"
     return True, ""

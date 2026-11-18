@@ -8,6 +8,14 @@
     <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
   </PropertyGroup>
 
+  <!-- The feature catalogue (spec D11): one source, osmose/engine_cs/features.json, embedded here
+       and copied beside the assembly as Osmose.Engine.capabilities.json for the Python side's
+       stale-build check. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\osmose\engine_cs\features.json" LogicalName="Osmose.Engine.features.json" />
+    <None Include="..\..\..\osmose\engine_cs\features.json" Link="Osmose.Engine.capabilities.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Osmose.Engine.Tests" />
     <InternalsVisibleTo Include="Osmose.Engine.Bench" />

@@ -5,11 +5,11 @@ namespace Osmose.Engine.Tests;
 public class SkeletonTests
 {
     [Fact]
-    public void RunSimulationIsNotImplementedYet()
+    public void RunSimulationValidatesTheBundleFirst()
     {
-        var ex = Assert.Throws<NotImplementedException>(
+        var ex = Assert.Throws<BundleValidationException>(
             () => OsmoseEngine.RunSimulation(new SimulationConfig(contractVersion: 1)));
-        Assert.Contains("Phase 1", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("time.n_steps: missing", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

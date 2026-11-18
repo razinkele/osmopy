@@ -11,14 +11,15 @@ public static class OsmoseEngine
     /// Runs the whole simulation. Blocking, thread-safe and re-entrant: no static mutable
     /// state, one run object per call.
     /// </summary>
-    /// <exception cref="NotImplementedException">
-    /// Until Phase 1 of docs/superpowers/specs/2026-11-17-csharp-engine-implementation-plan.md.
+    /// <exception cref="BundleValidationException">The bundle is malformed (every problem listed).</exception>
+    /// <exception cref="UnsupportedFeatureException">
+    /// The bundle needs a feature this engine does not implement. Until task 1.8 that includes
+    /// <c>core</c>, so every valid bundle is refused here, by name (fail closed, spec D11).
     /// </exception>
     public static RunSummary RunSimulation(SimulationConfig config)
     {
-        ArgumentNullException.ThrowIfNull(config);
+        EngineParameters parameters = EngineParameters.From(config);
         throw new NotImplementedException(
-            "The C# engine has no model yet: RunSimulation arrives in Phase 1 of "
-            + "docs/superpowers/specs/2026-11-17-csharp-engine-implementation-plan.md.");
+            $"unreachable until core is implemented (task 1.8); bundle declared {parameters.Features.Count} features");
     }
 }
