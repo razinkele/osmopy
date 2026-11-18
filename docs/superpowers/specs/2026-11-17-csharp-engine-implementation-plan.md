@@ -144,7 +144,7 @@ out-of-scope configs refused; the EEC performance gate.
 **Deliverables:** `docs/csharp_cross_check_<date>.md` and `docs/perf/<date>-csharp-eec.md`.
 
 **Gate G1 (owner).** Proceed to Baltic if equivalence holds and the EEC gate (no regression at
-1 and 14 threads) is met.
+1 and 14 threads) is met. **Decided GO by the owner on 2026-11-18** (`docs/csharp_cross_check_2026-11-18.md`).
 
 ---
 

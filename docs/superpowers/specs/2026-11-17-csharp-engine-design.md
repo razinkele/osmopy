@@ -1630,6 +1630,11 @@ with measurements.
 
 - First call in a process (runtime load and JIT): at most 2 s.
 - Bundle build plus marshalling: at most 5% of a 10-yr EEC run.
+  **Owner decision, 2026-11-18:** this budget counts the C#-specific overhead, that is building
+  and marshalling the bundle beyond the input resolution both engines perform (map sets, random
+  patches, the resource state, which the Python engine does inside its own timed run). Measured on
+  EEC 10 yr: 1.8% at 14 threads and 0.4% at one thread, a pass. With the shared input resolution
+  included it would be 10.6% at 14 threads (`docs/perf/2026-11-18-csharp-eec.md`).
 - Peak memory per run: no more than the Python engine's (about 400 MB for a 50-yr Baltic run,
   plan item 1).
 
@@ -1690,6 +1695,10 @@ Q4 takes its recommendation (refuse), which follows from D11 (fail closed). The 
 **Q4's scope, fixed 2026-11-18 (task 1.1):** refuse exactly the three named cases: catch-based fishing, by-class rates, and selectivity types other than -1, 0 and 1. Keys the Python engine never reads are valid OSMOSE/Java keys with no effect there (81 on Baltic). They **follow Python** and are not refused: equivalence with the Python engine is the target, and refusing them would block Baltic forever.
 
 **G0 was decided GO by the owner on 2026-11-18.**
+
+**G1 was decided GO by the owner on 2026-11-18**: equivalence holds on EEC and Bay of Biscay,
+and the EEC gate is met (3.77x and 7.57x). Phase 2 starts. Record:
+`docs/csharp_cross_check_2026-11-18.md`.
 
 **Which gate Q2 makes go/no-go.** There are two, at different times:
 - **G0, the kernel spike (plan, Phase 0).** Go if the best kernel variant is at least 1.0x
