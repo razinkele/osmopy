@@ -140,6 +140,13 @@ def _step_outputs(buffers: Any, records: int) -> list:
         """``{species: its length classes}``."""
         return dict(enumerate(families[name][i])) if name in families else None
 
+    def diet(i):
+        """The window's diet. The initial record has none: no mortality step ran before it, and
+        ``simulate`` leaves the field None there, which the diet frames skip."""
+        if "diet_by_species" not in families or buffers.record_step[i] < 0:
+            return None
+        return families["diet_by_species"][i]
+
     def present(name, i):
         """``{species: value}`` without the species absent from the record (NaN in the row)."""
         if name not in families:
@@ -166,6 +173,7 @@ def _step_outputs(buffers: Any, records: int) -> list:
             yield_n=row("yield_n", i),
             mean_size=present("mean_size", i),
             ssb=row("ssb", i),
+            diet_by_species=diet(i),
         )
         for i in range(records)
     ]

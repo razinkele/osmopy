@@ -21,7 +21,7 @@ public sealed class FamilyOutputsTests : IDisposable
     private static readonly int[] AgeOffsets = [0, 4, 6]; // 4 age classes, then 2
     private static readonly double[] Edges = [2.0, 6.0, 10.0];
 
-    private const OutputFamilies All = OutputFamilies.Known;
+    private const OutputFamilies All = OutputFamilies.Known & ~OutputFamilies.Diet; // the diet has its own tests
 
     private readonly List<GCHandle> _pins = [];
 
@@ -148,7 +148,7 @@ public sealed class FamilyOutputsTests : IDisposable
     public void EveryFamilyHasItsShapeAndWindowRuleInRecordOrder()
     {
         IReadOnlyList<FamilySpec> specs = Layout().Specs();
-        Assert.Equal(OutputLayout.AllNames, specs.Select(s => s.Name));
+        Assert.Equal(OutputLayout.AllNames.Where(n => n != "diet_by_species"), specs.Select(s => s.Name));
         Assert.Equal(new[] { 6 }, specs.Single(s => s.Name == "biomass_by_age").Shape);
         Assert.Equal(AgeOffsets, specs.Single(s => s.Name == "abundance_by_age").Blocks); // one block per species
         Assert.Equal(new[] { NFocal, 3 }, specs.Single(s => s.Name == "biomass_by_size").Shape);
@@ -318,7 +318,7 @@ public sealed class FamilyOutputsTests : IDisposable
         Assert.Equal(All, o.Families);
         Assert.Equal(AgeOffsets, o.AgeBinOffsets);
         Assert.Equal(Edges, o.SizeEdges);
-        Assert.Equal(OutputLayout.AllNames, o.Layout(NTotal, NFocal).Specs().Select(s => s.Name));
+        Assert.Equal(OutputLayout.AllNames.Where(n => n != "diet_by_species"), o.Layout(NTotal, NFocal).Specs().Select(s => s.Name));
     }
 
     [Fact]

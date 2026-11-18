@@ -284,9 +284,13 @@ public sealed class OutputParameters
     /// <summary>The left edges of the length classes; empty without a by-size family.</summary>
     public double[] SizeEdges { get; init; } = [];
 
+    /// <summary>Prey columns of the diet (focal species, then resources); 0 without the diet
+    /// family.</summary>
+    public int DietColumns { get; init; }
+
     /// <summary>The collector's layout for a model with these species counts.</summary>
     public Step.OutputLayout Layout(int nTotal, int nFocal) =>
-        new(nTotal, nFocal, Families) { AgeBinOffsets = AgeBinOffsets, SizeEdges = SizeEdges };
+        new(nTotal, nFocal, Families) { AgeBinOffsets = AgeBinOffsets, SizeEdges = SizeEdges, DietColumns = DietColumns };
 
     /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
     public int Records(int nSteps) => (Step0Include ? 1 : 0) + ((nSteps + RecordFrequency - 1) / RecordFrequency);
@@ -673,8 +677,28 @@ internal static class ModelReader
             r.Problem("output.size_edges: present, but output.families has no by-size family");
         }
 
+        int dietColumns = 0;
+        if ((on & Step.OutputFamilies.Diet) != 0)
+        {
+            dietColumns = (int)Math.Clamp(r.Int("output.diet_columns"), 0, int.MaxValue);
+            if (r.Has("output.diet_columns") && dietColumns < nFocal)
+            {
+                r.Problem($"output.diet_columns: {dietColumns}, but the prey columns start with the {nFocal} focal species");
+                dietColumns = 0;
+            }
+        }
+        else if (r.Has("output.diet_columns"))
+        {
+            r.Problem("output.diet_columns: present, but output.families has no diet family");
+        }
+
         // A family whose table is missing or broken is dropped here: the problem is reported, and
         // the layout stays one the collector can build.
+        if (dietColumns == 0)
+        {
+            on &= ~Step.OutputFamilies.Diet;
+        }
+
         if (ageOffsets.Length == 0)
         {
             on &= ~Step.OutputFamilies.ByAge;
@@ -693,6 +717,7 @@ internal static class ModelReader
             Families = on,
             AgeBinOffsets = ageOffsets,
             SizeEdges = edges,
+            DietColumns = dietColumns,
         };
     }
 

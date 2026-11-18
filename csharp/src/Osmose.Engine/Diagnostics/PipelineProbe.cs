@@ -31,21 +31,57 @@ public static class PipelineProbe
         run.Regroup();
         var draws = new InjectedCellDraws(InjectedDraws.FromBundle(drawsBundle, run.Store.CellStart, p.Ny * p.Nx, p.NSubdt));
         run.Mortality<InjectedCellDraws, InjectedDrawSource>(step, ref draws);
+
+        // The rest is RunStep's order. First the diet: each school's row by id (the input's
+        // order), then the step's diet by predator species, while the background schools are
+        // still there.
+        SchoolStore s = run.Store;
+        int cols = s.DietCols;
+        var dietById = new double[n * cols];
+        for (int i = 0; i < s.Count; i++)
+        {
+            s.Diet.Slice(i * cols, cols).CopyTo(dietById.AsSpan((int)s.Life[i].Id * cols, cols));
+        }
+
+        run.Collector.SnapshotDiet(s);
+
+        // The background schools leave: in the input they are the last block, in injection order
+        // (get_schools' order), so the first of them has the id n - the block's length. The
+        // length is the model's, not the number still in the store: a school that entered with
+        // no individuals was dropped by the regroup, and counting survivors would move the
+        // block's start.
+        int nBackground = p.Background.NSpecies > 0 ? Background.SchoolsPerStep(p.Background) : 0;
+        for (int i = 0; i < s.Count; i++)
+        {
+            bool background = (s.Core[i].Flags & SchoolFlags.IsBackground) != 0;
+            if (background != (s.Life[i].Id >= (ulong)(n - nBackground)))
+            {
+                throw new InvalidOperationException("the background schools are not the input's last block");
+            }
+        }
+
+        if (nBackground > 0)
+        {
+            run.RemoveBackground((ulong)(n - nBackground));
+        }
+
         run.AfterMortality(step);
-        run.Collector.Collect(p, run.Store);
+        run.CollectStep();
         run.Collector.Flush(run.Results, 0, step);
 
-        SchoolStore s = run.Store;
-        int m = s.Count;
-        if ((long)m - n != CountNew(s, n))
+        int m = s.Count, kept = n - nBackground;
+        if ((long)m - kept != CountNew(s, n))
         {
             throw new InvalidOperationException("school ids are not dense");
         }
 
+        // Output order: the input's focal schools, then the new egg schools (the background
+        // block between them is gone, as it is from the Python engine's state).
         var o = new Columns(m);
         for (int i = 0; i < m; i++)
         {
-            o.Set((int)s.Life[i].Id, s.Core[i], s.Ledger[i], s.Life[i], p.Nx);
+            int id = (int)s.Life[i].Id;
+            o.Set(id < kept ? id : id - nBackground, s.Core[i], s.Ledger[i], s.Life[i], p.Nx);
         }
 
         var handles = new List<GCHandle>();
@@ -53,6 +89,11 @@ public static class PipelineProbe
         {
             var output = new SimulationConfig(1);
             o.Write(output, handles, m);
+            if (cols > 0)
+            {
+                output.SetArray("s.diet", DType.F8, Pin(handles, dietById), n, cols);
+            }
+
             WriteResults(output, handles, run.Results);
             output.Save(outPath);
         }
@@ -79,11 +120,30 @@ public static class PipelineProbe
         OutputLayout layout = p.Output.Layout(p.Species.NTotal, p.Species.NFocal);
         var results = new RunResults(nRecords, layout);
         var collector = new OutputCollector(layout, freq);
+        bool diet = (layout.Families & OutputFamilies.Diet) != 0;
+        ReadOnlySpan<double> dietRows = diet && states.TryGet("state.diet", out _)
+            ? r.Array("state.diet", DType.F8, offsets[^1], layout.DietColumns)!.AsSpan<double>()
+            : default;
+        r.ThrowIfProblems();
         int record = 0;
         for (int t = 0; t < k; t++)
         {
             var store = new SchoolStore(p.Ny * p.Nx, 16);
             LoadSlice(states, p, store, offsets[t], offsets[t + 1]);
+            if (diet)
+            {
+                // The schools' diet rows of this "step" (state.diet, in the states' order), or
+                // none eaten when the states carry no rows.
+                store.EnableDiet(layout.DietColumns);
+                store.ClearDiet();
+                if (!dietRows.IsEmpty)
+                {
+                    int cols = layout.DietColumns;
+                    dietRows.Slice((int)offsets[t] * cols, store.Count * cols).CopyTo(store.DietArray);
+                }
+            }
+
+            collector.SnapshotDiet(store);
             collector.SnapshotStages(p, store); // the state as it is, as _collect_outputs falls back to
             collector.Collect(p, store);
             int step = t - first;

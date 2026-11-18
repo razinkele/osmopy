@@ -35,11 +35,15 @@ public enum OutputFamilies : long
     /// <summary>Spawning-stock biomass.</summary>
     Ssb = 256,
 
+    /// <summary>The diet: biomass eaten per predator species (background ones included) and
+    /// prey column (focal species, then resources). Predator pressure is derived from it.</summary>
+    Diet = 512,
+
     ByAge = BiomassByAge | AbundanceByAge,
     BySize = BiomassBySize | AbundanceBySize,
 
     /// <summary>Every family this engine can collect.</summary>
-    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb,
+    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet,
 }
 
 /// <summary>How a record window folds a family's per-step rows (<c>_average_step_outputs</c>).</summary>
@@ -77,12 +81,16 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
     /// <summary>The left edges of the length classes. Needed with a by-size family.</summary>
     public double[] SizeEdges { get; init; } = [];
 
+    /// <summary>Prey columns of the diet (bundle <c>output.diet_columns</c>): the focal
+    /// species, then the resources the reference discovered. Needed with the diet family.</summary>
+    public int DietColumns { get; init; }
+
     /// <summary>Every family name, on or off, in record order.</summary>
     public static readonly string[] AllNames =
     [
         "abundance_by_stage", "mortality_by_cause_stage", "mortality_rate_by_cause_stage",
         "biomass_by_age", "abundance_by_age", "biomass_by_size", "abundance_by_size",
-        "mean_tl", "yield_n", "mean_size", "ssb",
+        "mean_tl", "yield_n", "mean_size", "ssb", "diet_by_species",
     ];
 
     /// <summary>The families that are on, in the order of <see cref="AllNames"/>.</summary>
@@ -109,6 +117,11 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
             throw new ArgumentException("a by-size family needs SizeEdges");
         }
 
+        if ((Families & OutputFamilies.Diet) != 0 && DietColumns <= 0)
+        {
+            throw new ArgumentException("the diet family needs DietColumns");
+        }
+
         int nSize = SizeEdges.Length;
         int[] sizeBlocks = [.. Enumerable.Range(0, NFocal + 1).Select(sp => sp * nSize)];
         Add("abundance_by_stage", OutputFamilies.Stage, WindowFold.Mean, [NFocal, stages]);
@@ -122,6 +135,7 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         Add("yield_n", OutputFamilies.YieldN, WindowFold.Sum, [NFocal]);
         Add("mean_size", OutputFamilies.MeanSize, WindowFold.MeanOfPresent, [NFocal]);
         Add("ssb", OutputFamilies.Ssb, WindowFold.Mean, [NFocal]);
+        Add("diet_by_species", OutputFamilies.Diet, WindowFold.Sum, [NTotal, DietColumns]);
         return specs;
     }
 }
@@ -228,16 +242,17 @@ public sealed class OutputCollector
 
     private readonly OutputLayout _layout;
     private readonly int _nTotal, _nFocal, _rowsCapacity;
-    private readonly bool _stage, _full;
+    private readonly bool _stage, _full, _diet;
     private readonly double[] _biomass, _abundance, _mortality, _yield;
     private readonly IReadOnlyList<FamilySpec> _specs;
     private readonly Dictionary<string, double[]> _rows = new(StringComparer.Ordinal);
     private readonly double[] _stageAbundance, _stageDeaths, _stageRates;
     private readonly double[] _biomassByAge, _abundanceByAge, _biomassBySize, _abundanceBySize, _meanTl, _yieldN, _meanSize, _ssb;
+    private readonly double[] _dietRows;
     private readonly double[] _weighted, _weight; // scratch of the two weighted means, per focal species
     private readonly double[] _present; // scratch of a fold: one value per step of the window
     private int _k;
-    private bool _stageTaken;
+    private bool _stageTaken, _dietTaken;
 
     public OutputCollector(int nTotal, int nFocal, int recordFrequency, OutputFamilies families = OutputFamilies.None)
         : this(new OutputLayout(nTotal, nFocal, families), recordFrequency)
@@ -250,7 +265,8 @@ public sealed class OutputCollector
         _nTotal = layout.NTotal;
         _nFocal = layout.NFocal;
         _stage = (layout.Families & OutputFamilies.Stage) != 0;
-        _full = (layout.Families & ~OutputFamilies.Stage) != 0;
+        _full = (layout.Families & ~(OutputFamilies.Stage | OutputFamilies.Diet)) != 0;
+        _diet = (layout.Families & OutputFamilies.Diet) != 0;
         _rowsCapacity = Math.Max(1, recordFrequency);
         _biomass = new double[_rowsCapacity * _nTotal];
         _abundance = new double[_rowsCapacity * _nTotal];
@@ -274,6 +290,7 @@ public sealed class OutputCollector
         _yieldN = Rows("yield_n");
         _meanSize = Rows("mean_size");
         _ssb = Rows("ssb");
+        _dietRows = Rows("diet_by_species");
         _weighted = new double[_full ? 2 * _nFocal : 0];
         _weight = new double[_full ? 2 * _nFocal : 0];
         _present = new double[_specs.Count > 0 ? _rowsCapacity : 0];
@@ -345,6 +362,60 @@ public sealed class OutputCollector
 
         StageRates(abundance, deaths, _stageRates.AsSpan(_k * _nFocal * DeathCells, _nFocal * DeathCells), _nFocal);
         _stageTaken = true;
+    }
+
+    /// <summary>
+    /// The step's diet by predator species (<c>aggregate_diet_by_species</c>), into the open
+    /// window's next row: the per-school diet rows of the mortality step that just ran, added
+    /// per predator species in store order. Call it once per step, right after mortality and
+    /// BEFORE the background schools are removed (background predators have rows), or just
+    /// before <see cref="Collect(EngineParameters, SchoolStore)"/> for a state that no step
+    /// produced. Nothing to do without <see cref="OutputFamilies.Diet"/>.
+    /// </summary>
+    public void SnapshotDiet(SchoolStore store)
+    {
+        if (!_diet)
+        {
+            return;
+        }
+
+        if (_dietTaken)
+        {
+            throw new InvalidOperationException("the diet was already taken for this step");
+        }
+
+        if (_k >= _rowsCapacity)
+        {
+            throw new InvalidOperationException("the record window is full: flush before collecting");
+        }
+
+        int cols = _layout.DietColumns;
+        if (store.DietCols != cols && store.Count > 0)
+        {
+            throw new InvalidOperationException($"the store tracks {store.DietCols} diet columns, the layout has {cols}");
+        }
+
+        Span<double> row = _dietRows.AsSpan(_k * _nTotal * cols, _nTotal * cols);
+        row.Clear();
+        ReadOnlySpan<SchoolCore> core = store.Core;
+        ReadOnlySpan<double> diet = store.Diet;
+        for (int i = 0; i < core.Length; i++)
+        {
+            int sp = core[i].SpeciesId;
+            if (sp >= _nTotal)
+            {
+                continue;
+            }
+
+            ReadOnlySpan<double> eaten = diet.Slice(i * cols, cols);
+            Span<double> into = row.Slice(sp * cols, cols);
+            for (int j = 0; j < cols; j++)
+            {
+                into[j] += eaten[j];
+            }
+        }
+
+        _dietTaken = true;
     }
 
     /// <summary>
@@ -427,6 +498,11 @@ public sealed class OutputCollector
             throw new InvalidOperationException("the life-stage snapshot was not taken for this step: call SnapshotStages before Collect");
         }
 
+        if (_diet && !_dietTaken)
+        {
+            throw new InvalidOperationException("the diet was not taken for this step: call SnapshotDiet before Collect");
+        }
+
         Span<double> biomass = _biomass.AsSpan(_k * _nTotal, _nTotal);
         Span<double> abundance = _abundance.AsSpan(_k * _nTotal, _nTotal);
         Span<double> mortality = _mortality.AsSpan(_k * _nFocal * RunResults.MortalityCauses, _nFocal * RunResults.MortalityCauses);
@@ -479,6 +555,7 @@ public sealed class OutputCollector
 
         _k++;
         _stageTaken = false;
+        _dietTaken = false;
     }
 
     /// <summary>

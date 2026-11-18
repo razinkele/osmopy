@@ -57,10 +57,25 @@ def test_calibration_engine_names_and_the_java_alias(tmp_path):
 
 
 def test_a_csharp_calibration_of_an_unrunnable_config_is_refused_up_front(tmp_path):
-    """Every candidate would otherwise fail, and be scored as a failure, one by one."""
-    stock = Path(osmose_demo("eec_full", tmp_path)["config_file"])  # no output.minimal
-    with pytest.raises(ValueError, match="engine='csharp'"):
-        _problem(tmp_path, base=stock, engine="csharp")
+    """Every candidate would otherwise fail, and be scored as a failure, one by one.
+
+    The refusal has two causes, and each is asserted by its own message, so that this test
+    cannot pass on an unavailable engine while the config check goes untested (it did: the
+    stock config it used became runnable in task 2.6c, and only a run WITH the engine noticed).
+    A growth cap (species.lmax) is a feature the engine does not implement."""
+    from osmose.engine_cs import csharp_engine_available
+
+    stock = Path(osmose_demo("eec_full", tmp_path / "stock")["config_file"])
+    capped = Path(osmose_demo("eec_full", tmp_path / "capped")["config_file"])
+    capped.write_text(capped.read_text() + "\nspecies.lmax.sp0;25\n")
+    available, _ = csharp_engine_available()
+    if not available:
+        with pytest.raises(ValueError, match="engine='csharp': the C# engine is unavailable"):
+            _problem(tmp_path, base=capped, engine="csharp")
+        return
+    with pytest.raises(ValueError, match=r"cannot run this config: .*lmax_cap"):
+        _problem(tmp_path, base=capped, engine="csharp")
+    assert _problem(tmp_path, base=stock, engine="csharp").engine == "csharp"  # as shipped: runs
 
 
 def test_the_engine_reaches_the_workers_and_the_cache_key(tmp_path):
@@ -105,9 +120,20 @@ def test_cli_run_dispatches_in_process_engines(tmp_path, monkeypatch):
     )
 
 
-def test_calibrate_baltic_engine_csharp_says_why_it_cannot_run():
+def test_calibrate_baltic_engine_csharp_says_why_it_cannot_run(monkeypatch):
+    """Two reasons, and the script must give the one that applies. Since task 2.6c the C# engine
+    runs the Baltic config as shipped, so today it is the script's own: its DE pool forks. If
+    the engine refuses the config, that is said instead, with the engine's reason."""
     sys.path.insert(0, str(ROOT / "scripts"))
     import calibrate_baltic
 
-    with pytest.raises(SystemExit, match="cannot run the Baltic config"):
+    import osmose.engine_cs.capabilities as cap
+
+    with pytest.raises(SystemExit, match="does not carry it into its evaluations yet") as shipped:
+        calibrate_baltic._refuse_unplumbed_engine("csharp")
+    assert "cannot run the Baltic config" not in str(shipped.value)
+    assert "pool forks" in str(shipped.value)
+
+    monkeypatch.setattr(cap, "csharp_engine_block_reason", lambda raw: "lmax_cap (phase 2)")
+    with pytest.raises(SystemExit, match=r"cannot run the Baltic config: lmax_cap \(phase 2\)"):
         calibrate_baltic._refuse_unplumbed_engine("csharp")

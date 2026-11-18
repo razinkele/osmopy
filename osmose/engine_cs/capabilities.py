@@ -252,8 +252,23 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"population\.seeding\.(biomass\..+|year\.max|mode)", "phase1"),
     (r"reproduction\.(season\.file\..+|normalisation\.enabled)", "phase1"),
     (r"output\.(minimal\.enabled|cutoff\.age\..+|recordfrequency\.ndt|step0\.include)", "phase1"),
-    # Every other output switch: forced off by output.minimal.enabled, else full_outputs.
-    (r"output\..+", "full_outputs"),
+    # The output keys the Python engine reads: each is a family the C# engine collects since
+    # task 2.6 (the life-stage split needs no key), the binning of one, or a NetCDF switch of
+    # the shared writers. There is deliberately NO catch-all for output.*: with full_outputs
+    # implemented, a catch-all would accept a new Python-side output and the C# engine would
+    # silently not produce it. A new output key must be classified here by hand, as a family
+    # the C# engine collects or as a feature of its own; until then the config is refused and
+    # test_every_key_the_python_engine_reads_is_classified fails.
+    (
+        (
+            r"output\.(biomass|abundance)\.(byage|bysize)\.(netcdf\.)?enabled"
+            r"|output\.(biomass|abundance|mortality|yield\.biomass)\.netcdf\.enabled"
+            r"|output\.(size|ssb|yield\.abundance)\.(netcdf\.)?enabled"
+            r"|output\.(tl|meantl|diet\.composition)\.enabled"
+            r"|output\.distrib\.bysize\.(min|max|incr)"
+        ),
+        "full_outputs",
+    ),
 )
 
 _COMPILED = tuple((re.compile(rx), owner) for rx, owner in KEY_RULES)
@@ -282,7 +297,10 @@ def unclassified_keys(raw: Mapping[str, str]) -> list[str]:
         if _check(key, known) is not None:  # unknown to the Python engine: no effect there either
             continue
         pattern = _normalize_key_to_pattern(key)
-        if pattern in _ALLOWLIST_JAVA_ONLY:  # a real OSMOSE key the Python engine never reads
+        # A real OSMOSE key the Python engine never reads. The key itself is looked up too: a
+        # Java-only key can have a segment that LOOKS indexed (output.abundance.age1.enabled
+        # normalises to ...age{idx}...), and its pattern form is then not in the list.
+        if pattern in _ALLOWLIST_JAVA_ONLY or key in _ALLOWLIST_JAVA_ONLY:
             continue
         if classify_pattern(pattern) is None:
             out.append(key)

@@ -1859,10 +1859,11 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 def _refuse_unplumbed_engine(engine: str) -> None:
-    """``--engine csharp``: say why it cannot run here. Phase 1 of the C# engine refuses the
-    Baltic config (its phase-2 features), and the plumbing is deliberately not wired before it can
-    be tested: the DE pool FORKS, and the CLR must never be hosted in a process that forks, so a
-    C# calibration needs a spawn pool and an engine argument carried into every evaluation."""
+    """``--engine csharp``: say why it cannot run here. Since the C# engine's Phase 2 it can
+    run the Baltic config, so the reason is this script's own: the plumbing is not wired. The DE
+    pool FORKS, and the CLR must never be hosted in a process that forks, so a C# calibration
+    needs a spawn pool and an engine argument carried into every evaluation. Should the engine
+    refuse the config itself (a feature it does not implement), that reason is given instead."""
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine_cs.capabilities import csharp_engine_block_reason
 

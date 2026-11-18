@@ -59,11 +59,11 @@ def test_every_catalogue_feature_has_exactly_one_detector():
 def test_the_implemented_features_are_exactly_these():
     # Flip a feature's flag only in the PR that makes it run: core ran end to end in task 1.8,
     # oxygen_benthos in task 2.5, the recruitment three in task 2.3, salinity_gate in task 2.4,
-    # background_species in task 2.1.
+    # background_species in task 2.1, full_outputs in task 2.6c (with its last family, the diet).
     implemented = {f.name for f in cap.load_catalog().values() if f.implemented}
     assert implemented == {
         "core", "oxygen_benthos", "stock_recruitment", "rv_gate", "seeding_linear",
-        "salinity_gate", "background_species",
+        "salinity_gate", "background_species", "full_outputs",
     }  # fmt: skip
 
 
@@ -81,6 +81,81 @@ def test_every_key_the_python_engine_reads_is_classified():
     assert len(patterns) > 300  # the instrument sees the real key set
     unclassified = [p for p in patterns if cap.classify_pattern(p) is None]
     assert not unclassified, f"classify these in KEY_RULES: {unclassified}"
+
+
+#: The output keys the Python engine reads and full_outputs covers, one by one.
+FULL_OUTPUT_KEYS = {
+    "output.abundance.byage.enabled", "output.abundance.byage.netcdf.enabled",
+    "output.abundance.bysize.enabled", "output.abundance.bysize.netcdf.enabled",
+    "output.abundance.netcdf.enabled",
+    "output.biomass.byage.enabled", "output.biomass.byage.netcdf.enabled",
+    "output.biomass.bysize.enabled", "output.biomass.bysize.netcdf.enabled",
+    "output.biomass.netcdf.enabled",
+    "output.diet.composition.enabled",
+    "output.distrib.bysize.incr", "output.distrib.bysize.max", "output.distrib.bysize.min",
+    "output.meantl.enabled", "output.tl.enabled",
+    "output.mortality.netcdf.enabled",
+    "output.size.enabled", "output.size.netcdf.enabled",
+    "output.ssb.enabled", "output.ssb.netcdf.enabled",
+    "output.yield.abundance.enabled", "output.yield.abundance.netcdf.enabled",
+    "output.yield.biomass.netcdf.enabled",
+}  # fmt: skip
+
+
+def test_full_outputs_owns_exactly_the_output_keys_listed_here():
+    """full_outputs is implemented, so a key it owns is ACCEPTED. The rule must therefore name
+    its keys, not catch every output.* key: a new Python-side output would be accepted and
+    silently missing from a C# run. Widening the rule means editing this list, on purpose."""
+    owned = {p for p in _engine_read_patterns() if cap.classify_pattern(p) == "full_outputs"}
+    assert owned == FULL_OUTPUT_KEYS
+    for made_up in ("output.foo.enabled", "output.biomass.byweight.netcdf.enabled", "output.x"):
+        assert cap.classify_pattern(made_up) is None, made_up
+
+
+def test_a_java_only_key_with_an_index_like_segment_is_not_an_engine_key(demos):
+    """``output.abundance.age1.enabled`` (Benguela sets it) is Java-only, but ``age1`` looks
+    like an indexed segment and normalises to ``age{idx}``, which the Java-only list does not
+    hold. While a catch-all owned every output key this went unnoticed; without one it made the
+    C# engine refuse a config the Python engine runs. The key itself is looked up as well."""
+    key = "output.abundance.age1.enabled"
+    assert key in _ALLOWLIST_JAVA_ONLY and cap.classify_pattern(key) is None
+    raw = demos[("eec_full", True)][1] | {key: "true"}
+    assert cap.unclassified_keys(raw) == []
+    assert cap.csharp_engine_block_reason(raw) is None
+
+
+@pytest.mark.parametrize(
+    "master", sorted(p for p in (ROOT / "data").rglob("*.csv") if "all-parameters" in p.name)
+)
+def test_no_shipped_config_has_an_unclassified_output_key(master):
+    """The sweep behind the rule above: every output key of every shipped master config is
+    classified (or Java-only), so removing the catch-all refused nothing that ran before."""
+    from osmose.config.reader import OsmoseConfigReader
+
+    raw = dict(OsmoseConfigReader().read(master))
+    assert [k for k in cap.unclassified_keys(raw) if k.startswith("output.")] == []
+
+
+def test_a_new_output_key_the_python_engine_reads_blocks_the_engine(demos, monkeypatch):
+    """What the rule above is for: an output key the Python engine starts reading, which nobody
+    has classified, makes the C# engine refuse the config instead of running without it."""
+    import osmose.engine.config_validation as cv
+
+    real = cv.build_known_keys
+
+    def with_a_new_output_key():
+        known = real()
+        return type(known)(
+            patterns=known.patterns | {"output.newfamily.enabled"},
+            literals=known.literals,
+            regexes=known.regexes,
+        )
+
+    monkeypatch.setattr(cv, "build_known_keys", with_a_new_output_key)
+    raw = demos[("eec_full", False)][1] | {"output.newfamily.enabled": "true"}
+    assert cap.unclassified_keys(raw) == ["output.newfamily.enabled"]
+    reason = cap.csharp_engine_block_reason(raw)
+    assert reason is not None and "output.newfamily.enabled" in reason
 
 
 def test_rule_owners_are_catalogue_features_or_core_classes():
@@ -129,16 +204,27 @@ def test_demo_needs_exactly_these_features(demos, demo, minimal):
 
 
 @pytest.mark.parametrize("demo", sorted(EXPECTED))
-def test_every_demo_runs_with_minimal_outputs(demos, demo):
-    """With output.minimal on, EEC and Bay of Biscay need nothing beyond core, and Baltic needs
-    only implemented features since task 2.1 (its background species were the last). The stock
-    demos, without output.minimal, are still refused: see the next test."""
-    assert cap.csharp_engine_block_reason(demos[(demo, True)][1]) is None
+@pytest.mark.parametrize("minimal", [True, False])
+def test_every_demo_runs_as_shipped_and_with_minimal_outputs(demos, demo, minimal):
+    """EEC and Bay of Biscay need nothing beyond core, and Baltic only implemented features
+    since task 2.1 (its background species were the last). Since task 2.6c the full outputs are
+    implemented too, so the stock demos run as shipped."""
+    assert cap.csharp_engine_block_reason(demos[(demo, minimal)][1]) is None
 
 
-def test_stock_demos_are_refused_naming_the_full_outputs(demos):
-    reason = cap.csharp_engine_block_reason(demos[("eec_full", False)][1])
-    assert reason is not None and "full_outputs (phase 2)" in reason
+@pytest.mark.parametrize(
+    ("key", "feature"),
+    [
+        ("output.spatial.enabled", "spatial_outputs (phase 3)"),
+        ("output.carbon.enabled", "carbon_output (phase 3)"),
+    ],
+)
+def test_the_output_families_the_engine_does_not_collect_are_still_refused(demos, key, feature):
+    """full_outputs covers the life-stage split, the distributions, SSB, the two means, yield
+    in numbers and the diet. The spatial and the carbon-flux outputs are features of their own
+    and stay refused, by name."""
+    reason = cap.csharp_engine_block_reason(demos[("eec_full", False)][1] | {key: "true"})
+    assert reason is not None and feature in reason and "full_outputs" not in reason
 
 
 # --------------------------------------------------------------------------- one positive case per feature

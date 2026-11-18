@@ -85,9 +85,12 @@ def _probe(method: str, *args) -> Bundle:
     return Bundle.load(out)
 
 
-def _write_states(states: list, path: Path) -> None:
-    """K states concatenated, with ``state.offsets`` (K + 1)."""
+def _write_states(states: list, path: Path, extra: dict | None = None) -> None:
+    """K states concatenated, with ``state.offsets`` (K + 1). ``extra`` adds arrays by name
+    (``state.diet``: the schools' diet rows, concatenated like the states)."""
     b = Bundle(1)
+    for name, array in (extra or {}).items():
+        b.set_array(name, np.ascontiguousarray(array))
     for name, dt in [
         ("species_id", np.int32), ("age_dt", np.int32), ("length", np.float64), ("weight", np.float64),
         ("abundance", np.float64), ("trophic_level", np.float64), ("cell_x", np.int32),
@@ -118,7 +121,11 @@ def engine_ok():
 # ------------------------------------------------------------------- A. one whole step
 
 
-def _capture_step(raw: dict, step: int, edge_ages: bool = False) -> dict:
+def _capture_step(raw: dict, step: int, edge_ages: bool = False, edit=None) -> dict:
+    """One production step, captured (see the module docstring, A). ``edit(state, config)``
+    changes the state at mortality entry, before it is recorded. With the diet output on, the
+    capture also holds the kernel's per-school diet rows (``diet``) and the state as mortality
+    left it, background schools included (``after_mortality``)."""
     config, grid, rng, mv, mo = PythonEngine()._prepare_run(raw, 11)
     got: dict = {}
     real_mort, real_collect = sim._mortality, sim._collect_outputs
@@ -145,6 +152,8 @@ def _capture_step(raw: dict, step: int, edge_ages: bool = False) -> dict:
             lifespan = config_.lifespan_dt[state.species_id[adults]]
             state.age_dt[adults[0::3]] = lifespan[0::3] - 2  # survive this step
             state.age_dt[adults[1::3]] = lifespan[1::3] - 1  # die of old age this step
+        if edit is not None:
+            edit(state, config_)
         got["entry"] = copy.deepcopy(state)
         record: list = []
         got["record"] = record
@@ -153,7 +162,7 @@ def _capture_step(raw: dict, step: int, edge_ages: bool = False) -> dict:
         for k in kernels:
             setattr(mort, k, replay)
         try:
-            return real_mort(
+            after = real_mort(
                 state,
                 resources,
                 config_,
@@ -166,6 +175,10 @@ def _capture_step(raw: dict, step: int, edge_ages: bool = False) -> dict:
         finally:
             for k, fn in saved_kernels.items():
                 setattr(mort, k, fn)
+        if ctx is not None and ctx.diet_tracking_enabled and ctx.diet_matrix is not None:
+            got["diet"] = ctx.diet_matrix[: ctx._diet_active_rows].copy()
+            got["after_mortality"] = copy.deepcopy(after)
+        return after
 
     def collect_spy(*args, **kwargs):
         out = real_collect(*args, **kwargs)

@@ -34,6 +34,23 @@ def memory(out: Path) -> None:
     out.write_bytes(pickle.dumps({name: getattr(res, name)() for name in FRAMES}))
 
 
+def outputs(out: Path) -> None:
+    """The ``StepOutput`` list of one run, as ``run`` and ``run_in_memory`` hand it on, with the
+    resource names the run published on its config."""
+    from osmose.engine_cs import CSharpEngine
+
+    config, _grid, records = CSharpEngine()._execute(_raw(), int(sys.argv[5]), None)
+    out.write_bytes(pickle.dumps({"records": records, "resource_names": config.resource_names}))
+
+
+def frames(out: Path) -> None:
+    """Every frame ``run_in_memory`` builds, by its key."""
+    from osmose.engine_cs import CSharpEngine
+
+    res = CSharpEngine().run_in_memory(_raw(), seed=int(sys.argv[5]))
+    out.write_bytes(pickle.dumps(res._csv_cache))
+
+
 def files(out: Path) -> None:
     from osmose.engine_cs import CSharpEngine
 
@@ -160,6 +177,8 @@ def summary(out: Path) -> None:
 if __name__ == "__main__":
     {
         "memory": memory,
+        "outputs": outputs,
+        "frames": frames,
         "files": files,
         "cancel_at": cancel_at,
         "error": expect_error,
