@@ -101,3 +101,22 @@ public struct SchoolLedger
     public double DeadAging;
     public double AbundanceAtMortalityStart;
 }
+
+/// <summary>Cold per-school data, touched about once per step (spec D2).</summary>
+[StructLayout(LayoutKind.Sequential, Size = 32)]
+public struct SchoolLife
+{
+    /// <summary>Stable identity from a run-wide counter; keys the movement draws (spec section 5).</summary>
+    public ulong Id;
+
+    /// <summary>Lagged starvation rate: computed this step, applied next step.</summary>
+    public double StarvationRate;
+
+    /// <summary>Bioenergetics only; zero otherwise.</summary>
+    public double GonadWeight;
+
+    /// <summary><c>y * nx + x</c>, or -1 when unlocated or out of the domain.</summary>
+    public int CellId;
+
+    private int _reserved;
+}
