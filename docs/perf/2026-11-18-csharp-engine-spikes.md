@@ -3,17 +3,7 @@
 Plan: `docs/superpowers/specs/2026-11-17-csharp-engine-implementation-plan.md`, Phase 0.
 Spec: `docs/superpowers/specs/2026-11-17-csharp-engine-design.md`.
 **G0 is the owner's decision.** This document gives the measurements and a recommendation.
-
-## Read first: which threshold applies
-
-When the owner was asked (Q2, 2026-11-17), the question named the kernel spike's gate as
-"at least 1.15x faster". **That was a misquote.**
-- **The plan's G0 for the kernel spike:** go at 1.0x Numba or better, stop below 0.8x after one tuning pass, and the owner decides in between.
-- **1.15x is the separate end-to-end gate:** Baltic, 10 yr, one thread, checked when Phase 2 is declared done.
-
-The owner agreed to "performance gates are go/no-go" after reading "1.15x". If the result below
-falls **between 0.8x and 1.15x**, the two readings give different answers, and the owner should
-say which applies.
+The threshold question raised when the owner was asked is in the footnote at the end; the result makes it moot.
 
 ## 1. Bridge spike (task 0.2, PR #292): 7/7
 
@@ -84,7 +74,7 @@ Three independent invocations (step 129 twice), 9 rounds each:
 | C# indexed + mask | 0.0432 | **2.167** | 0.0434 | **2.293** | 0.0443 | **2.148** |
 | C# indexed + lists | 0.0427 | **2.190** | 0.0455 | **2.188** | 0.0423 | **2.248** |
 
-- **Per-round spread:** every round of every C# arm is above 2.07× the gate. The narrowest per-round range is 2.07–2.26 (indexed + lists, step 129).
+- **Per-round spread:** the lowest single round of any C# arm in any invocation is 2.069× (indexed + lists, step 129, first invocation). The per-arm, per-round ranges are in `docs/diagnostics/csharp_kernel_spike_2026-11-18.json`.
 - **The work agrees.**
   - Step 129: predation deaths 2.4203e10 (C#) against 2.4210e10 (Numba), preyed biomass 488,065 t against 488,090 t.
   - Step 141: 8.869e9 against 8.861e9 deaths, 611,963 t against 611,985 t.
@@ -93,9 +83,28 @@ Three independent invocations (step 129 twice), 9 rounds each:
 - **Side observation:** Numba's serial batch kernel is about 20% slower than its parallel one at one thread.
 - **Warm-up matters.** On the small EEC step-5 fixture (899 schools, cells of at most 9), an early smoke with a single warm-up call measured C# at 0.85×. After the 12-call warm-up, one round measured 1.25×: .NET's tiered JIT and PGO need several calls before the hot loop is optimised. This is one round on a tiny fixture, so it is context, not a result.
 
+## 3b. Is the baseline right, and where does the speed-up come from?
+
+`scripts/csharp/decompose_kernel.py`: one process, one thread, interleaved, 12 warm-up calls, 9 rounds.
+
+| Arm | Step 129 median (ms) | Step 141 median (ms) |
+|---|---:|---:|
+| Numba arm (the gate above) | 95.5 | 100.2 |
+| **real production `mortality()`**, on a captured snapshot with its run's `ctx` | 100.4 | 105.4 |
+| Numba, the parallel kernel's draws only | 21.3 | 22.4 |
+| C# regrouped + mask, Philox draws | 43.5 | 43.0 |
+| C# regrouped + mask, injected draws (almost free) | 33.0 | 31.7 |
+
+- **The baseline is faithful, and slightly conservative.** The real `mortality()` does strictly more work than the arm (larva pre-pass, stages, accessibility indices, rate precompute, post-loop updates) and takes 1.05× as long on both steps. Against it, C# is 2.31× (step 129) and 2.45× (step 141).
+- **Draws are not the main source.** Drawing costs Numba 21–22 ms and C# 10.5–11.3 ms: 2× cheaper, but only about a fifth of the Numba step.
+- **The kernel without draws is 2.25× faster (step 129) and 2.45× (step 141):** 74.2 against 33.0 ms, and 77.8 against 31.7 ms.
+- **Memory layout is not the source either**: regrouped and indexed time within a few percent of each other (section 3).
+
+**What remains is a hypothesis, not a measurement.** The Numba kernel allocates fresh arrays for every cell in every sub-step: four permutations, the cause orders and three prey buffers. That is about 616 cells × 10 sub-steps per step. The C# kernel reuses one worker scratch and allocates nothing. Code generation (struct generics devirtualised by RyuJIT) is the other candidate. Neither is isolated.
+
 ## 4. Recommendation: GO
 
-- **The kernel gate is met by a wide margin.** Every C# variant runs a production Baltic mortality step 2.15–2.37× faster than production's Numba kernel at one thread. The bridge passes 7/7. That clears the plan's G0 (go at 1.0×) and also the misquoted 1.15×, so the threshold question at the top does not change the decision.
+- **The kernel gate is met by a wide margin.** Every C# variant runs a production Baltic mortality step 2.15–2.37× faster than production's Numba kernel at one thread. The bridge passes 7/7. That clears the plan's G0 (go at 1.0×) and also the 1.15× quoted in the owner's question (see the footnote).
 - **Correctness came first.** The same kernel equals the Numba oracle bit for bit on six fixtures (EEC and two Baltic steps, zero and real rates) in all six variants.
 - **Keep the spec's design (regrouped + mask).** Keep candidate lists as the drop-in the spec already allows. The variants are within 10% of each other with no stable winner, so decide in task 1.9 on whole-run measurements, not on this kernel number.
 
@@ -103,7 +112,16 @@ Three independent invocations (step 129 twice), 9 rounds each:
 - **It is the kernel, at one thread, on this machine.** Mortality is about 78% of a one-thread Baltic run. If everything else ran exactly as fast as Python's, a 2.2× kernel would give about 1 / (0.78 / 2.2 + 0.22) ≈ 1.7× end to end.
 - **The 1.15× end-to-end gate is Phase 2's.** It needs the rest of the step loop ported first.
 - **Not measured:** multi-thread scaling, and the discard path (no fixture has a discard fraction above 0).
-- **Where the 2.2× comes from is not decomposed.** Candidates: cheaper draws (one Lehmer code per slot instead of a shuffle), the cell-outer sub-step loop, and code generation. The near-equal regrouped and indexed timings suggest memory layout matters less than the spec expected at this occupancy.
+- **The source is only partly decomposed** (section 3b): neither draws nor layout. The per-cell allocations in the Numba kernel are the leading hypothesis. This matters for Phase 1.3: the regroup's value may be its no-allocation scratch and determinism more than locality.
 - **Bit-equality with the oracle rests on glibc's `exp`.** Both engines call it on this machine. Another libm drops the comparison to tier L (section 2), which the forced 1-ulp run shows the tests tolerate.
 
 **If the owner says go:** Phase 1 (spec section 7.2), starting with tasks 1.1 (typed parameters and capabilities) and 1.2 (the bundle builder for EEC and Bay of Biscay).
+
+---
+
+**Footnote: which threshold applies.** When the owner was asked (Q2, 2026-11-17), the question named
+the kernel spike's gate as "at least 1.15x faster". That was a misquote.
+- The plan's G0 for the spike: go at 1.0× or better, stop below 0.8× after one tuning pass, and the owner decides in between.
+- 1.15× is the separate end-to-end gate (Baltic, 10 yr, one thread) at Phase 2.
+
+At 2.15–2.37×, the result clears both, so the misquote does not affect this decision.
