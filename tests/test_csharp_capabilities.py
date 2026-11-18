@@ -112,6 +112,30 @@ def test_full_outputs_owns_exactly_the_output_keys_listed_here():
         assert cap.classify_pattern(made_up) is None, made_up
 
 
+def test_a_java_only_key_with_an_index_like_segment_is_not_an_engine_key(demos):
+    """``output.abundance.age1.enabled`` (Benguela sets it) is Java-only, but ``age1`` looks
+    like an indexed segment and normalises to ``age{idx}``, which the Java-only list does not
+    hold. While a catch-all owned every output key this went unnoticed; without one it made the
+    C# engine refuse a config the Python engine runs. The key itself is looked up as well."""
+    key = "output.abundance.age1.enabled"
+    assert key in _ALLOWLIST_JAVA_ONLY and cap.classify_pattern(key) is None
+    raw = demos[("eec_full", True)][1] | {key: "true"}
+    assert cap.unclassified_keys(raw) == []
+    assert cap.csharp_engine_block_reason(raw) is None
+
+
+@pytest.mark.parametrize(
+    "master", sorted(p for p in (ROOT / "data").rglob("*.csv") if "all-parameters" in p.name)
+)
+def test_no_shipped_config_has_an_unclassified_output_key(master):
+    """The sweep behind the rule above: every output key of every shipped master config is
+    classified (or Java-only), so removing the catch-all refused nothing that ran before."""
+    from osmose.config.reader import OsmoseConfigReader
+
+    raw = dict(OsmoseConfigReader().read(master))
+    assert [k for k in cap.unclassified_keys(raw) if k.startswith("output.")] == []
+
+
 def test_a_new_output_key_the_python_engine_reads_blocks_the_engine(demos, monkeypatch):
     """What the rule above is for: an output key the Python engine starts reading, which nobody
     has classified, makes the C# engine refuse the config instead of running without it."""

@@ -127,7 +127,7 @@ def test_precancel_and_deadline_stop_at_step_zero(kind, error, tmp_path):
 
 # ------------------------------------------------- stock configs: the full outputs (task 2.6c)
 
-STOCK = {"eec_full": 2, "baltic": 1}  # demo: years
+STOCK = {"eec_full": 2, "baltic": 1, "bay_of_biscay": 1}  # demo: years
 
 
 def _families_row(record, name: str, n_species: int) -> np.ndarray | None:
@@ -193,9 +193,12 @@ def test_a_stock_run_hands_on_exactly_the_records_the_engine_computed(demo, tmp_
             "biomass_by_age", "biomass_by_size", "abundance_by_size", "mean_tl", "mean_size",
             "yield_n"} | ({"ssb"} if demo == "baltic" else set())  # fmt: skip
     assert want <= set(names)
+    # (Over the run, not in the last record: Bay of Biscay's fish stop feeding within the year.)
     last = records[-1]
-    assert last.diet_by_species is not None and last.diet_by_species.sum() > 0
-    assert last.mean_tl and last.mean_size and last.biomass_by_age
+    assert last.diet_by_species is not None
+    assert sum(r.diet_by_species.sum() for r in records if r.diet_by_species is not None) > 0
+    assert any(r.mean_tl for r in records) and any(r.mean_size for r in records)
+    assert last.biomass_by_age and sum(v.sum() for v in last.biomass_by_age.values()) > 0
     assert last.abundance_by_stage is not None and last.abundance_by_stage.sum() > 0
     if demo == "baltic":  # the background predators' rows, and SSB
         assert last.diet_by_species.shape[0] == nf + 2 and last.diet_by_species[nf:].sum() > 0
@@ -227,8 +230,8 @@ def test_a_stock_run_gives_the_frames_the_python_engine_gives(demo, tmp_path):
         else:
             assert _structure(a) == _structure(b), key
             labels.update(map(str, b.columns))
-    resources = {"eec_full": "Dinoflagellates", "baltic": "Benthos"}[demo]
-    assert any(resources in label for label in labels)  # a resource is a prey label
+    resource = {"eec_full": "Dinoflagellates", "baltic": "Benthos", "bay_of_biscay": "SmallPhyto"}
+    assert any(resource[demo] in label for label in labels)  # a resource is a prey label
 
 
 def _header(path: Path) -> list[str]:

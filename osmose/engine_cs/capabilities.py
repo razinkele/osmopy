@@ -297,7 +297,10 @@ def unclassified_keys(raw: Mapping[str, str]) -> list[str]:
         if _check(key, known) is not None:  # unknown to the Python engine: no effect there either
             continue
         pattern = _normalize_key_to_pattern(key)
-        if pattern in _ALLOWLIST_JAVA_ONLY:  # a real OSMOSE key the Python engine never reads
+        # A real OSMOSE key the Python engine never reads. The key itself is looked up too: a
+        # Java-only key can have a segment that LOOKS indexed (output.abundance.age1.enabled
+        # normalises to ...age{idx}...), and its pattern form is then not in the list.
+        if pattern in _ALLOWLIST_JAVA_ONLY or key in _ALLOWLIST_JAVA_ONLY:
             continue
         if classify_pattern(pattern) is None:
             out.append(key)

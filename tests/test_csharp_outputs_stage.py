@@ -18,9 +18,11 @@ C. Whole runs: the records no draw has influenced equal Python's; the minimal fa
    change when the stage family is on; deaths by stage add up to deaths by cause; results do not
    depend on the thread count.
 
-``full_outputs`` is not flipped by this task (2.6c does it), so production still refuses a config
-that is not minimal; the probes read such a bundle. The test needs the built engine. It skips
-without it unless ``OSMOSE_REQUIRE_CSHARP=1``.
+These tests go through the probes, which read a bundle directly: when the task landed,
+``full_outputs`` was not implemented yet and production refused a config that is not minimal.
+Task 2.6c flipped it; the end-to-end checks on stock configs are in
+tests/test_csharp_engine_e2e.py. The test needs the built engine. It skips without it unless
+``OSMOSE_REQUIRE_CSHARP=1``.
 """
 
 from __future__ import annotations
