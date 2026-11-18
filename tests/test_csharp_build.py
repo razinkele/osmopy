@@ -109,7 +109,9 @@ def test_bundle_round_trips_through_the_file_format(runs, tmp_path):
     loaded = Bundle.load(tmp_path / "eec.bin")
     assert loaded.names() == b.names()
     for name in b.names():
-        assert np.array_equal(np.asarray(loaded.get(name)), np.asarray(b.get(name))), name
+        a, c = np.asarray(loaded.get(name)), np.asarray(b.get(name))
+        assert a.dtype == c.dtype and a.shape == c.shape, name
+        assert a.tobytes() == c.tobytes(), name  # bit-exact, NaN payloads included
 
 
 @pytest.mark.parametrize("demo", ["eec_full", "bay_of_biscay", "baltic"])
@@ -229,3 +231,176 @@ def test_the_csharp_engine_accepts_the_header_and_refuses_only_core(runs, tmp_pa
         message
     )  # header valid; refusal is the feature check
     assert "core (not implemented yet; phase 1)" in message
+
+
+# ------------------------------------------------------------------ 1.2b: fishing and reproduction
+
+
+def school_table(config, grid, n: int, seed: int) -> SchoolState:
+    """Random schools with everything _precompute_effective_rates reads."""
+    rng = np.random.default_rng(seed)
+    st = random_schools(config, n, seed)
+    n_focal = config.n_species
+    return st.replace(
+        starvation_rate=np.where(rng.random(n) < 0.3, 0.0, rng.uniform(0, 2.0, n)),
+        first_feeding_age_dt=rng.integers(0, 3, n).astype(np.int32),
+        is_background=st.species_id >= n_focal,
+        cell_x=rng.integers(-1, grid.nx, n).astype(np.int32),
+        cell_y=rng.integers(-1, grid.ny, n).astype(np.int32),
+        abundance=rng.uniform(0, 1e6, n),
+    )
+
+
+def reference_rates(b: Bundle, st: SchoolState, step: int):
+    """The C# engine's per-school rates, computed from the bundle tables only."""
+    ndt, nsub = int(b.get("time.n_dt_per_year")), int(b.get("time.n_subdt"))
+    denom = ndt * nsub
+    sp = st.species_id
+    n_focal = int(b.get("species.n_focal"))
+    exempt = st.is_background | (st.age_dt < st.first_feeding_age_dt)
+
+    def zero_exempt(a):
+        a = a.copy()
+        a[exempt] = 0.0
+        a[a < 0] = 0.0
+        return a
+
+    eff_s = zero_exempt(st.starvation_rate / denom)
+    add = zero_exempt(b.get("mortality.additional.rate_by_step")[step][sp])
+    eff_a = np.nan_to_num(add / denom, nan=0.0, posinf=0.0, neginf=0.0)
+    eff_f = np.zeros(len(st))
+    disc = np.zeros(len(st))
+    if b.get("fishing.enabled"):
+        f = b.get("fishing.rate_by_step")[step][sp]
+        sel = np.ones(len(st))
+        spatial = np.ones(len(st))
+        stype, a50, l50 = (b.get(f"fishing.selectivity.{k}") for k in ("type", "a50", "l50"))
+        index, maps = b.get("fishing.map_index"), b.get("fishing.maps")
+        for i in range(len(st)):
+            s = sp[i]
+            if s >= n_focal:
+                continue
+            if stype[s] == 0:
+                sel[i] = 0.0 if (st.age_dt[i] / ndt) < a50[s] else 1.0
+            elif stype[s] != 1:  # logistic is a refused-until-implemented feature
+                sel[i] = 0.0 if (l50[s] > 0 and st.length[i] < l50[s]) else 1.0
+            if index[s] >= 0:
+                cy, cx = st.cell_y[i], st.cell_x[i]
+                m = maps[index[s]]
+                v = m[cy, cx] if (0 <= cy < m.shape[0] and 0 <= cx < m.shape[1]) else 0.0
+                spatial[i] = 0.0 if (np.isnan(v) or v <= 0) else v
+        if "fishing.season_by_step" in b.names():
+            eff_f = f * sel * spatial * 1.0 * b.get("fishing.season_by_step")[step][sp] / nsub
+        else:
+            eff_f = f * sel * spatial * 1.0 / denom
+        eff_f = np.nan_to_num(zero_exempt(eff_f), nan=0.0, posinf=0.0, neginf=0.0)
+        if "fishing.discard_rate" in b.names():
+            disc = np.where(eff_f > 0, b.get("fishing.discard_rate")[sp], 0.0)
+    return eff_s, eff_a, eff_f, disc
+
+
+@pytest.mark.parametrize("demo", ["eec_full", "bay_of_biscay", "baltic"])
+def test_per_school_rates_from_the_bundle_equal_precompute_effective_rates(runs, demo):
+    from osmose.engine.processes.mortality import _precompute_effective_rates
+
+    config, _, grid, b = runs[demo]
+    st = school_table(config, grid, 3000, seed=11)
+    nsub = config.mortality_subdt
+    for step in (0, 5, 23, 24, 31):
+        want = _precompute_effective_rates(st, config, nsub, step)
+        got = reference_rates(b, st, step)
+        for name, w, g in zip(
+            ("starvation", "additional", "fishing", "discard"), want, got, strict=True
+        ):
+            assert np.array_equal(w, g), f"{demo} step {step}: {name} differs"
+    assert (want[2] > 0).any()  # the instrument sees fishing
+
+
+def test_eec_fishing_uses_seasonality_maps_and_the_age_knife_edge(runs):
+    _, _, _, b = runs["eec_full"]
+    assert "fishing.season_by_step" in b.names()
+    assert (b.get("fishing.map_index") >= 0).all()
+    assert (b.get("fishing.selectivity.type") == 0).all()
+    _, _, _, bob = runs["bay_of_biscay"]
+    assert "fishing.season_by_step" not in bob.names()  # the other branch of the denominator
+
+
+def reference_eggs(b: Bundle, st: SchoolState, step: int) -> np.ndarray:
+    n_focal = int(b.get("species.n_focal"))
+    sp = st.species_id
+    mature = (
+        (st.length >= b.get("reproduction.maturity_size")[sp])
+        & (st.age_dt >= b.get("reproduction.maturity_age_dt")[sp])
+        & (st.abundance > 0)
+    )
+    ssb = np.zeros(n_focal)
+    np.add.at(ssb, sp[mature], st.abundance[mature] * st.weight[mature])
+    for s in range(n_focal):
+        if ssb[s] == 0.0 and step < b.get("reproduction.seeding_max_step")[s]:
+            ssb[s] = b.get("reproduction.seeding_biomass")[s]
+    return (
+        b.get("reproduction.sex_ratio") * b.get("reproduction.relative_fecundity") * ssb
+        * b.get("reproduction.season_by_step")[step] * 1_000_000.0
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize("demo", ["eec_full", "bay_of_biscay"])
+def test_egg_production_from_the_bundle_equals_reproduction(runs, demo):
+    from osmose.engine.processes.reproduction import reproduction
+
+    config, _, grid, b = runs[demo]
+    n_focal = config.n_species
+    for step in (0, 7, 30):
+        st = school_table(config, grid, 2000, seed=20 + step)
+        st = st.replace(
+            species_id=st.species_id % n_focal, is_background=np.zeros(len(st), dtype=bool)
+        )
+        n_eggs = reference_eggs(b, st, step)
+        after = reproduction(st, config, step, np.random.default_rng(0), grid.ny, grid.nx)
+        new = (
+            after.species_id[len(st) :],
+            after.abundance[len(st) :],
+            after.length[len(st) :],
+            after.weight[len(st) :],
+        )
+        for s in range(n_focal):
+            mask = new[0] == s
+            if n_eggs[s] <= 0:
+                assert not mask.any()
+                continue
+            n_new = int(config.n_schools[s]) if n_eggs[s] >= config.n_schools[s] else 1
+            assert mask.sum() == n_new
+            assert np.all(new[1][mask] == n_eggs[s] / n_new)
+            assert np.all(new[2][mask] == b.get("reproduction.egg_length")[s])
+            assert np.all(new[3][mask] == b.get("reproduction.egg_weight")[s])
+
+
+def test_discards_reach_the_rates_when_a_config_sets_them(runs):
+    """No shipped demo has a discard rate above 0, so give EEC some."""
+    from osmose.engine.processes.mortality import _precompute_effective_rates
+
+    config, raw, grid, _ = runs["eec_full"]
+    cfg = copy.copy(config)
+    cfg.fishing_discard_rate = np.linspace(0.0, 0.6, config.n_species)
+    b = build_bundle(cfg, raw, grid, seed=7)
+    st = school_table(cfg, grid, 3000, seed=12)
+    want = _precompute_effective_rates(st, cfg, cfg.mortality_subdt, 9)
+    got = reference_rates(b, st, 9)
+    assert np.array_equal(want[3], got[3]) and (want[3] > 0).any()
+
+
+def test_each_species_gets_its_own_fishing_map(runs):
+    """EEC's 14 maps are identical, so a mixed-up map index would pass on them. Give each
+    species a different map."""
+    from osmose.engine.processes.mortality import _precompute_effective_rates
+
+    config, raw, grid, _ = runs["eec_full"]
+    cfg = copy.copy(config)
+    rng = np.random.default_rng(5)
+    cfg.fishing_spatial_maps = [
+        rng.uniform(-0.2, 2.0, (grid.ny, grid.nx)) for _ in range(config.n_species)
+    ]
+    b = build_bundle(cfg, raw, grid, seed=7)
+    st = school_table(cfg, grid, 3000, seed=13)
+    want = _precompute_effective_rates(st, cfg, cfg.mortality_subdt, 4)
+    assert np.array_equal(want[2], reference_rates(b, st, 4)[2]) and (want[2] > 0).any()

@@ -4,9 +4,10 @@ Python resolves, C# computes (spec 8.1): every table here is what the Python eng
 already parsed, per species and, where a value can change, per step. The C# engine never sees a
 config key, a file or a species name it must interpret.
 
-Task 1.2a builds the header and the static tables: contract, run, time, grid, species, growth,
-predation (with feeding stages), stage accessibility, non-fishing mortality and output settings.
-Fishing and reproduction (1.2b) and resources, movement and the result buffers (1.2c) follow.
+Tasks 1.2a/b build the header, the static tables (contract, run, time, grid, species, growth,
+predation with feeding stages, stage accessibility, non-fishing mortality, output settings) and
+the per-step fishing and reproduction tables. Resources, movement and the result buffers (1.2c)
+follow.
 
 Entry names, dtypes and shapes are the contract. Every array is validated against
 ``n_total = n_focal + n_background`` (or ``n_focal``) here, so a mis-sized table fails at build
@@ -90,6 +91,8 @@ def build_bundle(
     _predation(b, config, n_total)
     _access(b, config, n_total)
     _mortality(b, config, n_total)
+    _fishing(b, config, grid, n_total)
+    _reproduction(b, config, n_total)
     _output(b, config, n_total)
     return b
 
@@ -232,6 +235,116 @@ def _mortality(b: Bundle, config: Any, n_total: int) -> None:
         "mortality.starvation.rate_max",
         _f8("mortality.starvation.rate_max", config.starvation_rate_max, (n_total,)),
     )
+
+
+def _fishing(b: Bundle, config: Any, grid: Any, n_total: int) -> None:
+    """What ``_precompute_effective_rates`` reads for fishing, resolved per step.
+
+    The engine's per-school rate is ``rate * selectivity * spatial * season / n_subdt`` when
+    ``fishing.season_by_step`` is present, else ``rate * selectivity * spatial / (ndt * n_subdt)``
+    (the two branches of the Python expression; MPAs and by-year rates are refused features).
+    Selectivity and maps apply to focal species only, as in Python's focal loop.
+    """
+    n_steps, ndt, n_focal = int(config.n_steps), int(config.n_dt_per_year), config.n_species
+    b.set_int("fishing.enabled", int(bool(config.fishing_enabled)))
+    rate = _f8("fishing.rate", config.fishing_rate, (n_total,))
+    b.set_array(
+        "fishing.rate_by_step", np.ascontiguousarray(np.broadcast_to(rate, (n_steps, n_total)))
+    )
+    if config.fishing_seasonality is not None:
+        seas = _f8("fishing.seasonality", config.fishing_seasonality, (n_total, ndt))
+        cols = np.arange(n_steps) % ndt  # step_in_year
+        b.set_array("fishing.season_by_step", np.ascontiguousarray(seas[:, cols].T))
+    b.set_array(
+        "fishing.selectivity.type",
+        _i4("fishing.selectivity.type", config.fishing_selectivity_type, (n_total,)),
+    )
+    for name in ("a50", "l50", "slope"):
+        b.set_array(
+            f"fishing.selectivity.{name}",
+            _f8(
+                f"fishing.selectivity.{name}",
+                getattr(config, f"fishing_selectivity_{name}"),
+                (n_total,),
+            ),
+        )
+    maps = list(config.fishing_spatial_maps)[:n_focal]
+    maps += [None] * (n_focal - len(maps))
+    index = np.full(n_focal, -1, dtype=np.int32)
+    stack = []
+    for sp, m in enumerate(maps):
+        if m is None:
+            continue
+        arr = np.asarray(m, dtype=np.float64)
+        if arr.shape != (grid.ny, grid.nx):
+            raise BundleBuildError(
+                f"fishing.maps: species {sp} map shape {arr.shape}, grid {(grid.ny, grid.nx)}"
+            )
+        index[sp] = len(stack)
+        stack.append(arr)
+    b.set_array("fishing.map_index", index)
+    b.set_array(
+        "fishing.maps",
+        np.ascontiguousarray(np.stack(stack)) if stack else np.zeros((0, grid.ny, grid.nx)),
+    )
+    if config.fishing_discard_rate is not None:
+        b.set_array(
+            "fishing.discard_rate",
+            _f8("fishing.discard_rate", config.fishing_discard_rate, (n_total,)),
+        )
+
+
+def _reproduction(b: Bundle, config: Any, n_total: int) -> None:
+    """What ``reproduction`` reads (focal species), with the season factor resolved per step and
+    the egg weight resolved exactly as ``create_egg_schools`` computes it."""
+    n_steps, ndt, n_focal = int(config.n_steps), int(config.n_dt_per_year), config.n_species
+    for name in ("sex_ratio", "relative_fecundity", "maturity_size", "seeding_biomass"):
+        b.set_array(
+            f"reproduction.{name}",
+            _f8(f"reproduction.{name}", np.asarray(getattr(config, name))[:n_focal], (n_focal,)),
+        )
+    b.set_array(
+        "reproduction.maturity_age_dt",
+        _i4(
+            "reproduction.maturity_age_dt", np.asarray(config.maturity_age_dt)[:n_focal], (n_focal,)
+        ),
+    )
+    b.set_array(
+        "reproduction.seeding_max_step",
+        _i4(
+            "reproduction.seeding_max_step",
+            np.asarray(config.seeding_max_step)[:n_focal],
+            (n_focal,),
+        ),
+    )
+    if config.spawning_season is not None:
+        season = np.asarray(config.spawning_season, dtype=np.float64)
+        if season.shape[0] != n_focal:
+            raise BundleBuildError(
+                f"reproduction.season: {season.shape[0]} rows, expected {n_focal}"
+            )
+        cols = np.arange(n_steps) % season.shape[1]  # multi-year season files wrap by column count
+        by_step = np.ascontiguousarray(season[:, cols].T)
+    else:
+        by_step = np.full((n_steps, n_focal), 1.0 / ndt)
+    b.set_array("reproduction.season_by_step", by_step)
+    egg_size = np.asarray(config.egg_size, dtype=np.float64)
+    b.set_array("reproduction.egg_length", np.ascontiguousarray(egg_size[:n_focal]))
+    weights = np.empty(n_focal, dtype=np.float64)
+    for sp in range(n_focal):
+        # create_egg_schools' expression, scalar by scalar (a vectorised ** may round differently).
+        weight = (
+            config.condition_factor[sp] * config.egg_size[sp] ** config.allometric_power[sp] * 1e-6
+        )
+        override = config.egg_weight_override
+        if override is not None and not np.isnan(override[sp]):
+            weight = override[sp]
+        weights[sp] = weight
+    b.set_array("reproduction.egg_weight", weights)
+    b.set_array(
+        "reproduction.sr.type", np.zeros(n_focal, dtype=np.uint8)
+    )  # none; SR curves are a phase 2 feature
+    b.set_int("reproduction.seeding_mode", 0 if config.seeding_mode == "stock_recruitment" else 1)
 
 
 def _output(b: Bundle, config: Any, n_total: int) -> None:
