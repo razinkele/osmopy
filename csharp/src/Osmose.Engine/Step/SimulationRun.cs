@@ -65,10 +65,10 @@ public sealed class SimulationRun
         _seeded = new bool[nFocal];
         _key = PhiloxKey.ForRun(p.Seed, p.RngScheme);
         int nRecords = p.Output.Records(p.NSteps);
-        Results = new RunResults(nRecords, nTotal, nFocal);
-        Collector = new OutputCollector(nTotal, nFocal, p.Output.RecordFrequency);
+        Results = new RunResults(nRecords, nTotal, nFocal, p.Output.Families);
+        Collector = new OutputCollector(nTotal, nFocal, p.Output.RecordFrequency, p.Output.Families);
         _control = ControlBlock.From(config);
-        _buffers = ResultBuffers.From(config, nRecords, nTotal, nFocal);
+        _buffers = ResultBuffers.From(config, nRecords, nTotal, nFocal, p.Output.Families);
     }
 
     public SchoolStore Store { get; }
@@ -84,6 +84,7 @@ public sealed class SimulationRun
         int records = 0, steps = 0, peak = 0;
         if (_p.Output.Step0Include)
         {
+            Collector.SnapshotStages(_p, Store); // no step produced this state: split it as it is
             Collector.Collect(_p, Store); // the initial state (empty without a warm start)
             Flush(records++, -1);
         }
@@ -293,6 +294,11 @@ public sealed class SimulationRun
         LifeCycle.Floor(Store.Core);
         LifeCycle.Growth(_p, Store.Core, Store.Step);
         LifeCycle.Aging(_p, Store.Core, Store.Ledger);
+
+        // The life-stage split is taken here, as simulate() takes it: reproduction increments
+        // ages and clears the egg flag, after which this step's egg deaths would be charged to
+        // juveniles. Nothing to do for a minimal run.
+        Collector.SnapshotStages(_p, Store);
         LifeCycle.Reproduction(_p, Store, step, _ssb, _eggs, _seeded);
     }
 
@@ -348,8 +354,9 @@ internal sealed unsafe class ResultBuffers
 {
     private readonly int* _recordStep, _windowSteps;
     private readonly double* _biomass, _abundance, _mortality, _yield;
+    private readonly double* _abundanceByStage, _deathsByStage, _ratesByStage;
 
-    private ResultBuffers(int* recordStep, int* windowSteps, double* biomass, double* abundance, double* mortality, double* yield)
+    private ResultBuffers(int* recordStep, int* windowSteps, double* biomass, double* abundance, double* mortality, double* yield, double* abundanceByStage, double* deathsByStage, double* ratesByStage)
     {
         _recordStep = recordStep;
         _windowSteps = windowSteps;
@@ -357,9 +364,14 @@ internal sealed unsafe class ResultBuffers
         _abundance = abundance;
         _mortality = mortality;
         _yield = yield;
+        _abundanceByStage = abundanceByStage;
+        _deathsByStage = deathsByStage;
+        _ratesByStage = ratesByStage;
     }
 
-    public static ResultBuffers? From(SimulationConfig config, int nRecords, int nTotal, int nFocal)
+    /// <summary>The buffers of the families the bundle declares, each required with its exact
+    /// shape; a buffer of a family the run will not fill is a problem too.</summary>
+    public static ResultBuffers? From(SimulationConfig config, int nRecords, int nTotal, int nFocal, OutputFamilies families = OutputFamilies.None)
     {
         if (config.IsFileBacked || !config.TryGet("result.biomass", out _))
         {
@@ -382,12 +394,31 @@ internal sealed unsafe class ResultBuffers
         nint b = Get("result.biomass", DType.F8, nRecords, nTotal), a = Get("result.abundance", DType.F8, nRecords, nTotal);
         nint m = Get("result.mortality", DType.F8, nRecords, nFocal, RunResults.MortalityCauses);
         nint y = Get("result.yield", DType.F8, nRecords, nFocal);
+        nint sa = 0, sd = 0, sr = 0;
+        const int stages = OutputCollector.Stages, causes = RunResults.MortalityCauses;
+        if ((families & OutputFamilies.Stage) != 0)
+        {
+            sa = Get("result.abundance_by_stage", DType.F8, nRecords, nFocal, stages);
+            sd = Get("result.mortality_by_cause_stage", DType.F8, nRecords, nFocal, causes, stages);
+            sr = Get("result.mortality_rate_by_cause_stage", DType.F8, nRecords, nFocal, causes, stages);
+        }
+        else
+        {
+            foreach (string name in new[] { "result.abundance_by_stage", "result.mortality_by_cause_stage", "result.mortality_rate_by_cause_stage" })
+            {
+                if (config.TryGet(name, out _))
+                {
+                    problems.Add($"{name}: the bundle's output.families does not include it");
+                }
+            }
+        }
+
         if (problems.Count > 0)
         {
             throw new BundleValidationException(problems);
         }
 
-        return new ResultBuffers((int*)rs, (int*)ws, (double*)b, (double*)a, (double*)m, (double*)y);
+        return new ResultBuffers((int*)rs, (int*)ws, (double*)b, (double*)a, (double*)m, (double*)y, (double*)sa, (double*)sd, (double*)sr);
     }
 
     public void Write(RunResults r, int record)
@@ -398,6 +429,12 @@ internal sealed unsafe class ResultBuffers
         Copy(r.Abundance, _abundance, record, r.NTotal);
         Copy(r.Mortality, _mortality, record, r.NFocal * RunResults.MortalityCauses);
         Copy(r.Yield, _yield, record, r.NFocal);
+        if (_abundanceByStage != null)
+        {
+            Copy(r.AbundanceByStage, _abundanceByStage, record, r.NFocal * OutputCollector.Stages);
+            Copy(r.DeathsByStage, _deathsByStage, record, r.NFocal * RunResults.MortalityCauses * OutputCollector.Stages);
+            Copy(r.RatesByStage, _ratesByStage, record, r.NFocal * RunResults.MortalityCauses * OutputCollector.Stages);
+        }
     }
 
     private static void Copy(double[] from, double* to, int record, int width) =>

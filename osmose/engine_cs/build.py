@@ -700,14 +700,29 @@ def _output(b: Bundle, config: Any, n_total: int) -> None:
     )
     b.set_int("output.record_frequency", int(config.output_record_frequency))
     b.set_int("output.step0_include", int(bool(config.output_step0_include)))
-    b.set_int("output.families", 0)  # 0 = output.minimal.enabled; full families are Phase 2
+    b.set_int("output.families", output_families(config))
+
+
+#: Bits of ``output.families`` (C# ``OutputFamilies``). 0 = ``output.minimal.enabled``.
+FAMILY_STAGE = 1  # the life-stage split and its rates: every run that is not minimal
+
+
+def output_families(config: Any) -> int:
+    """The families ``_collect_outputs`` computes for this config beyond the minimal set. They
+    exist exactly with feature ``full_outputs`` (a config that is not minimal)."""
+    if config.output_minimal:
+        return 0
+    return FAMILY_STAGE
 
 
 # --------------------------------------------------------------------------- result buffers
 
 #: Columns of ``result.mortality``, in ``MortalityCause`` order.
 N_MORTALITY_CAUSES = 8
+N_STAGES = 3
 CONTROL_SLOTS = 8
+#: The life-stage buffers, named as the ``StepOutput`` fields they become.
+STAGE_BUFFERS = ("abundance_by_stage", "mortality_by_cause_stage", "mortality_rate_by_cause_stage")
 
 
 @dataclass
@@ -722,6 +737,11 @@ class RunBuffers:
     mortality: np.ndarray  # f8 (n_records, n_focal, 8): window sum of deaths by cause
     yield_: np.ndarray  # f8 (n_records, n_focal): window sum, tonnes
     control: np.ndarray  # i8 (8): [0] cancel (Python), [1] steps done, [2] records, [3] schools
+    # The life-stage family (Eggs, Juvenil, Adult); None for a minimal run.
+    abundance_by_stage: np.ndarray | None = None  # f8 (n_records, n_focal, 3): window mean
+    mortality_by_cause_stage: np.ndarray | None = None  # f8 (n_records, n_focal, 8, 3): window sum
+    # f8 (n_records, n_focal, 8, 3): the window SUM of per-step rates; inf for an emptied stage
+    mortality_rate_by_cause_stage: np.ndarray | None = None
 
 
 def n_records(n_steps: int, record_frequency: int, step0_include: bool) -> int:
@@ -746,5 +766,11 @@ def allocate_results(b: Bundle, config: Any) -> RunBuffers:
     for name in ("record_step", "window_steps", "biomass", "abundance", "mortality"):
         b.set_array(f"result.{name}", getattr(buffers, name))
     b.set_array("result.yield", buffers.yield_)
+    if output_families(config) & FAMILY_STAGE:
+        buffers.abundance_by_stage = np.zeros((n, n_focal, N_STAGES))
+        buffers.mortality_by_cause_stage = np.zeros((n, n_focal, N_MORTALITY_CAUSES, N_STAGES))
+        buffers.mortality_rate_by_cause_stage = np.zeros((n, n_focal, N_MORTALITY_CAUSES, N_STAGES))
+        for name in STAGE_BUFFERS:
+            b.set_array(f"result.{name}", getattr(buffers, name))
     b.set_array("control.block", buffers.control)
     return buffers

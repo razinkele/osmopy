@@ -76,13 +76,14 @@ public static class PipelineProbe
         int k = offsets.Length - 1, freq = p.Output.RecordFrequency, first = p.Output.Step0Include ? 1 : 0;
         int nSteps = k - first;
         int nRecords = first + ((nSteps + freq - 1) / freq);
-        var results = new RunResults(nRecords, p.Species.NTotal, p.Species.NFocal);
-        var collector = new OutputCollector(p.Species.NTotal, p.Species.NFocal, freq);
+        var results = new RunResults(nRecords, p.Species.NTotal, p.Species.NFocal, p.Output.Families);
+        var collector = new OutputCollector(p.Species.NTotal, p.Species.NFocal, freq, p.Output.Families);
         int record = 0;
         for (int t = 0; t < k; t++)
         {
             var store = new SchoolStore(p.Ny * p.Nx, 16);
             LoadSlice(states, p, store, offsets[t], offsets[t + 1]);
+            collector.SnapshotStages(p, store); // the state as it is, as _collect_outputs falls back to
             collector.Collect(p, store);
             int step = t - first;
             if (step < 0)
@@ -269,6 +270,13 @@ public static class PipelineProbe
         output.SetArray("out.abundance", DType.F8, Pin(handles, r.Abundance), n, r.NTotal);
         output.SetArray("out.mortality", DType.F8, Pin(handles, r.Mortality), n, r.NFocal, RunResults.MortalityCauses);
         output.SetArray("out.yield", DType.F8, Pin(handles, r.Yield), n, r.NFocal);
+        if ((r.Families & OutputFamilies.Stage) != 0)
+        {
+            const int stages = OutputCollector.Stages, causes = RunResults.MortalityCauses;
+            output.SetArray("out.abundance_by_stage", DType.F8, Pin(handles, r.AbundanceByStage), n, r.NFocal, stages);
+            output.SetArray("out.mortality_by_cause_stage", DType.F8, Pin(handles, r.DeathsByStage), n, r.NFocal, causes, stages);
+            output.SetArray("out.mortality_rate_by_cause_stage", DType.F8, Pin(handles, r.RatesByStage), n, r.NFocal, causes, stages);
+        }
     }
 
     private static long Pin(List<GCHandle> handles, Array a)
