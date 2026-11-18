@@ -368,6 +368,10 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
     from osmose.engine.processes.mortality import _precompute_resource_arrays
     from osmose.engine.resources import ResourceState
 
+    # Deliberately WITHOUT the bottom-oxygen forcing simulate() passes: the oxygen-benthos K
+    # coupling is feature oxygen_benthos (phase 2), so a bundle that needs it carries that
+    # feature and the engine refuses it. Test references must build ResourceState the way
+    # simulate() does (tests/_csharp_resources.py), or they share this omission.
     rs = ResourceState(config=config.raw_config, grid=grid)
     n_rsc, n_cells, n_steps = rs.n_resources, grid.ny * grid.nx, int(config.n_steps)
     ndt = int(config.raw_config.get("simulation.time.ndtperyear", "24"))
