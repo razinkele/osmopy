@@ -8,7 +8,8 @@ A. Record windows, bit for bit. K captured states are collected as K steps and f
    same school order on both sides. The states are edited so that every branch of the rate
    formula is met: a stage a step emptied (``inf``, and the window stays ``inf``), a stage with
    survivors and no deaths, a stage with no schools. ``np.log`` is the C library's for the
-   reference, as .NET's ``Math.Log`` is.
+   reference, as .NET's ``Math.Log`` is: NumPy's own differs from it by one ulp on 0.35% of
+   arguments in (0, 1) on an AVX-512 machine (measured 2026-11-18, NumPy 2.4.6).
 B. One production step. The reference split is the one ``simulate`` took BEFORE reproduction;
    the C# step takes its own inside ``AfterMortality``. Sums run in a different order (the store
    is regrouped), so tier L for the counts; the rates must then be exactly the rate function of
@@ -401,9 +402,13 @@ def test_a_full_run_leaves_the_minimal_families_as_they_were(engine_ok, demo, tm
     assert config.n_background == (2 if demo == "tutorial" else 0)
 
 
-def test_the_stage_records_do_not_depend_on_the_thread_count(engine_ok, tmp_path):  # noqa: F811
-    raw = _raw("eec_full", tmp_path, 2, FULL)
-    runs = [_run(raw, tmp_path, f"t{t}", threads=t)[0] for t in (1, 4)]
-    for name in STAGE_BUFFERS:
-        assert runs[0].get(f"out.{name}").tobytes() == runs[1].get(f"out.{name}").tobytes(), name
+@pytest.mark.parametrize("demo", ["eec_full", "tutorial"])
+def test_the_stage_records_do_not_depend_on_the_thread_count(engine_ok, demo, tmp_path):  # noqa: F811
+    """1, 2 and 14 threads (the plan's Phase 2 set). The Baltic-derived config is the one with
+    background schools in the store when mortality runs; they are gone before the split."""
+    raw = _raw(demo, tmp_path, 2, FULL)
+    runs = [_run(raw, tmp_path, f"t{t}", threads=t)[0] for t in (1, 2, 14)]
+    for name in (*STAGE_BUFFERS, "biomass", "mortality"):
+        one = runs[0].get(f"out.{name}").tobytes()
+        assert all(r.get(f"out.{name}").tobytes() == one for r in runs[1:]), name
     assert runs[0].get("out.mortality_by_cause_stage").sum() > 0
