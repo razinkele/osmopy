@@ -15,7 +15,7 @@ owner's gate G1.
 | Ensemble equivalence holds | **Met** (EEC and Bay of Biscay) | `docs/perf/2026-11-18-csharp-ensemble-equivalence.md` |
 | EEC gate: no regression at 1 and 14 threads | **Met**: 3.77x and 7.57x (gate 1.0x) | `docs/perf/2026-11-18-csharp-eec.md` |
 
-Both criteria hold. The decision is the owner's.
+Both criteria hold. **The owner decided GO on 2026-11-18: Phase 2 starts.**
 
 ## Phase 1 acceptance (spec 7.2)
 
@@ -34,9 +34,9 @@ Both criteria hold. The decision is the owner's.
 |---|---|---|
 | First call in a fresh process, at most 2 s | **Met**: 0.57 s (1 thread), 0.40 s (14) | |
 | Peak memory, no more than the Python engine's | **Met**: 217 vs 286 MB, 218 vs 287 MB | Since #310: the C# path no longer imports Numba (it missed by 1.9 MB before). |
-| Bundle build plus marshalling, at most 5% of a 10-yr EEC run | **Owner's reading** | 2.2% at one thread. At 14 threads it is 10.6% (36 ms of a 0.36 s run). Of those 36 ms, 29.5 ms is input resolution the Python engine performs inside its own timed run; **the C#-only remainder is 6.5 ms (1.8%)**. |
+| Bundle build plus marshalling, at most 5% of a 10-yr EEC run | **Met**, on the owner's reading (2026-11-18): the budget counts C#-specific overhead | The C#-only part is 6.5 ms: **1.8% at 14 threads**, 0.4% at one. With the input resolution both engines perform included (29.5 ms, which the Python engine does inside its own timed run), it would be 10.6% at 14 threads. |
 
-**What it would take to meet the bundle budget on the strict reading (measured, not done):**
+**For the record: what the strict reading would have taken (measured, not done):**
 - Exact optimisations helping both engines bring the build to ~27 ms, 7.4% at 14 threads:
   - a lazy data-directory search: ~3 ms of 3.8;
   - one gather in place of the masked remap of the map tables: 6.4 → 2.2 ms;
