@@ -104,12 +104,18 @@ public static class Movement
 
     /// <summary>Moves every school of the store for <paramref name="step"/>.
     /// <paramref name="scratch"/> holds at least <see cref="ScratchLength"/> values.</summary>
-    public static void Run(EngineParameters p, SchoolStore store, int step, in PhiloxKey key, Span<int> scratch)
+    public static void Run(EngineParameters p, SchoolStore store, int step, in PhiloxKey key, Span<int> scratch) =>
+        Run(p, store, step, key, scratch, 0, store.Count);
+
+    /// <summary>Moves schools <paramref name="from"/> (inclusive) to <paramref name="to"/>
+    /// (exclusive). A school's move touches only that school, so ranges may run in parallel,
+    /// each with its own <paramref name="scratch"/>.</summary>
+    public static void Run(EngineParameters p, SchoolStore store, int step, in PhiloxKey key, Span<int> scratch, int from, int to)
     {
         MovementParameters m = p.Movement;
         Span<SchoolCore> core = store.Core;
         Span<SchoolLife> life = store.Life;
-        for (int i = 0; i < core.Length; i++)
+        for (int i = from; i < to; i++)
         {
             int sp = core[i].SpeciesId;
             byte method = sp < m.Method.Length ? m.Method[sp] : MovementParameters.MethodNone;
