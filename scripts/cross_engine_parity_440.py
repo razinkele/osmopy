@@ -200,12 +200,105 @@ def nondegenerate(ens, metric: str, n: int, floor: float, frac: float = 0.9) -> 
 
 
 def python_rep(config: Path, years: int, seed: int, spinup: int) -> dict[str, dict[str, float]]:
+    return in_memory_rep(PythonEngine(), config, years, seed, spinup)
+
+
+def in_memory_rep(
+    engine, config: Path, years: int, seed: int, spinup: int, minimal: bool = False
+) -> dict[str, dict[str, float]]:
+    """One replicate of an in-process engine (Python or C#), reduced to post-spinup means."""
     raw = dict(OsmoseConfigReader().read(str(config)))
     raw["simulation.time.nyear"] = str(years)
-    res = PythonEngine().run_in_memory(raw, seed=seed)
+    if minimal:
+        raw["output.minimal.enabled"] = "true"
+    res = engine.run_in_memory(raw, seed=seed)
     out = {m: _final_mean(_reader(res, m), years, spinup) for m in METRICS}
     out.update({m: _optional_metric(res, m, years, spinup) for m in OPTIONAL_METRICS})
     return out
+
+
+#: Seed bases of the equivalence arms (spec 10.2): two Python arms, one C# arm, disjoint.
+EQUIVALENCE_SEEDS = {"python": 1000, "python-control": 5000, "csharp": 9000}
+
+
+def in_memory_arm(engine_name: str, config: Path, years: int, n: int, spinup: int, threads: int):
+    """-> {metric: {species: array(N)}} for an in-process arm, output.minimal on."""
+    if engine_name == "csharp":
+        from osmose.engine_cs import CSharpEngine
+
+        engine = CSharpEngine(threads=threads)
+    else:
+        engine = PythonEngine()
+    base = EQUIVALENCE_SEEDS[engine_name]
+    reps = [in_memory_rep(engine, config, years, base + s, spinup, minimal=True) for s in range(n)]
+    out: dict[str, dict[str, np.ndarray]] = {}
+    for m in METRICS:
+        species = sorted({k for r in reps for k in r[m]})
+        out[m] = {sp: np.array([r[m].get(sp, np.nan) for r in reps], dtype=float) for sp in species}
+    out["mean_weight"] = {
+        sp: out["biomass"][sp] / np.clip(out["abundance"][sp], 1e-9, None)
+        for sp in out["biomass"]
+        if sp in out["abundance"]
+    }
+    return out
+
+
+def run_equivalence(args) -> None:
+    """The C# engine's ensemble acceptance (spec 10.2): Python seeds A and B, C# seeds C. The
+    rule is CALIBRATED on A and B (re-splits of their pooled replicates) and its constants frozen
+    BEFORE the C# arm is compared; then A-vs-B is the control and A-vs-C the treatment."""
+    import json
+
+    from osmose.validation.engine_equivalence import MARGINS, acceptance, calibrate, compare
+
+    t0 = time.time()
+    arms = {}
+    for name in ("python", "python-control", "csharp"):
+        t = time.time()
+        arms[name] = in_memory_arm(
+            name, args.config, args.years, args.n, args.spinup_years, args.csharp_threads
+        )
+        print(f"[arm] {name}: {args.n} replicates in {time.time() - t:.0f} s", flush=True)
+    a, b, c = arms["python"], arms["python-control"], arms["csharp"]
+    chosen, rates, attribution = calibrate(a, b, n_splits=args.calibration_splits)
+    print(
+        "\n[calibration] false-fail rate of the rule for identical engines (Python A+B re-split):"
+    )
+    for rung, rate in rates.items():
+        mark = "  <- frozen" if rung == chosen else ""
+        print(
+            f"  slack {rung.eq_slack}, ratio {rung.max_ratio}, variance {rung.var_factor}: {rate:.3f}{mark}"
+        )
+    print(f"  at the frozen rung, splits failing each criterion: {attribution}")
+    control, treatment = compare(a, b), compare(a, c)
+    verdict = acceptance(control, treatment, MARGINS, chosen)
+    print(
+        f"\n{'metric':12s} {'species':22s} {'d(P-C#)':>9s} {'ci90':>7s} {'eq':>3s} {'d(P-P)':>9s} {'eq':>3s} {'var':>6s}"
+    )
+    for key in sorted(treatment):
+        tc, cc = treatment[key], control[key]
+        flag = " vacuous" if tc.vacuous else ""
+        print(
+            f"{key[0]:12s} {key[1]:22s} {tc.d:9.4f} {tc.ci:7.4f} {'Y' if tc.equivalent else 'n':>3s} "
+            f"{cc.d:9.4f} {'Y' if cc.equivalent else 'n':>3s} {tc.var_ratio:6.2f}{flag}"
+        )
+    print(
+        f"\nequivalent cells: C# {verdict.n_equivalent}, control {verdict.n_equivalent_control}; "
+        f"largest |d|: C# {verdict.max_d:.4f}, control {verdict.max_d_control:.4f}"
+    )
+    print(f"VERDICT: {'PASS' if verdict.passed else 'FAIL'}  ({time.time() - t0:.0f} s)")
+    for f in verdict.failures:
+        print(f"  - {f}")
+    if args.persist_results:
+        args.persist_results.write_text(json.dumps({
+            "config": str(args.config), "years": args.years, "spinup": args.spinup_years, "n": args.n,
+            "constants": vars(chosen) if hasattr(chosen, "__dict__") else chosen.__repr__(),
+            "rates": {repr(k): v for k, v in rates.items()}, "attribution": attribution,
+            "passed": verdict.passed, "failures": verdict.failures,
+            "cells": {f"{k[0]}/{k[1]}": {"d": treatment[k].d, "ci": treatment[k].ci, "eq": treatment[k].equivalent,
+                       "d_control": control[k].d, "eq_control": control[k].equivalent,
+                       "var_ratio": treatment[k].var_ratio, "vacuous": treatment[k].vacuous} for k in treatment},
+        }, indent=1, default=float))  # fmt: skip
 
 
 def java_rep(
@@ -367,10 +460,21 @@ def main() -> None:
         "on the python arm or the gate arm",
     )
     ap.add_argument("--persist-results", type=Path, default=None)
+    ap.add_argument("--csharp-threads", type=int, default=1, help="threads of the C# arm")
+    ap.add_argument(
+        "--calibration-splits", type=int, default=2000, help="re-splits for the rule's calibration"
+    )
     args = ap.parse_args()
     tmp = Path(tempfile.mkdtemp(prefix="xengine_"))
     prefix = _read_prefix(args.config)
     engines = [e.strip() for e in args.engines.split(",")]
+    if "csharp" in engines or "python-control" in engines:
+        # The C# engine's acceptance (spec 10.2) is a mode of its own: exactly these three
+        # in-process arms (no Java subprocess beside a hosted CLR), with its own margins.
+        if sorted(engines) != ["csharp", "python", "python-control"]:
+            raise SystemExit("--engines with csharp must be exactly python,python-control,csharp")
+        run_equivalence(args)
+        return
 
     if "python" in engines:  # determinism check
         a, b = python_rep(args.config, 3, 7, 1), python_rep(args.config, 3, 7, 1)
