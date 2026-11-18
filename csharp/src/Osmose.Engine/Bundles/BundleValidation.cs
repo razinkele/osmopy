@@ -58,6 +58,12 @@ public sealed class BundleReader
     /// <summary>Problems found so far.</summary>
     public IReadOnlyList<string> Problems => _problems;
 
+    /// <summary>Whether the bundle carries an entry of this name (no problem recorded either way).</summary>
+    public bool Has(string name) => _config.TryGet(name, out _);
+
+    /// <summary>Records a problem found by the caller.</summary>
+    public void Problem(string message) => _problems.Add(message);
+
     /// <summary>An integer scalar; records a problem and returns 0 when absent or not an integer.</summary>
     public long Int(string name) => Scalar(name, EntryKind.Int)?.IntValue ?? 0;
 

@@ -61,4 +61,9 @@ public static class FeatureCatalog
 
     /// <summary>The <c>core</c> feature (id 0): the Phase 1 engine itself, required by every bundle.</summary>
     public static FeatureInfo Core => All[0];
+
+    /// <summary>The feature of this name; throws when the catalogue has none (a code error).</summary>
+    public static FeatureInfo Named(string name) =>
+        All.FirstOrDefault(f => f.Name == name)
+        ?? throw new InvalidOperationException($"features.json has no feature named {name}");
 }

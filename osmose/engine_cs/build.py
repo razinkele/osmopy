@@ -364,15 +364,34 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
     frame of each step and ``accessibility_by_step`` the (capped, possibly time-varying)
     accessibility. Sizes, trophic levels and accessibility rows come from the kernel's own
     ``_precompute_resource_arrays``.
-    """
-    from osmose.engine.processes.precompute import _precompute_resource_arrays
-    from osmose.engine.resources import ResourceState
 
-    # Deliberately WITHOUT the bottom-oxygen forcing simulate() passes: the oxygen-benthos K
-    # coupling is feature oxygen_benthos (phase 2), so a bundle that needs it carries that
-    # feature and the engine refuses it. Test references must build ResourceState the way
-    # simulate() does (tests/_csharp_resources.py), or they share this omission.
-    rs = ResourceState(config=config.raw_config, grid=grid)
+    Bottom oxygen scaling a resource's K (feature ``oxygen_benthos``): the bundle carries the
+    Hill factor pre-evaluated per oxygen frame by the engine's own ``f_o2_hill`` on
+    ``ResourceState._oxygen_row``, so the C# engine only multiplies. ``oxygen.coupled`` marks the
+    resources it applies to (every one named ``ltl.oxygen.benthos.rsc``, as ``update`` does),
+    ``oxygen.frame_by_step`` is ``step % frames`` (``PhysicalData``'s rule). The three entries
+    exist exactly when the config declares the feature; with no forcing, or no resource of that
+    name, nothing is coupled, as in Python.
+    """
+    from pathlib import Path
+
+    from osmose.engine.processes.oxygen_function import f_o2_hill
+    from osmose.engine.processes.precompute import _precompute_resource_arrays
+    from osmose.engine.resources import ResourceState, oxygen_benthos_enabled
+
+    # ResourceState as simulate() constructs it: with the bottom-oxygen forcing when the coupling
+    # is on. _load_oxygen_data raises on a forcing whose frame count is not n_dt_per_year (it
+    # would misalign silently), and so does this builder. simulate() loads the forcing for
+    # bioenergetics too; that is feature bioenergetics, not read here.
+    raw_config = config.raw_config
+    coupling = oxygen_benthos_enabled(raw_config)
+    oxygen = None
+    if coupling:
+        from osmose.engine.simulate import _load_oxygen_data
+
+        config_dir = raw_config.get("_osmose.config.dir", "")
+        oxygen = _load_oxygen_data(raw_config, Path(config_dir) if config_dir else None)
+    rs = ResourceState(config=raw_config, grid=grid, oxygen=oxygen)
     n_rsc, n_cells, n_steps = rs.n_resources, grid.ny * grid.nx, int(config.n_steps)
     ndt = int(config.raw_config.get("simulation.time.ndtperyear", "24"))
     b.set_int("resources.n", n_rsc)
@@ -410,6 +429,22 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
                 )
             else:
                 access_by_step[step, i] = rsc.accessibility
+    if coupling:
+        coupled = np.zeros(n_rsc, dtype=np.uint8)
+        factor = np.ones((1, n_cells), dtype=np.float64)
+        o2_frame_by_step = np.zeros(n_steps, dtype=np.int32)
+        if rs._oxygen is not None:
+            coupled[:] = [rsc.name == rs._oxygen_rsc_name for rsc in rs.species]
+            # _oxygen_row(f) is frame f (it indexes step % frames); a constant field has one.
+            o2_data = rs._oxygen._data
+            n_o2 = 1 if rs._oxygen.is_constant or o2_data is None else int(o2_data.shape[0])
+            factor = np.stack(
+                [f_o2_hill(rs._oxygen_row(f), rs._oxygen_c50, rs._oxygen_n) for f in range(n_o2)]
+            ).astype(np.float64)
+            o2_frame_by_step[:] = np.arange(n_steps) % n_o2
+        b.set_array("resources.oxygen.coupled", coupled)
+        b.set_array("resources.oxygen.factor", np.ascontiguousarray(factor))
+        b.set_array("resources.oxygen.frame_by_step", o2_frame_by_step)
     rs.close()
     b.set_array("resources.forcing", frames)
     b.set_array("resources.frame_by_step", frame_by_step)

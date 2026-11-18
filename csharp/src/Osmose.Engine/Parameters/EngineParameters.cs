@@ -232,7 +232,8 @@ public sealed class EngineParameters
         AccessParameters access = ModelReader.Access(model, nTotal);
         MortalityParameters mortality = ModelReader.Mortality(model, (int)nSteps, species.NFocal, nTotal);
         FishingParameters fishing = ModelReader.Fishing(model, config, (int)nSteps, species.NFocal, nTotal, (int)ny, (int)nx);
-        ResourceParameters resources = ModelReader.Resources(model, (int)nSteps, (int)(ny * nx));
+        bool oxygen = features.Contains(FeatureCatalog.Named("oxygen_benthos"));
+        ResourceParameters resources = ModelReader.Resources(model, (int)nSteps, (int)(ny * nx), oxygen);
         OutputParameters output = ModelReader.Output(model, nTotal);
         ReproductionParameters reproduction = ModelReader.Reproduction(model, (int)nSteps, species.NFocal);
         MovementParameters movement = ModelReader.Movement(model, species.NFocal, nTotal, (int)ny, (int)nx, mask);

@@ -13,10 +13,14 @@ public static class StepPreparation
 {
     /// <summary>Carrying capacity of every resource in every cell for <paramref name="step"/>,
     /// cell-major (<c>[cell * nRsc + r]</c>, spec 4.3): <c>forcing[r, frame] * access</c>.</summary>
-    public static void UpdateResources(EngineParameters p, int step, Span<double> cellMajor)
+    public static void UpdateResources(EngineParameters p, int step, Span<double> cellMajor) =>
+        UpdateResources(p.Resources, p.Ny * p.Nx, step, cellMajor);
+
+    /// <summary>As <see cref="UpdateResources(EngineParameters, int, Span{double})"/>, on the
+    /// resource group alone.</summary>
+    public static void UpdateResources(ResourceParameters rp, int nCells, int step, Span<double> cellMajor)
     {
-        ResourceParameters rp = p.Resources;
-        int nRsc = rp.N, nCells = p.Ny * p.Nx;
+        int nRsc = rp.N;
         if (nRsc == 0)
         {
             return;
@@ -32,6 +36,19 @@ public static class StepPreparation
             int frame = rp.FrameByStep[(step * nRsc) + r];
             double access = rp.AccessByStep[(step * nRsc) + r];
             int baseIdx = ((r * rp.NFrames) + frame) * nCells;
+            if (rp.OxygenCoupled.Length > 0 && rp.OxygenCoupled[r] != 0)
+            {
+                // ResourceState.update: k_row = (forcing * multiplier * access) * f_o2_hill(...),
+                // the same left-to-right product, on the builder's pre-evaluated factor.
+                int oxygenBase = rp.OxygenFrameByStep[step] * nCells;
+                for (int c = 0; c < nCells; c++)
+                {
+                    cellMajor[(c * nRsc) + r] = rp.Forcing[baseIdx + c] * access * rp.OxygenFactor[oxygenBase + c];
+                }
+
+                continue;
+            }
+
             for (int c = 0; c < nCells; c++)
             {
                 cellMajor[(c * nRsc) + r] = rp.Forcing[baseIdx + c] * access;

@@ -1,11 +1,11 @@
 """The simulation's own ``ResourceState``, as the reference for the C# engine's resource tables.
 
 ``simulate()`` passes bottom-oxygen forcing to ``ResourceState`` (the oxygen-benthos K coupling).
-A ``ResourceState`` built without it silently drops the coupling. The C# bundle builder builds it
-without oxygen on purpose: the coupling is feature ``oxygen_benthos`` (phase 2), and the engine
-refuses every bundle that needs it. A reference built the builder's way therefore agrees with the
-builder over exactly the coupling it lacks (found 2026-11-18, task 1.5), so build it the way
-``simulate()`` does.
+A ``ResourceState`` built without it silently drops the coupling. Until task 2.5 the C# bundle
+builder built it without oxygen, and a reference built the builder's way agreed with the builder
+over exactly the coupling it lacked (found 2026-11-18, task 1.5). The builder now builds it as
+``simulate()`` does; the rule stands for every reference: build it the way ``simulate()`` does,
+through this helper, never the way the code under test does.
 """
 
 from __future__ import annotations
