@@ -101,6 +101,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Docker build smoke test
         run: docker build -t osmose-test .
+      - name: C# engine self-test in the image (plan task 1.13)
+        run: docker run --rm osmose-test python -m osmose.engine_cs.selftest
       - name: Docker run smoke test (catch runtime crash-loops a build can't)
         run: |
           docker run -d --name osmose-run -p 8000:8000 osmose-test
@@ -208,12 +210,15 @@ jobs:
         uses: eWaterCycle/setup-apptainer@v2
       - name: Build the HPC image
         run: apptainer build --fakeroot osmose.sif apptainer/osmose.def
-      - name: Smoke — CLI + engine import + numba cache + java
+      - name: Smoke — CLI + engine import + numba cache + java + C# engine
         run: |
           apptainer exec osmose.sif osmose --help
           apptainer exec osmose.sif python -c "import osmose.engine"
           apptainer exec osmose.sif java -version
           apptainer exec osmose.sif sh -c 'ls -A "$NUMBA_CACHE_DIR" | grep -q . && echo numba-cache-baked'
+          # --pwd /tmp: exec keeps the runner's cwd (this checkout), and `python -m` puts the cwd
+          # ahead of PYTHONPATH=/app, so without it the test would import the checkout's osmose.
+          apptainer exec --pwd /tmp osmose.sif python -m osmose.engine_cs.selftest
       - name: Smoke — tiny sweep into a writable bind mount
         run: |
           mkdir -p "$RUNNER_TEMP/results"

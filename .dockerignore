@@ -45,3 +45,8 @@ docker-compose*.yml
 tmp/
 temp/
 *.tmp
+
+# C# engine build outputs: the image builds its own (Dockerfile, csharp-build stage)
+osmose/engine_cs/bin/
+csharp/**/bin/
+csharp/**/obj/
