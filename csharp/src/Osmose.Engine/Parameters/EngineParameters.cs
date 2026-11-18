@@ -72,6 +72,8 @@ public sealed class EngineParameters
 
     public SpeciesParameters Species { get; private init; } = new();
 
+    public GrowthParameters Growth { get; private init; } = new();
+
     public PredationParameters Predation { get; private init; } = new();
 
     public AccessParameters Access { get; private init; } = new();
@@ -219,6 +221,7 @@ public sealed class EngineParameters
         var model = new BundleReader(config, [.. FeatureCatalog.ContractVersions]);
         SpeciesParameters species = ModelReader.Species(model);
         int nTotal = species.NTotal;
+        GrowthParameters growth = ModelReader.Growth(model, species.NFocal, nTotal);
         PredationParameters predation = ModelReader.Predation(model, nTotal);
         AccessParameters access = ModelReader.Access(model, nTotal);
         MortalityParameters mortality = ModelReader.Mortality(model, (int)nSteps, species.NFocal, nTotal);
@@ -229,6 +232,7 @@ public sealed class EngineParameters
         return new EngineParameters
         {
             Species = species,
+            Growth = growth,
             Predation = predation,
             Access = access,
             Mortality = mortality,
