@@ -42,6 +42,24 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_in_process(args: argparse.Namespace, config_path: Path) -> int:
+    """``osmose run --engine python|csharp``: an in-process run, outputs written to ``--output``
+    (default ``./output``). The engine is named in the log: there is no silent default."""
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.engine.select import get_engine
+
+    raw = dict(OsmoseConfigReader().read(config_path))
+    output_dir = Path(args.output) if args.output else Path("output")
+    print(f"Running {config_path} on the {args.engine} engine (seed {args.seed}) -> {output_dir}")
+    try:
+        get_engine(args.engine).run(raw, output_dir, seed=args.seed)
+    except Exception as exc:  # report, do not trace back, as the Java path does
+        print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    print(f"Done: outputs in {output_dir}")
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Run an OSMOSE simulation."""
     import asyncio
@@ -52,6 +70,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not config_path.exists():
         print(f"Error: config file not found: {config_path}", file=sys.stderr)
         return 1
+
+    if getattr(args, "engine", "java") != "java":
+        return _run_in_process(args, config_path)
 
     jar = _jar_from(args.jar)
     if not jar:
@@ -130,6 +151,13 @@ def main() -> None:
     p_run.add_argument("--output", help="Output directory")
     p_run.add_argument("--java-opts", help="Java options (e.g. '-Xmx4g')")
     p_run.add_argument("--timeout", type=int, help="Timeout in seconds")
+    p_run.add_argument(
+        "--engine",
+        choices=("java", "python", "csharp"),
+        default="java",
+        help="engine to run (default java; python and csharp run in this process)",
+    )
+    p_run.add_argument("--seed", type=int, default=0, help="seed of an in-process run")
 
     # report
     p_report = subparsers.add_parser("report", help="Generate HTML report")

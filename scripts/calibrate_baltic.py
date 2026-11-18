@@ -1858,6 +1858,23 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+def _refuse_unplumbed_engine(engine: str) -> None:
+    """``--engine csharp``: say why it cannot run here. Phase 1 of the C# engine refuses the
+    Baltic config (its phase-2 features), and the plumbing is deliberately not wired before it can
+    be tested: the DE pool FORKS, and the CLR must never be hosted in a process that forks, so a
+    C# calibration needs a spawn pool and an engine argument carried into every evaluation."""
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.engine_cs.capabilities import csharp_engine_block_reason
+
+    reason = csharp_engine_block_reason(OsmoseConfigReader().read(BALTIC_CONFIG))
+    if reason is not None:
+        raise SystemExit(f"--engine {engine}: the C# engine cannot run the Baltic config: {reason}")
+    raise SystemExit(
+        f"--engine {engine}: the C# engine could run this config, but calibrate_baltic.py does not "
+        "carry it into its evaluations yet (its DE pool forks; a C# run needs a spawn pool)"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Baltic Sea OSMOSE calibration")
     parser.add_argument(
@@ -1875,6 +1892,12 @@ def main():
         help="DE population size multiplier of n_params (default 10)",
     )
     parser.add_argument("--seeds", type=int, default=3, help="Number of seeds for validation")
+    parser.add_argument(
+        "--engine",
+        choices=("python", "csharp"),
+        default="python",
+        help="engine of the evaluations (csharp refuses the Baltic config in its Phase 1)",
+    )
     parser.add_argument("--years", type=int, default=40, help="Simulation years per eval")
     parser.add_argument(
         "--tol",
@@ -1971,6 +1994,8 @@ def main():
         "of trading them away.",
     )
     args = parser.parse_args()
+    if args.engine != "python":
+        _refuse_unplumbed_engine(args.engine)
 
     if args.validate:
         validate_calibration(n_years=50, n_seeds=args.seeds)
