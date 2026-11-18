@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.10.8] - 2026-11-17
+
+### Features
+
+- **calibration:** opt-in common random numbers for the NSGA-II problem (item 5a) (ab0767e)
+
+### Bug Fixes
+
+- **ui:** judge bool and enum representability on the unstripped value (10552e8)
+- **ui:** show raw text for bool and enum values a widget cannot represent (#277) (4d30360)
+
+### Performance
+
+- **engine:** opt-in minimal outputs for calibration (item 4, -8.7%) (d30884e)
+
+### Other
+
+- Merge pull request #288 from razinkele/perf/calibration-crn (09c38c3)
+- Merge pull request #287 from razinkele/perf/output-minimal (eb056a7)
+- Merge pull request #286 from razinkele/fix/unrepresentable-values (99e8107)
+
 ## [1.10.7] - 2026-11-17
 
 ### Bug Fixes

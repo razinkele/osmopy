@@ -66,6 +66,11 @@ forcing = ["rasterio>=1.3"]
 #   skip on its absence), so the probe runs against a throwaway venv, not `.venv`.
 # python-dotenv: already required by [dev] for scripts/make_baltic_oxygen_forcing.py;
 #   repeated here because server.py imports it at module scope and [mcp] must stand alone.
+# The C# engine bridge (osmose/engine_cs, spec docs/superpowers/specs/2026-11-17-csharp-engine-design.md).
+# Only osmose/engine_cs/bridge.py imports it, on first use; the .NET runtime and the built
+# assembly are separate (csharp/README.md).
+csharp = ["pythonnet>=3.2.1"]
+
 mcp = [
     "copernicusmarine>=2,<3",
     "fastmcp>=2,<5",
@@ -107,6 +112,9 @@ dev = [
     # suite. Declaring it in [dev] (not only [viztest]) keeps those tests running in
     # standard CI rather than relying on transitive presence (clean-venv false-green trap).
     "pillow>=10",
+    # pythonnet: in [dev] so CI and pyright see the C# engine bridge (spec section 9.5). The
+    # bridge tests still skip without a built engine unless OSMOSE_REQUIRE_CSHARP=1.
+    "pythonnet>=3.2.1",
     # numba is also an end-user opt-in via [numba], but dev/CI always
     # gets it because the test suite (test_tutorial_3species.py and
     # several engine tests) runs full simulations that are 5-10x slower
@@ -201,6 +209,9 @@ omit = [
     # to ast.parse (find_soft_key_lines) and crashes with SyntaxError. Templates are not
     # Python source — exclude them from measurement entirely.
     "osmose/templates/*",
+    # Hosts the CLR, so it can only run where .NET and the built assembly exist: measured in
+    # the csharp-engine CI job, not in the main test job (spec section 9.8).
+    "osmose/engine_cs/bridge.py",
 ]
 
 [tool.ruff]

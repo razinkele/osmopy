@@ -148,3 +148,9 @@ tests/baselines/*.json
 # Tiny gate series CSVs generated alongside reproduction_reference_seed3.npz
 # (RV / thermal / recruitment-ceiling inputs; regenerated with the reference).
 tests/baselines/reproduction_reference_files/
+
+# C# engine build outputs (scripts/build_csharp_engine.sh, dotnet build/test/bench)
+osmose/engine_cs/bin/
+csharp/**/bin/
+csharp/**/obj/
+BenchmarkDotNet.Artifacts/

@@ -456,7 +456,23 @@ Any change must respect these. Each has cost at least one retraction in this rep
 
 ---
 
-## 7. Open item to measure: adjacent seeds may share a stream
+## 7. Settled 2026-11-17: adjacent seeds do not share a stream
+
+**Settled by tracing and a trap test, not by a variance comparison.**
+- **Neither per-species generator set is consumed by any production path.** The mortality
+  generators are passed into `mortality()` and never indexed. The batched kernels seed their
+  per-cell MT19937 from the main `default_rng(seed)`, and movement draws from the main generator
+  as well, for both maps and random movement.
+- **The trap test:** a one-year run with both sets replaced by objects that raise on any use
+  completes on Baltic, EEC full and Bay of Biscay. So each replicate has one stream of its own,
+  and `default_rng(s)` and `default_rng(s + 1)` are independent.
+- **A consequence:** `movement.randomseed.fixed` and `stochastic.mortality.randomseed.fixed`
+  have no effect on the Python engine's results.
+- **Kept as a guard:** `tests/test_rng_streams_independent.py`. It fails if anything starts
+  drawing from a per-species generator, which would make the overlap below real. It is
+  mutation-checked: mortality drawing from them fails both cases.
+
+The original note, kept for the record:
 
 **Inferred from code; effect unmeasured.** `PythonEngine._prepare_run`
 (`osmose/engine/__init__.py:72-91`) builds the movement generators from `seed` and the

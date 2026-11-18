@@ -13,7 +13,7 @@ import re
 import subprocess
 import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
@@ -179,9 +179,29 @@ class OsmoseCalibrationProblem(Problem):
         cleanup_after_eval: bool = False,
         use_java_engine: bool = False,
         parallel_backend: Literal["thread", "process"] = "thread",
+        crn_seeds: Sequence[int] | None = None,
     ):
+        """Set up the calibration problem.
+
+        ``crn_seeds`` (opt-in, perf plan item 5a): run EVERY candidate of every generation on this
+        same seed set and score the mean of each objective over it, so candidates are compared
+        under common random numbers. By default candidate i runs on ``seed=i``, its position in
+        the population, which ties the seed noise to position rather than to the candidate; that
+        default is kept so past runs stay reproducible. The seed set enters the cache key only in
+        this mode. Python engine only.
+        """
         if use_java_engine and jar_path is None:
             raise ValueError("use_java_engine=True requires jar_path")
+        if crn_seeds is not None:
+            if use_java_engine:
+                raise ValueError(
+                    "crn_seeds is Python-engine only (the Java run takes no seed here)"
+                )
+            if len(crn_seeds) == 0:
+                raise ValueError("crn_seeds must name at least one seed (or be None)")
+        self.crn_seeds: tuple[int, ...] | None = (
+            tuple(int(s) for s in crn_seeds) if crn_seeds is not None else None
+        )
         self.free_params = free_params
         self.objective_fns = objective_fns
         self.base_config_path = base_config_path
@@ -408,18 +428,29 @@ class OsmoseCalibrationProblem(Problem):
                 return cached["objectives"]
 
         # Dispatch to the appropriate engine
-        if self.use_java_engine:
-            results = self._run_java_subprocess(overrides, run_id)
+        if self.crn_seeds is not None:
+            # Common random numbers: the same seeds for every candidate, the mean scored.
+            per_seed: list[list[float]] = []
+            for seed in self.crn_seeds:
+                seed_results = self._run_python_engine(overrides, run_id, seed=seed)
+                if seed_results is None:
+                    return [float("inf")] * self.n_obj
+                with seed_results as r:
+                    per_seed.append([float(fn(r)) for fn in self.objective_fns])
+            obj_values = [float(np.mean([vals[k] for vals in per_seed])) for k in range(self.n_obj)]
         else:
-            results = self._run_python_engine(overrides, run_id)
+            if self.use_java_engine:
+                results = self._run_java_subprocess(overrides, run_id)
+            else:
+                results = self._run_python_engine(overrides, run_id)
 
-        if results is None:
-            return [float("inf")] * self.n_obj
+            if results is None:
+                return [float("inf")] * self.n_obj
 
-        # Compute objectives (results is an OsmoseResults; supports context-manager
-        # protocol and is consumable directly).
-        with results as r:
-            obj_values = [float(fn(r)) for fn in self.objective_fns]
+            # Compute objectives (results is an OsmoseResults; supports context-manager
+            # protocol and is consumable directly).
+            with results as r:
+                obj_values = [float(fn(r)) for fn in self.objective_fns]
 
         # Cache write (atomic rename)
         if self._enable_cache:
@@ -445,8 +476,13 @@ class OsmoseCalibrationProblem(Problem):
 
         return obj_values
 
-    def _run_python_engine(self, overrides: dict[str, str], run_id: int) -> OsmoseResults | None:
-        """Run the Python engine in-process; return OsmoseResults or None on failure."""
+    def _run_python_engine(
+        self, overrides: dict[str, str], run_id: int, seed: int | None = None
+    ) -> OsmoseResults | None:
+        """Run the Python engine in-process; return OsmoseResults or None on failure.
+
+        ``seed`` defaults to ``run_id`` (the candidate's position); ``crn_seeds`` passes its own.
+        """
         from osmose.config import OsmoseConfigReader
         from osmose.engine import PythonEngine
 
@@ -454,7 +490,7 @@ class OsmoseCalibrationProblem(Problem):
             base_cfg = OsmoseConfigReader().read(self.base_config_path)
             cfg = dict(base_cfg)
             cfg.update(overrides)
-            return PythonEngine().run_in_memory(cfg, seed=run_id)
+            return PythonEngine().run_in_memory(cfg, seed=run_id if seed is None else seed)
         except _python_engine_errors as exc:
             _log.warning(
                 "Python-engine run %d failed (%s: %s)",
@@ -595,6 +631,9 @@ class OsmoseCalibrationProblem(Problem):
 
             engine_id = f"python-{__version__}"
         raw = f"{parts}|{engine_id}|{self._base_config_hash}"
+        if self.crn_seeds is not None:
+            # Only in CRN mode, so the default key (and existing caches) are unchanged.
+            raw += f"|crn={self.crn_seeds}"
         return hashlib.sha256(raw.encode()).hexdigest()
 
     def cache_stats(self) -> dict:
