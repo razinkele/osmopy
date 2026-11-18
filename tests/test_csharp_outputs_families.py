@@ -229,6 +229,88 @@ def test_step_outputs_rebuild_the_dicts_and_leave_out_absent_species(tmp_path):
         assert getattr(off, name) is None, name
 
 
+def _fields_equal(a, b) -> bool:
+    """Two ``StepOutput`` field values: arrays, dicts of arrays or floats, scalars, None."""
+    if a is None or b is None:
+        return a is None and b is None
+    if isinstance(a, dict):
+        return (
+            isinstance(b, dict)
+            and sorted(a) == sorted(b)
+            and all(_fields_equal(a[k], b[k]) for k in a)
+        )
+    if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
+        a, b = np.asarray(a), np.asarray(b)
+        return a.shape == b.shape and a.tobytes() == b.tobytes()
+    return type(a) is type(b) and a == b
+
+
+def test_records_of_a_python_run_survive_the_buffers_and_both_consumers(tmp_path):
+    """The Python half of the transport, on what the consumers actually read: a real run's
+    records are packed into the result buffers as the C# engine fills them and rebuilt by
+    ``_step_outputs``. Every ``StepOutput`` field must come back as it was, so a field the
+    Python engine fills and this path drops is caught; and ``OsmoseResults.from_outputs`` and
+    ``write_outputs`` must give the same frames and the same files from both lists."""
+    import dataclasses
+
+    import pandas as pd
+
+    from osmose.engine.output import write_outputs
+    from osmose.results import OsmoseResults
+
+    extra = ALL | {
+        "output.recordfrequency.ndt": "6",
+        "output.step0.include": "true",
+        "output.diet.composition.enabled": "false",  # the diet family is task 2.6c
+        "output.diet.pressure.enabled": "false",
+    }
+    raw = _raw("eec_full", tmp_path, 1, extra)
+    config, grid, rng, mv, mo = PythonEngine()._prepare_run(raw, 11)
+    python = sim.simulate(config, grid, rng, movement_rngs=mv, mortality_rngs=mo)
+    buffers = allocate_results(build_bundle(config, raw, grid, seed=11), config)
+    assert len(buffers.record_step) == len(python) == 5
+    nf = config.n_species
+    for i, r in enumerate(python):
+        buffers.record_step[i], buffers.window_steps[i] = r.step, r.window_steps
+        buffers.biomass[i], buffers.abundance[i] = r.biomass, r.abundance
+        buffers.mortality[i], buffers.yield_[i] = r.mortality_by_cause, r.yield_by_species
+        for name in build.STAGE_BUFFERS:
+            buffers.families[name][i] = getattr(r, name)
+        for name in NAMES:
+            buffers.families[name][i] = _row(r, name, nf)
+    rebuilt = _step_outputs(buffers, len(python))
+
+    for i, (a, b) in enumerate(zip(python, rebuilt, strict=True)):
+        for f in dataclasses.fields(StepOutput):
+            assert _fields_equal(getattr(a, f.name), getattr(b, f.name)), (i, f.name)
+    last = python[-1]
+    assert last.mean_tl and last.mean_size and last.ssb is not None and last.ssb.sum() > 0
+    assert len(last.mean_tl) < nf or len(python[1].mean_tl or {}) < nf  # a species was absent
+
+    frames = [OsmoseResults.from_outputs(o, config, grid)._csv_cache for o in (python, rebuilt)]
+    assert sorted(frames[0]) == sorted(frames[1]) and len(frames[0]) > 10
+    for key in frames[0]:
+        a, b = frames[0][key], frames[1][key]
+        if isinstance(a, dict):
+            assert sorted(a) == sorted(b), key
+            for sub in a:
+                pd.testing.assert_frame_equal(a[sub], b[sub], check_exact=True, obj=f"{key}/{sub}")
+        else:
+            pd.testing.assert_frame_equal(a, b, check_exact=True, obj=str(key))
+
+    for name, outputs in (("python", python), ("rebuilt", rebuilt)):
+        write_outputs(outputs, tmp_path / name, config, grid=grid)
+    files = [
+        sorted(p.relative_to(tmp_path / n) for p in (tmp_path / n).rglob("*") if p.is_file())
+        for n in ("python", "rebuilt")
+    ]
+    assert files[0] == files[1] and len(files[0]) > 10
+    for rel in files[0]:
+        assert (tmp_path / "python" / rel).read_bytes() == (
+            tmp_path / "rebuilt" / rel
+        ).read_bytes(), rel
+
+
 # ------------------------------------------------------------------------ B. windows
 
 UNFED_SOME, UNFED_WINDOW, NO_SURVIVOR = (2, 3), (5, 6, 7, 8, 9), 6
@@ -358,6 +440,34 @@ def test_only_the_families_that_are_on_are_written(engine_ok, family_states, tmp
                 assert _same(res.get(f"out.{name}")[i], _row(r, name, cfg.n_species)), (name, i)
         else:
             assert f"out.{name}" not in res.names() and getattr(want[0], name) is None, name
+
+
+@pytest.mark.parametrize(
+    ("name", "key"), [(name, key) for name, keys in SWITCHES.items() for key in keys]
+)
+def test_each_switch_alone_gives_the_field_the_reference_gives(
+    engine_ok,  # noqa: F811
+    family_states,
+    name,
+    key,
+    tmp_path,
+):
+    """One config key on, from the raw config through both engines. The Python engine returns
+    exactly one of the eight fields, and the C# engine writes exactly that family: the two
+    sides' bit numbers are tied through what they produce, not through a table in this file."""
+    _, grid, raw, states, _ = family_states["eec_full"]
+    raw = raw | OFF | {key: "true", "output.recordfrequency.ndt": "2"}
+    cfg = EngineConfig.from_dict(raw)
+    reference = _collect_outputs(states[0], cfg, 0)
+    assert {n for n in NAMES if getattr(reference, n) is not None} == {name}
+    build_bundle(cfg, raw, grid, seed=11).save(tmp_path / "model.bin")
+    _write_states(states[:2], tmp_path / "states.bin")
+    res = _probe("Windows", tmp_path / "model.bin", tmp_path / "states.bin", tmp_path / "out.bin")
+    minimal = {"record_step", "window_steps", *(cs_name for cs_name, _ in FAMILIES)}
+    written = {n.removeprefix("out.") for n in res.names()} - minimal
+    assert written == {*build.STAGE_BUFFERS, name}
+    want = _python_records(states[:2], cfg, 2, False)
+    assert len(want) == 1 and _same(res.get(f"out.{name}")[0], _row(want[0], name, cfg.n_species))
 
 
 # ------------------------------------------------------------------- C. one whole step
