@@ -78,7 +78,13 @@ public sealed class OutputCollector
     /// schools at or above the cutoff age; deaths by cause and yield (<c>dead_fishing * W</c>) of
     /// every focal school. Sums run in store order.
     /// </summary>
-    public void Collect(EngineParameters p, SchoolStore store)
+    public void Collect(EngineParameters p, SchoolStore store) => Collect(p, store, [], []);
+
+    /// <summary>As <see cref="Collect(EngineParameters, SchoolStore)"/>, then the step's background
+    /// totals (<c>_collect_background_outputs</c>): the biomass and abundance of the background
+    /// species, indexed by species like the outputs, taken before those schools were removed and
+    /// added WITHOUT the cutoff age. Empty spans add nothing.</summary>
+    public void Collect(EngineParameters p, SchoolStore store, ReadOnlySpan<double> backgroundBiomass, ReadOnlySpan<double> backgroundAbundance)
     {
         if (_k * _nTotal >= _biomass.Length)
         {
@@ -123,6 +129,12 @@ public sealed class OutputCollector
             m[6] += l.DeadDiscards;
             m[7] += l.DeadAging;
             yield[sp] += l.DeadFishing * c.Weight;
+        }
+
+        for (int sp = _nFocal; sp < backgroundBiomass.Length; sp++)
+        {
+            biomass[sp] += backgroundBiomass[sp];
+            abundance[sp] += backgroundAbundance[sp];
         }
 
         _k++;

@@ -103,6 +103,7 @@ def build_bundle(
     _reproduction(b, config, n_total)
     _resources(b, config, grid)
     _movement(b, config, grid, n_total, seed)
+    _background(b, config, grid)
     _output(b, config, n_total)
     return b
 
@@ -613,6 +614,82 @@ def _movement(b: Bundle, config: Any, grid: Any, n_total: int, seed: int) -> Non
         "movement.random.domain.cells",  # (x, y) pairs, in build_random_patches' order
         np.ascontiguousarray(np.concatenate(cells)) if cells else np.zeros((0, 2), dtype=np.int32),
     )
+
+
+def _background(b: Bundle, config: Any, grid: Any) -> None:
+    """Background (forced) species, feature ``background_species``: what
+    ``BackgroundState.get_schools`` needs to build a step's schools, one per species, class and
+    ocean cell, in that order.
+
+    The state is constructed as ``simulate()`` constructs it, and its own tables are written:
+    per class the length, weight (tonnes), trophic level and age; ``proportion_by_step`` with
+    the time series resolved per step (clamped at its end, as ``get_schools`` does);
+    ``ocean_cells`` in the state's order; ``base``, the per-ocean-cell biomass frames (the
+    forcing, already times the multiplier and on the model grid, or one uniform frame); and
+    ``frame_by_step``. A school's biomass is then ``base * proportion`` and its abundance
+    ``biomass / weight``: the same two operations ``get_schools`` performs, left to C#.
+    The entries exist exactly when the config has background species.
+    """
+    n_bkg = int(config.n_background)
+    if n_bkg == 0:
+        return
+    from osmose.engine.background import BackgroundState
+
+    state = BackgroundState(config=config.raw_config, grid=grid, engine_config=config)
+    species = state._species
+    if len(species) != n_bkg:
+        raise BundleBuildError(f"background: {len(species)} species parsed, config has {n_bkg}")
+    n_steps, ndt = int(config.n_steps), int(config.n_dt_per_year)
+    ocean = (state._ocean_ys.astype(np.int64) * grid.nx + state._ocean_xs).astype(np.int32)
+    n_ocean = len(ocean)
+    offsets = np.zeros(n_bkg + 1, dtype=np.int32)
+    lengths: list[float] = []
+    weights: list[float] = []
+    levels: list[float] = []
+    ages: list[int] = []
+    proportion = []
+    frames: list[np.ndarray] = []
+    frame_by_step = np.zeros((n_steps, n_bkg), dtype=np.int32)
+    for k, sp in enumerate(species):
+        offsets[k + 1] = offsets[k] + sp.n_class
+        ts = (
+            sp.proportion_ts if sp.proportion_ts is not None and len(sp.proportion_ts) > 0 else None
+        )
+        for c in range(sp.n_class):
+            # get_schools' own fallbacks for a list shorter than n_class.
+            lengths.append(sp.lengths[c] if c < len(sp.lengths) else 0.0)
+            levels.append(sp.trophic_levels[c] if c < len(sp.trophic_levels) else 2.0)
+            ages.append(sp.ages_dt[c] if c < len(sp.ages_dt) else 0)
+            weights.append(float(state._weights[k][c]))
+            if ts is None:
+                proportion.append(np.full(n_steps, sp.proportions[c], dtype=np.float64))
+            else:
+                rows = np.minimum(np.arange(n_steps), len(ts) - 1)  # clamped, never wrapped
+                proportion.append(np.array([float(ts[r, c]) for r in rows], dtype=np.float64))
+        forcing = state._forcing_data[k]
+        first = len(frames)
+        if forcing is not None:
+            n_forcing = int(state._forcing_nsteps[k])
+            frames.extend(forcing[f][state._ocean_ys, state._ocean_xs] for f in range(n_forcing))
+            for step in range(n_steps):  # get_schools' step-to-frame mapping, with its int()
+                idx = min(int((step % ndt) * sp.forcing_nsteps_year / ndt), n_forcing - 1)
+                frame_by_step[step, k] = first + idx
+        elif state._per_cell_biomass[k] < 0:
+            raise BundleBuildError(
+                f"background species {sp.name!r}: no species.biomass.total and no species.file"
+            )
+        else:
+            frames.append(np.full(n_ocean, state._per_cell_biomass[k], dtype=np.float64))
+            frame_by_step[:, k] = first
+    b.set_array("background.class.offsets", offsets)
+    b.set_array("background.class.length", np.asarray(lengths, dtype=np.float64))
+    b.set_array("background.class.weight", np.asarray(weights, dtype=np.float64))
+    b.set_array("background.class.trophic_level", np.asarray(levels, dtype=np.float64))
+    b.set_array("background.class.age_dt", np.asarray(ages, dtype=np.int32))
+    b.set_array("background.proportion_by_step", np.ascontiguousarray(np.stack(proportion, axis=1)))
+    b.set_array("background.ocean_cells", ocean)
+    b.set_array("background.base", np.ascontiguousarray(np.stack(frames), dtype=np.float64))
+    b.set_array("background.frame_by_step", frame_by_step)
 
 
 def _output(b: Bundle, config: Any, n_total: int) -> None:

@@ -178,6 +178,41 @@ public sealed class ResourceParameters
     public int[] OxygenFrameByStep { get; init; } = [];
 }
 
+/// <summary>Background (forced) species (bundle group <c>background</c>, feature
+/// <c>background_species</c>): what <c>BackgroundState.get_schools</c> builds a step's schools
+/// from. Empty (<see cref="NSpecies"/> 0) without the feature.</summary>
+public sealed record BackgroundParameters
+{
+    public int NSpecies { get; init; }
+
+    /// <summary>Classes of all species together.</summary>
+    public int NClasses { get; init; }
+
+    /// <summary><c>[species]</c> .. <c>[species + 1]</c>: a species' classes.</summary>
+    public int[] ClassOffsets { get; init; } = [0];
+
+    public double[] ClassLength { get; init; } = [];
+
+    /// <summary>Tonnes per individual.</summary>
+    public double[] ClassWeight { get; init; } = [];
+
+    public double[] ClassTrophicLevel { get; init; } = [];
+
+    public int[] ClassAgeDt { get; init; } = [];
+
+    /// <summary><c>[step * NClasses + class]</c>: the class's share of its species' biomass.</summary>
+    public double[] ProportionByStep { get; init; } = [];
+
+    /// <summary>The ocean cells (<c>y * nx + x</c>), in the Python state's order.</summary>
+    public int[] OceanCells { get; init; } = [];
+
+    /// <summary><c>[frame * nOcean + ocean cell]</c>: species biomass per ocean cell, tonnes.</summary>
+    public double[] Base { get; init; } = [];
+
+    /// <summary><c>[step * NSpecies + species]</c>: the frame of <see cref="Base"/> for the step.</summary>
+    public int[] FrameByStep { get; init; } = [];
+}
+
 /// <summary>Reads the model groups from a bundle through one <see cref="BundleReader"/>, so every
 /// missing entry or wrong shape lands in the same problem list as the header's.</summary>
 /// <summary>Reproduction (bundle group <c>reproduction</c>, focal species, spec 6.8).</summary>
@@ -565,6 +600,76 @@ internal static class ModelReader
         Step0Include = r.Int("output.step0_include") != 0,
         Families = r.Int("output.families"),
     };
+
+    /// <summary>The background group follows the declared feature: required with it; without
+    /// it, background species in the bundle are a problem (they would never be injected).</summary>
+    public static BackgroundParameters Background(BundleReader r, int nSteps, int nBackground, int nCells, bool feature)
+    {
+        string[] entries =
+        [
+            "background.class.offsets", "background.class.length", "background.class.weight",
+            "background.class.trophic_level", "background.class.age_dt", "background.proportion_by_step",
+            "background.ocean_cells", "background.base", "background.frame_by_step",
+        ];
+        if (!feature)
+        {
+            if (nBackground > 0)
+            {
+                r.Problem($"species.n_background: {nBackground}, but the bundle does not declare feature background_species");
+            }
+
+            Undeclared(r, "background_species", entries);
+            return new BackgroundParameters();
+        }
+
+        if (nBackground <= 0)
+        {
+            r.Problem("contract.features: background_species is declared, but species.n_background is 0");
+            return new BackgroundParameters();
+        }
+
+        int[] offsets = I4(r, entries[0], nBackground + 1);
+        bool offsetsOk = offsets.Length == nBackground + 1 && offsets[0] == 0;
+        for (int k = 0; offsetsOk && k < nBackground; k++)
+        {
+            offsetsOk = offsets[k + 1] > offsets[k];
+        }
+
+        if (offsets.Length == nBackground + 1 && !offsetsOk)
+        {
+            r.Problem($"{entries[0]}: must start at 0 and increase (every species has a class)");
+        }
+
+        int nClasses = offsetsOk ? offsets[^1] : 0;
+        int[] ocean = r.Array(entries[6], DType.I4, BundleReader.Any)?.ToArray<int>() ?? [];
+        if (ocean.Any(c => c < 0 || c >= nCells))
+        {
+            r.Problem($"{entries[6]}: values must be cells in [0, {nCells})");
+        }
+
+        BundleEntry? baseEntry = r.Array(entries[7], DType.F8, BundleReader.Any, ocean.Length);
+        long nFrames = baseEntry?.Shape[0] ?? 0;
+        int[] frame = r.Array(entries[8], DType.I4, nSteps, nBackground)?.ToArray<int>() ?? [];
+        if (baseEntry is not null && frame.Any(f => f < 0 || f >= nFrames))
+        {
+            r.Problem($"{entries[8]}: values must be in [0, {nFrames})");
+        }
+
+        return new BackgroundParameters
+        {
+            NSpecies = nBackground,
+            NClasses = nClasses,
+            ClassOffsets = offsetsOk ? offsets : [0],
+            ClassLength = F8(r, entries[1], nClasses),
+            ClassWeight = F8(r, entries[2], nClasses),
+            ClassTrophicLevel = F8(r, entries[3], nClasses),
+            ClassAgeDt = I4(r, entries[4], nClasses),
+            ProportionByStep = r.Array(entries[5], DType.F8, nSteps, nClasses)?.ToArray<double>() ?? [],
+            OceanCells = ocean,
+            Base = baseEntry?.ToArray<double>() ?? [],
+            FrameByStep = frame,
+        };
+    }
 
     public static MovementParameters Movement(
         BundleReader r, int nSteps, int nFocal, int nTotal, int ny, int nx, byte[] ocean, bool salinityGate)

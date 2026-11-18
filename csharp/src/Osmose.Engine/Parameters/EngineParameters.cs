@@ -76,6 +76,9 @@ public sealed class EngineParameters
 
     public MovementParameters Movement { get; private init; } = new();
 
+    /// <summary>Background species (feature <c>background_species</c>); empty without it.</summary>
+    public BackgroundParameters Background { get; private init; } = new();
+
     public ReproductionParameters Reproduction { get; private init; } = new();
 
     public OutputParameters Output { get; private init; } = new();
@@ -252,10 +255,17 @@ public sealed class EngineParameters
             (int)nx,
             mask,
             salinityGate: features.Contains(FeatureCatalog.Named("salinity_gate")));
+        BackgroundParameters background = ModelReader.Background(
+            model,
+            (int)nSteps,
+            species.NBackground,
+            (int)(ny * nx),
+            feature: features.Contains(FeatureCatalog.Named("background_species")));
         model.ThrowIfProblems();
 
         return new EngineParameters
         {
+            Background = background,
             Species = species,
             Growth = growth,
             Movement = movement,

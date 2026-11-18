@@ -158,6 +158,38 @@ public sealed class SchoolStore
         Count = located + tail;
     }
 
+    /// <summary>
+    /// Removes every background school, keeping the others in their order and with their step
+    /// data (the background schools of a step leave right after mortality: the life cycle and the
+    /// outputs must not see them). The cell index (<see cref="CellStart"/>) is stale afterwards,
+    /// until the next <see cref="Regroup"/>. Returns how many were removed.
+    /// </summary>
+    public int RemoveBackground()
+    {
+        int n = Count, kept = 0;
+        for (int i = 0; i < n; i++)
+        {
+            if ((_core[i].Flags & SchoolFlags.IsBackground) != 0)
+            {
+                continue;
+            }
+
+            if (kept != i)
+            {
+                _core[kept] = _core[i];
+                _ledger[kept] = _ledger[i];
+                _life[kept] = _life[i];
+                _step[kept] = _step[i];
+                _lane[kept] = _lane[i];
+            }
+
+            kept++;
+        }
+
+        Count = kept;
+        return n - kept;
+    }
+
     private void Grow()
     {
         int capacity = _core.Length * 2;
