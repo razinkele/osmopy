@@ -141,50 +141,56 @@ def _reference(state, resources, config, grid, step, ctx, rsc0, libm: bool):
     return out, record, resources.biomass.copy()
 
 
-def _disagreeing(rate: float) -> float:
-    """The first value just above ``rate`` whose ``1 - exp(-v)`` NumPy and the C library round
-    differently (they disagree on about 6% of arguments)."""
+def _disagreeing(rate: float) -> float | None:
+    """The first value just above ``rate`` whose ``exp(-v)`` NumPy and the C library round
+    differently, or None when they agree on every candidate. Whether they ever disagree depends
+    on the machine: NumPy picks its ``exp`` by CPU. On the development box about 6% of arguments
+    differ; on the CI runner none did (2026-11-18), so this must not be assumed."""
     cand = rate * (1.0 + np.arange(1, 20001) * 1e-9)
     numpy_exp = np.exp(-cand)
     libm_exp = np.array([math.exp(-v) for v in cand])
     hit = np.flatnonzero(numpy_exp != libm_exp)
-    assert hit.size, rate
-    return float(cand[hit[0]])
+    return float(cand[hit[0]]) if hit.size else None
 
 
-def _make_exp_visible(config) -> None:
+def _make_exp_visible(config) -> bool:
     """Every shipped larva and out-of-domain rate happens to be an argument where NumPy's ``exp``
     and the C library's agree, which would make the two references identical and the libm test
-    uninformative. Move each focal larva rate (by at most 2e-5 relative) to one where they differ."""
+    uninformative. Move each focal larva rate (by at most 2e-5 relative) to one where they differ.
+    Returns whether any moved: on a machine whose NumPy agrees with libm everywhere, the two
+    references are identical and the C# step must equal the STOCK reference bit for bit."""
     assert config.larva_mortality_by_dt is None or all(
         t is None for t in config.larva_mortality_by_dt
     )
-    rates = config.larva_mortality_rate
+    rates, moved = config.larva_mortality_rate, False
     for sp in range(config.n_species):
-        if rates[sp] > 0:
-            rates[sp] = _disagreeing(float(rates[sp]))
+        if rates[sp] > 0 and (v := _disagreeing(float(rates[sp]))) is not None:
+            rates[sp], moved = v, True
+    return moved
 
 
-def _eec_synthetic(config, state) -> None:
+def _eec_synthetic(config, state) -> bool:
     """EEC at the capture step: larva rates where NumPy and libm disagree; a critical success
     rate of 0 for the species of the first egg school (eggs never feed, so the next starvation
     rate takes the ``csr > 0 ? csr : 1`` guard, which no shipped species reaches); and a discard
     fraction, which no shipped config sets (the DISCARDS counter would otherwise always be 0)."""
-    _make_exp_visible(config)
+    visible = _make_exp_visible(config)
     assert not config.fishing_discard_rate.any()  # shipped: all zero
     config.fishing_discard_rate[: config.n_species] = 0.3
     sp = int(state.species_id[state.is_egg.astype(bool)][0])
     assert config.starvation_rate_max[sp] > 0
     config.critical_success_rate[sp] = 0.0
+    return visible
 
 
-def _tutorial_synthetic(config, state) -> None:
+def _tutorial_synthetic(config, state) -> bool:
     """Tutorial config at the capture step: give the background species a starvation maximum and
     a critical success rate. Every shipped background species has a zero maximum, so the zeroing
     of background starvation rates would otherwise change nothing."""
     for b in np.unique(state.species_id[state.is_background.astype(bool)]):
         config.starvation_rate_max[b] = 2.0
         config.critical_success_rate[b] = 1.0
+    return False  # its rates are left as shipped
 
 
 SYNTHETIC = {"eec_full": _eec_synthetic, "tutorial": _tutorial_synthetic}
@@ -204,7 +210,7 @@ def _capture(raw: dict, step: int, synthetic) -> dict:
             assert len(st) == len(state)  # nothing dead at entry: the C# regroup drops nothing
             assert not st.n_dead.any() and not st.preyed_biomass.any()
             rsc0 = resources.biomass.copy()
-            synthetic(config_, st)  # at this step only: the trajectory up to it is the shipped one
+            got["exp_visible"] = synthetic(config_, st)  # this step only: the trajectory is shipped
             got["numpy"] = _reference(st, resources, config_, grid_, step, ctx, rsc0, libm=False)
             got["libm"] = _reference(st, resources, config_, grid_, step, ctx, rsc0, libm=True)
             got["state"], got["rsc0"] = st, rsc0
@@ -339,9 +345,10 @@ def test_step_matches_the_numpy_reference_at_tier_l(stepped, demo, record_proper
             rel = np.where((diff == 0) | both_nan, 0.0, diff / scale)
         worst[name] = float(rel.max()) if rel.size else 0.0
     record_property("worst_relative_error", worst)
-    print(f"{demo} worst relative error vs the NumPy reference: {worst}")
+    record_property("numpy_exp_differs_from_libm", stepped[demo]["exp_visible"])
+    print(f"{demo} (exp visible: {stepped[demo]['exp_visible']}) worst relative error: {worst}")
     assert all(v <= TIER_L for v in worst.values()), worst
-    if demo == "eec_full":  # its larva rates sit where NumPy and libm disagree: the gap is visible
+    if stepped[demo]["exp_visible"]:  # larva rates moved to where NumPy and libm disagree
         assert worst["n_dead"] > 0 and worst["abundance"] > 0, worst
 
 
