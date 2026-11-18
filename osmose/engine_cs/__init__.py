@@ -20,6 +20,19 @@ BUILD_COMMAND = "bash scripts/build_csharp_engine.sh"
 CAPABILITIES_FILE = f"{ASSEMBLY_NAME}.capabilities.json"  # the build's copy of features.json
 
 
+_LAZY = {"CSharpEngine", "CSharpEngineError", "CSharpEngineTimeout"}
+
+
+def __getattr__(name: str):
+    """``CSharpEngine`` and its errors live in :mod:`osmose.engine_cs.engine`, imported on first
+    use so that importing this package stays light (it never loads the CLR either way)."""
+    if name in _LAZY:
+        from osmose.engine_cs import engine
+
+        return getattr(engine, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def assembly_dir() -> Path:
     """Directory holding the built assembly: ``$OSMOSE_CSHARP_ENGINE_DIR``, else ``bin/`` here."""
     override = os.environ.get(ENGINE_DIR_ENV)
