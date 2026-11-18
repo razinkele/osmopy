@@ -1,4 +1,7 @@
-"""C# engine performance on EEC, spec 10.4's protocol (plan task 1.11).
+"""C# engine performance against the Python engine, spec 10.4's protocol (plan tasks 1.11, 2.8).
+
+EEC by default; ``--config`` takes another fixture (``baltic``, ``examples``) or a path. The
+gates differ by config (spec 10.4): EEC 1.0x; Baltic 1.15x at one thread and 1.5x at 14.
 
 Each engine runs in its own long-lived worker process, warmed once, then driven run by run:
 pairs are interleaved (the engine going first alternates), only one engine runs at a time,
@@ -15,7 +18,8 @@ and both use ``output.minimal.enabled``. Reported:
 The timed span matches ``scripts/benchmark_engine.py``: Python ``simulate``; C# the bundle,
 the buffers, ``RunSimulation`` and the ``StepOutput`` list. Config parsing is outside both.
 
-Usage: PYTHONPATH=. python scripts/csharp/ab_eec.py [--pairs 7] [--threads 1 14] [--json out.json]
+Usage: PYTHONPATH=. python scripts/csharp/ab_eec.py [--config baltic] [--pairs 7]
+       [--threads 1 14] [--json out.json]
 """
 
 from __future__ import annotations
@@ -31,15 +35,33 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG = ROOT / "data" / "eec_full" / "eec_all-parameters.csv"
+FIXTURES = {
+    "eec_full": ROOT / "data" / "eec_full" / "eec_all-parameters.csv",
+    "baltic": ROOT / "data" / "baltic" / "baltic_all-parameters.csv",
+    "examples": ROOT / "data" / "examples" / "osm_all-parameters.csv",
+}
+# Spec 10.4's gate per fixture and thread count (ratio Python / C#); 1.0 where it names none.
+GATES = {"baltic": {1: 1.15, 14: 1.5}}
 
 
-def _prepare(years: int):
+def resolve_config(name: str) -> tuple[Path, str | None]:
+    """``--config`` as an absolute path, and the fixture it is (None for any other file).
+
+    The path is resolved from the caller's directory, because the workers run in ``ROOT``. The
+    fixture is recognised by its FILE, so that a path to Baltic's config gets Baltic's gate, not
+    the 1.0 default.
+    """
+    path = (FIXTURES[name] if name in FIXTURES else Path(name)).resolve()
+    fixture = next((k for k, v in FIXTURES.items() if v.resolve() == path), None)
+    return path, fixture
+
+
+def _prepare(config: Path, years: int):
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine import PythonEngine
     from osmose.engine.config import EngineConfig
 
-    raw = dict(OsmoseConfigReader().read(CONFIG))
+    raw = dict(OsmoseConfigReader().read(config))
     raw["simulation.time.nyear"] = str(years)
     raw["output.minimal.enabled"] = "true"
     return raw, EngineConfig.from_dict(raw), PythonEngine()._resolve_grid(raw)
@@ -50,7 +72,7 @@ def _rss_mb() -> float:
         return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 2**20
 
 
-def worker(engine: str, threads: int, years: int, seed: int) -> None:
+def worker(engine: str, threads: int, years: int, seed: int, config: Path) -> None:
     """Line protocol on stdin/stdout: 'run' -> one JSON result line; 'quit' -> peak RSS."""
     if engine == "python":  # Numba's threads; the C# worker must not import Numba for nothing
         from osmose.engine.thread_policy import apply_single_run_threads
@@ -79,7 +101,7 @@ def worker(engine: str, threads: int, years: int, seed: int) -> None:
         return {"wall": time.perf_counter() - t0}
 
     out: dict = {"engine": engine, "threads": threads}
-    short, full = _prepare(1), _prepare(years)
+    short, full = _prepare(config, 1), _prepare(config, years)
     if engine == "python":
         import osmose.engine.simulate  # noqa: F401  (the C# side's imports are its run cost)
     out["rss_baseline_mb"] = _rss_mb()
@@ -98,40 +120,40 @@ def worker(engine: str, threads: int, years: int, seed: int) -> None:
 
 
 class Worker:
-    def __init__(self, engine: str, threads: int, years: int, seed: int):
+    def __init__(self, engine: str, threads: int, years: int, seed: int, config: Path):
         env = dict(os.environ, NUMBA_NUM_THREADS=str(threads), PYTHONPATH=str(ROOT))
         self.p = subprocess.Popen(
-            [sys.executable, __file__, "--worker", engine, str(threads), str(years), str(seed)],
+            [sys.executable, __file__, "--worker", engine, str(threads), str(years), str(seed), str(config)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env, cwd=ROOT,
         )  # fmt: skip
+        assert self.p.stdin is not None and self.p.stdout is not None  # both are pipes
+        self._stdin, self._stdout = self.p.stdin, self.p.stdout
         self.ready = self._read()["ready"]
 
     def _read(self) -> dict:
         while True:
-            line = self.p.stdout.readline()
+            line = self._stdout.readline()
             if not line:
                 raise RuntimeError("worker exited")
             if line.startswith("{"):
                 return json.loads(line)
 
     def run(self) -> dict:
-        self.p.stdin.write("run\n")
-        self.p.stdin.flush()
+        self._stdin.write("run\n")
+        self._stdin.flush()
         return self._read()
 
     def quit(self) -> float:
-        self.p.stdin.write("quit\n")
-        self.p.stdin.flush()
+        self._stdin.write("quit\n")
+        self._stdin.flush()
         rss = self._read()["peak_rss_mb"]
         self.p.wait(timeout=60)
         return rss
 
 
-def measure(threads: int, pairs: int, years: int, seed: int) -> dict:
-    py = Worker(
-        "python", threads, years, seed
-    )  # warm-ups one after the other: one engine at a time
-    cs = Worker("csharp", threads, years, seed)
+def measure(threads: int, pairs: int, years: int, seed: int, config: Path) -> dict:
+    py = Worker("python", threads, years, seed, config)  # warm-ups one after the other
+    cs = Worker("csharp", threads, years, seed, config)
     rows = []
     for i in range(pairs):
         order = (py, cs) if i % 2 == 0 else (cs, py)
@@ -165,7 +187,7 @@ def measure(threads: int, pairs: int, years: int, seed: int) -> dict:
 
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--worker":
-        worker(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))
+        worker(sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]), Path(sys.argv[6]))
         return
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     ap.add_argument("--pairs", type=int, default=7)
@@ -173,19 +195,29 @@ def main() -> None:
     ap.add_argument("--years", type=int, default=10)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--json", type=Path, default=None)
+    ap.add_argument(
+        "--config", default="eec_full", help=f"a fixture ({', '.join(FIXTURES)}) or a config path"
+    )
     args = ap.parse_args()
+    config, fixture = resolve_config(args.config)
+    if not config.is_file():
+        ap.error(f"--config: {args.config!r} is neither a fixture nor a file")
+    gates = GATES.get(fixture or "", {})
+    print(f"config {config} ({fixture or 'not a fixture: gate 1.0'})")
     load = os.getloadavg()
     print(
         f"load average {load[0]:.2f} {load[1]:.2f} {load[2]:.2f} on {os.cpu_count()} CPUs"
         + ("  (NOT idle)" if load[0] > 2 else "")
     )
-    results = [measure(t, args.pairs, args.years, args.seed) for t in args.threads]
+    results = [measure(t, args.pairs, args.years, args.seed, config) for t in args.threads]
     print()
     for r in results:
-        verdict = "PASS" if r["ratio"] >= 1.0 else "FAIL"
+        gate = gates.get(r["threads"], 1.0)
+        verdict = "PASS" if r["ratio"] >= gate else "FAIL"
+        r["gate"] = gate
         print(
             f"threads {r['threads']}: python {r['median_python_s']:.3f}s  csharp {r['median_csharp_s']:.3f}s  "
-            f"ratio {r['ratio']:.2f}x (gate 1.0x {verdict}, target 1.2x); pairs agree: {r['all_pairs_agree']}"
+            f"ratio {r['ratio']:.2f}x (gate {gate}x {verdict}); pairs agree: {r['all_pairs_agree']}"
         )
         print(
             f"  first call {r['first_call_overhead_s']:.2f}s (budget 2 s); bundle share {r['bundle_share'] * 100:.1f}% (budget 5%); "
@@ -195,7 +227,15 @@ def main() -> None:
         print("  C# phases: " + ", ".join(f"{k} {v:.3f}s" for k, v in r["csharp_phases_s"].items()))
     if args.json:
         args.json.write_text(
-            json.dumps({"load_average": load, "years": args.years, "results": results}, indent=1)
+            json.dumps(
+                {
+                    "config": str(config),
+                    "load_average": load,
+                    "years": args.years,
+                    "results": results,
+                },
+                indent=1,
+            )
         )
 
 
