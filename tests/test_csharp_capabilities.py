@@ -56,9 +56,9 @@ def test_every_catalogue_feature_has_exactly_one_detector():
     assert set(cap.DETECTORS) == set(cap.load_catalog())
 
 
-def test_nothing_is_implemented_until_core_runs_end_to_end():
-    # Flip a feature's flag only in the PR that makes it run (task 1.8 for core).
-    assert not any(f.implemented for f in cap.load_catalog().values())
+def test_only_core_is_implemented():
+    # Flip a feature's flag only in the PR that makes it run: core ran end to end in task 1.8.
+    assert {f.name for f in cap.load_catalog().values() if f.implemented} == {"core"}
 
 
 # --------------------------------------------------------------------------- key coverage
@@ -123,9 +123,23 @@ def test_demo_needs_exactly_these_features(demos, demo, minimal):
 
 
 @pytest.mark.parametrize("demo", sorted(EXPECTED))
-def test_every_demo_is_blocked_today(demos, demo):
+def test_minimal_eec_and_bob_run_and_baltic_is_refused(demos, demo):
+    """With output.minimal on, EEC and Bay of Biscay need nothing beyond core. Baltic still needs
+    phase-2 features, and the builder writes an oxygen-free benthos K and no recruitment curve
+    whatever the config says, so the refusal is the ONLY protection: it must name each one."""
     reason = cap.csharp_engine_block_reason(demos[(demo, True)][1])
-    assert reason is not None and "core (phase 1)" in reason
+    if demo == "baltic":
+        assert reason is not None and "core" not in reason
+        for name in (
+            "background_species",
+            "stock_recruitment",
+            "rv_gate",
+            "salinity_gate",
+            "oxygen_benthos",
+        ):
+            assert f"{name} (phase 2)" in reason, name
+    else:
+        assert reason is None
 
 
 def test_stock_demos_are_refused_naming_the_full_outputs(demos):

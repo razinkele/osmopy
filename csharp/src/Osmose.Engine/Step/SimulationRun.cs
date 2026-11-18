@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using Osmose.Engine.Mortality;
 using Osmose.Engine.Rng;
 using Osmose.Engine.Schools;
@@ -6,17 +7,27 @@ using Osmose.Engine.Schools;
 namespace Osmose.Engine.Step;
 
 /// <summary>
-/// One simulation (spec 4.1), single-threaded (plan task 1.8; parallelism is 1.9). Each stage is
-/// a method so a probe can drive part of a step with injected draws. No static state: one object
-/// per <see cref="OsmoseEngine.RunSimulation"/> call.
+/// One simulation (spec 4.1). Each stage is a method so a probe can drive part of a step with
+/// injected draws. No static state: one object per <see cref="OsmoseEngine.RunSimulation"/> call.
+/// With <c>run.threads</c> above 1, mortality runs cells heaviest first with single-cell claims
+/// and movement runs fixed chunks of schools (spec D4); everything else is serial. Results do not
+/// depend on the thread count: cells are disjoint, a school's move touches only that school,
+/// draws are counter-based, and every reduction is serial.
 /// </summary>
 public sealed class SimulationRun
 {
     private readonly EngineParameters _p;
+    /// <summary>Schools per movement chunk (spec D4).</summary>
+    public const int MoveChunk = 2048;
+
     private readonly KernelTables _tables;
-    private readonly CellScratch _cellScratch = new();
+    private readonly int _workers;
+    private readonly ParallelOptions _options;
+    private readonly CellScratch[] _cellScratch;
+    private readonly int[][] _moveScratch;
+    private readonly int[] _cellOrder;
+    private readonly long[] _cellCost;
     private readonly double[] _rsc;
-    private readonly int[] _moveScratch;
     private readonly double[] _ssb, _eggs;
     private readonly bool[] _seeded;
     private readonly PhiloxKey _key;
@@ -31,7 +42,18 @@ public sealed class SimulationRun
         int nCells = p.Ny * p.Nx, nFocal = p.Species.NFocal, nTotal = p.Species.NTotal;
         Store = new SchoolStore(nCells, initialCapacity: 1024);
         _rsc = new double[Math.Max(1, p.Resources.N * nCells)];
-        _moveScratch = new int[Math.Max(1, Movement.ScratchLength(p.Movement))];
+        _workers = Math.Max(1, p.Threads);
+        _options = new ParallelOptions { MaxDegreeOfParallelism = _workers };
+        _cellScratch = new CellScratch[_workers];
+        _moveScratch = new int[_workers][];
+        for (int w = 0; w < _workers; w++)
+        {
+            _cellScratch[w] = new CellScratch();
+            _moveScratch[w] = new int[Math.Max(1, Movement.ScratchLength(p.Movement))];
+        }
+
+        _cellOrder = new int[nCells];
+        _cellCost = new long[nCells];
         _ssb = new double[nFocal];
         _eggs = new double[nFocal];
         _seeded = new bool[nFocal];
@@ -76,13 +98,7 @@ public sealed class SimulationRun
                 break;
             }
 
-            BeginStep();
-            Move(step);
-            Regroup();
-            var draws = new PhiloxCellDraws(_key, step);
-            Mortality<PhiloxCellDraws, PhiloxDrawSource>(step, ref draws);
-            AfterMortality(step);
-            Collector.Collect(_p, Store);
+            RunStep(step);
             if ((step + 1) % freq == 0)
             {
                 Flush(records++, step);
@@ -102,6 +118,18 @@ public sealed class SimulationRun
         return new RunSummary(status, steps, records, peak, clock.Elapsed.TotalSeconds, _p.RngScheme);
     }
 
+    /// <summary>Stages 2 to 12 of one step, the record flush excepted.</summary>
+    public void RunStep(int step)
+    {
+        BeginStep();
+        Move(step);
+        Regroup();
+        var draws = new PhiloxCellDraws(_key, step);
+        Mortality<PhiloxCellDraws, PhiloxDrawSource>(step, ref draws);
+        AfterMortality(step);
+        Collector.Collect(_p, Store);
+    }
+
     /// <summary>Stage 2, the per-step reset (<c>_reset_step_variables</c>): no school is out of
     /// the domain until movement says so. Deaths are reset by the mortality step, the step
     /// scratch after the regroup.</summary>
@@ -116,8 +144,34 @@ public sealed class SimulationRun
         }
     }
 
-    /// <summary>Stage 4.</summary>
-    public void Move(int step) => Movement.Run(_p, Store, step, _key, _moveScratch);
+    /// <summary>Stage 4: fixed chunks of schools across the workers.</summary>
+    public void Move(int step)
+    {
+        int n = Store.Count;
+        if (_workers == 1 || n <= MoveChunk)
+        {
+            Movement.Run(_p, Store, step, _key, _moveScratch[0], 0, n);
+            return;
+        }
+
+        MoveInChunks(step, n);
+    }
+
+    /// <summary>A separate method: the lambda's captured locals are hoisted into a closure
+    /// object allocated on ENTRY to the method that declares them, so the one-thread path above
+    /// must not declare them (measured: 40 bytes per step otherwise).</summary>
+    private void MoveInChunks(int step, int n)
+    {
+        int chunks = (n + MoveChunk - 1) / MoveChunk, next = -1;
+        Parallel(slot =>
+        {
+            int c;
+            while ((c = Interlocked.Increment(ref next)) < chunks)
+            {
+                Movement.Run(_p, Store, step, _key, _moveScratch[slot], c * MoveChunk, Math.Min(n, (c + 1) * MoveChunk));
+            }
+        });
+    }
 
     /// <summary>Stage 5: drop dead schools, make cells contiguous, and clear the per-step scratch
     /// (predation success and preyed biomass are only ever added to).</summary>
@@ -137,7 +191,67 @@ public sealed class SimulationRun
             _larva = new double[Math.Max(Store.Count, _larva.Length * 2)];
         }
 
-        MortalityStep.Run<TFactory, TDraws>(_p, _tables, Store, step, _rsc, _cellScratch, _larva, ref draws);
+        MortalityStep.Prepare(_p, Store, step, _rsc, _larva);
+        if (_workers == 1)
+        {
+            for (int cell = 0; cell < Store.CellCount; cell++)
+            {
+                MortalityStep.RunCell<TFactory, TDraws>(_tables, Store, cell, _rsc, _cellScratch[0], ref draws);
+            }
+        }
+        else
+        {
+            RunCellsHeaviestFirst<TFactory, TDraws>(draws);
+        }
+
+        MortalityStep.Commit(_p, Store, step, _larva);
+    }
+
+    /// <summary>Spec D4: the occupied cells sorted by an occupancy cost, heaviest first, each
+    /// claimed by one interlocked increment (longest-processing-time first).</summary>
+    private void RunCellsHeaviestFirst<TFactory, TDraws>(TFactory draws)
+        where TFactory : struct, ICellDraws<TDraws>
+        where TDraws : struct, IDrawSource
+    {
+        ReadOnlySpan<int> start = Store.CellStart;
+        int count = 0;
+        for (int cell = 0; cell < Store.CellCount; cell++)
+        {
+            long n = start[cell + 1] - start[cell];
+            if (n > 0)
+            {
+                _cellOrder[count] = cell;
+                _cellCost[count] = -((n * n) + (8 * n)); // ascending sort = heaviest first
+                count++;
+            }
+        }
+
+        Array.Sort(_cellCost, _cellOrder, 0, count);
+        int next = -1;
+        Parallel(slot =>
+        {
+            TFactory local = draws; // ForCell does not mutate the factory: a copy per worker
+            CellScratch scratch = _cellScratch[slot];
+            int i;
+            while ((i = Interlocked.Increment(ref next)) < count)
+            {
+                MortalityStep.RunCell<TFactory, TDraws>(_tables, Store, _cellOrder[i], _rsc, scratch, ref local);
+            }
+        });
+    }
+
+    /// <summary>Runs <paramref name="body"/> once per worker slot; a failure inside surfaces as
+    /// its own exception, not an <see cref="AggregateException"/>.</summary>
+    private void Parallel(Action<int> body)
+    {
+        try
+        {
+            System.Threading.Tasks.Parallel.For(0, _workers, _options, body);
+        }
+        catch (AggregateException e) when (e.InnerExceptions.Count > 0)
+        {
+            ExceptionDispatchInfo.Capture(e.InnerExceptions[0]).Throw();
+        }
     }
 
     /// <summary>Stages 8 to 11: floor, growth, aging, reproduction.</summary>

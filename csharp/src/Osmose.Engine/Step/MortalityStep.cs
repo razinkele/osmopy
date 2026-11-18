@@ -33,15 +33,28 @@ public readonly struct InjectedCellDraws(InjectedDrawSource[] perCell) : ICellDr
 /// </summary>
 public static class MortalityStep
 {
-    /// <summary>Runs the step. <paramref name="larva"/> is per-school scratch of at least
-    /// <c>store.Count</c> values.</summary>
+    /// <summary>Runs the step serially: <see cref="Prepare"/>, every cell, <see cref="Commit"/>.
+    /// <paramref name="larva"/> is per-school scratch of at least <c>store.Count</c> values.</summary>
     public static void Run<TFactory, TDraws>(
         EngineParameters p, KernelTables t, SchoolStore store, int step, Span<double> rscCellMajor,
         CellScratch scratch, Span<double> larva, ref TFactory draws)
         where TFactory : struct, ICellDraws<TDraws>
         where TDraws : struct, IDrawSource
     {
-        int n = store.Count, nFocal = p.Species.NFocal, nsub = p.NSubdt, ndt = p.NDtPerYear;
+        Prepare(p, store, step, rscCellMajor, larva);
+        for (int cell = 0; cell < store.CellCount; cell++)
+        {
+            RunCell<TFactory, TDraws>(t, store, cell, rscCellMajor, scratch, ref draws);
+        }
+
+        Commit(p, store, step, larva);
+    }
+
+    /// <summary>Before the cells: larva pre-pass, egg retention and release, the per-step
+    /// preparation (stages, access indices, rates, resource capacity).</summary>
+    public static void Prepare(EngineParameters p, SchoolStore store, int step, Span<double> rscCellMajor, Span<double> larva)
+    {
+        int n = store.Count, nFocal = p.Species.NFocal, nsub = p.NSubdt;
         Span<SchoolCore> core = store.Core;
         Span<SchoolStep> st = store.Step;
         Span<SchoolLedger> led = store.Ledger;
@@ -73,23 +86,37 @@ public static class MortalityStep
         StepPreparation.StagesAndAccess(p, core);
         StepPreparation.Rates(p, core, life, st, step);
         StepPreparation.UpdateResources(p, step, rscCellMajor);
+    }
 
-        int nRsc = p.Resources.N;
+    /// <summary>One cell, every sub-step (spec D3). Cells are disjoint in schools and resources
+    /// and their draws are counter-based, so cells may run on any thread in any order.</summary>
+    public static void RunCell<TFactory, TDraws>(KernelTables t, SchoolStore store, int cell, Span<double> rscCellMajor, CellScratch scratch, ref TFactory draws)
+        where TFactory : struct, ICellDraws<TDraws>
+        where TDraws : struct, IDrawSource
+    {
         ReadOnlySpan<int> cellStart = store.CellStart;
-        for (int cell = 0; cell < store.CellCount; cell++)
+        int start = cellStart[cell], count = cellStart[cell + 1] - start;
+        if (count == 0)
         {
-            int start = cellStart[cell], count = cellStart[cell + 1] - start;
-            if (count == 0)
-            {
-                continue;
-            }
-
-            var schools = new ContiguousCell(store.CoreArray, store.StepArray, store.LedgerArray, store.LaneArray, start, count);
-            TDraws d = draws.ForCell(cell);
-            Span<double> rsc = nRsc > 0 ? rscCellMajor.Slice(cell * nRsc, nRsc) : [];
-            MortalityKernel.RunCell<ContiguousCell, MaskPrefilter, TDraws>(t, ref schools, rsc, scratch, ref d);
+            return;
         }
 
+        int nRsc = t.NResources;
+        var schools = new ContiguousCell(store.CoreArray, store.StepArray, store.LedgerArray, store.LaneArray, start, count);
+        TDraws d = draws.ForCell(cell);
+        Span<double> rsc = nRsc > 0 ? rscCellMajor.Slice(cell * nRsc, nRsc) : [];
+        MortalityKernel.RunCell<ContiguousCell, MaskPrefilter, TDraws>(t, ref schools, rsc, scratch, ref d);
+    }
+
+    /// <summary>After the cells: the commit, out-of-domain mortality, the lagged starvation rate,
+    /// the trophic level, and the death-accounting check under <c>run.checks</c>.</summary>
+    public static void Commit(EngineParameters p, SchoolStore store, int step, Span<double> larva)
+    {
+        int n = store.Count, ndt = p.NDtPerYear;
+        Span<SchoolCore> core = store.Core;
+        Span<SchoolStep> st = store.Step;
+        Span<SchoolLedger> led = store.Ledger;
+        Span<SchoolLife> life = store.Life;
         for (int i = 0; i < n; i++)
         {
             ref SchoolCore c = ref core[i];

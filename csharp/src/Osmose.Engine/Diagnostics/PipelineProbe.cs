@@ -136,6 +136,58 @@ public static class PipelineProbe
         }
     }
 
+    /// <summary>Steady-state allocation (plan 1.9): run <paramref name="warmSteps"/> steps, let
+    /// tiered compilation settle, then count this thread's managed allocations over the next
+    /// <paramref name="measureSteps"/>. Writes [allocated bytes, store capacity before, after,
+    /// schools at the end]; a capacity change means the population grew, not a per-step leak.</summary>
+    public static void Allocations(string modelPath, int warmSteps, int measureSteps, string outPath)
+    {
+        using SimulationConfig model = SimulationConfig.Load(modelPath);
+        EngineParameters p = EngineParameters.From(model, checkFeatures: false);
+        var run = new SimulationRun(p, model);
+        int freq = p.Output.RecordFrequency;
+        void Step(int step)
+        {
+            run.RunStep(step);
+            if (run.Collector.Pending == freq)
+            {
+                run.Collector.Flush(run.Results, 0, step); // record 0, overwritten: nothing kept
+            }
+        }
+
+        for (int step = 0; step < warmSteps; step++)
+        {
+            Step(step);
+        }
+
+        Thread.Sleep(500);
+        for (int step = warmSteps; step < warmSteps + 3; step++)
+        {
+            Step(step); // re-touch every path once more after the sleep
+        }
+
+        long capacityBefore = run.Store.Capacity;
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int step = warmSteps + 3; step < warmSteps + 3 + measureSteps; step++)
+        {
+            Step(step);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        long[] counts = [allocated, capacityBefore, run.Store.Capacity, run.Store.Count];
+        var handles = new List<GCHandle>();
+        try
+        {
+            var output = new SimulationConfig(1);
+            output.SetArray("out.allocations", DType.I8, Pin(handles, counts), counts.Length);
+            output.Save(outPath);
+        }
+        finally
+        {
+            Free(handles);
+        }
+    }
+
     private static long CountNew(SchoolStore s, int n)
     {
         long c = 0;

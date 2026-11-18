@@ -204,34 +204,50 @@ def test_per_species_tables_have_n_total_rows_and_the_engine_values(runs, demo):
     assert b.get("species.n_schools").shape == (config.n_species,)
 
 
-def test_the_csharp_engine_accepts_the_header_and_refuses_only_core(runs, tmp_path):
+def test_the_csharp_engine_accepts_a_core_bundle_and_refuses_full_outputs(runs, tmp_path):
+    """Since task 1.8 core is implemented: the minimal EEC bundle passes the header and feature
+    checks, and the same config without output.minimal is refused, naming full_outputs."""
+    from osmose.engine.config import EngineConfig
+
     ok, why = csharp_engine_available()
     if not ok:
         if os.environ.get("OSMOSE_REQUIRE_CSHARP") == "1":
             pytest.fail(f"OSMOSE_REQUIRE_CSHARP=1 but the C# engine is unavailable: {why}")
         pytest.skip(f"C# engine unavailable ({why}); build it with scripts/build_csharp_engine.sh")
-    path = tmp_path / "eec.bin"
-    runs["eec_full"][3].save(path)
+    _, raw, grid, b = runs["eec_full"]
+    b.save(tmp_path / "minimal.bin")
+    stock_raw = raw | {"output.minimal.enabled": "false"}
+    build_bundle(EngineConfig.from_dict(stock_raw), stock_raw, grid, seed=7).save(
+        tmp_path / "stock.bin"
+    )
     code = (
         "import sys, json; sys.path.insert(0, sys.argv[1]); from osmose.engine_cs import bridge; "
-        "e = bridge.load(); c = e.SimulationConfig.Load(sys.argv[2])\n"
-        "try:\n    e.EngineParameters.From(c); print(json.dumps(['accepted']))\n"
-        "except Exception as exc:\n    print(json.dumps([type(exc).__name__, str(exc).splitlines()[0]]))\n"
-        "finally:\n    c.Dispose()"
+        "e = bridge.load()\n"
+        "for path in sys.argv[2:]:\n"
+        "    c = e.SimulationConfig.Load(path)\n"
+        "    try:\n        e.EngineParameters.From(c); print(json.dumps(['accepted', '']))\n"
+        "    except Exception as exc:\n        print(json.dumps([type(exc).__name__, str(exc).splitlines()[0]]))\n"
+        "    finally:\n        c.Dispose()"
     )
     proc = subprocess.run(
-        [sys.executable, "-c", code, str(ROOT), str(path)],
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(ROOT),
+            str(tmp_path / "minimal.bin"),
+            str(tmp_path / "stock.bin"),
+        ],
         capture_output=True,
         text=True,
         timeout=180,
         cwd=ROOT,
     )
     assert proc.returncode == 0, proc.stderr[-3000:]
-    kind, message = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert kind == "UnsupportedFeatureException", (
-        message
-    )  # header valid; refusal is the feature check
-    assert "core (not implemented yet; phase 1)" in message
+    (k1, _), (k2, message) = (json.loads(line) for line in proc.stdout.strip().splitlines()[-2:])
+    assert k1 == "accepted"
+    assert k2 == "UnsupportedFeatureException" and "full_outputs" in message, message
+    assert "core" not in message
 
 
 # ------------------------------------------------------------------ 1.2b: fishing and reproduction
