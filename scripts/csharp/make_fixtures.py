@@ -270,7 +270,7 @@ def _numba_exp_neg(x: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--demo", help="a demo name from osmose.demo (eec_full, baltic, ...)")
     src.add_argument("--config", help="path to a master config file")
