@@ -17,8 +17,9 @@ SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 SHINY_ROOT="/srv/shiny-server"
 SHINY_PYTHON="/opt/micromamba/envs/shiny/bin/python3"
 SHINY_PIP="/opt/micromamba/envs/shiny/bin/pip"
-# Deploy runs pip as root (via sudo) into the shared env by design; --root-user-action=ignore
-# silences pip's "running as root" warning. Use "${PIP_INSTALL[@]} <pkgs>" for installs.
+# pip runs AS SHINY (see as_shiny below): the env is shiny-owned. --root-user-action=ignore is
+# inert for a non-root user and kept so a root invocation would not warn. Use
+# 'as_shiny "${PIP_INSTALL[@]}" <pkgs>' for installs.
 PIP_INSTALL=("$SHINY_PIP" install --root-user-action=ignore)
 LINK_PATH="${SHINY_ROOT}/${APP_NAME}"
 SERVICE_NAME="osmose-shiny"
@@ -127,21 +128,161 @@ if ! command -v git >/dev/null 2>&1; then
     exit 1
 fi
 
+# --- Root never executes, or writes through, anything the service user can modify ---
+# The prod clone (.git included) and the shared env (/opt/micromamba/envs/shiny, its python3,
+# pip and site-packages) are owned by shiny. Run as root, `git checkout` would execute the
+# clone's hooks, core.fsmonitor and filter drivers; the env's python3 would execute its
+# sitecustomize and .pth files (or a replaced interpreter); and `cp` into the clone would follow
+# a planted symlink. A compromised service account would then get root at the next deploy. So
+# every such step runs as shiny: it gains nothing that user did not already have. From /, so a
+# working directory shiny cannot enter does not break git or pip. Under setsid, so the child
+# has NO controlling terminal: a shiny process sharing root's terminal could otherwise push
+# keystrokes into it (the TIOCSTI ioctl) for root's shell to run after the deploy. This kernel
+# disables that (dev.tty.legacy_tiocsti=0, 2026-11-18), but a sysctl is not a guarantee.
+SHINY_HOME="$(getent passwd shiny | cut -d: -f6)"
+as_shiny() { (cd / && setsid -w runuser -u shiny -- env HOME="$SHINY_HOME" "$@"); }
+
+# --- Step 0: Install missing + version-floored Python dependencies ---
+# BEFORE the checkout: pip runs as shiny (above), and a failure here (a network error, or a
+# package an older deploy installed as root that shiny cannot upgrade; DEPLOY.md, one-time fix)
+# then stops the deploy with the previous ref still checked out, rather than leaving new code on
+# disk under the old process. Installs that completed before the failure stay in the shared env;
+# they are version floors, which the running code already satisfies.
+# Clean up leftover "~"-prefixed dist-info dirs (broken partial installs from interrupted
+# pip upgrades, e.g. ~inycss2 / ~hinyswatch / ~ma). pip warns "Ignoring invalid distribution"
+# for each on every command; removing them is safe (the real packages are the unprefixed dirs).
+SHINY_SITE_PACKAGES="$(as_shiny "$SHINY_PYTHON" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+if [[ -d "$SHINY_SITE_PACKAGES" ]]; then
+    LEFTOVER=$(find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' 2>/dev/null)
+    if [[ -n "$LEFTOVER" ]]; then
+        info "Removing leftover partial-install dirs in $SHINY_SITE_PACKAGES"
+        # Cosmetic (pip only warns about them), so a leftover shiny cannot remove, e.g. one an
+        # older root deploy left root-owned, is reported, not fatal.
+        as_shiny find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' -exec rm -rf {} + \
+            || warn "Could not remove all of: ${LEFTOVER} (root-owned? DEPLOY.md, one-time step)"
+    fi
+fi
+
+# Presence-only check for packages we just need installed:
+MISSING_PKGS=()
+for pkg in pymoo SALib; do
+    if ! as_shiny "$SHINY_PIP" show "$pkg" &>/dev/null; then
+        MISSING_PKGS+=("$pkg")
+    fi
+done
+if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
+    info "Installing missing packages: ${MISSING_PKGS[*]}"
+    as_shiny "${PIP_INSTALL[@]}" "${MISSING_PKGS[@]}" --quiet
+fi
+
+# Version-floored packages: a presence check cannot enforce a minimum, so upgrade
+# unconditionally. cma <=3.3.0 breaks under numpy 2; shinyswatch <0.11 forces a sass
+# compile under shiny 1.6.3; shinywidgets floor raised. shiny_deckgl must match prod's
+# layer_legend_widget API (v1.9.2).
+info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl, pyvis)..."
+as_shiny "${PIP_INSTALL[@]}" --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
+# Only when the installed version is not exactly 1.9.2: pip reinstalls a git-URL requirement
+# under --upgrade every time, even at the same version, and that reinstall is what would hit a
+# package an older (root) deploy left root-owned.
+if ! as_shiny "$SHINY_PYTHON" -c 'import sys; from importlib.metadata import version; sys.exit(version("shiny_deckgl") != "1.9.2")' 2>/dev/null; then
+    as_shiny "${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
+fi
+# pyvis is a FORK (razinkele/pyvis "Optimized Edition", versioned 4.x); PyPI's `pyvis` is a
+# different lineage that stops at 0.3.2. The fork ships under TWO distribution names: `pyvis`
+# on the maintainer's conda channel, and `pyvis-optimized` on PyPI -- both install the same
+# `pyvis` import package. The shared env is used by other apps and may already carry either
+# (2026-10-29: `pyvis-optimized 4.5.0`, and NO `pyvis` dist at all, so the old
+# `version("pyvis")` check aborted the deploy). So: key everything on the IMPORT package's own
+# `__version__`, not a dist name, and only install `pyvis-optimized` when that is missing or
+# below the floor -- never overwrite a conda-managed fork that already satisfies it. A presence
+# check (`pip show`, `import pyvis`) would pass on upstream 0.3.2; the floor is what catches it.
+if ! as_shiny "$SHINY_PYTHON" -c 'import sys, pyvis; from packaging.version import Version; sys.exit(Version(getattr(pyvis, "__version__", "0")) < Version("4.2"))' 2>/dev/null; then
+    info "pyvis fork missing or below 4.2; installing pyvis-optimized from PyPI..."
+    as_shiny "${PIP_INSTALL[@]}" --quiet --upgrade "pyvis-optimized>=4.2"
+fi
+
+# Fail loudly if any floor is unmet after install.
+as_shiny "${PIP_INSTALL[@]}" --quiet "packaging" || true
+as_shiny "$SHINY_PYTHON" - <<'PYCHK'
+import sys
+from importlib.metadata import version
+from packaging.version import Version
+floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.6.3",
+          "shiny_deckgl": "1.9.2"}
+have = {k: version(k) for k in floors}
+# pyvis by import-package version: its dist name is `pyvis` or `pyvis-optimized` (see above).
+import pyvis
+floors["pyvis"] = "4.2"
+have["pyvis"] = getattr(pyvis, "__version__", "0")
+bad = [f"{pkg} {have[pkg]} < {floor}" for pkg, floor in floors.items()
+       if Version(have[pkg]) < Version(floor)]
+if bad:
+    print("DEPENDENCY FLOOR CHECK FAILED:", "; ".join(bad)); sys.exit(1)
+print("dependency floors OK:", have)
+PYCHK
+info "Python dependencies ensured."
+
 # --- Step 1: Sync the prod source clone ---
 # Clone once, then fetch + checkout the target ref on every deploy. This is the
 # ONLY moment prod's source changes (followed by a restart in Step 4), so the
 # running process never reads a file that is being edited underneath it.
-git config --global --add safe.directory "$PROD_SRC" 2>/dev/null || true
+# Older deploys let ROOT operate on this shiny-owned repository (safe.directory overrides git's
+# guard against exactly that, CVE-2022-24765). Git now runs as shiny, so withdraw the grant.
+git config --global --fixed-value --unset-all safe.directory "$PROD_SRC" 2>/dev/null || true
 if [[ -d "${PROD_SRC}/.git" ]]; then
     info "Updating prod clone at ${PROD_SRC} (fetch ${DEPLOY_REF})..."
-    git -C "$PROD_SRC" fetch --quiet --prune origin
+    # Root never writes into the clone, not even to re-own it: a hard link shiny planted there
+    # would carry the change to a file outside it. Anything an older, root-git deploy left
+    # root-owned would make git as shiny fail half-way, so refuse first (read-only check);
+    # DEPLOY.md has the one-time fix.
+    ROOT_OWNED="$(find "$PROD_SRC" -xdev -user root -print -quit 2>/dev/null || true)"
+    if [[ -n "$ROOT_OWNED" ]]; then
+        error "Root-owned files in ${PROD_SRC} (first: ${ROOT_OWNED}). See DEPLOY.md, one-time step."
+        exit 1
+    fi
+    as_shiny git -C "$PROD_SRC" fetch --quiet --prune origin
 elif [[ -e "$PROD_SRC" ]]; then
     error "${PROD_SRC} exists but is not a git clone. Remove it manually."
     exit 1
 else
     info "Creating prod clone: ${REPO_URL} -> ${PROD_SRC}"
-    git clone --quiet "$REPO_URL" "$PROD_SRC"
+    install -d -o shiny -g shiny "$PROD_SRC"  # root-owned parent: root creates the empty dir
+    if ! as_shiny git clone --quiet "$REPO_URL" "$PROD_SRC"; then
+        rmdir "$PROD_SRC" 2>/dev/null || true  # the dir made above, only if git left it empty
+        error "git clone of ${REPO_URL} failed; nothing was deployed. Re-run once it is reachable."
+        exit 1
+    fi
 fi
+# The osmose-java JARs are NOT tracked in git (so they are absent from a fresh clone). Provision
+# them from the deploy host's tree so Java-engine runs remain available. Best-effort: a failure is
+# a warning (prod's primary path is the Python engine; a missing JAR only disables Java runs). It
+# runs before the checkout, and each JAR lands under a temporary name and is then renamed, so a
+# failed copy never leaves a truncated JAR. Root reads the JARs (the deploy host's tree may be
+# closed to shiny) into a fresh root-owned directory shiny can read; shiny copies them in.
+provision_jars() {
+    as_shiny mkdir -p "${PROD_SRC}/osmose-java" || return 1
+    local jar name
+    for jar in "$JAR_STAGE"/*.jar; do
+        name="$(basename "$jar")"
+        as_shiny cp -f "$jar" "${PROD_SRC}/osmose-java/.${name}.part" || return 1
+        as_shiny mv -f "${PROD_SRC}/osmose-java/.${name}.part" "${PROD_SRC}/osmose-java/${name}" \
+            || return 1
+    done
+}
+if compgen -G "${SOURCE_DIR}/osmose-java/"*.jar >/dev/null 2>&1; then
+    JAR_STAGE="$(mktemp -d)"
+    chmod 755 "$JAR_STAGE"
+    if install -m 644 "${SOURCE_DIR}/osmose-java/"*.jar "$JAR_STAGE/" && provision_jars; then
+        info "Provisioned Java JAR(s) into ${PROD_SRC}/osmose-java/."
+    else
+        as_shiny find "${PROD_SRC}/osmose-java" -maxdepth 1 -name '.*.part' -delete 2>/dev/null || true
+        warn "Could not provision the Java JAR(s); Java-engine runs may be unavailable in prod."
+    fi
+    rm -rf "$JAR_STAGE"
+else
+    warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."
+fi
+
 # The C# assembly is gitignored, so `checkout --force` keeps the previous ref's build, and
 # csharp_engine_available() only compares the feature catalogue: a stale assembly would load
 # against the new Python code. Remove it on EVERY deploy, BEFORE the checkout, so a failed
@@ -149,26 +290,12 @@ fi
 # rebuilds it from the new ref when OSMOSE_DEPLOY_CSHARP=1. As shiny, not root: the clone is
 # shiny-writable, and root's rm -rf would follow a symlink planted above bin/ out of the clone.
 if [[ -e "${PROD_SRC}/osmose/engine_cs/bin" || -L "${PROD_SRC}/osmose/engine_cs/bin" ]]; then
-    runuser -u shiny -- rm -rf "${PROD_SRC}/osmose/engine_cs/bin"
+    as_shiny rm -rf "${PROD_SRC}/osmose/engine_cs/bin"
 fi
-git -C "$PROD_SRC" checkout --quiet --force --detach "$DEPLOY_REF"
-DEPLOYED_SHA="$(git -C "$PROD_SRC" rev-parse --short HEAD)"
+as_shiny git -C "$PROD_SRC" checkout --quiet --force --detach "$DEPLOY_REF"
+DEPLOYED_SHA="$(as_shiny git -C "$PROD_SRC" rev-parse --short HEAD)"
 info "Prod source at ${DEPLOY_REF} (${DEPLOYED_SHA})."
 
-# The osmose-java JAR is NOT tracked in git (so it is absent from a fresh clone).
-# Provision it from the deploy host's tree so Java-engine runs remain available.
-# Best-effort: prod's primary path is the Python engine; missing JAR only disables
-# Java runs (the run page shows "no JAR found").
-if compgen -G "${SOURCE_DIR}/osmose-java/"*.jar >/dev/null 2>&1; then
-    mkdir -p "${PROD_SRC}/osmose-java"
-    cp -f "${SOURCE_DIR}/osmose-java/"*.jar "${PROD_SRC}/osmose-java/"
-    info "Provisioned Java JAR(s) into ${PROD_SRC}/osmose-java/."
-else
-    warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."
-fi
-
-# shiny must read the whole clone.
-chown -R shiny:shiny "$PROD_SRC" 2>/dev/null || true
 
 # --- Step 1b: Point the served path at the clone (NOT the dev tree) ---
 if [[ -L "$LINK_PATH" ]]; then
@@ -191,73 +318,6 @@ fi
 
 # Ensure shiny user can traverse the symlink
 chown -h shiny:shiny "$LINK_PATH" 2>/dev/null || true
-
-# --- Step 2: Install missing + version-floored Python dependencies ---
-# Clean up leftover "~"-prefixed dist-info dirs (broken partial installs from interrupted
-# pip upgrades, e.g. ~inycss2 / ~hinyswatch / ~ma). pip warns "Ignoring invalid distribution"
-# for each on every command; removing them is safe (the real packages are the unprefixed dirs).
-SHINY_SITE_PACKAGES="$("$SHINY_PYTHON" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
-if [[ -d "$SHINY_SITE_PACKAGES" ]]; then
-    LEFTOVER=$(find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' 2>/dev/null)
-    if [[ -n "$LEFTOVER" ]]; then
-        info "Removing leftover partial-install dirs in $SHINY_SITE_PACKAGES"
-        find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' -exec rm -rf {} +
-    fi
-fi
-
-# Presence-only check for packages we just need installed:
-MISSING_PKGS=()
-for pkg in pymoo SALib; do
-    if ! "$SHINY_PIP" show "$pkg" &>/dev/null; then
-        MISSING_PKGS+=("$pkg")
-    fi
-done
-if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
-    info "Installing missing packages: ${MISSING_PKGS[*]}"
-    "${PIP_INSTALL[@]}" "${MISSING_PKGS[@]}" --quiet
-fi
-
-# Version-floored packages: a presence check cannot enforce a minimum, so upgrade
-# unconditionally. cma <=3.3.0 breaks under numpy 2; shinyswatch <0.11 forces a sass
-# compile under shiny 1.6.3; shinywidgets floor raised. shiny_deckgl must match prod's
-# layer_legend_widget API (v1.9.2).
-info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl, pyvis)..."
-"${PIP_INSTALL[@]}" --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
-"${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
-# pyvis is a FORK (razinkele/pyvis "Optimized Edition", versioned 4.x); PyPI's `pyvis` is a
-# different lineage that stops at 0.3.2. The fork ships under TWO distribution names: `pyvis`
-# on the maintainer's conda channel, and `pyvis-optimized` on PyPI -- both install the same
-# `pyvis` import package. The shared env is used by other apps and may already carry either
-# (2026-10-29: `pyvis-optimized 4.5.0`, and NO `pyvis` dist at all, so the old
-# `version("pyvis")` check aborted the deploy). So: key everything on the IMPORT package's own
-# `__version__`, not a dist name, and only install `pyvis-optimized` when that is missing or
-# below the floor -- never overwrite a conda-managed fork that already satisfies it. A presence
-# check (`pip show`, `import pyvis`) would pass on upstream 0.3.2; the floor is what catches it.
-if ! "$SHINY_PYTHON" -c 'import sys, pyvis; from packaging.version import Version; sys.exit(Version(getattr(pyvis, "__version__", "0")) < Version("4.2"))' 2>/dev/null; then
-    info "pyvis fork missing or below 4.2; installing pyvis-optimized from PyPI..."
-    "${PIP_INSTALL[@]}" --quiet --upgrade "pyvis-optimized>=4.2"
-fi
-
-# Fail loudly if any floor is unmet after install.
-"${PIP_INSTALL[@]}" --quiet "packaging" || true
-"$SHINY_PYTHON" - <<'PYCHK'
-import sys
-from importlib.metadata import version
-from packaging.version import Version
-floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.6.3",
-          "shiny_deckgl": "1.9.2"}
-have = {k: version(k) for k in floors}
-# pyvis by import-package version: its dist name is `pyvis` or `pyvis-optimized` (see above).
-import pyvis
-floors["pyvis"] = "4.2"
-have["pyvis"] = getattr(pyvis, "__version__", "0")
-bad = [f"{pkg} {have[pkg]} < {floor}" for pkg, floor in floors.items()
-       if Version(have[pkg]) < Version(floor)]
-if bad:
-    print("DEPENDENCY FLOOR CHECK FAILED:", "; ".join(bad)); sys.exit(1)
-print("dependency floors OK:", have)
-PYCHK
-info "Python dependencies ensured."
 
 # --- Step 3: Install systemd service ---
 info "Installing ${SERVICE_NAME} systemd service..."
@@ -352,7 +412,7 @@ if [[ "$DEPLOY_CSHARP" == "1" ]]; then
             || csharp_fail "the .NET SDK install failed"
         rm -f "$DOTNET_INSTALLER"
     fi
-    "${PIP_INSTALL[@]}" --quiet "pythonnet>=3.2.1" || csharp_fail "pip install pythonnet failed"
+    as_shiny "${PIP_INSTALL[@]}" --quiet "pythonnet>=3.2.1" || csharp_fail "pip install pythonnet failed"
     info "Building the C# engine (as shiny, into a staging directory)..."
     # AS THE SERVICE USER, never as root: the clone is shiny-writable (Step 1) and MSBuild project
     # files are code -- an untracked Directory.Build.targets above the project, or a
@@ -362,37 +422,36 @@ if [[ "$DEPLOY_CSHARP" == "1" ]]; then
     # NuGet files go to a throwaway home, since shiny's own home may not exist.
     # The build is published to a STAGING directory and self-tested there. Only a build that
     # passes is moved into osmose/engine_cs/bin, so a failed build never becomes loadable.
-    runuser -u shiny -- git -C "$PROD_SRC" clean -fdxq -- csharp/ \
+    as_shiny git -C "$PROD_SRC" clean -fdxq -- csharp/ \
         || csharp_fail "could not clear old build state in ${PROD_SRC}/csharp"
     BUILD_HOME="$(mktemp -d)"
     chown shiny:shiny "$BUILD_HOME"
     STAGE="${BUILD_HOME}/engine"
     LIVE_BIN="${PROD_SRC}/osmose/engine_cs/bin"
-    drop_build_home() { runuser -u shiny -- rm -rf "$BUILD_HOME" || true; }
+    drop_build_home() { as_shiny rm -rf "$BUILD_HOME" || true; }
     # DOTNET_ROOT explicitly: the build script would otherwise fall back to ~/.dotnet.
     # OSMOSE_CSHARP_ENGINE_DIR, explicitly: where the build publishes and the self-test loads from.
-    runuser -u shiny -- env HOME="$BUILD_HOME" DOTNET_CLI_HOME="$BUILD_HOME" \
+    as_shiny env HOME="$BUILD_HOME" DOTNET_CLI_HOME="$BUILD_HOME" \
         NUGET_PACKAGES="${BUILD_HOME}/nuget" DOTNET_ROOT="$DOTNET_DIR" \
         OSMOSE_CSHARP_ENGINE_DIR="$STAGE" \
         bash "${PROD_SRC}/scripts/build_csharp_engine.sh" -v quiet \
         || { drop_build_home; csharp_fail "the build failed"; }
     # As the SERVICE runs it: its user, interpreter, working copy and DOTNET_ROOT. Run as root it
     # could find another .NET (resolve_dotnet_root falls back to ~/.dotnet) and pass falsely.
-    SHINY_HOME="$(getent passwd shiny | cut -d: -f6)"
     as_service() {
-        (cd "$LINK_PATH" && runuser -u shiny -- env HOME="$SHINY_HOME" DOTNET_ROOT="$DOTNET_DIR" "$@")
+        (cd "$LINK_PATH" && setsid -w runuser -u shiny -- env HOME="$SHINY_HOME" DOTNET_ROOT="$DOTNET_DIR" "$@")
     }
     if ! as_service OSMOSE_CSHARP_ENGINE_DIR="$STAGE" "$SHINY_PYTHON" -m osmose.engine_cs.selftest; then
         drop_build_home
         csharp_fail "the self-test failed (its output is above); the build was not activated"
     fi
-    runuser -u shiny -- rm -rf "$LIVE_BIN" && runuser -u shiny -- mv "$STAGE" "$LIVE_BIN" \
+    as_shiny rm -rf "$LIVE_BIN" && as_shiny mv "$STAGE" "$LIVE_BIN" \
         || { drop_build_home; csharp_fail "could not move the tested build into ${LIVE_BIN}"; }
     drop_build_home
     # The self-test loaded the staged copy; confirm the service's own path (no override) sees it.
     as_service "$SHINY_PYTHON" -c "from osmose.engine_cs import csharp_engine_available as a
 ok, why = a(); raise SystemExit(0 if ok else why)" \
-        || { runuser -u shiny -- rm -rf "$LIVE_BIN"; csharp_fail "the activated build is not loadable"; }
+        || { as_shiny rm -rf "$LIVE_BIN"; csharp_fail "the activated build is not loadable"; }
     CSHARP_RESULT="built from ${DEPLOYED_SHA}, self-tested, activated"
 fi
 
