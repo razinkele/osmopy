@@ -274,8 +274,8 @@ public sealed class OutputParameters
     /// <summary>A record of the initial state, at step -1, precedes the run.</summary>
     public bool Step0Include { get; init; }
 
-    /// <summary>Output families beyond the minimal set; 0 = <c>output.minimal.enabled</c>.</summary>
-    public long Families { get; init; }
+    /// <summary>Output families beyond the minimal set; none = <c>output.minimal.enabled</c>.</summary>
+    public Step.OutputFamilies Families { get; init; }
 
     /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
     public int Records(int nSteps) => (Step0Include ? 1 : 0) + ((nSteps + RecordFrequency - 1) / RecordFrequency);
@@ -593,13 +593,38 @@ internal static class ModelReader
         EggWeight = F8(r, "reproduction.egg_weight", nFocal),
     };
 
-    public static OutputParameters Output(BundleReader r, int nTotal) => new()
+    /// <summary><c>output.families</c> follows the declared feature <c>full_outputs</c>: with it
+    /// the mask holds the life-stage family (every run that is not minimal has it) and only
+    /// families this engine collects; without it the mask is 0.</summary>
+    public static OutputParameters Output(BundleReader r, int nTotal, bool feature)
     {
-        CutoffAge = F8(r, "output.cutoff_age", nTotal),
-        RecordFrequency = (int)Math.Max(1, r.Int("output.record_frequency")),
-        Step0Include = r.Int("output.step0_include") != 0,
-        Families = r.Int("output.families"),
-    };
+        long families = r.Int("output.families");
+        long unknown = families & ~(long)Step.OutputFamilies.Known;
+        if (!feature && families != 0)
+        {
+            r.Problem($"output.families: {families}, but the bundle does not declare feature full_outputs");
+        }
+        else if (feature && families == 0)
+        {
+            r.Problem("output.families: full_outputs is declared, but output.families is 0");
+        }
+        else if (unknown != 0)
+        {
+            r.Problem($"output.families: unknown bits 0x{unknown:X}; this engine collects 0x{(long)Step.OutputFamilies.Known:X}");
+        }
+        else if (feature && (families & (long)Step.OutputFamilies.Stage) == 0)
+        {
+            r.Problem("output.families: the life-stage family (bit 0) is part of every run that is not minimal");
+        }
+
+        return new()
+        {
+            CutoffAge = F8(r, "output.cutoff_age", nTotal),
+            RecordFrequency = (int)Math.Max(1, r.Int("output.record_frequency")),
+            Step0Include = r.Int("output.step0_include") != 0,
+            Families = feature ? (Step.OutputFamilies)(families & (long)Step.OutputFamilies.Known) : Step.OutputFamilies.None,
+        };
+    }
 
     /// <summary>The background group follows the declared feature: required with it; without
     /// it, background species in the bundle are a problem (they would never be injected).</summary>

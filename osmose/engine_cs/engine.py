@@ -120,6 +120,9 @@ def _step_outputs(buffers: Any, records: int) -> list:
     """One ``StepOutput`` per written record, as views of the result rows (spec 8.4)."""
     from osmose.engine.simulate import StepOutput
 
+    def row(a, i):
+        return None if a is None else a[i]  # a family the run did not collect stays None
+
     return [
         StepOutput(
             step=int(buffers.record_step[i]),
@@ -128,6 +131,9 @@ def _step_outputs(buffers: Any, records: int) -> list:
             mortality_by_cause=buffers.mortality[i],
             yield_by_species=buffers.yield_[i],
             window_steps=int(buffers.window_steps[i]),
+            abundance_by_stage=row(buffers.abundance_by_stage, i),
+            mortality_by_cause_stage=row(buffers.mortality_by_cause_stage, i),
+            mortality_rate_by_cause_stage=row(buffers.mortality_rate_by_cause_stage, i),
         )
         for i in range(records)
     ]
