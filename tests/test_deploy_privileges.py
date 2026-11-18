@@ -74,6 +74,15 @@ def test_root_never_runs_git_the_env_or_writes_into_the_clone():
     assert _violations(DEPLOY.read_text()) == []
 
 
+def test_every_runuser_child_has_no_controlling_terminal():
+    """A shiny child sharing root's terminal could inject keystrokes into it (TIOCSTI) for
+    root's shell to run after the deploy: every runuser call runs under setsid."""
+    calls = [(n, line) for n, line in _code_lines(DEPLOY.read_text()) if "runuser" in line]
+    assert calls, "no runuser call found: the helpers moved, update this test"
+    bare = [f"deploy.sh:{n}: {line}" for n, line in calls if "setsid -w runuser" not in line]
+    assert bare == []
+
+
 def test_the_lint_catches_each_kind():
     """The lint itself: each pattern it must catch, and the forms it must allow."""
     bad = [

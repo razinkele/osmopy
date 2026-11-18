@@ -21,7 +21,7 @@ The production web app is a **systemd service** running Uvicorn directly:
 - the env's interpreter would execute its `.pth` files, or a replaced binary;
 - `cp` into the clone would follow a planted symlink.
 
-Any of those would let a compromised service account get root at the next deploy. So every `git` command on the clone, every run of the env's `python3` and `pip`, and every write into the clone goes through `runuser -u shiny`. Root keeps only what it owns: the systemd unit, `/opt/dotnet`, the `/srv/shiny-server/osmose` symlink, and creating the empty clone directory. `tests/test_deploy_privileges.py` enforces this line by line.
+Any of those would let a compromised service account get root at the next deploy. So every `git` command on the clone, every run of the env's `python3` and `pip`, and every write into the clone goes through `runuser -u shiny`, under `setsid` so the child has no controlling terminal (it could otherwise inject keystrokes into root's terminal with the `TIOCSTI` ioctl). Root keeps only what it owns: the systemd unit, `/opt/dotnet`, the `/srv/shiny-server/osmose` symlink, and creating the empty clone directory. `tests/test_deploy_privileges.py` enforces this line by line.
 
 Deploys before this change let root operate on the clone through a `safe.directory` grant in root's git config. The deploy now withdraws it, and hands anything those deploys left root-owned in the clone back to `shiny`.
 

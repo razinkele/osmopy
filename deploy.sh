@@ -135,9 +135,12 @@ fi
 # sitecustomize and .pth files (or a replaced interpreter); and `cp` into the clone would follow
 # a planted symlink. A compromised service account would then get root at the next deploy. So
 # every such step runs as shiny: it gains nothing that user did not already have. From /, so a
-# working directory shiny cannot enter does not break git or pip.
+# working directory shiny cannot enter does not break git or pip. Under setsid, so the child
+# has NO controlling terminal: a shiny process sharing root's terminal could otherwise push
+# keystrokes into it (the TIOCSTI ioctl) for root's shell to run after the deploy. This kernel
+# disables that (dev.tty.legacy_tiocsti=0, 2026-11-18), but a sysctl is not a guarantee.
 SHINY_HOME="$(getent passwd shiny | cut -d: -f6)"
-as_shiny() { (cd / && runuser -u shiny -- env HOME="$SHINY_HOME" "$@"); }
+as_shiny() { (cd / && setsid -w runuser -u shiny -- env HOME="$SHINY_HOME" "$@"); }
 
 # --- Step 0: Install missing + version-floored Python dependencies ---
 # BEFORE the checkout: pip runs as shiny (above), and a failure here (a network error, or a
@@ -411,7 +414,7 @@ if [[ "$DEPLOY_CSHARP" == "1" ]]; then
     # As the SERVICE runs it: its user, interpreter, working copy and DOTNET_ROOT. Run as root it
     # could find another .NET (resolve_dotnet_root falls back to ~/.dotnet) and pass falsely.
     as_service() {
-        (cd "$LINK_PATH" && runuser -u shiny -- env HOME="$SHINY_HOME" DOTNET_ROOT="$DOTNET_DIR" "$@")
+        (cd "$LINK_PATH" && setsid -w runuser -u shiny -- env HOME="$SHINY_HOME" DOTNET_ROOT="$DOTNET_DIR" "$@")
     }
     if ! as_service OSMOSE_CSHARP_ENGINE_DIR="$STAGE" "$SHINY_PYTHON" -m osmose.engine_cs.selftest; then
         drop_build_home
