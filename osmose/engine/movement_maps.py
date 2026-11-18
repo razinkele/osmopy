@@ -51,13 +51,19 @@ def _load_csv_grid(path: Path, ny: int, nx: int) -> NDArray[np.float64]:
         if not line:
             continue
         parts = line.split(";")
-        row_values: list[float] = []
-        for part in parts:
-            p = part.strip().lower()
-            if p in ("na", "nan", ""):
-                row_values.append(np.nan)
-            else:
-                row_values.append(float(p))
+        # Fast path: NumPy's str -> float64 equals float() part by part (whitespace, signs,
+        # exponents, 'nan', 'inf'; checked on 200,000 strings). It raises on 'na', an empty field
+        # or anything float() rejects, which then takes the original per-part rule below.
+        try:
+            row_values: NDArray[np.float64] | list[float] = np.array(parts, dtype=np.float64)
+        except ValueError:
+            row_values = []
+            for part in parts:
+                p = part.strip().lower()
+                if p in ("na", "nan", ""):
+                    row_values.append(np.nan)
+                else:
+                    row_values.append(float(p))
         if len(row_values) < nx:
             raise ValueError(
                 f"Movement map CSV row {csv_row_idx} has {len(row_values)} columns, "
@@ -198,15 +204,16 @@ class MovementMapSet:
                 raw_grids.append(None)  # loaded below
 
             # --- Fill index_maps ---
-            for age_dt in range(init_age_dt, last_age_dt + 1):
-                if age_dt >= lifespan_dt:
-                    continue
-                for year in years:
-                    for season in steps:
-                        global_step = year * n_dt_per_year + season
-                        if global_step >= n_total_steps:
-                            continue
-                        self.index_maps[age_dt, global_step] = remap[map_idx]
+            # Every (age, year, season) cell of this map gets the same value, and later maps
+            # overwrite earlier ones, so one fancy assignment per map equals the per-cell loop
+            # (negative indices wrap the same way in both). The loop was ~1.2M Python iterations
+            # on EEC at 10 years, paid by simulate() and by the C# bundle build alike.
+            ages = np.arange(init_age_dt, last_age_dt + 1)
+            ages = ages[ages < lifespan_dt]
+            cols = np.array([y * n_dt_per_year + s for y in years for s in steps], dtype=np.int64)
+            cols = cols[cols < n_total_steps]
+            if ages.size and cols.size:
+                self.index_maps[np.ix_(ages, cols)] = remap[map_idx]
 
         # --- Load CSV grids ---
         for i, fp in enumerate(map_file_paths):
