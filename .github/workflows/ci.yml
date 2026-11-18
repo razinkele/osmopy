@@ -198,7 +198,9 @@ jobs:
         # No coverage here: the CLR-hosting checks run in a subprocess (the CLR never enters the
         # pytest process, which may fork), so pytest-cov could not see bridge.py anyway. Its
         # load path is pinned by mutation instead (PR description).
-        run: pytest -p no:cacheprovider -q tests/test_csharp_*.py
+        # test_engine_select.py too: it picks the C# engine by name, and its config checks only
+        # run when the engine is built (in the main test job they stop at "unavailable").
+        run: pytest -p no:cacheprovider -q tests/test_csharp_*.py tests/test_engine_select.py
 
   apptainer-smoke:
     # Pinned: setup-apptainer's apptainer 1.3.6 .deb depends on libfuse3-3, which is not

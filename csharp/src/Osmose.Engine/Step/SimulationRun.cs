@@ -91,6 +91,7 @@ public sealed class SimulationRun
         if (_p.Output.Step0Include)
         {
             Collector.SnapshotStages(_p, Store); // no step produced this state: split it as it is
+            Store.ClearDiet(); // the rows must exist, zeroed, before the snapshot reads them...
             Collector.SnapshotDiet(Store); // ...and nothing was eaten
             Collector.Collect(_p, Store); // the initial state (empty without a warm start)
             Flush(records++, -1);

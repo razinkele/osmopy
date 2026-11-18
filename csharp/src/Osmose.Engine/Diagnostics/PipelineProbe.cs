@@ -46,13 +46,15 @@ public static class PipelineProbe
         run.Collector.SnapshotDiet(s);
 
         // The background schools leave: in the input they are the last block, in injection order
-        // (get_schools' order), so the first of them has the id n - their number.
-        int nBackground = 0;
+        // (get_schools' order), so the first of them has the id n - the block's length. The
+        // length is the model's, not the number still in the store: a school that entered with
+        // no individuals was dropped by the regroup, and counting survivors would move the
+        // block's start.
+        int nBackground = p.Background.NSpecies > 0 ? Background.SchoolsPerStep(p.Background) : 0;
         for (int i = 0; i < s.Count; i++)
         {
             bool background = (s.Core[i].Flags & SchoolFlags.IsBackground) != 0;
-            nBackground += background ? 1 : 0;
-            if (background != (s.Life[i].Id >= (ulong)(n - (p.Background.NSpecies > 0 ? Background.SchoolsPerStep(p.Background) : 0))))
+            if (background != (s.Life[i].Id >= (ulong)(n - nBackground)))
             {
                 throw new InvalidOperationException("the background schools are not the input's last block");
             }
