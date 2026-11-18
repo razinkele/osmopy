@@ -33,6 +33,11 @@ COLLAPSE = 1.0
 #: Per-metric log floors. Mean weight is biomass / abundance in tonnes per fish (~1e-6), so the
 #: tonnes floor would clamp every value to 1 and make every mean-weight cell read d = 0.
 FLOORS = {"biomass": COLLAPSE, "abundance": COLLAPSE, "yield": COLLAPSE, "mean_weight": 1e-9}
+#: A standard error below this (log10 units, ~2e-12 relative) is floating-point residue, not
+#: spread. Measured 2026-11-18 on Bay of Biscay: a species identical across Python seeds read a
+#: C# spread of 4.7e-17 (its outputs are summed in a seed-dependent store order), and the
+#: variance ratio 0 / 1e-34 failed criterion 4. Such a cell has no variance to compare.
+SPREAD_FLOOR = 1e-12
 #: Margins on the log10 scale (spec 10.2): 1.25x for stocks and flows, 1.05x for mean weight.
 MARGINS = {
     "biomass": float(np.log10(1.25)),
@@ -50,16 +55,17 @@ def tost(x, y, delta: float, floor: float = COLLAPSE, with_ks: bool = True):
     """Formal TOST of ``mean(log10 x) - mean(log10 y)`` against ``+-delta``: returns
     ``(d, ci90_halfwidth, p_tost, equivalent, ks_p, var_ratio)``.
 
-    ``se == 0`` (both arms with exactly zero spread on the log scale) is a real comparison: ``d``
-    is genuine, ``ci90`` is the literal 0.0, ``equivalent`` is the bare ``|d| <= delta`` test, and
-    the KS p-value and the variance ratio are NaN (not applicable, not "not significant").
+    ``se < SPREAD_FLOOR`` (no spread on the log scale beyond rounding) is a real comparison:
+    ``d`` is genuine, ``ci90`` is the literal 0.0, ``equivalent`` is the bare ``|d| <= delta``
+    test, and the KS p-value and the variance ratio are NaN (not applicable, not "not
+    significant").
     """
     lx, ly = _log(x, floor), _log(y, floor)
     n1, n2 = len(lx), len(ly)
     d = float(lx.mean() - ly.mean())
     se = float(np.sqrt(lx.var(ddof=1) / n1 + ly.var(ddof=1) / n2))
     df = n1 + n2 - 2
-    if se == 0:
+    if se < SPREAD_FLOOR:
         eq = abs(d) <= delta
         return d, 0.0, 0.0 if eq else 1.0, eq, np.nan, np.nan
     p_lower = stats.t.sf((d + delta) / se, df)  # H0: d <= -delta

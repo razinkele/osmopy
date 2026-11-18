@@ -289,6 +289,17 @@ def run_equivalence(args) -> None:
     print(f"VERDICT: {'PASS' if verdict.passed else 'FAIL'}  ({time.time() - t0:.0f} s)")
     for f in verdict.failures:
         print(f"  - {f}")
+    # Diagnostic, not part of the rule: the control and the treatment SHARE arm A, so an
+    # atypical arm A shows as the same difference in both. B against C# separates them.
+    pairs = {"A vs C#": compare(a, c), "A vs B (control)": control, "B vs C#": compare(b, c)}
+    print("\npairwise (non-vacuous cells):")
+    for label, cells in pairs.items():
+        live = [k for k in cells if not cells[k].vacuous]
+        ds = sorted(abs(cells[k].d) for k in live)
+        over = sum(abs(cells[k].d) > MARGINS[k[0]] for k in live)
+        print(
+            f"  {label:18s} max |d| {ds[-1]:.3f}  median {ds[len(ds) // 2]:.4f}  beyond margin {over}/{len(live)}"
+        )
     if args.persist_results:
         args.persist_results.write_text(json.dumps({
             "config": str(args.config), "years": args.years, "spinup": args.spinup_years, "n": args.n,
@@ -296,8 +307,10 @@ def run_equivalence(args) -> None:
             "rates": {repr(k): v for k, v in rates.items()}, "attribution": attribution,
             "passed": verdict.passed, "failures": verdict.failures,
             "cells": {f"{k[0]}/{k[1]}": {"d": treatment[k].d, "ci": treatment[k].ci, "eq": treatment[k].equivalent,
-                       "d_control": control[k].d, "eq_control": control[k].equivalent,
+                       "d_control": control[k].d, "ci_control": control[k].ci, "eq_control": control[k].equivalent,
                        "var_ratio": treatment[k].var_ratio, "vacuous": treatment[k].vacuous} for k in treatment},
+            "replicates": {arm: {m: {sp: list(map(float, v)) for sp, v in by.items()} for m, by in data.items()}
+                           for arm, data in arms.items()},
         }, indent=1, default=float))  # fmt: skip
 
 

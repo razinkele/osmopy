@@ -125,6 +125,21 @@ def test_tost_zero_spread_is_a_real_comparison():
     assert eq is False and d > MARGINS["biomass"]
 
 
+def test_rounding_residue_is_not_spread():
+    """A deterministic species: one arm exactly constant, the other constant to within an ulp
+    (a seed-dependent summation order). No variance to compare, so criterion 4 must not fire."""
+    exact = np.full(N, 1.0e6)
+    # 1e-14 relative survives log10 (2**-52 would round back to exactly 6.0: a true zero).
+    ulp = exact * (1.0 + np.random.default_rng(9).choice([-1, 0, 1], N) * 1e-14)
+    assert 0 < np.log10(ulp).std() < 1e-13  # a residue, really present, far below any spread
+    _, ci, _, eq, ks, vr = tost(exact, ulp, MARGINS["biomass"])
+    assert eq and ci == 0.0 and np.isnan(vr) and np.isnan(ks)
+    real = exact * 10.0 ** np.random.default_rng(10).normal(
+        0, 0.01, N
+    )  # a real spread still counts
+    assert tost(exact, real, MARGINS["biomass"])[5] == 0.0
+
+
 # --------------------------------------------------------------------------- calibration
 
 
