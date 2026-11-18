@@ -5,9 +5,10 @@ Date: 2026-11-18. Harness: `scripts/csharp/ab_eec.py --config baltic`. Baltic, 1
 protocol. Branch state: task 2.1 (PR #315), the first on which Baltic runs on the C# engine.
 
 **This is not the Phase 2 gate measurement.** That is task 2.8's, taken when Phase 2 is declared
-done, with the full outputs (tasks 2.6a to 2.6c) in place. The reading was taken now because the
-Baltic gate is go/no-go, and the outputs and UI work should not start on an engine that might
-miss it.
+done. It uses the same protocol, minimal outputs on both engines included (spec 10.4), so what
+can still move the ratio is the code added between now and then. The reading was taken now
+because the Baltic gate is go/no-go, and the outputs and UI work should not start on an engine
+that might miss it.
 
 ## Reading
 
@@ -36,8 +37,10 @@ Mortality scales 8.3x on 14 threads, and movement 2.9x. The life cycle and the r
 
 ## Caveats
 
-- **Minimal outputs.** The full outputs of task 2.6 will add work to both engines. The C# output
-  phase is 0.02 s here, so the ratio can move.
+- **The outputs work is still to come.** The gate is measured with minimal outputs, as here, so
+  the risk is task 2.6 slowing the minimal path (the stage snapshot, and the diet accumulation
+  in the mortality kernel). Each 2.6 task must show the minimal run unchanged, in results and
+  in time.
 - **The machine was not idle** (load average 2.1 at the start, 7.1 at the end; other users'
   jobs). The pair ratios are tight all the same: 2.51 to 2.66, and 6.71 to 6.98.
 - **Equivalence is not yet established on Baltic.** That is task 2.8's ensemble. So far:
