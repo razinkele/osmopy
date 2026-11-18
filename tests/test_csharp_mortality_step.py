@@ -166,10 +166,13 @@ def _make_exp_visible(config) -> None:
 
 
 def _eec_synthetic(config, state) -> None:
-    """EEC at the capture step: larva rates where NumPy and libm disagree, and a critical success
-    rate of 0 for the species of the first egg school. Eggs never feed (success 0), so the next
-    starvation rate takes the ``csr > 0 ? csr : 1`` guard, which no shipped species reaches."""
+    """EEC at the capture step: larva rates where NumPy and libm disagree; a critical success
+    rate of 0 for the species of the first egg school (eggs never feed, so the next starvation
+    rate takes the ``csr > 0 ? csr : 1`` guard, which no shipped species reaches); and a discard
+    fraction, which no shipped config sets (the DISCARDS counter would otherwise always be 0)."""
     _make_exp_visible(config)
+    assert not config.fishing_discard_rate.any()  # shipped: all zero
+    config.fishing_discard_rate[: config.n_species] = 0.3
     sp = int(state.species_id[state.is_egg.astype(bool)][0])
     assert config.starvation_rate_max[sp] > 0
     config.critical_success_rate[sp] = 0.0
@@ -363,6 +366,8 @@ def test_the_captured_step_exercises_every_path(stepped, demo):
     assert egg.any() and (n_dead[egg, CAUSES.index("additional")] > 0).all()
     for cause in ("predation", "starvation", "additional", "fishing"):
         assert by_cause[cause] > 0, cause
+    if demo == "eec_full":
+        assert by_cause["discards"] > 0
     rsc_after = np.asarray(got["cs"].get("mort.resources"))[: got["rsc0"].shape[0]]
     assert (rsc_after < got["rsc0"]).any()
     if demo == "eec_full":
