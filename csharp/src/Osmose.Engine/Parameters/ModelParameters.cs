@@ -165,6 +165,17 @@ public sealed class ResourceParameters
 
     /// <summary><c>[step * N + resource]</c>.</summary>
     public double[] AccessByStep { get; init; } = [];
+
+    /// <summary>Feature <c>oxygen_benthos</c>: 1 for each resource whose carrying capacity bottom
+    /// oxygen scales; empty when the bundle does not declare the feature.</summary>
+    public byte[] OxygenCoupled { get; init; } = [];
+
+    /// <summary><c>[frame * nCells + cell]</c>: the Hill factor, pre-evaluated by the builder with
+    /// the Python engine's own function, so applying it is one multiplication (tier E).</summary>
+    public double[] OxygenFactor { get; init; } = [];
+
+    /// <summary><c>[step]</c>: the oxygen frame of each step.</summary>
+    public int[] OxygenFrameByStep { get; init; } = [];
 }
 
 /// <summary>Reads the model groups from a bundle through one <see cref="BundleReader"/>, so every
@@ -377,7 +388,7 @@ internal static class ModelReader
         DiscardRate = config.TryGet("fishing.discard_rate", out _) ? F8(r, "fishing.discard_rate", nTotal) : null,
     };
 
-    public static ResourceParameters Resources(BundleReader r, int nSteps, int nCells)
+    public static ResourceParameters Resources(BundleReader r, int nSteps, int nCells, bool oxygen)
     {
         int n = (int)r.Int("resources.n");
         if (n <= 0)
@@ -385,9 +396,38 @@ internal static class ModelReader
             return new ResourceParameters { N = 0 };
         }
 
+        // The oxygen entries exist exactly when the bundle declares oxygen_benthos: required with
+        // it, a builder error without it (they would otherwise be silently ignored).
+        byte[] coupled = [];
+        double[] factor = [];
+        int[] oxygenFrame = [];
+        string[] oxygenEntries = ["resources.oxygen.coupled", "resources.oxygen.factor", "resources.oxygen.frame_by_step"];
+        if (oxygen)
+        {
+            coupled = r.Array(oxygenEntries[0], DType.U1, n)?.ToArray<byte>() ?? [];
+            BundleEntry? f = r.Array(oxygenEntries[1], DType.F8, BundleReader.Any, nCells);
+            factor = f?.ToArray<double>() ?? [];
+            oxygenFrame = r.Array(oxygenEntries[2], DType.I4, nSteps)?.ToArray<int>() ?? [];
+            long frames = f?.Shape[0] ?? 0;
+            if (f is not null && oxygenFrame.Any(i => i < 0 || i >= frames))
+            {
+                r.Problem($"{oxygenEntries[2]}: values must be in [0, {frames})");
+            }
+        }
+        else
+        {
+            foreach (string name in oxygenEntries.Where(r.Has))
+            {
+                r.Problem($"{name}: present, but the bundle does not declare feature oxygen_benthos");
+            }
+        }
+
         BundleEntry? forcing = r.Array("resources.forcing", DType.F8, n, BundleReader.Any, nCells);
         return new ResourceParameters
         {
+            OxygenCoupled = coupled,
+            OxygenFactor = factor,
+            OxygenFrameByStep = oxygenFrame,
             N = n,
             SizeMin = F8(r, "resources.size_min", n),
             SizeMax = F8(r, "resources.size_max", n),

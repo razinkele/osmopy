@@ -429,9 +429,9 @@ def test_each_species_gets_its_own_fishing_map(runs):
 @pytest.mark.parametrize("demo", ["eec_full", "bay_of_biscay", "baltic"])
 def test_resource_capacity_from_the_bundle_equals_the_simulations(runs, demo):
     """Against ResourceState as simulate() builds it, oxygen included (a fresh one drops the
-    coupling, see tests/_csharp_resources.py). Baltic's benthos K is scaled by bottom oxygen,
-    feature oxygen_benthos (phase 2): the bundle leaves it unscaled, so that resource must
-    DIFFER, and the bundle must need the feature the engine refuses."""
+    coupling, see tests/_csharp_resources.py). Baltic's benthos K is scaled by bottom oxygen
+    (feature oxygen_benthos, task 2.5): the bundle's factor table makes that resource equal too,
+    and without the table it must DIFFER, so the table is what carries the coupling."""
     config, raw, grid, b = runs[demo]
     rs = simulation_resources(config, grid)
     coupled = oxygen_coupled(config, rs)
@@ -440,20 +440,23 @@ def test_resource_capacity_from_the_bundle_equals_the_simulations(runs, demo):
     frames, fbs, abs_ = (
         b.get(f"resources.{k}") for k in ("forcing", "frame_by_step", "accessibility_by_step")
     )
-    coupled_differs = False
+    assert ("resources.oxygen.coupled" in b.names()) == (coupled is not None)
+    unscaled_differs = False
     for step in (0, 1, 11, 23, 24, 40):
         rs.update(step)
         for r in range(n):
             got = frames[r, fbs[step, r]] * abs_[step, r]  # the C# engine's K
             if r == coupled:
-                coupled_differs |= got.tobytes() != rs.biomass[r].tobytes()
-            else:
-                assert got.tobytes() == rs.biomass[r].tobytes(), f"{demo} step {step} resource {r}"
+                unscaled_differs |= got.tobytes() != rs.biomass[r].tobytes()
+                factor = b.get("resources.oxygen.factor")
+                got = got * factor[b.get("resources.oxygen.frame_by_step")[step]]
+            assert got.tobytes() == rs.biomass[r].tobytes(), f"{demo} step {step} resource {r}"
     rs.close()
     assert (frames > 0).any()
     assert (coupled is not None) == (demo == "baltic")
     if coupled is not None:
-        assert coupled_differs
+        assert unscaled_differs
+        assert b.get("resources.oxygen.coupled").tolist() == [int(r == coupled) for r in range(n)]
         assert "oxygen_benthos" in required_features(config, raw)
 
 

@@ -42,10 +42,12 @@ class _Stop(Exception):
     pass
 
 
-def capture_state(demo: str, step: int, workdir: Path):
+def capture_state(demo: str, step: int, workdir: Path, overrides: dict | None = None):
     """(config, grid, raw, state, resources) just before step ``step``'s mortality in a real run;
-    ``resources`` is the simulation's own resource biomass at that moment."""
+    ``resources`` is the simulation's own resource biomass at that moment. ``overrides`` are
+    config keys set on top of the demo."""
     raw = dict(OsmoseConfigReader().read(Path(osmose_demo(demo, workdir)["config_file"])))
+    raw |= overrides or {}
     raw["output.minimal.enabled"] = "true"
     raw["simulation.time.nyear"] = str(step // 24 + 1)
     config, grid, rng, mv, mo = PythonEngine()._prepare_run(raw, 11)
@@ -146,19 +148,25 @@ def test_feeding_stages_and_access_indices_equal_the_engine(prepared, demo):
 def test_resource_capacity_equals_the_simulations_own(prepared, demo):
     """Against the resource biomass the running simulation held at this step (not a fresh
     ResourceState, which drops the oxygen coupling, see tests/_csharp_resources.py). Baltic's
-    benthos K is scaled by bottom oxygen, feature oxygen_benthos (phase 2): the C# value must
-    DIFFER there, and the engine must refuse the config."""
-    config, grid, _, _, prep, raw, _, live = prepared[demo]
+    benthos K is scaled by bottom oxygen (feature oxygen_benthos, task 2.5): the C# value equals
+    the simulation's there too, and the unscaled product does NOT, so an engine that ignored the
+    factor table could not pass."""
+    config, grid, _, step, prep, raw, d, live = prepared[demo]
     got = prep.get("prep.resources")[: live.shape[0]]
     rs = simulation_resources(config, grid)
     coupled = oxygen_coupled(config, rs)
     rs.close()
     for r in range(live.shape[0]):
-        same = got[r].tobytes() == live[r].tobytes()
-        assert same != (r == coupled), (demo, r, coupled)
+        assert got[r].tobytes() == live[r].tobytes(), (demo, r, coupled)
     assert (coupled is not None) == (demo == "baltic")
     if coupled is not None:
         assert "oxygen_benthos" in required_features(config, raw)
+        b = Bundle.load(d / "model.bin")
+        frames, fbs, access = (
+            b.get(f"resources.{k}") for k in ("forcing", "frame_by_step", "accessibility_by_step")
+        )
+        unscaled = frames[coupled, fbs[step, coupled]] * access[step, coupled]
+        assert unscaled.tobytes() != live[coupled].tobytes()
 
 
 def test_baltic_background_schools_are_exempt(prepared):
