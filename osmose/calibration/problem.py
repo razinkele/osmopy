@@ -76,6 +76,13 @@ class _EvalSpec:
 
 _WORKER_PROBLEM: OsmoseCalibrationProblem | None = None
 
+# Threads per C# evaluation. Calibration scales across candidates (the pool's W workers), so
+# each run gets one thread and W workers never oversubscribe the cores: plan task 1.12 and the
+# calibration row of spec 10.4, "W workers x 1 thread". C# results are identical at any thread
+# count (task 1.9), so this changes speed only, never a score. Explicit, so a change to
+# CSharpEngine's own default cannot move calibration.
+CSHARP_THREADS_PER_EVAL = 1
+
 
 def _check_csharp_runs(base_config_path: Path) -> None:
     """Refuse a C# calibration up front when the C# engine cannot run its base config: every
@@ -533,7 +540,9 @@ class OsmoseCalibrationProblem(Problem):
             base_cfg = OsmoseConfigReader().read(self.base_config_path)
             cfg = dict(base_cfg)
             cfg.update(overrides)
-            return get_engine(self.engine).run_in_memory(cfg, seed=run_id if seed is None else seed)
+            kwargs = {"threads": CSHARP_THREADS_PER_EVAL} if self.engine == "csharp" else {}
+            engine = get_engine(self.engine, **kwargs)
+            return engine.run_in_memory(cfg, seed=run_id if seed is None else seed)
         except _python_engine_errors as exc:
             _log.warning(
                 "%s-engine run %d failed (%s: %s)",
