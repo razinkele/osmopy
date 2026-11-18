@@ -90,6 +90,19 @@ def parse_overrides(text: str) -> dict[str, str]:
     return result
 
 
+def csharp_block_reason(config: dict[str, str], overrides_text: str) -> str | None:
+    """Why the C# engine cannot run ``config`` WITH the run panel's overrides applied, or None.
+
+    The overrides are part of what runs: one of them can turn on a feature the engine does not
+    implement, and checking the loaded config alone would let that run start and then fail."""
+    effective = dict(config or {})
+    effective.update(parse_overrides(overrides_text or ""))
+    cap = describe_engine("csharp", effective)
+    if cap.can_run:
+        return None
+    return cap.block_reason or "The C# engine cannot run this configuration."
+
+
 def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) -> list[str]:
     """Copy ancillary data files referenced in config from source_dir to dest_dir.
 
@@ -839,9 +852,8 @@ def run_server(input, output, session, state: AppState):
             # The C# engine refuses a config with a feature it does not implement (and says
             # which), and it may not be installed here. Same shape as the Java guard: block
             # early with the reason instead of starting a run that can only fail.
-            cap = describe_engine("csharp", config)
-            if not cap.can_run:
-                block = cap.block_reason or "The C# engine cannot run this configuration."
+            block = csharp_block_reason(config, input.py_param_overrides() or "")
+            if block:
                 run_log.set(["--- RUN BLOCKED (engine not supported) ---", block])
                 status.set("C# engine not supported for this configuration")
                 ui.notification_show(block, type="error", duration=20)

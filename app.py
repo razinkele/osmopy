@@ -1,6 +1,7 @@
 """OSMOPY - Python Interface for OSMOSE marine ecosystem simulator."""
 
 import json
+import logging
 from pathlib import Path
 
 from shiny import App, reactive, render, ui
@@ -40,9 +41,22 @@ from ui.pages.spatial_results import spatial_results_server, spatial_results_ui
 from ui.state import AppState
 from ui.theme import THEME
 
-#: Whether this installation has the C# engine (an optional build). Decided once, at import: it
-#: is what the header offers and what the server accepts.
-CSHARP_ENGINE_OFFERED = csharp_engine_available()[0]
+
+def _csharp_engine_offered() -> bool:
+    """Whether this installation has the C# engine. Never raises: the engine is an optional
+    build, and a probe that fails must not stop the app, and with it the Python and Java
+    engines, from starting. It is then simply not offered."""
+    try:
+        return bool(csharp_engine_available()[0])
+    except Exception:
+        logging.getLogger("osmose.app").warning(
+            "the C# engine probe failed; the engine is not offered", exc_info=True
+        )
+        return False
+
+
+#: Decided once, at import: it is what the header offers and what the server accepts.
+CSHARP_ENGINE_OFFERED = _csharp_engine_offered()
 
 
 def accepts_engine_mode(mode: object, csharp_offered: bool | None = None) -> bool:
