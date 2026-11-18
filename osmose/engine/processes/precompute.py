@@ -11,7 +11,7 @@ these plain helpers paid 64 MB of Numba and LLVM it never used (measured 2026-11
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -144,3 +144,24 @@ def _flatten_all_map_sets(
         pos += len(ms.maps)
 
     return all_maps, all_max_proba, all_is_null, sp_map_offset
+
+
+def _movement_salinity_weight(config, grid, step) -> NDArray[np.float64] | None:
+    """Per-step salinity occupancy-weight grid for the gate, or None when off.
+
+    Reads config.salinity_gate_enabled / .salinity_field / .salinity_gate_s_low /
+    .salinity_gate_s_high and grid.ny/nx. Constant fields broadcast to the grid.
+    """
+    if not (config.salinity_gate_enabled and config.salinity_field is not None):
+        return None
+    from osmose.engine.processes.salinity_gate import salinity_weight
+
+    if config.salinity_field.is_constant:
+        S = np.full((grid.ny, grid.nx), config.salinity_field.get_scalar())
+    else:
+        S = config.salinity_field.get_grid(step)
+    # S is always an ndarray here, so salinity_weight returns an ndarray.
+    return cast(
+        "NDArray[np.float64]",
+        salinity_weight(S, config.salinity_gate_s_low, config.salinity_gate_s_high),
+    )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import warnings
-from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,6 +12,7 @@ from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
 from osmose.engine.processes.precompute import (  # noqa: F401 -- re-exported for callers and tests
     _flatten_all_map_sets,
+    _movement_salinity_weight,
     build_random_patches,
 )
 from osmose.engine.processes.salinity_gate import salinity_weighted_map
@@ -32,27 +32,6 @@ if not _HAS_NUMBA:
     _log.warning(
         "Numba is not installed. Movement will use pure Python fallback, "
         "which may be 10-100x slower. Install numba for optimal performance."
-    )
-
-
-def _movement_salinity_weight(config, grid, step) -> NDArray[np.float64] | None:
-    """Per-step salinity occupancy-weight grid for the gate, or None when off.
-
-    Reads config.salinity_gate_enabled / .salinity_field / .salinity_gate_s_low /
-    .salinity_gate_s_high and grid.ny/nx. Constant fields broadcast to the grid.
-    """
-    if not (config.salinity_gate_enabled and config.salinity_field is not None):
-        return None
-    from osmose.engine.processes.salinity_gate import salinity_weight
-
-    if config.salinity_field.is_constant:
-        S = np.full((grid.ny, grid.nx), config.salinity_field.get_scalar())
-    else:
-        S = config.salinity_field.get_grid(step)
-    # S is always an ndarray here, so salinity_weight returns an ndarray.
-    return cast(
-        "NDArray[np.float64]",
-        salinity_weight(S, config.salinity_gate_s_low, config.salinity_gate_s_high),
     )
 
 

@@ -495,9 +495,20 @@ def _movement(b: Bundle, config: Any, grid: Any, n_total: int, seed: int) -> Non
     same-map rule follows from the same table. Random: the placement domain of each random-moving
     species, built by the engine's ``build_random_patches`` on a stream of its own derived from
     the run seed (only a configured ``ncell`` smaller than the ocean draws anything).
+
+    Salinity gate (feature ``salinity_gate``), for the gated map species: ``salinity.weight`` is
+    the occupancy weight of each salinity frame, from the engine's own
+    ``_movement_salinity_weight``; ``salinity.frame_by_step`` is ``step % frames``
+    (``PhysicalData``'s rule); ``salinity.wmax[map, frame]`` is the largest non-NaN
+    ``map * weight`` (0 when there is none), which the Python kernel recomputes for every school
+    and which decides its all-zero guard. The four entries exist exactly with the feature.
     """
     from osmose.engine.movement_maps import MovementMapSet
-    from osmose.engine.processes.precompute import _flatten_all_map_sets, build_random_patches
+    from osmose.engine.processes.precompute import (
+        _flatten_all_map_sets,
+        _movement_salinity_weight,
+        build_random_patches,
+    )
 
     n_focal = config.n_species
     methods = list(config.movement_method)
@@ -545,6 +556,44 @@ def _movement(b: Bundle, config: Any, grid: Any, n_total: int, seed: int) -> Non
         b.set_array("movement.maps.index", np.concatenate(tables).astype(np.int32))
         b.set_array("movement.maps.index.offsets", offsets)
         b.set_array("movement.maps.index.shape", shapes)
+
+    if config.salinity_gate_enabled:
+        n_cells, n_steps = grid.ny * grid.nx, int(config.n_steps)
+        field = config.salinity_field
+        if field is None or config.salinity_gate_species is None:  # EngineConfig sets both
+            raise BundleBuildError("movement.salinity: the gate is enabled without a field")
+        field_data = field._data
+        n_frames = 1 if field.is_constant or field_data is None else int(field_data.shape[0])
+        frames: list[np.ndarray] = []
+        for f in range(n_frames):  # _movement_salinity_weight(step) reads frame step % frames
+            w = _movement_salinity_weight(config, grid, f)
+            if w is None or w.shape != (grid.ny, grid.nx):
+                raise BundleBuildError(
+                    f"movement.salinity.weight: the field is not on the model grid "
+                    f"({grid.ny}, {grid.nx})"
+                )
+            frames.append(w)
+        weight = np.ascontiguousarray(np.stack(frames).reshape(n_frames, n_cells), dtype=np.float64)
+        maps = (
+            np.asarray(stack, dtype=np.float64).reshape(len(stack), n_cells)
+            if map_sets
+            else np.zeros((0, n_cells))
+        )
+        wmax = np.zeros((len(maps), n_frames), dtype=np.float64)
+        for g in range(len(maps)):
+            for f in range(n_frames):
+                product = maps[g] * weight[f]  # the kernel's current_map * sal_w, cell by cell
+                valid = product[~np.isnan(product)]
+                wmax[g, f] = max(0.0, float(valid.max())) if valid.size else 0.0
+        b.set_array(
+            "movement.salinity.species",
+            np.asarray(config.salinity_gate_species)[:n_focal].astype(np.uint8),
+        )
+        b.set_array("movement.salinity.weight", weight)
+        b.set_array(
+            "movement.salinity.frame_by_step", (np.arange(n_steps) % n_frames).astype(np.int32)
+        )
+        b.set_array("movement.salinity.wmax", wmax)
 
     rng = np.random.default_rng(
         np.random.SeedSequence([int(seed) & 0xFFFFFFFFFFFFFFFF, PATCH_STREAM])

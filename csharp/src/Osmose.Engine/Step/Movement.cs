@@ -11,8 +11,14 @@ namespace Osmose.Engine.Step;
 /// </summary>
 /// <remarks>
 /// The candidate sets, the map index, the same-map test and the accept rule are tier E against
-/// the Python engine; where a school lands is tier S. The salinity gate (feature salinity_gate)
-/// is phase 2 and not applied here: the engine refuses bundles that need it.
+/// the Python engine; where a school lands is tier S.
+/// <para>
+/// Salinity gate (feature salinity_gate, plan task 2.4): for a gated species, occupancy follows
+/// <c>map * weight</c> instead of the map. Placement accepts a drawn cell when that product is
+/// placeable and at least <c>u * wmax</c>; a walk chooses among the cells where both the map and
+/// the product are placeable, with probability proportional to the product. When no cell of the
+/// map has a positive product this step (<c>wmax</c> 0) the school moves exactly as ungated.
+/// </para>
 /// <para>
 /// <see cref="SchoolFlags.IsOut"/> is written for map-based schools only, as Python's map kernel
 /// does: set when the school leaves the domain, cleared when it is placed, walks or stays. The
@@ -34,6 +40,83 @@ public static class Movement
     /// <summary>The placement accept rule for a drawn cell: placeable, and either a presence map
     /// (<paramref name="maxP"/> 0) or <c>value >= u * maxP</c>.</summary>
     public static bool Accepts(double value, double maxP, double u) => IsPlaceable(value) && (maxP == 0.0 || value >= u * maxP);
+
+    /// <summary>The gated placement accept rule: the product <c>map * weight</c> of the drawn cell
+    /// is placeable and at least <c>u * wmax</c> (a uniform is always drawn for a placeable cell).</summary>
+    public static bool AcceptsGated(double product, double wmax, double u) => IsPlaceable(product) && product >= u * wmax;
+
+    /// <summary>Whether the salinity gate applies to a school of <paramref name="species"/> on map
+    /// <paramref name="globalMap"/> at <paramref name="step"/>, with the step's weight row and the
+    /// map's <paramref name="wmax"/>. False (ungated) for a species outside the gate and when
+    /// the map has no positive product this step (the all-zero guard).</summary>
+    public static bool Gate(MovementParameters m, int species, int globalMap, int step, int nCells, out ReadOnlySpan<double> weight, out double wmax)
+    {
+        weight = default;
+        wmax = 0.0;
+        if (species >= m.SalinitySpecies.Length || m.SalinitySpecies[species] == 0)
+        {
+            return false;
+        }
+
+        int frame = m.SalinityFrameByStep[step];
+        wmax = m.SalinityWmax[(globalMap * m.SalinityFrames) + frame];
+        if (!(wmax > 0.0))
+        {
+            return false;
+        }
+
+        weight = m.SalinityWeight.AsSpan(frame * nCells, nCells);
+        return true;
+    }
+
+    /// <summary>Gated walk candidates: the cells of <see cref="MapWalkCandidates"/> whose product
+    /// <c>map * weight</c> is placeable too, row-major. <paramref name="total"/> is the sum of
+    /// their products, added in that order (the Python kernel's <c>W</c>).</summary>
+    public static int GatedWalkCandidates(
+        MovementParameters m, int ny, int nx, int globalMap, int cell, int range, ReadOnlySpan<double> weight, Span<int> into, out double total)
+    {
+        ReadOnlySpan<double> map = m.MapStack.AsSpan(globalMap * ny * nx, ny * nx);
+        int cy = cell / nx, cx = cell % nx, n = 0;
+        int yHi = Math.Min(ny, cy + range + 1), xLo = Math.Max(0, cx - range), xHi = Math.Min(nx, cx + range + 1);
+        total = 0.0;
+        for (int y = Math.Max(0, cy - range); y < yHi; y++)
+        {
+            for (int x = xLo; x < xHi; x++)
+            {
+                int k = (y * nx) + x;
+                if (m.Ocean[k] != 0 && IsPlaceable(map[k]))
+                {
+                    double product = map[k] * weight[k];
+                    if (IsPlaceable(product))
+                    {
+                        into[n++] = k;
+                        total += product;
+                    }
+                }
+            }
+        }
+
+        return n;
+    }
+
+    /// <summary>The weighted choice of the gated walk: the first candidate at which the running
+    /// sum of products reaches <paramref name="r"/> (<c>u * total</c>), else the last one.
+    /// The sum is taken in candidate order, as <see cref="GatedWalkCandidates"/> took the total.</summary>
+    public static int WeightedChoice(ReadOnlySpan<double> map, ReadOnlySpan<double> weight, ReadOnlySpan<int> candidates, double r)
+    {
+        double acc = 0.0;
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            int k = candidates[i];
+            acc += map[k] * weight[k];
+            if (acc >= r)
+            {
+                return k;
+            }
+        }
+
+        return candidates[^1];
+    }
 
     /// <summary><c>index_maps[age_dt, step]</c> of a focal species, or -1 when either lies outside
     /// the table or the species has no maps.</summary>
@@ -143,18 +226,29 @@ public static class Movement
         }
 
         int g = offset + index;
+        bool gated = Gate(m, sp, g, step, nCells, out ReadOnlySpan<double> weight, out double wmax);
+        ReadOnlySpan<double> map = m.MapStack.AsSpan(g * nCells, nCells);
         if (!SameMap(m, sp, c.AgeDt, step, index) || l.CellId < 0)
         {
-            ReadOnlySpan<double> map = m.MapStack.AsSpan(g * nCells, nCells);
             double maxP = m.MapMaxProba[g];
             var draws = new PhiloxStream(key, DrawPurpose.MoveMapPlace, step, 0, l.Id);
             for (int t = 0; t < MaxPlacementTries; t++)
             {
                 int cell = (int)draws.NextBounded((ulong)nCells);
                 double v = map[cell];
+                bool accepted;
+                if (gated)
+                {
+                    double product = v * weight[cell];
+                    accepted = IsPlaceable(product) && AcceptsGated(product, wmax, draws.NextDouble());
+                }
+                else
+                {
+                    // The uniform is drawn only for a placeable cell of a proportional map, as Python does.
+                    accepted = IsPlaceable(v) && (maxP == 0.0 || Accepts(v, maxP, draws.NextDouble()));
+                }
 
-                // The uniform is drawn only for a placeable cell of a proportional map, as Python does.
-                if (IsPlaceable(v) && (maxP == 0.0 || Accepts(v, maxP, draws.NextDouble())))
+                if (accepted)
                 {
                     l.CellId = cell;
                     c.Flags &= ~SchoolFlags.IsOut;
@@ -166,11 +260,23 @@ public static class Movement
             return;
         }
 
-        int n = MapWalkCandidates(m, p.Ny, p.Nx, g, l.CellId, m.WalkRange[sp], scratch);
-        if (n > 0)
+        if (gated)
         {
-            var draws = new PhiloxStream(key, DrawPurpose.MoveMapWalk, step, 0, l.Id);
-            l.CellId = scratch[(int)draws.NextBounded((ulong)n)];
+            int count = GatedWalkCandidates(m, p.Ny, p.Nx, g, l.CellId, m.WalkRange[sp], weight, scratch, out double total);
+            if (count > 0)
+            {
+                var draws = new PhiloxStream(key, DrawPurpose.MoveMapWalk, step, 0, l.Id);
+                l.CellId = WeightedChoice(map, weight, scratch[..count], draws.NextDouble() * total);
+            }
+        }
+        else
+        {
+            int n = MapWalkCandidates(m, p.Ny, p.Nx, g, l.CellId, m.WalkRange[sp], scratch);
+            if (n > 0)
+            {
+                var draws = new PhiloxStream(key, DrawPurpose.MoveMapWalk, step, 0, l.Id);
+                l.CellId = scratch[(int)draws.NextBounded((ulong)n)];
+            }
         }
 
         c.Flags &= ~SchoolFlags.IsOut; // walked, or stranded where it is

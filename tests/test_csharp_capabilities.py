@@ -58,10 +58,11 @@ def test_every_catalogue_feature_has_exactly_one_detector():
 
 def test_the_implemented_features_are_exactly_these():
     # Flip a feature's flag only in the PR that makes it run: core ran end to end in task 1.8,
-    # oxygen_benthos in task 2.5, the recruitment three in task 2.3.
+    # oxygen_benthos in task 2.5, the recruitment three in task 2.3, salinity_gate in task 2.4.
     implemented = {f.name for f in cap.load_catalog().values() if f.implemented}
     assert implemented == {
         "core", "oxygen_benthos", "stock_recruitment", "rv_gate", "seeding_linear",
+        "salinity_gate",
     }  # fmt: skip
 
 
@@ -129,17 +130,16 @@ def test_demo_needs_exactly_these_features(demos, demo, minimal):
 @pytest.mark.parametrize("demo", sorted(EXPECTED))
 def test_minimal_eec_and_bob_run_and_baltic_is_refused(demos, demo):
     """With output.minimal on, EEC and Bay of Biscay need nothing beyond core. Baltic still needs
-    phase-2 features, and the builder writes no background schools and no salinity gate
-    whatever the config says, so the refusal is the ONLY protection: it must name each one that
-    is not implemented yet, and no implemented one (oxygen_benthos, task 2.5; the recruitment
-    curves and the RV gate, task 2.3)."""
+    its background species, and the builder writes no background schools whatever the config
+    says, so the refusal is the ONLY protection: it must name the feature that is not
+    implemented yet, and no implemented one (oxygen_benthos, task 2.5; the recruitment curves
+    and the RV gate, task 2.3; the salinity gate, task 2.4)."""
     reason = cap.csharp_engine_block_reason(demos[(demo, True)][1])
     if demo == "baltic":
         assert reason is not None and "core" not in reason
-        for name in ("oxygen_benthos", "stock_recruitment", "rv_gate"):
+        for name in ("oxygen_benthos", "stock_recruitment", "rv_gate", "salinity_gate"):
             assert name not in reason, name
-        for name in ("background_species", "salinity_gate"):
-            assert f"{name} (phase 2)" in reason, name
+        assert "background_species (phase 2)" in reason
     else:
         assert reason is None
 
