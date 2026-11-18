@@ -53,6 +53,38 @@ public sealed class KernelTables
 
     public required double[] RscTrophicLevel { get; init; }
 
+    /// <summary>The kernel's tables for a run, from its parameters.</summary>
+    public static KernelTables From(EngineParameters p)
+    {
+        AccessParameters a = p.Access;
+        (double[] byPred, int preyCount, int predCount) = a.Mode == 0
+            ? ([], 0, 0)
+            : PredatorMajor(a.Matrix, a.Rows, a.Cols, stageMode: a.Mode == 2);
+        ResourceParameters r = p.Resources;
+        return new KernelTables
+        {
+            NSpeciesFocal = p.Species.NFocal,
+            NStage = p.Predation.NStage,
+            NDtPerYear = p.NDtPerYear,
+            NSubdt = p.NSubdt,
+            NResources = r.N,
+            SizeRatioMin = p.Predation.SizeRatioMin,
+            SizeRatioMax = p.Predation.SizeRatioMax,
+            IngestionRate = p.Predation.IngestionRate,
+            FrShape = p.Predation.FrShape,
+            FrHalfSat = p.Predation.FrHalfSat,
+            HasAccess = a.Mode != 0,
+            UseStageAccess = a.Mode == 2,
+            AccessByPred = byPred,
+            AccessPreyCount = preyCount,
+            AccessPredCount = predCount,
+            ResourceAccessRows = r.N > 0 ? r.AccessRows : [],
+            RscSizeMin = r.N > 0 ? r.SizeMin : [],
+            RscSizeMax = r.N > 0 ? r.SizeMax : [],
+            RscTrophicLevel = r.N > 0 ? r.TrophicLevel : [],
+        };
+    }
+
     /// <summary>
     /// Builds the predator-major matrix from Python's layout: stage mode holds
     /// <c>[prey_row, pred_col]</c>, species mode <c>[pred_species, prey_species]</c>.

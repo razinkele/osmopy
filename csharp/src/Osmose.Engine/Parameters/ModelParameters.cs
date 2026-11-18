@@ -16,6 +16,34 @@ public sealed class SpeciesParameters
     public int[] LifespanDt { get; init; } = [];
 }
 
+/// <summary>Growth (bundle group <c>growth</c>): every species, except <see cref="Class"/> (focal).</summary>
+public sealed class GrowthParameters
+{
+    /// <summary>0 von Bertalanffy, 1 Gompertz (focal).</summary>
+    public byte[] Class { get; init; } = [];
+
+    public double[] Linf { get; init; } = [];
+
+    public double[] K { get; init; } = [];
+
+    public double[] T0 { get; init; } = [];
+
+    public double[] EggSize { get; init; } = [];
+
+    public double[] VbThresholdAge { get; init; } = [];
+
+    public double[] ConditionFactor { get; init; } = [];
+
+    public double[] AllometricPower { get; init; } = [];
+
+    /// <summary>+inf when unset (no cap).</summary>
+    public double[] Lmax { get; init; } = [];
+
+    public double[] DeltaLmaxFactor { get; init; } = [];
+
+    public double[] CriticalSuccessRate { get; init; } = [];
+}
+
 /// <summary>Predation and feeding stages (bundle group <c>predation</c>).</summary>
 public sealed class PredationParameters
 {
@@ -156,6 +184,21 @@ internal static class ModelReader
             LifespanDt = I4(r, "species.lifespan_dt", nTotal),
         };
     }
+
+    public static GrowthParameters Growth(BundleReader r, int nFocal, int nTotal) => new()
+    {
+        Class = r.Array("growth.class", DType.U1, nFocal)?.ToArray<byte>() ?? [],
+        Linf = F8(r, "growth.linf", nTotal),
+        K = F8(r, "growth.k", nTotal),
+        T0 = F8(r, "growth.t0", nTotal),
+        EggSize = F8(r, "growth.egg_size", nTotal),
+        VbThresholdAge = F8(r, "growth.vb_threshold_age", nTotal),
+        ConditionFactor = F8(r, "growth.condition_factor", nTotal),
+        AllometricPower = F8(r, "growth.allometric_power", nTotal),
+        Lmax = F8(r, "growth.lmax", nTotal),
+        DeltaLmaxFactor = F8(r, "growth.delta_lmax_factor", nTotal),
+        CriticalSuccessRate = F8(r, "growth.critical_success_rate", nTotal),
+    };
 
     public static PredationParameters Predation(BundleReader r, int nTotal)
     {
