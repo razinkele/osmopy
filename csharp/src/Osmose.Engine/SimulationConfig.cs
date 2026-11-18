@@ -39,6 +39,10 @@ public sealed partial class SimulationConfig : IDisposable
 
     private readonly SortedDictionary<string, BundleEntry> _entries = new(StringComparer.Ordinal);
     private MemoryMappedFile? _map;
+
+    /// <summary>Loaded from a bundle file: its arrays are a READ-ONLY memory map, so the engine
+    /// never writes results or control slots into it (a write would kill the process).</summary>
+    internal bool IsFileBacked => _map is not null;
     private MemoryMappedViewAccessor? _view;
 
     /// <summary>Creates an empty bundle for one contract version.</summary>

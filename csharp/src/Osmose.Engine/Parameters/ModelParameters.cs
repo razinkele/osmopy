@@ -200,6 +200,25 @@ public sealed class ReproductionParameters
     public int SeedingMode { get; init; }
 }
 
+/// <summary>Outputs (bundle group <c>output</c>, spec 6.9).</summary>
+public sealed class OutputParameters
+{
+    /// <summary>Per species (every species): schools younger than this many years are left out of
+    /// biomass and abundance. 0 when unset.</summary>
+    public double[] CutoffAge { get; init; } = [];
+
+    public int RecordFrequency { get; init; } = 1;
+
+    /// <summary>A record of the initial state, at step -1, precedes the run.</summary>
+    public bool Step0Include { get; init; }
+
+    /// <summary>Output families beyond the minimal set; 0 = <c>output.minimal.enabled</c>.</summary>
+    public long Families { get; init; }
+
+    /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
+    public int Records(int nSteps) => (Step0Include ? 1 : 0) + ((nSteps + RecordFrequency - 1) / RecordFrequency);
+}
+
 /// <summary>Movement (bundle group <c>movement</c>, spec 6.11).</summary>
 public sealed class MovementParameters
 {
@@ -394,6 +413,14 @@ internal static class ModelReader
         EggWeight = F8(r, "reproduction.egg_weight", nFocal),
         SrType = r.Array("reproduction.sr.type", DType.U1, nFocal)?.ToArray<byte>() ?? [],
         SeedingMode = (int)r.Int("reproduction.seeding_mode"),
+    };
+
+    public static OutputParameters Output(BundleReader r, int nTotal) => new()
+    {
+        CutoffAge = F8(r, "output.cutoff_age", nTotal),
+        RecordFrequency = (int)Math.Max(1, r.Int("output.record_frequency")),
+        Step0Include = r.Int("output.step0_include") != 0,
+        Families = r.Int("output.families"),
     };
 
     public static MovementParameters Movement(BundleReader r, int nFocal, int nTotal, int ny, int nx, byte[] ocean)
