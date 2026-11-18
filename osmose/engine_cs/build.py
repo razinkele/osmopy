@@ -36,6 +36,8 @@ ACCESS_NONE, ACCESS_SPECIES, ACCESS_STAGE = 0, 1, 2
 GROWTH_CLASSES = {"VB": 0, "GOMPERTZ": 1}
 #: ``movement.method`` codes.
 MOVEMENT_METHODS = {"none": 0, "random": 1, "maps": 2}
+# apply_stock_recruitment's curves (reproduction.sr.type).
+SR_TYPES = {"none": 0, "beverton_holt": 1, "ricker": 2, "hockey_stick": 3, "shepherd": 4}
 #: Domain separator for the random-patch generator (ASCII "PATC"): the patches get their own
 #: stream, derived from the run seed, so they never share one with anything else.
 PATCH_STREAM = 0x50415443
@@ -304,7 +306,17 @@ def _fishing(b: Bundle, config: Any, grid: Any, n_total: int) -> None:
 
 def _reproduction(b: Bundle, config: Any, n_total: int) -> None:
     """What ``reproduction`` reads (focal species), with the season factor resolved per step and
-    the egg weight resolved exactly as ``create_egg_schools`` computes it."""
+    the egg weight resolved exactly as ``create_egg_schools`` computes it.
+
+    Recruitment regulation (``regulate_recruitment``), in its order:
+    - the stock-recruitment curve: ``sr.type`` always, ``sr.ssb_half`` and ``sr.shepherd_beta``
+      exactly when a species has one (feature ``stock_recruitment``);
+    - ``seeding_mode`` (1 = linear, feature ``seeding_linear``): a seeded species skips the curve;
+    - the reproductive-volume gate (feature ``rv_gate``): ``rv.enabled`` and ``rv.factor_by_year``,
+      the latter filled by the engine's own ``rv_gate_factor`` for each model year, so its
+      offset and its clamp past the end of the series are the engine's.
+    The ceiling, thermal and depensation gates are phase 3 features; the engine refuses them.
+    """
     n_steps, ndt, n_focal = int(config.n_steps), int(config.n_dt_per_year), config.n_species
     for name in ("sex_ratio", "relative_fecundity", "maturity_size", "seeding_biomass"):
         b.set_array(
@@ -349,10 +361,33 @@ def _reproduction(b: Bundle, config: Any, n_total: int) -> None:
             weight = override[sp]
         weights[sp] = weight
     b.set_array("reproduction.egg_weight", weights)
-    b.set_array(
-        "reproduction.sr.type", np.zeros(n_focal, dtype=np.uint8)
-    )  # none; SR curves are a phase 2 feature
+    types = [str(t) for t in list(config.recruitment_type)[:n_focal]]
+    unknown = sorted(set(types) - set(SR_TYPES))
+    if unknown:
+        raise BundleBuildError(f"reproduction.sr.type: unknown stock-recruitment type {unknown}")
+    b.set_array("reproduction.sr.type", np.asarray([SR_TYPES[t] for t in types], dtype=np.uint8))
+    if any(t != "none" for t in types):
+        for name, source in (
+            ("ssb_half", "recruitment_ssb_half"),
+            ("shepherd_beta", "shepherd_beta"),
+        ):
+            entry = f"reproduction.sr.{name}"
+            b.set_array(
+                entry, _f8(entry, np.asarray(getattr(config, source))[:n_focal], (n_focal,))
+            )
+    if config.seeding_mode not in ("stock_recruitment", "linear"):
+        raise BundleBuildError(f"reproduction.seeding_mode: unknown mode {config.seeding_mode!r}")
     b.set_int("reproduction.seeding_mode", 0 if config.seeding_mode == "stock_recruitment" else 1)
+    enabled = config.rv_gate_enabled
+    if enabled is not None and np.asarray(enabled).any():
+        from osmose.engine.processes.recruitment_gate import rv_gate_factor
+
+        n_years = -(-n_steps // ndt)
+        by_year = np.stack([rv_gate_factor(config, y * ndt)[:n_focal] for y in range(n_years)])
+        b.set_array("reproduction.rv.enabled", np.asarray(enabled)[:n_focal].astype(np.uint8))
+        b.set_array(
+            "reproduction.rv.factor_by_year", np.ascontiguousarray(by_year, dtype=np.float64)
+        )
 
 
 def _resources(b: Bundle, config: Any, grid: Any) -> None:
