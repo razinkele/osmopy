@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import warnings
-from collections import deque
 from typing import cast
 
 import numpy as np
@@ -12,6 +11,10 @@ from numpy.typing import NDArray
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
 from osmose.engine.movement_maps import MovementMapSet
+from osmose.engine.processes.precompute import (  # noqa: F401 -- re-exported for callers and tests
+    _flatten_all_map_sets,
+    build_random_patches,
+)
 from osmose.engine.processes.salinity_gate import salinity_weighted_map
 from osmose.engine.state import SchoolState
 from osmose.logging import setup_logging
@@ -145,69 +148,6 @@ def _map_move_school(
     else:
         idx = rng.integers(0, len(accessible))
     return accessible[idx][0], accessible[idx][1], False
-
-
-def build_random_patches(
-    config: EngineConfig,
-    grid: Grid,
-    rng: np.random.Generator,
-) -> dict[int, NDArray[np.int32]]:
-    """Build the placement domain of every species that uses the "random" distribution.
-
-    Mirrors Java's ``RandomDistribution.createRandomMap`` (4.3.3): when
-    ``movement.distribution.ncell`` is unset, or covers at least every ocean cell, the
-    domain is the WHOLE ocean and no random number is drawn; otherwise it is a
-    BFS-connected patch of ``ncell`` ocean cells grown from a random ocean cell.
-
-    The domain is where UNLOCATED schools (new eggs) are placed. Located schools
-    random-walk beyond it, as in Java, whose ``getAccessibleCells`` ignores the domain.
-
-    Returns a dict mapping species index -> ``(n_cells, 2)`` int32 array of ``(x, y)``
-    cells. A species is absent only when the grid has no ocean cell at all.
-    """
-    domains: dict[int, NDArray[np.int32]] = {}
-    ocean_ys, ocean_xs = np.nonzero(grid.ocean_mask)  # row-major: y outer, x inner
-    n_ocean = len(ocean_xs)
-    if n_ocean == 0:
-        return domains
-    whole_ocean = np.column_stack((ocean_xs, ocean_ys)).astype(np.int32)
-    whole_ocean.setflags(write=False)  # one array shared by every whole-domain species
-
-    for sp in range(config.n_species):
-        if config.movement_method[sp] != "random":
-            continue
-        # 0 is the parser's placeholder for an unset key (Java: unset -> whole domain).
-        ncell = (
-            0
-            if config.random_distribution_ncell is None
-            else int(config.random_distribution_ncell[sp])
-        )
-        if ncell <= 0 or ncell >= n_ocean:
-            domains[sp] = whole_ocean
-            continue
-
-        # Pick random starting ocean cell
-        start_idx = int(rng.integers(0, n_ocean))
-        start = (int(ocean_xs[start_idx]), int(ocean_ys[start_idx]))
-
-        # BFS to collect ncell connected ocean cells (the list keeps insertion order)
-        patch: list[tuple[int, int]] = [start]
-        seen: set[tuple[int, int]] = {start}
-        queue: deque[tuple[int, int]] = deque([start])
-
-        while len(patch) < ncell and queue:
-            cx, cy = queue.popleft()
-            for ny, nx in grid.neighbors(cy, cx):
-                if len(patch) >= ncell:
-                    break
-                if grid.ocean_mask[ny, nx] and (nx, ny) not in seen:
-                    seen.add((nx, ny))
-                    patch.append((nx, ny))
-                    queue.append((nx, ny))
-
-        domains[sp] = np.array(patch, dtype=np.int32)
-
-    return domains
 
 
 def random_walk(
@@ -616,42 +556,6 @@ if _HAS_NUMBA:
                                 break
                     if count > target:
                         break
-
-
-def _flatten_all_map_sets(
-    map_sets: dict[int, MovementMapSet],
-    n_species: int,
-    ny: int,
-    nx: int,
-) -> tuple[NDArray, NDArray, NDArray, NDArray]:
-    """Stack all species' movement maps into contiguous arrays for Numba.
-
-    Returns:
-        all_maps: float64[total_maps, ny, nx] — stacked maps (None → zeros)
-        all_max_proba: float64[total_maps] — max probability per map
-        all_is_null: bool[total_maps] — True for None (out-of-domain) maps
-        sp_map_offset: int32[n_species] — offset into all_maps per species (-1 if no maps)
-    """
-    total_maps = sum(len(ms.maps) for ms in map_sets.values())
-    all_maps = np.zeros((total_maps, ny, nx), dtype=np.float64)
-    all_max_proba = np.zeros(total_maps, dtype=np.float64)
-    all_is_null = np.zeros(total_maps, dtype=np.bool_)
-    sp_map_offset = np.full(n_species, -1, dtype=np.int32)
-
-    pos = 0
-    for sp, ms in map_sets.items():
-        if sp >= n_species:
-            raise ValueError(f"Movement map species ID {sp} exceeds n_species={n_species}")
-        sp_map_offset[sp] = pos
-        for k, m in enumerate(ms.maps):
-            if m is not None:
-                all_maps[pos + k] = m
-            else:
-                all_is_null[pos + k] = True
-            all_max_proba[pos + k] = ms.max_proba[k]
-        pos += len(ms.maps)
-
-    return all_maps, all_max_proba, all_is_null, sp_map_offset
 
 
 def _precompute_map_indices(

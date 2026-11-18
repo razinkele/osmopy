@@ -365,7 +365,7 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
     accessibility. Sizes, trophic levels and accessibility rows come from the kernel's own
     ``_precompute_resource_arrays``.
     """
-    from osmose.engine.processes.mortality import _precompute_resource_arrays
+    from osmose.engine.processes.precompute import _precompute_resource_arrays
     from osmose.engine.resources import ResourceState
 
     # Deliberately WITHOUT the bottom-oxygen forcing simulate() passes: the oxygen-benthos K
@@ -427,7 +427,7 @@ def _movement(b: Bundle, config: Any, grid: Any, n_total: int, seed: int) -> Non
     the run seed (only a configured ``ncell`` smaller than the ocean draws anything).
     """
     from osmose.engine.movement_maps import MovementMapSet
-    from osmose.engine.processes.movement import _flatten_all_map_sets, build_random_patches
+    from osmose.engine.processes.precompute import _flatten_all_map_sets, build_random_patches
 
     n_focal = config.n_species
     methods = list(config.movement_method)

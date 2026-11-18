@@ -21,8 +21,11 @@ described under "Bundle build".
 | Bundle build plus marshalling, at most 5% of a 10-yr EEC run | 2.2% (39 ms), PASS | **9.8%** (40 ms), OVER |
 | Peak memory, no more than the Python engine's | 291.0 vs 289.1 MB, **1.9 MB over** | 289.6 vs 290.2 MB, PASS |
 
-Two budget lines miss, by small absolute amounts. Both have an identified cause and a fix outside
-this task (below). The owner decides whether they block anything. Neither changes the gate.
+Two budget lines missed, by small absolute amounts. Neither changes the gate.
+
+**Update, same day:**
+- **Peak memory now passes:** C# 217 MB against Python's 286 MB at one thread, and 218 against 287 at 14. The Numba import is gone from the C# path (see "Peak memory" below).
+- **The bundle share is unchanged,** at 10.6% at 14 threads in a second measurement. Of its 36 ms, 29.5 ms is input resolution the Python engine performs inside its own timed run. **The C#-only remainder is 6.5 ms: 1.8% at 14 threads, 0.4% at one.** Whether the budget should count the shared part is the owner's call.
 
 ## Protocol, and where it departs from spec 10.4
 
@@ -122,12 +125,26 @@ below in the second.
   `build_random_patches`).
 - The build's own data adds 20 MB, and the CLR plus the run add 55–65 MB.
 
-*Follow-up, not done here:* move those helpers to Numba-free modules. A process that runs only
-the C# engine could then skip Numba, about 60 MB under the Python engine. Today
-`osmose/engine/thread_policy.py` imports Numba as well, and calibration workers call it, so that
-import would need to become lazy too before the saving applies there: about 60 MB per worker, or
-0.8 GB across 14. The budget's real target is the 50-yr Baltic run of Phase 2, where the run's
-data dominates. EEC's peaks are mostly runtime machinery.
+**Done (same day, PR "C# path without Numba").** The three helpers moved to the Numba-free
+`osmose/engine/processes/precompute.py`, and the old modules re-export them. C# calibration
+workers no longer apply Numba's thread rule, which imported Numba, and neither does the A/B
+harness's C# worker. `tests/test_csharp_build_no_numba.py` runs a bundle build, and a full C#
+run, in a fresh interpreter and requires that no `numba` or `llvmlite` module loads. Pointing the
+builder back at `mortality.py` turns it red: `llvmlite` loads.
+
+Measured again (EEC 10 yr, 3 pairs, warm Numba cache):
+
+| Threads | Python peak (baseline) | C# peak (baseline) | C# vs Python |
+|---|---|---|---|
+| 1 | 286 MB (203) | 217 MB (137) | **69 MB under** |
+| 14 | 287 MB (203) | 218 MB (138) | **69 MB under** |
+
+The ratios held: 3.77x at one thread and 7.59x at 14. One aside on method: the first one-thread
+Python worker in a fresh worktree peaked at 501 MB, because its warm-up compiled Numba kernels
+into an empty cache. Measure Python RSS with a warm cache.
+
+The budget's real target is still the 50-yr Baltic run of Phase 2, where the run's data
+dominates.
 
 ## First run, same day
 

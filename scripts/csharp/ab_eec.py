@@ -52,9 +52,10 @@ def _rss_mb() -> float:
 
 def worker(engine: str, threads: int, years: int, seed: int) -> None:
     """Line protocol on stdin/stdout: 'run' -> one JSON result line; 'quit' -> peak RSS."""
-    from osmose.engine.thread_policy import apply_single_run_threads
+    if engine == "python":  # Numba's threads; the C# worker must not import Numba for nothing
+        from osmose.engine.thread_policy import apply_single_run_threads
 
-    apply_single_run_threads(threads)
+        apply_single_run_threads(threads)
     import numpy as np
 
     def timed(raw, cfg, grid) -> dict:
