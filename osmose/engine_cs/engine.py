@@ -14,6 +14,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from osmose.results import OsmoseResults
 from osmose.runner import RunResult
 
@@ -120,8 +122,30 @@ def _step_outputs(buffers: Any, records: int) -> list:
     """One ``StepOutput`` per written record, as views of the result rows (spec 8.4)."""
     from osmose.engine.simulate import StepOutput
 
-    def row(a, i):
-        return None if a is None else a[i]  # a family the run did not collect stays None
+    families = buffers.families
+    offsets = buffers.age_bin_offsets
+
+    def row(name, i):
+        """A family's record as the array ``_collect_outputs`` gives; None when it is off."""
+        return families[name][i] if name in families else None
+
+    def by_age(name, i):
+        """``{species: its age classes}``, cut from the concatenated row."""
+        if name not in families:
+            return None
+        r = families[name][i]
+        return {sp: r[offsets[sp] : offsets[sp + 1]] for sp in range(len(offsets) - 1)}
+
+    def by_size(name, i):
+        """``{species: its length classes}``."""
+        return dict(enumerate(families[name][i])) if name in families else None
+
+    def present(name, i):
+        """``{species: value}`` without the species absent from the record (NaN in the row)."""
+        if name not in families:
+            return None
+        r = families[name][i]
+        return {sp: float(v) for sp, v in enumerate(r) if not np.isnan(v)}
 
     return [
         StepOutput(
@@ -131,9 +155,17 @@ def _step_outputs(buffers: Any, records: int) -> list:
             mortality_by_cause=buffers.mortality[i],
             yield_by_species=buffers.yield_[i],
             window_steps=int(buffers.window_steps[i]),
-            abundance_by_stage=row(buffers.abundance_by_stage, i),
-            mortality_by_cause_stage=row(buffers.mortality_by_cause_stage, i),
-            mortality_rate_by_cause_stage=row(buffers.mortality_rate_by_cause_stage, i),
+            abundance_by_stage=row("abundance_by_stage", i),
+            mortality_by_cause_stage=row("mortality_by_cause_stage", i),
+            mortality_rate_by_cause_stage=row("mortality_rate_by_cause_stage", i),
+            biomass_by_age=by_age("biomass_by_age", i),
+            abundance_by_age=by_age("abundance_by_age", i),
+            biomass_by_size=by_size("biomass_by_size", i),
+            abundance_by_size=by_size("abundance_by_size", i),
+            mean_tl=present("mean_tl", i),
+            yield_n=row("yield_n", i),
+            mean_size=present("mean_size", i),
+            ssb=row("ssb", i),
         )
         for i in range(records)
     ]

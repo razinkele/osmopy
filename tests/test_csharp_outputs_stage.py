@@ -98,43 +98,42 @@ def _bytes_equal(a, b) -> bool:
 
 
 def test_the_stage_family_is_declared_exactly_for_a_config_that_is_not_minimal(tmp_path):
-    for extra, families in ((FULL, FAMILY_STAGE), ({}, 0)):
+    for extra, on in ((FULL, True), ({}, False)):
         raw = _raw("eec_full", tmp_path, 1, extra)
         config, grid, *_ = PythonEngine()._prepare_run(raw, 11)
-        assert output_families(config) == families
+        families = output_families(config)
+        assert bool(families & FAMILY_STAGE) == on and (families == 0) == (not on)
         b = build_bundle(config, raw, grid, seed=11)
         assert b.get("output.families") == families
         buffers = allocate_results(b, config)
         n, nf = len(buffers.record_step), config.n_species
-        shapes = {name: getattr(buffers, name) for name in STAGE_BUFFERS}
-        if families:
-            assert shapes["abundance_by_stage"].shape == (n, nf, 3)
-            assert shapes["mortality_by_cause_stage"].shape == (n, nf, 8, 3)
-            assert shapes["mortality_rate_by_cause_stage"].shape == (n, nf, 8, 3)
-            assert all(b.get(f"result.{name}") is shapes[name] for name in STAGE_BUFFERS)
+        if on:
+            got = buffers.families
+            assert got["abundance_by_stage"].shape == (n, nf, 3)
+            assert got["mortality_by_cause_stage"].shape == (n, nf, 8, 3)
+            assert got["mortality_rate_by_cause_stage"].shape == (n, nf, 8, 3)
+            assert all(b.get(f"result.{name}") is got[name] for name in STAGE_BUFFERS)
         else:
-            assert all(v is None for v in shapes.values())
-            assert not any(f"result.{name}" in b.names() for name in STAGE_BUFFERS)
+            assert buffers.families == {}
+            assert not any(name.startswith("result.") and "stage" in name for name in b.names())
 
 
 def test_step_outputs_carry_the_stage_rows_and_none_for_a_minimal_run(tmp_path):
     raw = _raw("eec_full", tmp_path, 1, FULL)
     config, grid, *_ = PythonEngine()._prepare_run(raw, 11)
     buffers = allocate_results(build_bundle(config, raw, grid, seed=11), config)
-    assert buffers.abundance_by_stage is not None
-    assert buffers.mortality_rate_by_cause_stage is not None
-    buffers.abundance_by_stage[:] = np.arange(buffers.abundance_by_stage.size).reshape(
-        buffers.abundance_by_stage.shape
-    )
-    buffers.mortality_rate_by_cause_stage[0, 1, 3, 1] = np.inf
+    abundance = buffers.families["abundance_by_stage"]
+    abundance[:] = np.arange(abundance.size).reshape(abundance.shape)
+    buffers.families["mortality_rate_by_cause_stage"][0, 1, 3, 1] = np.inf
     out = _step_outputs(buffers, 1)
     assert len(out) == 1 and isinstance(out[0], StepOutput)
     assert out[0].abundance_by_stage is not None
     assert out[0].mortality_by_cause_stage is not None
     assert out[0].mortality_rate_by_cause_stage is not None
-    assert np.array_equal(out[0].abundance_by_stage, buffers.abundance_by_stage[0])
+    assert np.array_equal(out[0].abundance_by_stage, abundance[0])
     assert out[0].mortality_by_cause_stage.shape == (config.n_species, 8, 3)
     assert out[0].mortality_rate_by_cause_stage[1, 3, 1] == np.inf
+    assert not out[0].mortality_by_cause_stage.any()  # each field reads its own buffer
 
     raw = _raw("eec_full", tmp_path, 1)
     config, grid, *_ = PythonEngine()._prepare_run(raw, 11)

@@ -17,7 +17,7 @@ time with its name rather than inside the engine.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -700,29 +700,114 @@ def _output(b: Bundle, config: Any, n_total: int) -> None:
     )
     b.set_int("output.record_frequency", int(config.output_record_frequency))
     b.set_int("output.step0_include", int(bool(config.output_step0_include)))
-    b.set_int("output.families", output_families(config))
+    families = output_families(config)
+    b.set_int("output.families", families)
+    # The two binning tables, exactly with their families and exactly as _collect_distributions
+    # forms them.
+    if families & (FAMILY_BIOMASS_BY_AGE | FAMILY_ABUNDANCE_BY_AGE):
+        b.set_array("output.age_bin_offsets", age_bin_offsets(config))
+    if families & (FAMILY_BIOMASS_BY_SIZE | FAMILY_ABUNDANCE_BY_SIZE):
+        b.set_array("output.size_edges", size_edges(config))
 
 
+N_STAGES = 3  # Eggs, Juvenil, Adult
+#: The life-stage buffers, named as the ``StepOutput`` fields they become.
+STAGE_BUFFERS = ("abundance_by_stage", "mortality_by_cause_stage", "mortality_rate_by_cause_stage")
 #: Bits of ``output.families`` (C# ``OutputFamilies``). 0 = ``output.minimal.enabled``.
 FAMILY_STAGE = 1  # the life-stage split and its rates: every run that is not minimal
+FAMILY_BIOMASS_BY_AGE = 2
+FAMILY_ABUNDANCE_BY_AGE = 4
+FAMILY_BIOMASS_BY_SIZE = 8
+FAMILY_ABUNDANCE_BY_SIZE = 16
+FAMILY_MEAN_TL = 32
+FAMILY_YIELD_N = 64
+FAMILY_MEAN_SIZE = 128
+FAMILY_SSB = 256
 
 
 def output_families(config: Any) -> int:
-    """The families ``_collect_outputs`` computes for this config beyond the minimal set. They
-    exist exactly with feature ``full_outputs`` (a config that is not minimal)."""
+    """The families ``_collect_outputs`` computes for this config beyond the minimal set, by the
+    same switches it reads. They exist exactly with feature ``full_outputs`` (a config that is
+    not minimal)."""
     if config.output_minimal:
         return 0
-    return FAMILY_STAGE
+    on = [
+        (FAMILY_STAGE, True),
+        (FAMILY_BIOMASS_BY_AGE, config.output_biomass_byage),
+        (FAMILY_ABUNDANCE_BY_AGE, config.output_abundance_byage),
+        (FAMILY_BIOMASS_BY_SIZE, config.output_biomass_bysize),
+        (FAMILY_ABUNDANCE_BY_SIZE, config.output_abundance_bysize),
+        (FAMILY_MEAN_TL, config.output_meantl),
+        (FAMILY_YIELD_N, config.output_yield_abundance or config.output_yield_abundance_netcdf),
+        (FAMILY_MEAN_SIZE, config.output_mean_size or config.output_mean_size_netcdf),
+        (FAMILY_SSB, config.output_ssb or config.output_ssb_netcdf),
+    ]
+    return sum(bit for bit, flag in on if flag)
+
+
+def age_bin_offsets(config: Any) -> np.ndarray:
+    """Where each focal species' age classes start in a by-age record (``n_species + 1``
+    values). A species has ``ceil(lifespan / steps per year) + 1`` classes, as
+    ``_collect_distributions`` sizes them."""
+    bins = [
+        int(np.ceil(config.lifespan_dt[sp] / config.n_dt_per_year)) + 1
+        for sp in range(config.n_species)
+    ]
+    return np.concatenate([[0], np.cumsum(bins)]).astype(np.int32)
+
+
+def size_edges(config: Any) -> np.ndarray:
+    """The left edges of the length classes, as ``_collect_distributions`` forms them."""
+    edges = np.arange(
+        config.output_size_min,
+        config.output_size_max + config.output_size_incr,
+        config.output_size_incr,
+    )
+    if len(edges) == 0 or not (np.diff(edges) > 0).all():
+        raise BundleBuildError(
+            f"output.distrib.bysize: min {config.output_size_min}, max {config.output_size_max}, "
+            f"incr {config.output_size_incr} give no increasing length classes"
+        )
+    return np.ascontiguousarray(edges, dtype=np.float64)
+
+
+def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
+    """The shape of ONE record of every family that is on, by buffer name (the ``StepOutput``
+    field of the same name), in the engine's order (C# ``OutputLayout.Specs``)."""
+    families, nf = output_families(config), config.n_species
+    shapes: dict[str, tuple[int, ...]] = {}
+    if families & FAMILY_STAGE:
+        shapes["abundance_by_stage"] = (nf, N_STAGES)
+        shapes["mortality_by_cause_stage"] = (nf, N_MORTALITY_CAUSES, N_STAGES)
+        shapes["mortality_rate_by_cause_stage"] = (nf, N_MORTALITY_CAUSES, N_STAGES)
+    if families & (FAMILY_BIOMASS_BY_AGE | FAMILY_ABUNDANCE_BY_AGE):
+        n_age = int(age_bin_offsets(config)[-1])
+        if families & FAMILY_BIOMASS_BY_AGE:
+            shapes["biomass_by_age"] = (n_age,)
+        if families & FAMILY_ABUNDANCE_BY_AGE:
+            shapes["abundance_by_age"] = (n_age,)
+    if families & (FAMILY_BIOMASS_BY_SIZE | FAMILY_ABUNDANCE_BY_SIZE):
+        n_size = len(size_edges(config))
+        if families & FAMILY_BIOMASS_BY_SIZE:
+            shapes["biomass_by_size"] = (nf, n_size)
+        if families & FAMILY_ABUNDANCE_BY_SIZE:
+            shapes["abundance_by_size"] = (nf, n_size)
+    for name, bit in (
+        ("mean_tl", FAMILY_MEAN_TL),
+        ("yield_n", FAMILY_YIELD_N),
+        ("mean_size", FAMILY_MEAN_SIZE),
+        ("ssb", FAMILY_SSB),
+    ):
+        if families & bit:
+            shapes[name] = (nf,)
+    return shapes
 
 
 # --------------------------------------------------------------------------- result buffers
 
 #: Columns of ``result.mortality``, in ``MortalityCause`` order.
 N_MORTALITY_CAUSES = 8
-N_STAGES = 3
 CONTROL_SLOTS = 8
-#: The life-stage buffers, named as the ``StepOutput`` fields they become.
-STAGE_BUFFERS = ("abundance_by_stage", "mortality_by_cause_stage", "mortality_rate_by_cause_stage")
 
 
 @dataclass
@@ -737,11 +822,12 @@ class RunBuffers:
     mortality: np.ndarray  # f8 (n_records, n_focal, 8): window sum of deaths by cause
     yield_: np.ndarray  # f8 (n_records, n_focal): window sum, tonnes
     control: np.ndarray  # i8 (8): [0] cancel (Python), [1] steps done, [2] records, [3] schools
-    # The life-stage family (Eggs, Juvenil, Adult); None for a minimal run.
-    abundance_by_stage: np.ndarray | None = None  # f8 (n_records, n_focal, 3): window mean
-    mortality_by_cause_stage: np.ndarray | None = None  # f8 (n_records, n_focal, 8, 3): window sum
-    # f8 (n_records, n_focal, 8, 3): the window SUM of per-step rates; inf for an emptied stage
-    mortality_rate_by_cause_stage: np.ndarray | None = None
+    #: The families beyond the minimal set, by name (``family_shapes``): f8, one row per record.
+    #: Empty for a minimal run. The stage rates are a window SUM of per-step rates (inf for an
+    #: emptied stage); ``mean_tl`` and ``mean_size`` hold NaN for a species absent from a record.
+    families: dict[str, np.ndarray] = field(default_factory=dict)
+    #: Where each focal species' age classes start in a by-age row; None without a by-age family.
+    age_bin_offsets: np.ndarray | None = None
 
 
 def n_records(n_steps: int, record_frequency: int, step0_include: bool) -> int:
@@ -766,11 +852,10 @@ def allocate_results(b: Bundle, config: Any) -> RunBuffers:
     for name in ("record_step", "window_steps", "biomass", "abundance", "mortality"):
         b.set_array(f"result.{name}", getattr(buffers, name))
     b.set_array("result.yield", buffers.yield_)
-    if output_families(config) & FAMILY_STAGE:
-        buffers.abundance_by_stage = np.zeros((n, n_focal, N_STAGES))
-        buffers.mortality_by_cause_stage = np.zeros((n, n_focal, N_MORTALITY_CAUSES, N_STAGES))
-        buffers.mortality_rate_by_cause_stage = np.zeros((n, n_focal, N_MORTALITY_CAUSES, N_STAGES))
-        for name in STAGE_BUFFERS:
-            b.set_array(f"result.{name}", getattr(buffers, name))
+    for name, shape in family_shapes(config).items():
+        buffers.families[name] = np.zeros((n, *shape))
+        b.set_array(f"result.{name}", buffers.families[name])
+    if "biomass_by_age" in buffers.families or "abundance_by_age" in buffers.families:
+        buffers.age_bin_offsets = age_bin_offsets(config)
     b.set_array("control.block", buffers.control)
     return buffers
