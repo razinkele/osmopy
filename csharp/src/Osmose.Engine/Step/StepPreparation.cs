@@ -1,0 +1,191 @@
+using Osmose.Engine.Schools;
+
+namespace Osmose.Engine.Step;
+
+/// <summary>
+/// Per-step preparation before mortality (plan task 1.4, spec 6.3): resource carrying capacity,
+/// feeding stages, stage-accessibility indices and per-school rates. Every operation is exact
+/// IEEE arithmetic in the Python engine's order (tier E), so the results equal
+/// <c>_precompute_effective_rates</c>, <c>compute_feeding_stages</c>,
+/// <c>AccessibilityMatrix.compute_school_indices</c> and <c>ResourceState.update</c> bit for bit.
+/// </summary>
+public static class StepPreparation
+{
+    /// <summary>Carrying capacity of every resource in every cell for <paramref name="step"/>,
+    /// cell-major (<c>[cell * nRsc + r]</c>, spec 4.3): <c>forcing[r, frame] * access</c>.</summary>
+    public static void UpdateResources(EngineParameters p, int step, Span<double> cellMajor)
+    {
+        ResourceParameters rp = p.Resources;
+        int nRsc = rp.N, nCells = p.Ny * p.Nx;
+        if (nRsc == 0)
+        {
+            return;
+        }
+
+        if (cellMajor.Length < nRsc * nCells)
+        {
+            throw new ArgumentException($"needs {nRsc * nCells} values", nameof(cellMajor));
+        }
+
+        for (int r = 0; r < nRsc; r++)
+        {
+            int frame = rp.FrameByStep[(step * nRsc) + r];
+            double access = rp.AccessByStep[(step * nRsc) + r];
+            int baseIdx = ((r * rp.NFrames) + frame) * nCells;
+            for (int c = 0; c < nCells; c++)
+            {
+                cellMajor[(c * nRsc) + r] = rp.Forcing[baseIdx + c] * access;
+            }
+        }
+    }
+
+    /// <summary>Feeding stage and accessibility indices of every school (they depend only on
+    /// species, age, size, weight and trophic level, so once per step).</summary>
+    public static void StagesAndAccess(EngineParameters p, Span<SchoolCore> core)
+    {
+        PredationParameters pr = p.Predation;
+        AccessParameters ac = p.Access;
+        double ndt = p.NDtPerYear;
+        for (int i = 0; i < core.Length; i++)
+        {
+            ref SchoolCore c = ref core[i];
+            int sp = c.SpeciesId;
+            double value = pr.StageMetric[sp] switch
+            {
+                0 => c.Length,
+                1 => c.AgeDt / ndt,
+                2 => c.Weight * 1e6,
+                _ => c.TrophicLevel,
+            };
+            int lo = pr.StageOffsets[sp], hi = pr.StageOffsets[sp + 1];
+            c.FeedingStage = (byte)CountAtMost(pr.StageThresholds.AsSpan(lo, hi - lo), value);
+            if (ac.Mode == 2)
+            {
+                double ageYears = c.AgeDt / ndt;
+                c.PreyAccessRow = (short)StageIndex(ac.PreyOffsets, ac.PreyThresholds, ac.PreyIndex, sp, ageYears);
+                c.PredAccessCol = (short)StageIndex(ac.PredOffsets, ac.PredThresholds, ac.PredIndex, sp, ageYears);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Per-school sub-step rates for <paramref name="step"/>, written to <see cref="SchoolStep"/>:
+    /// starvation <c>rate / (ndt * n_subdt)</c>; additional <c>rate / (ndt * n_subdt)</c>; fishing
+    /// <c>rate * selectivity * spatial * season / n_subdt</c> with seasonality, else
+    /// <c>rate * selectivity * spatial / (ndt * n_subdt)</c>. Background and pre-feeding schools and
+    /// negative values are zeroed; NaN and infinities become zero; the discard fraction applies
+    /// where the fishing rate is positive.
+    /// </summary>
+    public static void Rates(EngineParameters p, Span<SchoolCore> core, ReadOnlySpan<SchoolLife> life, Span<SchoolStep> step, int t)
+    {
+        int nTotal = p.Species.NTotal, nFocal = p.Species.NFocal, nsub = p.NSubdt, ndt = p.NDtPerYear;
+        int denom = ndt * nsub;
+        int nx = p.Nx, ny = p.Ny;
+        FishingParameters f = p.Fishing;
+        double[] add = p.Mortality.AdditionalRateByStep;
+        for (int i = 0; i < core.Length; i++)
+        {
+            ref SchoolCore c = ref core[i];
+            ref SchoolStep s = ref step[i];
+            int sp = c.SpeciesId;
+            bool exempt = (c.Flags & SchoolFlags.IsBackground) != 0 || c.AgeDt < c.FirstFeedingAgeDt;
+
+            s.RateStarvation = Exempt(life[i].StarvationRate / denom, exempt);
+            s.RateAdditional = Finite(Exempt(add[(t * nTotal) + sp], exempt) / denom);
+
+            double fishing = 0.0, discard = 0.0;
+            if (f.Enabled)
+            {
+                double rate = f.RateByStep[(t * nTotal) + sp];
+                double sel = 1.0, spatial = 1.0;
+                if (sp < nFocal)
+                {
+                    sel = Selectivity(f, sp, c, ndt);
+                    int map = f.MapIndex[sp];
+                    if (map >= 0)
+                    {
+                        int cell = life[i].CellId;
+                        int cy = cell >= 0 ? cell / nx : -1, cx = cell >= 0 ? cell % nx : -1;
+                        double v = (cy >= 0 && cy < ny && cx >= 0 && cx < nx) ? f.Maps[(((map * ny) + cy) * nx) + cx] : 0.0;
+                        spatial = double.IsNaN(v) || v <= 0 ? 0.0 : v;
+                    }
+                }
+
+                fishing = f.SeasonByStep is { } season
+                    ? rate * sel * spatial * season[(t * nTotal) + sp] / nsub
+                    : rate * sel * spatial / denom;
+                fishing = Finite(Exempt(fishing, exempt));
+                if (f.DiscardRate is { } d && fishing > 0)
+                {
+                    discard = d[sp];
+                }
+            }
+
+            s.RateFishing = fishing;
+            s.DiscardFraction = discard;
+        }
+    }
+
+    private static double Selectivity(FishingParameters f, int sp, in SchoolCore c, int ndt)
+    {
+        int type = f.SelectivityType[sp];
+        if (type == 0)
+        {
+            return (c.AgeDt / (double)ndt) < f.SelectivityA50[sp] ? 0.0 : 1.0;
+        }
+
+        if (type == 1)
+        {
+            throw new NotSupportedException("logistic selectivity is the selectivity_logistic feature (phase 3)");
+        }
+
+        double l50 = f.SelectivityL50[sp];
+        return l50 > 0 && c.Length < l50 ? 0.0 : 1.0;
+    }
+
+    /// <summary>The Python engine's <c>_zero_exempt</c>: exempt schools and negative values become 0.</summary>
+    private static double Exempt(double value, bool exempt) => exempt || value < 0 ? 0.0 : value;
+
+    /// <summary><c>np.nan_to_num(nan=0, posinf=0, neginf=0)</c>.</summary>
+    private static double Finite(double value) => double.IsFinite(value) ? value : 0.0;
+
+    /// <summary><c>np.searchsorted(sorted, v, side="right")</c>: how many thresholds are at most v.
+    /// NumPy sorts NaN last, so a NaN value counts every threshold.</summary>
+    private static int CountAtMost(ReadOnlySpan<double> sorted, double v)
+    {
+        if (double.IsNaN(v))
+        {
+            return sorted.Length;
+        }
+
+        int lo = 0, hi = sorted.Length;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >>> 1;
+            if (sorted[mid] <= v)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return lo;
+    }
+
+    /// <summary><c>compute_school_indices</c>: the stage of the first threshold above the age,
+    /// clamped to the last stage; an empty range (species absent from the CSV) gives -1.</summary>
+    private static int StageIndex(int[] offsets, double[] thresholds, int[] index, int sp, double ageYears)
+    {
+        int lo = offsets[sp], hi = offsets[sp + 1];
+        if (hi == lo)
+        {
+            return -1;
+        }
+
+        int k = CountAtMost(thresholds.AsSpan(lo, hi - lo), ageYears);
+        return index[lo + Math.Min(k, hi - lo - 1)];
+    }
+}

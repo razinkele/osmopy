@@ -70,12 +70,30 @@ public sealed class EngineParameters
     /// <summary><c>grid.ocean_mask</c> (ny * nx, row-major), copied: 1 = ocean, 0 = land.</summary>
     public IReadOnlyList<byte> OceanMask { get; private init; } = [];
 
+    public SpeciesParameters Species { get; private init; } = new();
+
+    public PredationParameters Predation { get; private init; } = new();
+
+    public AccessParameters Access { get; private init; } = new();
+
+    public MortalityParameters Mortality { get; private init; } = new();
+
+    public FishingParameters Fishing { get; private init; } = new();
+
+    public ResourceParameters Resources { get; private init; } = new();
+
     /// <summary>
-    /// Reads and validates the bundle. Every structural problem (missing entry, wrong dtype or
-    /// shape, out-of-range value) is reported in one <see cref="BundleValidationException"/>; a valid
-    /// bundle that needs unimplemented features gets one <see cref="UnsupportedFeatureException"/>.
+    /// Reads and validates the bundle in three stages: the header (every problem in one
+    /// <see cref="BundleValidationException"/>), then the declared features (one
+    /// <see cref="UnsupportedFeatureException"/> naming every unimplemented one, so a bundle the
+    /// engine cannot run is refused before its model tables are examined), then the model groups
+    /// (again every problem at once).
     /// </summary>
-    public static EngineParameters From(SimulationConfig config)
+    public static EngineParameters From(SimulationConfig config) => From(config, checkFeatures: true);
+
+    /// <summary>As <see cref="From(SimulationConfig)"/>; <paramref name="checkFeatures"/> false lets the
+    /// test probes read a bundle whose features are not implemented yet.</summary>
+    internal static EngineParameters From(SimulationConfig config, bool checkFeatures)
     {
         ArgumentNullException.ThrowIfNull(config);
         var r = new BundleReader(config, [.. FeatureCatalog.ContractVersions]);
@@ -193,13 +211,29 @@ public sealed class EngineParameters
         }
 
         FeatureInfo[] unsupported = [.. features.Where(f => !f.Implemented).OrderBy(f => f.Id)];
-        if (unsupported.Length > 0)
+        if (checkFeatures && unsupported.Length > 0)
         {
             throw new UnsupportedFeatureException(unsupported);
         }
 
+        var model = new BundleReader(config, [.. FeatureCatalog.ContractVersions]);
+        SpeciesParameters species = ModelReader.Species(model);
+        int nTotal = species.NTotal;
+        PredationParameters predation = ModelReader.Predation(model, nTotal);
+        AccessParameters access = ModelReader.Access(model, nTotal);
+        MortalityParameters mortality = ModelReader.Mortality(model, (int)nSteps, species.NFocal, nTotal);
+        FishingParameters fishing = ModelReader.Fishing(model, config, (int)nSteps, species.NFocal, nTotal, (int)ny, (int)nx);
+        ResourceParameters resources = ModelReader.Resources(model, (int)nSteps, (int)(ny * nx));
+        model.ThrowIfProblems();
+
         return new EngineParameters
         {
+            Species = species,
+            Predation = predation,
+            Access = access,
+            Mortality = mortality,
+            Fishing = fishing,
+            Resources = resources,
             ContractVersion = config.ContractVersion,
             Features = features,
             RngScheme = rngScheme,
