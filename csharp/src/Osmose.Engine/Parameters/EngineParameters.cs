@@ -74,6 +74,8 @@ public sealed class EngineParameters
 
     public GrowthParameters Growth { get; private init; } = new();
 
+    public MovementParameters Movement { get; private init; } = new();
+
     public PredationParameters Predation { get; private init; } = new();
 
     public AccessParameters Access { get; private init; } = new();
@@ -227,12 +229,14 @@ public sealed class EngineParameters
         MortalityParameters mortality = ModelReader.Mortality(model, (int)nSteps, species.NFocal, nTotal);
         FishingParameters fishing = ModelReader.Fishing(model, config, (int)nSteps, species.NFocal, nTotal, (int)ny, (int)nx);
         ResourceParameters resources = ModelReader.Resources(model, (int)nSteps, (int)(ny * nx));
+        MovementParameters movement = ModelReader.Movement(model, species.NFocal, nTotal, (int)ny, (int)nx, mask);
         model.ThrowIfProblems();
 
         return new EngineParameters
         {
             Species = species,
             Growth = growth,
+            Movement = movement,
             Predation = predation,
             Access = access,
             Mortality = mortality,

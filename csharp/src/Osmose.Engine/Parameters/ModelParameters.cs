@@ -169,6 +169,55 @@ public sealed class ResourceParameters
 
 /// <summary>Reads the model groups from a bundle through one <see cref="BundleReader"/>, so every
 /// missing entry or wrong shape lands in the same problem list as the header's.</summary>
+/// <summary>Movement (bundle group <c>movement</c>, spec 6.11).</summary>
+public sealed class MovementParameters
+{
+    public const byte MethodNone = 0;
+    public const byte MethodRandom = 1;
+    public const byte MethodMaps = 2;
+
+    /// <summary>Per species (every species): none, random or maps.</summary>
+    public byte[] Method { get; init; } = [];
+
+    /// <summary>Walk range in cells, per species.</summary>
+    public int[] WalkRange { get; init; } = [];
+
+    /// <summary>The largest walk range, which sizes the candidate scratch: <c>(2r + 1)^2</c>.</summary>
+    public int MaxWalkRange { get; init; }
+
+    /// <summary>Number of stacked maps over all species.</summary>
+    public int NMaps { get; init; }
+
+    /// <summary><c>[map, y, x]</c>, row-major; a null map is all zeros with <see cref="MapIsNull"/> set.</summary>
+    public double[] MapStack { get; init; } = [];
+
+    /// <summary>0 for presence/absence maps, else the map's maximum (<c>MovementMapSet</c>).</summary>
+    public double[] MapMaxProba { get; init; } = [];
+
+    public byte[] MapIsNull { get; init; } = [];
+
+    /// <summary>First stacked map of each focal species, or -1 for a species without maps.</summary>
+    public int[] MapSpeciesOffset { get; init; } = [];
+
+    /// <summary>Every focal species' <c>index_maps[age_dt, step]</c> table, concatenated row-major.</summary>
+    public int[] MapIndex { get; init; } = [];
+
+    /// <summary>Start of each species' table in <see cref="MapIndex"/>, length focal + 1.</summary>
+    public long[] MapIndexOffsets { get; init; } = [];
+
+    /// <summary><c>(n_ages, n_steps)</c> of each species' table, flattened.</summary>
+    public int[] MapIndexShape { get; init; } = [];
+
+    /// <summary>Start of each focal species' placement domain in <see cref="DomainCells"/>.</summary>
+    public int[] DomainOffsets { get; init; } = [];
+
+    /// <summary>Placement domains of random-method species: <c>(x, y)</c> pairs.</summary>
+    public int[] DomainCells { get; init; } = [];
+
+    /// <summary>The grid's ocean mask (1 ocean, 0 land), copied for the walk's hot loop.</summary>
+    public byte[] Ocean { get; init; } = [];
+}
+
 internal static class ModelReader
 {
     public static SpeciesParameters Species(BundleReader r)
@@ -298,6 +347,49 @@ internal static class ModelReader
             Forcing = forcing?.ToArray<double>() ?? [],
             FrameByStep = r.Array("resources.frame_by_step", DType.I4, nSteps, n)?.ToArray<int>() ?? [],
             AccessByStep = r.Array("resources.accessibility_by_step", DType.F8, nSteps, n)?.ToArray<double>() ?? [],
+        };
+    }
+
+    public static MovementParameters Movement(BundleReader r, int nFocal, int nTotal, int ny, int nx, byte[] ocean)
+    {
+        byte[] method = r.Array("movement.method", DType.U1, nTotal)?.ToArray<byte>() ?? [];
+        int[] walk = I4(r, "movement.walk_range", nTotal);
+        int nMaps = 0;
+        double[] stack = [], maxP = [];
+        byte[] isNull = [];
+        int[] offset = Enumerable.Repeat(-1, nFocal).ToArray(), index = [], shape = new int[nFocal * 2];
+        long[] indexOffsets = new long[nFocal + 1];
+        if (r.Int("movement.maps.n_species") > 0)
+        {
+            BundleEntry? s = r.Array("movement.maps.stack", DType.F8, BundleReader.Any, ny, nx);
+            nMaps = s is null ? 0 : (int)s.Shape[0];
+            stack = s?.ToArray<double>() ?? [];
+            maxP = F8(r, "movement.maps.max_proba", nMaps);
+            isNull = r.Array("movement.maps.is_null", DType.U1, nMaps)?.ToArray<byte>() ?? [];
+            offset = I4(r, "movement.maps.species_offset", nFocal);
+            indexOffsets = r.Array("movement.maps.index.offsets", DType.I8, nFocal + 1)?.ToArray<long>() ?? indexOffsets;
+            shape = r.Array("movement.maps.index.shape", DType.I4, nFocal, 2)?.ToArray<int>() ?? shape;
+            index = I4(r, "movement.maps.index", indexOffsets[^1]);
+        }
+
+        int[] domainOffsets = I4(r, "movement.random.domain.offsets", nFocal + 1);
+        long nDomain = domainOffsets.Length == nFocal + 1 ? domainOffsets[^1] : 0;
+        return new MovementParameters
+        {
+            Method = method,
+            WalkRange = walk,
+            MaxWalkRange = walk.Length == 0 ? 0 : Math.Max(0, walk.Max()),
+            NMaps = nMaps,
+            MapStack = stack,
+            MapMaxProba = maxP,
+            MapIsNull = isNull,
+            MapSpeciesOffset = offset,
+            MapIndex = index,
+            MapIndexOffsets = indexOffsets,
+            MapIndexShape = shape,
+            DomainOffsets = domainOffsets,
+            DomainCells = r.Array("movement.random.domain.cells", DType.I4, nDomain, 2)?.ToArray<int>() ?? [],
+            Ocean = ocean,
         };
     }
 
