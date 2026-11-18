@@ -108,12 +108,51 @@ public static class LifeCycle
     }
 
     /// <summary>
+    /// <c>regulate_recruitment</c> for one species, in its order: the stock-recruitment curve
+    /// (<c>apply_stock_recruitment</c>; skipped at <c>ssb &lt;= 0</c>), the linear seeding mode
+    /// (a seeded species keeps the linear count), then the reproductive-volume gate (skipped on a
+    /// seeded step). <paramref name="ssb"/> is the stock AFTER seeding. Ricker's <c>exp</c> and
+    /// Shepherd's <c>pow</c> are the C library's (tier L against NumPy's <c>exp</c>).
+    /// </summary>
+    public static double RegulateRecruitment(
+        ReproductionParameters r, int sp, int nFocal, int year, double linear, double ssb, bool seeded)
+    {
+        double eggs = linear;
+        byte type = r.SrType[sp];
+        if (type != 0 && ssb > 0.0)
+        {
+            double half = r.SrSsbHalf[sp];
+            eggs = type switch
+            {
+                1 => linear / (1.0 + (ssb / half)),
+                2 => linear * Math.Exp(-ssb / half),
+                3 => ssb > half ? linear * (half / ssb) : linear,
+                4 => linear / (1.0 + Math.Pow(ssb / half, r.ShepherdBeta[sp])),
+                _ => throw new InvalidOperationException($"unknown stock-recruitment type {type}"),
+            };
+        }
+
+        if (r.SeedingMode == 1 && seeded)
+        {
+            eggs = linear;
+        }
+
+        if (!seeded && r.RvEnabled.Length > 0 && r.RvEnabled[sp] != 0)
+        {
+            eggs *= r.RvFactorByYear[(year * nFocal) + sp];
+        }
+
+        return eggs;
+    }
+
+    /// <summary>
     /// <c>reproduction</c>: the spawning stock of each focal species (mature: length and age at
     /// maturity, abundance positive), the seeding biomass when that stock is exactly 0 within the
-    /// seeding period, <c>eggs = sex_ratio * fecundity * SSB * season * 1e6</c>; then every existing
-    /// school ages one step (and stops being an egg once fed), and the new egg schools are
-    /// appended, unlocated, species by species. <paramref name="ssb"/> and
-    /// <paramref name="eggs"/> are focal-length scratch and hold the step's values afterwards.
+    /// seeding period, <c>eggs = sex_ratio * fecundity * SSB * season * 1e6</c> regulated by
+    /// <see cref="RegulateRecruitment"/>; then every existing school ages one step (and stops being
+    /// an egg once fed), and the new egg schools are appended, unlocated, species by species.
+    /// <paramref name="ssb"/> and <paramref name="eggs"/> are focal-length scratch and hold the
+    /// step's values afterwards.
     /// </summary>
     public static void Reproduction(EngineParameters p, SchoolStore store, int step, Span<double> ssb, Span<double> eggs, Span<bool> seeded)
     {
@@ -131,20 +170,17 @@ public static class LifeCycle
             }
         }
 
+        int year = step / p.NDtPerYear;
         for (int sp = 0; sp < nFocal; sp++)
         {
-            if (r.SrType[sp] != 0)
-            {
-                throw new NotSupportedException("stock-recruitment curves are the stock_recruitment feature (phase 2)");
-            }
-
             seeded[sp] = ssb[sp] == 0.0 && step < r.SeedingMaxStep[sp];
             if (seeded[sp])
             {
                 ssb[sp] = r.SeedingBiomass[sp];
             }
 
-            eggs[sp] = r.SexRatio[sp] * r.RelativeFecundity[sp] * ssb[sp] * r.SeasonByStep[(step * nFocal) + sp] * TonnesToGrams;
+            double linear = r.SexRatio[sp] * r.RelativeFecundity[sp] * ssb[sp] * r.SeasonByStep[(step * nFocal) + sp] * TonnesToGrams;
+            eggs[sp] = RegulateRecruitment(r, sp, nFocal, year, linear, ssb[sp], seeded[sp]);
         }
 
         for (int i = 0; i < core.Length; i++)

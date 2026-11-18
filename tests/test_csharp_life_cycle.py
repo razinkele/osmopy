@@ -30,6 +30,7 @@ import numpy as np
 import pytest
 
 import osmose.engine.processes.growth as growth_mod
+import osmose.engine.processes.reproduction as reproduction_mod
 import osmose.engine.simulate as sim
 from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import osmose_demo
@@ -39,6 +40,7 @@ from osmose.engine.state import MortalityCause
 from osmose.engine_cs import csharp_engine_available
 from osmose.engine_cs.build import build_bundle
 from osmose.engine_cs.bundle import Bundle
+from osmose.engine_cs.capabilities import required_features
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = {"eec_full": 30, "bay_of_biscay": 9, "baltic": 129}
@@ -262,7 +264,7 @@ def test_aging_threshold_on_both_sides(cycled, tmp_path):
     assert (want.abundance[0::2] == 0).all() and (want.abundance[1::2] == st.abundance[1::2]).all()
 
 
-REPRO = ["eec_full", "bay_of_biscay"]  # Baltic: SR curve + gates are phase 2
+REPRO = sorted(CASES)  # Baltic too since task 2.3: its Shepherd curves and its RV gate
 ALL_FIELDS = list(FIELDS)
 
 
@@ -372,3 +374,180 @@ def test_maturity_age_binds(cycled, tmp_path):
     base = _stage(got, "reproduction", tmp_path)
     shrunk = np.asarray(res.get("life.ssb")) < np.asarray(base.get("life.ssb"))
     assert shrunk.any()
+
+
+# ------------------------------------------------------------------ task 2.3: recruitment
+
+
+def _repro_case(got: dict, tmp: Path, state=None, **changes):
+    """Production ``reproduction`` and the C# stage on a copy of the captured config with
+    ``changes`` set (the bundle is rebuilt from it). Returns (config, want, res). Each call
+    writes to its own directory: a loaded bundle is a memory map of its file, so a second case
+    written to the same names would silently replace the first one's results."""
+    cfg = copy.copy(got["config"])
+    for name, value in changes.items():
+        setattr(cfg, name, value)
+    st = got["stages"]["reproduction"][0] if state is None else state
+    want = reproduction(copy.deepcopy(st), cfg, got["step"], np.random.default_rng(0))
+    d = tmp / f"case{sum(1 for _ in tmp.glob('case*'))}"
+    d.mkdir()
+    build_bundle(cfg, got["raw"], got["grid"], seed=11).save(d / "model.bin")
+    _write_state(st, d / "in.bin")
+    res = _run_probe(d / "model.bin", d / "in.bin", "reproduction", got["step"], d / "out.bin")
+    return cfg, want, res
+
+
+def _eggs(res: Bundle) -> np.ndarray:
+    return np.array(res.get("life.eggs"))  # a copy, not a view of the mapped file
+
+
+def test_baltic_reproduction_needs_its_curves(cycled):
+    """The exact Baltic comparison above is only worth something if the Shepherd curves change
+    the answer: without them production itself lays different eggs. (The RV gate does NOT change
+    it at the captured step: Baltic's factor is 1.0 for its first twelve model years. It has its
+    own test below.)"""
+    got = cycled["baltic"]
+    cfg, step = got["config"], got["step"]
+    st_in, st_out = got["stages"]["reproduction"]
+    assert set(cfg.recruitment_type[: cfg.n_species]) == {"shepherd"}
+    other = copy.copy(cfg)
+    other.recruitment_type = ["none"] * len(cfg.recruitment_type)
+    out = reproduction(copy.deepcopy(st_in), other, step, np.random.default_rng(0))
+    assert out.abundance.tobytes() != st_out.abundance.tobytes()
+
+
+@pytest.mark.parametrize("year", [16, 49])
+def test_baltic_rv_gate_bites_in_low_volume_years_and_clamps_past_its_series(
+    cycled, year, tmp_path
+):
+    """Baltic's own reproductive-volume series (47 years, raw_cap): 0.6 in model year 16, and
+    past its end (year 49) the last value, 0.32, by clamping. ``reproduction`` is a function of
+    (state, config, step), so the state captured at step 129 serves at any step: here mid-year,
+    in eastern cod's spawning season, on a 50-year config."""
+    from osmose.engine.processes.recruitment_gate import rv_gate_factor
+
+    got = cycled["baltic"]
+    raw = got["raw"] | {"simulation.time.nyear": "50"}
+    cfg, grid, *_ = PythonEngine()._prepare_run(raw, 11)
+    step = year * cfg.n_dt_per_year + 12
+    cod_east = int(np.flatnonzero(cfg.rv_gate_enabled)[0])
+    factor = float(rv_gate_factor(cfg, step)[cod_east])
+    assert factor == pytest.approx({16: 0.6, 49: 0.32}[year], abs=1e-3)
+    assert factor == cfg.rv_gate_factor_by_index[min(year, len(cfg.rv_gate_factor_by_index) - 1)]
+    st_in = got["stages"]["reproduction"][0]
+    want = reproduction(copy.deepcopy(st_in), cfg, step, np.random.default_rng(0))
+    model = tmp_path / "model.bin"
+    build_bundle(cfg, raw, grid, seed=11).save(model)
+    _write_state(st_in, tmp_path / "in.bin")
+    res = _run_probe(model, tmp_path / "in.bin", "reproduction", step, tmp_path / "out.bin")
+    _assert_exact(res, want, ALL_FIELDS)
+    ungated = copy.copy(cfg)
+    ungated.rv_gate_factor_by_index = None
+    free = reproduction(copy.deepcopy(st_in), ungated, step, np.random.default_rng(0))
+    assert free.abundance.tobytes() != want.abundance.tobytes()  # the gate changes the answer
+    assert (
+        not np.asarray(res.get("life.seeded")).astype(bool)[cod_east] and _eggs(res)[cod_east] > 0
+    )
+
+
+@pytest.mark.parametrize("curve", ["beverton_holt", "ricker", "hockey_stick", "shepherd"])
+def test_each_recruitment_curve_equals_the_engine(cycled, curve, tmp_path):
+    """Every species gets ``curve``, with its characteristic SSB below the stock for the even
+    species and above it for the odd ones (both sides of the hockey stick's breakpoint), and a
+    non-integer Shepherd exponent. Ricker's ``exp`` is NumPy's in production and the C library's
+    in C#, so the exact reference swaps it (as for growth); production is within tier L."""
+    got = cycled["eec_full"]
+    n = got["config"].n_species
+    base = _stage(got, "reproduction", tmp_path)
+    ssb = np.asarray(base.get("life.ssb"))  # after seeding: what the curve sees
+    half = np.where(np.arange(n) % 2 == 0, 0.37, 2.3) * ssb
+    changes = {
+        "recruitment_type": [curve] * n,
+        "recruitment_ssb_half": half,
+        "shepherd_beta": np.full(n, 1.63),
+    }
+    cfg, stock, res = _repro_case(got, tmp_path, **changes)
+    assert required_features(cfg, got["raw"]) == ["core", "stock_recruitment"]
+    old = reproduction_mod.np
+    reproduction_mod.np = _LibmNumpy()
+    try:
+        st_in = got["stages"]["reproduction"][0]
+        libm = reproduction(copy.deepcopy(st_in), cfg, got["step"], np.random.default_rng(0))
+    finally:
+        reproduction_mod.np = old
+    _assert_exact(res, libm, ALL_FIELDS)
+    assert np.allclose(stock.abundance, libm.abundance, rtol=TIER_L, atol=0.0)
+    if curve != "ricker":
+        assert stock.abundance.tobytes() == libm.abundance.tobytes()  # no exp: production itself
+    eggs, linear = _eggs(res), _eggs(base)
+    lays = linear > 0  # a species out of its spawning season lays nothing either way
+    below = ssb <= half
+    assert (lays & below).any() and (lays & ~below).any()
+    assert (eggs[~lays] == 0).all()
+    if curve == "hockey_stick":
+        assert (eggs[below] == linear[below]).all()  # at or under the breakpoint: no correction
+        assert (eggs[lays & ~below] < linear[lays & ~below]).all()
+    else:
+        assert (eggs[lays] < linear[lays]).all()  # every other curve bites at any positive stock
+
+
+@pytest.mark.parametrize("mode", ["stock_recruitment", "linear"])
+def test_a_seeded_species_takes_the_curve_or_the_linear_count_by_seeding_mode(
+    cycled, mode, tmp_path
+):
+    """GitHub #143: with ``seeding_mode = linear`` a seeded species skips the curve (Java's
+    proportional seeding); by default it goes through it. An emptied state seeds every species."""
+    got = cycled["eec_full"]
+    n, step = got["config"].n_species, got["step"]
+    empty = copy.deepcopy(got["stages"]["reproduction"][0])
+    empty.abundance[:] = 0.0
+    changes = {
+        "seeding_max_step": np.full_like(got["config"].seeding_max_step, step + 1),
+        "recruitment_type": ["beverton_holt"] * n,
+        "recruitment_ssb_half": np.asarray(got["config"].seeding_biomass)[:n] * 0.5,
+        "seeding_mode": mode,
+    }
+    cfg, want, res = _repro_case(got, tmp_path, state=empty, **changes)
+    assert ("seeding_linear" in required_features(cfg, got["raw"])) == (mode == "linear")
+    _assert_exact(res, want, ALL_FIELDS)
+    assert np.asarray(res.get("life.seeded")).astype(bool).all()
+    _, _, plain = _repro_case(
+        got, tmp_path, state=empty, seeding_max_step=changes["seeding_max_step"]
+    )
+    lays = _eggs(plain) > 0
+    assert lays.any()
+    if mode == "linear":
+        assert _eggs(res).tobytes() == _eggs(plain).tobytes()  # the curve is skipped
+    else:
+        # Beverton-Holt at ssb = 2 * ssb_half: a third of the linear count (to rounding).
+        assert np.allclose(_eggs(res)[lays], _eggs(plain)[lays] / 3.0, rtol=1e-12, atol=0.0)
+
+
+@pytest.mark.parametrize("series", [[0.5, 0.25], [0.4]])
+def test_rv_gate_scales_unseeded_enabled_species_and_clamps_past_its_series(
+    cycled, series, tmp_path
+):
+    """The captured step is in model year 1: a two-year series gives year 1's factor, a one-year
+    series is clamped to its last value (never wrapped). The gate is on for one seeded species
+    and one with a real stock; only the second is scaled. Production is the reference."""
+    got = cycled["eec_full"]
+    n, step = got["config"].n_species, got["step"]
+    assert step // got["config"].n_dt_per_year == 1
+    base = _stage(got, "reproduction", tmp_path)
+    seeded = np.asarray(base.get("life.seeded")).astype(bool)
+    # Both must LAY EGGS at this step: scaling a species that lays none changes nothing, and a
+    # gate wrongly applied to a seeded species would go unseen (it did, in a mutation check).
+    on_seeded = int(np.flatnonzero(seeded & (_eggs(base) > 0))[0])
+    on_real = int(np.flatnonzero(~seeded & (_eggs(base) > 0))[0])
+    enabled = np.zeros(n, dtype=bool)
+    enabled[[on_seeded, on_real]] = True
+    cfg, want, res = _repro_case(
+        got, tmp_path, rv_gate_enabled=enabled,
+        rv_gate_factor_by_index=np.asarray(series, dtype=np.float64), rv_gate_offset=0,
+    )  # fmt: skip
+    assert required_features(cfg, got["raw"]) == ["core", "rv_gate"]
+    _assert_exact(res, want, ALL_FIELDS)
+    eggs, plain = _eggs(res), _eggs(base)
+    assert eggs[on_real] == plain[on_real] * series[-1]
+    untouched = np.arange(n) != on_real
+    assert eggs[untouched].tobytes() == plain[untouched].tobytes()  # the seeded one included

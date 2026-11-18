@@ -181,7 +181,7 @@ public sealed class ResourceParameters
 /// <summary>Reads the model groups from a bundle through one <see cref="BundleReader"/>, so every
 /// missing entry or wrong shape lands in the same problem list as the header's.</summary>
 /// <summary>Reproduction (bundle group <c>reproduction</c>, focal species, spec 6.8).</summary>
-public sealed class ReproductionParameters
+public sealed record ReproductionParameters
 {
     public double[] SexRatio { get; init; } = [];
 
@@ -204,11 +204,27 @@ public sealed class ReproductionParameters
     /// <summary>Egg weight in tonnes, resolved by the builder exactly as <c>create_egg_schools</c>.</summary>
     public double[] EggWeight { get; init; } = [];
 
-    /// <summary>Stock-recruitment curve per species: 0 none (phase 1); others are phase 2.</summary>
+    /// <summary>Stock-recruitment curve per species (<c>apply_stock_recruitment</c>): 0 none,
+    /// 1 Beverton-Holt, 2 Ricker, 3 hockey stick, 4 Shepherd.</summary>
     public byte[] SrType { get; init; } = [];
 
-    /// <summary>0 stock_recruitment, 1 linear.</summary>
+    /// <summary>The curve's characteristic SSB in tonnes; empty without feature
+    /// <c>stock_recruitment</c>.</summary>
+    public double[] SrSsbHalf { get; init; } = [];
+
+    /// <summary>The Shepherd exponent; empty without feature <c>stock_recruitment</c>.</summary>
+    public double[] ShepherdBeta { get; init; } = [];
+
+    /// <summary>0 stock_recruitment; 1 linear (feature <c>seeding_linear</c>): a seeded species
+    /// skips the curve.</summary>
     public int SeedingMode { get; init; }
+
+    /// <summary>Feature <c>rv_gate</c>: 1 for each gated species; empty without the feature.</summary>
+    public byte[] RvEnabled { get; init; } = [];
+
+    /// <summary><c>[year * nFocal + species]</c>: the reproductive-volume egg multiplier of each
+    /// model year, resolved by the builder with the Python engine's <c>rv_gate_factor</c>.</summary>
+    public double[] RvFactorByYear { get; init; } = [];
 }
 
 /// <summary>Outputs (bundle group <c>output</c>, spec 6.9).</summary>
@@ -440,7 +456,78 @@ internal static class ModelReader
         };
     }
 
-    public static ReproductionParameters Reproduction(BundleReader r, int nSteps, int nFocal) => new()
+    /// <summary>The recruitment entries follow the declared features: required with a feature,
+    /// a problem without it (a curve, a linear seeding mode or a gate table the engine was not
+    /// told about would otherwise be applied, or ignored, silently).</summary>
+    public static ReproductionParameters Reproduction(
+        BundleReader r, int nSteps, int nFocal, int ndt, bool curves, bool rvGate, bool seedingLinear)
+    {
+        byte[] srType = r.Array("reproduction.sr.type", DType.U1, nFocal)?.ToArray<byte>() ?? [];
+        if (srType.Any(t => t > 4))
+        {
+            r.Problem("reproduction.sr.type: values must be 0 (none) to 4 (shepherd)");
+        }
+
+        double[] ssbHalf = [];
+        double[] beta = [];
+        if (curves)
+        {
+            ssbHalf = F8(r, "reproduction.sr.ssb_half", nFocal);
+            beta = F8(r, "reproduction.sr.shepherd_beta", nFocal);
+        }
+        else
+        {
+            if (srType.Any(t => t != 0))
+            {
+                r.Problem("reproduction.sr.type: a curve is set, but the bundle does not declare feature stock_recruitment");
+            }
+
+            Undeclared(r, "stock_recruitment", "reproduction.sr.ssb_half", "reproduction.sr.shepherd_beta");
+        }
+
+        int seedingMode = (int)r.Int("reproduction.seeding_mode");
+        if (seedingMode is < 0 or > 1)
+        {
+            r.Problem($"reproduction.seeding_mode: {seedingMode} must be 0 (stock_recruitment) or 1 (linear)");
+        }
+        else if (seedingMode == 1 && !seedingLinear)
+        {
+            r.Problem("reproduction.seeding_mode: linear, but the bundle does not declare feature seeding_linear");
+        }
+
+        byte[] rvEnabled = [];
+        double[] rvFactor = [];
+        if (rvGate)
+        {
+            int nYears = ndt > 0 ? (nSteps + ndt - 1) / ndt : 0;
+            rvEnabled = r.Array("reproduction.rv.enabled", DType.U1, nFocal)?.ToArray<byte>() ?? [];
+            rvFactor = r.Array("reproduction.rv.factor_by_year", DType.F8, nYears, nFocal)?.ToArray<double>() ?? [];
+        }
+        else
+        {
+            Undeclared(r, "rv_gate", "reproduction.rv.enabled", "reproduction.rv.factor_by_year");
+        }
+
+        return Reproduction(r, nSteps, nFocal) with
+        {
+            SrType = srType,
+            SrSsbHalf = ssbHalf,
+            ShepherdBeta = beta,
+            SeedingMode = seedingMode,
+            RvEnabled = rvEnabled,
+            RvFactorByYear = rvFactor,
+        };
+    }
+
+    private static void Undeclared(BundleReader r, string feature, params string[] entries)
+    {
+        foreach (string name in entries.Where(r.Has))
+        {
+            r.Problem($"{name}: present, but the bundle does not declare feature {feature}");
+        }
+    }
+
+    private static ReproductionParameters Reproduction(BundleReader r, int nSteps, int nFocal) => new()
     {
         SexRatio = F8(r, "reproduction.sex_ratio", nFocal),
         RelativeFecundity = F8(r, "reproduction.relative_fecundity", nFocal),
@@ -451,8 +538,6 @@ internal static class ModelReader
         SeasonByStep = r.Array("reproduction.season_by_step", DType.F8, nSteps, nFocal)?.ToArray<double>() ?? [],
         EggLength = F8(r, "reproduction.egg_length", nFocal),
         EggWeight = F8(r, "reproduction.egg_weight", nFocal),
-        SrType = r.Array("reproduction.sr.type", DType.U1, nFocal)?.ToArray<byte>() ?? [],
-        SeedingMode = (int)r.Int("reproduction.seeding_mode"),
     };
 
     public static OutputParameters Output(BundleReader r, int nTotal) => new()

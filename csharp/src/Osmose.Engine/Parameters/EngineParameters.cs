@@ -235,7 +235,14 @@ public sealed class EngineParameters
         bool oxygen = features.Contains(FeatureCatalog.Named("oxygen_benthos"));
         ResourceParameters resources = ModelReader.Resources(model, (int)nSteps, (int)(ny * nx), oxygen);
         OutputParameters output = ModelReader.Output(model, nTotal);
-        ReproductionParameters reproduction = ModelReader.Reproduction(model, (int)nSteps, species.NFocal);
+        ReproductionParameters reproduction = ModelReader.Reproduction(
+            model,
+            (int)nSteps,
+            species.NFocal,
+            (int)ndt,
+            curves: features.Contains(FeatureCatalog.Named("stock_recruitment")),
+            rvGate: features.Contains(FeatureCatalog.Named("rv_gate")),
+            seedingLinear: features.Contains(FeatureCatalog.Named("seeding_linear")));
         MovementParameters movement = ModelReader.Movement(model, species.NFocal, nTotal, (int)ny, (int)nx, mask);
         model.ThrowIfProblems();
 
