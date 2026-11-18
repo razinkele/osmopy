@@ -404,3 +404,66 @@ def test_each_species_gets_its_own_fishing_map(runs):
     st = school_table(cfg, grid, 3000, seed=13)
     want = _precompute_effective_rates(st, cfg, cfg.mortality_subdt, 4)
     assert np.array_equal(want[2], reference_rates(b, st, 4)[2]) and (want[2] > 0).any()
+
+
+# ------------------------------------------------------------------ 1.2c: resources
+
+
+@pytest.mark.parametrize("demo", ["eec_full", "bay_of_biscay", "baltic"])
+def test_resource_capacity_from_the_bundle_equals_resource_state_update(runs, demo):
+    from osmose.engine.resources import ResourceState
+
+    config, _, grid, b = runs[demo]
+    rs = ResourceState(config=config.raw_config, grid=grid)
+    n = int(b.get("resources.n"))
+    assert n == rs.n_resources and n > 0
+    frames, fbs, abs_ = (
+        b.get(f"resources.{k}") for k in ("forcing", "frame_by_step", "accessibility_by_step")
+    )
+    for step in (0, 1, 11, 23, 24, 40):
+        rs.update(step)
+        for r in range(n):
+            got = frames[r, fbs[step, r]] * abs_[step, r]  # the C# engine's K
+            assert got.tobytes() == rs.biomass[r].tobytes(), f"{demo} step {step} resource {r}"
+    rs.close()
+    assert (frames > 0).any()
+
+
+def test_resource_access_rows_are_the_kernels(runs):
+    from osmose.engine.processes.mortality import _precompute_resource_arrays
+    from osmose.engine.resources import ResourceState
+
+    config, _, grid, b = runs["eec_full"]
+    rs = ResourceState(config=config.raw_config, grid=grid)
+    *_, rows, _n = _precompute_resource_arrays(config, rs)
+    assert np.array_equal(b.get("resources.access_rows"), rows) and (rows >= 0).any()
+    rs.close()
+
+
+def test_resource_multipliers_reach_the_capacity(runs):
+    """Every shipped resource has multiplier 1.0, so give EEC's resources other ones."""
+    from osmose.engine.resources import ResourceState
+
+    config, raw, grid, _ = runs["eec_full"]
+    rsc_keys = [
+        k
+        for k, v in raw.items()
+        if k.startswith("species.type.sp") and v.strip().lower() == "resource"
+    ]
+    assert rsc_keys
+    cfg = copy.copy(config)
+    cfg.raw_config = dict(config.raw_config) | {
+        k.replace("species.type.", "species.multiplier."): str(1.5 + i)
+        for i, k in enumerate(rsc_keys)
+    }
+    b = build_bundle(cfg, raw, grid, seed=7)
+    rs = ResourceState(config=cfg.raw_config, grid=grid)
+    frames, fbs, abs_ = (
+        b.get(f"resources.{k}") for k in ("forcing", "frame_by_step", "accessibility_by_step")
+    )
+    for step in (0, 13):
+        rs.update(step)
+        for r in range(rs.n_resources):
+            assert (frames[r, fbs[step, r]] * abs_[step, r]).tobytes() == rs.biomass[r].tobytes()
+    assert {s.multiplier for s in rs.species} != {1.0}
+    rs.close()

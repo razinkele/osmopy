@@ -93,6 +93,7 @@ def build_bundle(
     _mortality(b, config, n_total)
     _fishing(b, config, grid, n_total)
     _reproduction(b, config, n_total)
+    _resources(b, config, grid)
     _output(b, config, n_total)
     return b
 
@@ -345,6 +346,61 @@ def _reproduction(b: Bundle, config: Any, n_total: int) -> None:
         "reproduction.sr.type", np.zeros(n_focal, dtype=np.uint8)
     )  # none; SR curves are a phase 2 feature
     b.set_int("reproduction.seeding_mode", 0 if config.seeding_mode == "stock_recruitment" else 1)
+
+
+def _resources(b: Bundle, config: Any, grid: Any) -> None:
+    """The LTL resources as ``ResourceState.update`` computes them, non-depletable (Phase 1).
+
+    Each step's carrying capacity is ``frame * access``: ``resources.forcing[r, frame]`` holds
+    the regridded forcing already multiplied by the multiplier (Python's left-to-right
+    ``forcing * multiplier * access``, so pre-multiplying is exact), ``frame_by_step`` the forcing
+    frame of each step and ``accessibility_by_step`` the (capped, possibly time-varying)
+    accessibility. Sizes, trophic levels and accessibility rows come from the kernel's own
+    ``_precompute_resource_arrays``.
+    """
+    from osmose.engine.processes.mortality import _precompute_resource_arrays
+    from osmose.engine.resources import ResourceState
+
+    rs = ResourceState(config=config.raw_config, grid=grid)
+    n_rsc, n_cells, n_steps = rs.n_resources, grid.ny * grid.nx, int(config.n_steps)
+    ndt = int(config.raw_config.get("simulation.time.ndtperyear", "24"))
+    b.set_int("resources.n", n_rsc)
+    if n_rsc == 0:
+        return
+    size_min, size_max, tl, rows, _ = _precompute_resource_arrays(config, rs)
+    b.set_array("resources.size_min", np.asarray(size_min, dtype=np.float64))
+    b.set_array("resources.size_max", np.asarray(size_max, dtype=np.float64))
+    b.set_array("resources.trophic_level", np.asarray(tl, dtype=np.float64))
+    b.set_array("resources.access_rows", np.asarray(rows, dtype=np.int32))
+    forcing = rs._forcing_data
+    n_frames = max(1, int(rs._n_forcing_steps)) if forcing is not None else 1
+    frames = np.zeros((n_rsc, n_frames, n_cells), dtype=np.float64)
+    frame_by_step = np.zeros((n_steps, n_rsc), dtype=np.int32)
+    access_by_step = np.zeros((n_steps, n_rsc), dtype=np.float64)
+    for i, rsc in enumerate(rs.species):
+        if forcing is not None and rsc.name in forcing:
+            for f in range(n_frames):
+                data = forcing[rsc.name].isel(time=f).values
+                flat = rs._regrid_to_model(data).flatten() * rsc.multiplier
+                frames[i, f, : len(flat)] = flat[:n_cells]
+            for step in range(n_steps):
+                step_in_year = step % ndt  # update()'s mapping, with its int() truncation
+                frame_by_step[step, i] = min(
+                    int(step_in_year * rs._n_forcing_steps / ndt), rs._n_forcing_steps - 1
+                )
+        elif rs._uniform_biomass[i] > 0:
+            frames[i, :, :] = rsc.multiplier * (rs._uniform_biomass[i] + rsc.offset)
+        for step in range(n_steps):
+            if rsc.accessibility_ts is not None and len(rsc.accessibility_ts) > 0:
+                access_by_step[step, i] = float(
+                    rsc.accessibility_ts[step % len(rsc.accessibility_ts)]
+                )
+            else:
+                access_by_step[step, i] = rsc.accessibility
+    rs.close()
+    b.set_array("resources.forcing", frames)
+    b.set_array("resources.frame_by_step", frame_by_step)
+    b.set_array("resources.accessibility_by_step", access_by_step)
 
 
 def _output(b: Bundle, config: Any, n_total: int) -> None:
