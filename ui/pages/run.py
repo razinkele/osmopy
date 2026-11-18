@@ -634,11 +634,13 @@ def run_server(input, output, session, state: AppState):
 
     @render.ui
     def live_movement_status():
+        # An engine without a live view gets the note whatever an earlier run left in the
+        # status: with the pane expanded, "done" over an empty map would read as a live run.
+        if not engine_supports(state.engine_mode.get(), "live_view"):
+            return ui.p("Live view is available for the Python engine only.", class_="text-muted")
         status_v = _live_status_val.get()
         snap = _live_snapshot.get()
         if not status_v:
-            if not engine_supports(state.engine_mode.get(), "live_view"):
-                return ui.p("Live view available for the Python engine.", class_="text-muted")
             return ui.div()
         prog = f"step {snap.step + 1}/{snap.n_steps}" if snap is not None else ""
         extra = ""

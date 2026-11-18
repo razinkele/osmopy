@@ -88,6 +88,56 @@ def cancel_at(out: Path) -> None:
     }))  # fmt: skip
 
 
+def cancel_from_thread(out: Path) -> None:
+    """The UI's pattern (task 2.7): the engine runs on a WORKER thread, and another thread sets
+    the cancel token once the engine has completed k steps. The run must stop, raise
+    ``SimulationCancelled`` on the worker, and write nothing."""
+    import osmose.engine_cs.bridge as br
+    from osmose.engine.config import EngineConfig
+    from osmose.engine_cs import CSharpEngine
+
+    raw, k = _raw(), int(sys.argv[5])
+    seen: dict = {}
+    real_run = br.run
+
+    def run(bundle, control, cancel_token=None):
+        seen["control"] = control
+        return real_run(bundle, control, cancel_token)
+
+    br.run = run
+    token = threading.Event()
+    result: dict = {}
+    output_dir = out.parent / "cancelled_run"
+
+    def worker():
+        try:
+            CSharpEngine().run(raw, output_dir, seed=1, cancel_token=token)
+            result["raised"] = None
+        except BaseException as exc:
+            result.update(raised=type(exc).__name__, message=str(exc))
+
+    thread = threading.Thread(target=worker, name="ui-run")
+    thread.start()
+    while thread.is_alive() and ("control" not in seen or seen["control"][1] < k):
+        time.sleep(0.001)
+    token.set()
+    set_at = time.monotonic()
+    thread.join(timeout=120)
+    result["joined"] = not thread.is_alive()
+    result["seconds_to_stop"] = time.monotonic() - set_at
+    control = seen["control"]
+    at_join = int(control[1])
+    time.sleep(0.3)
+    result.update(
+        steps_at_join=at_join,
+        steps_later=int(control[1]),
+        cancel_slot=int(control[0]),
+        n_steps=int(EngineConfig.from_dict(raw).n_steps),
+        files=sorted(p.name for p in output_dir.rglob("*")) if output_dir.exists() else [],
+    )
+    out.write_text(json.dumps(result))
+
+
 def expect_error(out: Path) -> None:
     """``precancel``: a cancel token already set; ``deadline``: a deadline already past."""
     from osmose.engine_cs import CSharpEngine
@@ -181,6 +231,7 @@ if __name__ == "__main__":
         "frames": frames,
         "files": files,
         "cancel_at": cancel_at,
+        "cancel_thread": cancel_from_thread,
         "error": expect_error,
         "interrupted": interrupted,
         "summary": summary,

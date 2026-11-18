@@ -116,6 +116,22 @@ def test_cancel_stops_within_one_step_and_leaves_records_valid(tmp_path):
     assert r["control"][1:3] == [r["steps"], r["records"]]
 
 
+def test_a_run_on_a_worker_thread_is_cancelled_by_a_token_set_from_another_thread(tmp_path):
+    """What the UI's Cancel button does (task 2.7): the engine is on a worker thread, and the
+    token is set from another thread while it runs. The other cancel tests set the token before
+    the start, write the control slot directly, or raise a signal on the main thread."""
+    raw = _raw("eec_full", tmp_path, 10)
+    k = 5
+    _child("cancel_thread", raw, tmp_path / "c.json", str(k))
+    r = json.loads((tmp_path / "c.json").read_text())
+    assert r["raised"] == "SimulationCancelled" and r["joined"], r
+    assert k <= r["steps_at_join"] < r["n_steps"]  # stopped mid-run (a finished run raises nothing)
+    assert r["steps_at_join"] == r["steps_later"]  # the engine had returned: no step afterwards
+    assert r["message"] == f"cancelled at step {r['steps_at_join']}/{r['n_steps']}"
+    assert r["cancel_slot"] == 1 and r["seconds_to_stop"] < 5.0
+    assert r["files"] == []  # a cancelled run writes nothing
+
+
 @pytest.mark.parametrize(
     ("kind", "error"), [("precancel", "SimulationCancelled"), ("deadline", "CSharpEngineTimeout")]
 )

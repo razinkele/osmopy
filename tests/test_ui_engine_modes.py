@@ -117,6 +117,13 @@ def test_the_run_page_shows_each_engines_own_settings():
     assert engine_supports("java", "jar_settings") and not engine_supports("csharp", "jar_settings")
     # The live view and the step progress are asked for by name.
     assert 'engine_supports(state.engine_mode.get(), "live_view")' in text
+    # The live pane says so for an engine without a live view BEFORE it looks at the status an
+    # earlier run left: "done" over an empty map would read as a live run.
+    pane = text[text.index("def live_movement_status():") :]
+    assert pane.index('engine_supports(state.engine_mode.get(), "live_view")') < pane.index(
+        "_live_status_val.get()"
+    )
+    assert "Live view is available for the Python engine only." in pane[:900]
     assert 'engine_supports(engine_mode, "live_view")' in text
     assert 'engine_supports(engine_mode, "step_progress")' in text
     assert "if is_java(engine_mode):" in text and "if is_in_process(engine_mode):" in text
