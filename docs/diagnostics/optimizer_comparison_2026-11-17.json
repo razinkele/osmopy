@@ -1,0 +1,704 @@
+{
+ "design": "docs/perf/2026-11-17-optimizer-comparison-prestated.md",
+ "results": "docs/perf/2026-11-17-optimizer-comparison.md",
+ "runs": [
+  {
+   "optimizer": "cmaes",
+   "rep": 1,
+   "config": {
+    "popsize": 14,
+    "maxiter": 16,
+    "tol": 0.0,
+    "sigma0": 0.3
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    0.7861598679300095,
+    0.7354614295357347,
+    0.8912811020889609,
+    -0.4271494206201121,
+    -2.460829258800726,
+    -1.5559992749581104,
+    -1.0304351485490508,
+    -2.4927898484199917,
+    0.550533900504045
+   ],
+   "best_f": 0.9606457099973402,
+   "optimizer_reported": {
+    "fun": 0.9606457099973402,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 0.9606457099973402,
+    "149": 0.9606457099973402,
+    "224": 0.9606457099973402
+   },
+   "seconds": 3980
+  },
+  {
+   "optimizer": "cmaes",
+   "rep": 2,
+   "config": {
+    "popsize": 14,
+    "maxiter": 16,
+    "tol": 0.0,
+    "sigma0": 0.3
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    0.9368065241727893,
+    0.7660538245864383,
+    0.9417043937396312,
+    -0.10096005497534263,
+    -1.9065471778219525,
+    -1.0820017358914094,
+    -1.5908920431405054,
+    -2.3821718729423123,
+    0.2172951361852695
+   ],
+   "best_f": 0.7166190357182735,
+   "optimizer_reported": {
+    "fun": 0.7166190357182735,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 0.9401811668827131,
+    "149": 0.8222209639089266,
+    "224": 0.7166190357182735
+   },
+   "seconds": 4410
+  },
+  {
+   "optimizer": "cmaes",
+   "rep": 3,
+   "config": {
+    "popsize": 14,
+    "maxiter": 16,
+    "tol": 0.0,
+    "sigma0": 0.3
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    0.95564817184142,
+    0.7265964711144656,
+    0.9161186868048181,
+    0.028314167610093432,
+    -2.407230634809239,
+    -1.7635999543849983,
+    -1.2323086015232816,
+    -2.332954165994368,
+    0.4854753351046531
+   ],
+   "best_f": 0.7401255558203655,
+   "optimizer_reported": {
+    "fun": 0.7401255558203655,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 1.2499171124097814,
+    "149": 0.8089685430116104,
+    "224": 0.7401255558203655
+   },
+   "seconds": 4262
+  },
+  {
+   "optimizer": "de",
+   "rep": 1,
+   "config": {
+    "popsize": 28,
+    "maxiter": 7,
+    "tol": 0.0
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    0.8037198739991032,
+    0.6047746142547744,
+    0.8123009555873502,
+    0.16173851957993524,
+    -2.1924968453490585,
+    -0.42577427642393306,
+    -1.93636150351241,
+    -1.6980732755169041,
+    0.4559721788994726
+   ],
+   "best_f": 1.1301473178093704,
+   "optimizer_reported": {
+    "fun": 1.1301473178093704,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 4.115377838887183,
+    "149": 1.1650462670594584,
+    "224": 1.1301473178093704
+   },
+   "seconds": 3271
+  },
+  {
+   "optimizer": "de",
+   "rep": 2,
+   "config": {
+    "popsize": 28,
+    "maxiter": 7,
+    "tol": 0.0
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    0.8947925879820677,
+    -0.14933481969629414,
+    0.7491678764313328,
+    0.30932151245976514,
+    -0.8165731267626741,
+    0.4904593800255037,
+    -0.4061385143158017,
+    -0.9911944115979828,
+    0.38733731086455264
+   ],
+   "best_f": 0.9895676509951902,
+   "optimizer_reported": {
+    "fun": 0.9895676509951902,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 2.3199076816676074,
+    "149": 1.3809545103281033,
+    "224": 0.9895676509951902
+   },
+   "seconds": 3306
+  },
+  {
+   "optimizer": "de",
+   "rep": 3,
+   "config": {
+    "popsize": 28,
+    "maxiter": 7,
+    "tol": 0.0
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    0.9791023413335189,
+    0.18370906546814458,
+    0.6542573691397723,
+    -0.08610108688637885,
+    -1.383373151116045,
+    -0.32562277677768825,
+    0.004541721288174871,
+    -1.651448305850589,
+    0.28910396514916903
+   ],
+   "best_f": 1.2650058225694207,
+   "optimizer_reported": {
+    "fun": 1.2650058225694207,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 6.061978523607561,
+    "149": 1.2650058225694207,
+    "224": 1.2650058225694207
+   },
+   "seconds": 3254
+  },
+  {
+   "optimizer": "surrogate-de",
+   "rep": 1,
+   "config": {
+    "n_initial": 44,
+    "n_iterations": 6,
+    "n_topk": 30
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    -0.16585250564734155,
+    0.8255187605086329,
+    0.1316711476747633,
+    -0.4785750863342987,
+    0.38666526381839805,
+    -1.0699426271139283,
+    0.4941089222169328,
+    -2.2738438094726345,
+    0.5849972111909874
+   ],
+   "best_f": 0.99014506654945,
+   "optimizer_reported": {
+    "fun": 0.99014506654945,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 2.409653841765995,
+    "149": 2.2126325715898596,
+    "224": 0.99014506654945
+   },
+   "seconds": 3253
+  },
+  {
+   "optimizer": "surrogate-de",
+   "rep": 2,
+   "config": {
+    "n_initial": 44,
+    "n_iterations": 6,
+    "n_topk": 30
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    -0.27367998953813016,
+    -0.3287918305442354,
+    0.2684604892017294,
+    0.060608293898138044,
+    -0.3765804393183396,
+    -2.0970321323896632,
+    0.22576633286248482,
+    -2.067842247464548,
+    0.2193225609113086
+   ],
+   "best_f": 2.5916722453386054,
+   "optimizer_reported": {
+    "fun": 2.5916722453386054,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 3.2670810362551106,
+    "149": 3.2670810362551106,
+    "224": 2.5916722453386054
+   },
+   "seconds": 3014
+  },
+  {
+   "optimizer": "surrogate-de",
+   "rep": 3,
+   "config": {
+    "n_initial": 44,
+    "n_iterations": 6,
+    "n_topk": 30
+   },
+   "budget": 224,
+   "workers": 14,
+   "n_years": 40,
+   "smoke": false,
+   "train_seed": 42,
+   "keys": [
+    "mortality.additional.larva.rate.sp1",
+    "mortality.additional.larva.rate.sp2",
+    "mortality.additional.larva.rate.sp3",
+    "mortality.additional.larva.rate.sp7",
+    "mortality.additional.rate.sp1",
+    "mortality.additional.rate.sp2",
+    "mortality.additional.rate.sp3",
+    "mortality.additional.rate.sp7",
+    "predation.ingestion.rate.max.sp0"
+   ],
+   "x0": [
+    0.9030899869919435,
+    0.9542425094393249,
+    1.0791812460476249,
+    -0.3979400086720376,
+    -2.5228787452803374,
+    -1.3010299956639813,
+    -1.3010299956639813,
+    -2.5228787452803374,
+    0.5440680443502757
+   ],
+   "nfev_logged": 224,
+   "n_sentinel": 0,
+   "best_x": [
+    -0.3876838711933335,
+    0.509611790080664,
+    0.32001479814301004,
+    -0.047992480681968264,
+    0.07642129886599847,
+    0.31791694418679084,
+    0.28495457062576346,
+    0.05113752554259099,
+    0.3786604556663986
+   ],
+   "best_f": 1.3443030000206124,
+   "optimizer_reported": {
+    "fun": 1.3443030000206124,
+    "nfev": 224
+   },
+   "best_so_far": {
+    "74": 4.445566839684151,
+    "149": 2.0430699344423804,
+    "224": 1.3443030000206124
+   },
+   "seconds": 3397
+  }
+ ],
+ "rerank": {
+  "seeds": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "runs": [
+   {
+    "optimizer": "cmaes",
+    "rep": 1,
+    "train_best_f": 0.9606457099973402,
+    "rerank_mean": 0.9543007074100996,
+    "rerank_sd": 0.0039382046671544,
+    "rerank": [
+     0.9585673565376064,
+     0.9537734275839397,
+     0.9538998273621858,
+     0.9569801433389541,
+     0.9482827822278125
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "cmaes",
+    "rep": 2,
+    "train_best_f": 0.7166190357182735,
+    "rerank_mean": 0.7146358883610024,
+    "rerank_sd": 0.0012443598713904982,
+    "rerank": [
+     0.7159080003029947,
+     0.7138908357566197,
+     0.7153574729987358,
+     0.7151777810842351,
+     0.7128453516624269
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "cmaes",
+    "rep": 3,
+    "train_best_f": 0.7401255558203655,
+    "rerank_mean": 0.7328051153946934,
+    "rerank_sd": 0.0033762299625788132,
+    "rerank": [
+     0.7288628500752558,
+     0.7320716113246608,
+     0.7356953965409794,
+     0.7305698791987791,
+     0.7368258398337918
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "de",
+    "rep": 1,
+    "train_best_f": 1.1301473178093704,
+    "rerank_mean": 1.1287576719735795,
+    "rerank_sd": 0.004177185657643442,
+    "rerank": [
+     1.131097565750704,
+     1.131846409217988,
+     1.1284900227510657,
+     1.121627971431217,
+     1.130726390716922
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "de",
+    "rep": 2,
+    "train_best_f": 0.9895676509951902,
+    "rerank_mean": 0.9845467542673253,
+    "rerank_sd": 0.007998057428902106,
+    "rerank": [
+     0.9909016983339125,
+     0.9891283762192526,
+     0.9708174016814812,
+     0.9869688585025935,
+     0.9849174365993868
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "de",
+    "rep": 3,
+    "train_best_f": 1.2650058225694207,
+    "rerank_mean": 1.2784302799446206,
+    "rerank_sd": 0.0279291875121918,
+    "rerank": [
+     1.2969267078559839,
+     1.3039765816986324,
+     1.2889186713631446,
+     1.2349074326718572,
+     1.2674220061334847
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "surrogate-de",
+    "rep": 1,
+    "train_best_f": 0.99014506654945,
+    "rerank_mean": 0.987645556495246,
+    "rerank_sd": 0.012509119262013856,
+    "rerank": [
+     0.9682209141660001,
+     0.9969223039947044,
+     0.9951559473755895,
+     0.9961285704815113,
+     0.9818000464584241
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "surrogate-de",
+    "rep": 2,
+    "train_best_f": 2.5916722453386054,
+    "rerank_mean": 154.6891106138556,
+    "rerank_sd": 297.06684327861194,
+    "rerank": [
+     2.6058147313611935,
+     82.9667079747964,
+     2.582120082816371,
+     2.844267596986909,
+     682.4466426833171
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   },
+   {
+    "optimizer": "surrogate-de",
+    "rep": 3,
+    "train_best_f": 1.3443030000206124,
+    "rerank_mean": 1.3421395460863148,
+    "rerank_sd": 0.02759013818773908,
+    "rerank": [
+     1.3345843850428758,
+     1.3208213144099448,
+     1.3475665287822338,
+     1.3872468508164524,
+     1.3204786513800666
+    ],
+    "nfev_logged": 224,
+    "n_sentinel": 0
+   }
+  ]
+ }
+}
