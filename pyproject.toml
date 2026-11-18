@@ -167,6 +167,11 @@ version = {attr = "osmose.__version__.__version__"}
 [tool.setuptools.packages.find]
 include = ["osmose*"]
 
+# The C# engine's feature catalogue: read by osmose/engine_cs/capabilities.py and embedded in the
+# C# assembly. Without this a non-editable install (the Docker image) would not ship it.
+[tool.setuptools.package-data]
+"osmose.engine_cs" = ["features.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

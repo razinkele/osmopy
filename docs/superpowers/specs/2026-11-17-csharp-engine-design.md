@@ -950,7 +950,7 @@ not eggs.
 | LTL resources from forcing, per-step accessibility | `resources.py` | all | 1 |
 | Larva mortality (constant), egg retention and release | `processes/natural.py`, `mortality.py` | all | 1 |
 | Starvation (lagged) | `processes/starvation.py::update_starvation_rate` | all | 1 |
-| Fishing by rate: age knife-edge or no selectivity, seasonality, spatial maps, discards | `mortality.py::_precompute_effective_rates` | EEC, Baltic (BoB: flat rate) | 1 |
+| Fishing by rate: age knife-edge (type 0) or no selectivity (type -1 with L50 ≤ 0), seasonality, spatial maps, discards | `mortality.py::_precompute_effective_rates` | EEC, Baltic (BoB: flat rate, type -1, L50 = 0) | 1 |
 | Reproduction: season table, seeding, egg weight override | `processes/reproduction.py` | all | 1 |
 | Movement by maps, with same-map random walk | `processes/movement.py`, `movement_maps.py` | EEC, Baltic | 1 |
 | Movement "random": domain placement and walk | `movement.py::random_walk`, `build_random_patches` | BoB | 1 |
@@ -958,8 +958,8 @@ not eggs.
 | Minimal outputs: biomass, abundance, mortality by cause, yield | `simulate.py::_collect_outputs` | all | 1 |
 | Trophic level tracking | `mortality.py` | all (feeds outputs and the "tl" stage metric) | 1 |
 | Background species (uniform or forcing, classes) | `background.py` | Baltic (2) | 2 |
-| Out-of-domain mortality, null maps | `natural.py::out_mortality` | Baltic | 2 |
-| `species.lmax` cap | `growth.py` | Baltic | 2 |
+| Out-of-domain schools and `mortality.out.rate`: null maps, ages or steps no map covers, failed placement (`movement.py`, all three set `is_out`) | `natural.py::out_mortality`, `movement.py` | **EEC** (null maps 31 and 36). *Corrected 2026-11-18:* Baltic sets out rates but has no null maps (all 29 maps name a file) | **1**, part of `core` map movement |
+| `species.lmax` cap | `growth.py` | none of the three. *Corrected 2026-11-18:* no shipped config sets `species.lmax`; the 0.0 in Baltic's `lmax` array is background-species padding | 2 |
 | Shepherd / Beverton-Holt / Ricker / hockey-stick recruitment | `reproduction.py` | Baltic (Shepherd) | 2 |
 | RV recruitment gate (series) | `processes/recruitment_gate.py` | Baltic | 2 |
 | Salinity movement gate | `processes/salinity_gate.py`, `movement.py` | Baltic | 2 |
@@ -969,9 +969,11 @@ not eggs.
 | Incoming flux | `incoming_flux.py` | none of the three | 3 |
 | MPAs; by-year fishing rate; by-step additional and larva rates; additional-mortality maps | `mortality.py`, `natural.py` | none of the three | 3 |
 | Logistic selectivity (type 1) | `mortality.py` | none of the three | 3 |
+| Length knife-edge selectivity (type -1 with L50 > 0) | `mortality.py` | none of the three | 3 |
+| `population.seeding.mode = linear` | `reproduction.py` | none of the three (added 2026-11-18) | 3 |
 | Ceiling, thermal and depensation gates; spatial RV egg survival | `reproduction.py`, `thermal_gate.py`, `depensation_gate.py`, `natural.py` | demos only | 3 |
 | Type II and III functional response | `mortality.py` | none of the three | 3 |
-| Species-level (non-stage) accessibility matrix; dynamic accessibility | `mortality.py`, `dynamic_accessibility.py` | none of the three | 3 |
+| Species-level accessibility (a species matrix with **no** stage matrix); dynamic accessibility | `mortality.py`, `dynamic_accessibility.py` | none of the three. All three carry both matrices; `mortality()` uses the stage one when present | 3 |
 | Gompertz growth; feeding stages by age, weight, TL | `growth.py`, `feeding_stage.py` | none of the three | 3 |
 | Warm-start initial population | `initialization.py` | opt-in | 3 (built in Python, passed as initial state) |
 | Spatial outputs, carbon flux | `simulate.py::_collect_spatial_outputs`, `_collect_carbon` | opt-in | 3 |
@@ -1083,7 +1085,7 @@ Groups and their main entries (`n_total = n_focal + n_background`):
 
 | Group | Entries (shape) |
 |---|---|
-| `contract` | `version`; `features` (bitmask of what this bundle needs); `rng.scheme` |
+| `contract` | `features` i4 (n): the catalogue ids this bundle needs, `core` (0) always included; `rng.scheme`. The contract version is the bundle's header (`SimulationConfig.ContractVersion`), not an entry |
 | `run` | `seed`; `threads`; `deadline_seconds`; `checks` (debug invariants on or off) |
 | `time` | `n_steps`; `n_dt_per_year`; `n_subdt` |
 | `grid` | `ny`; `nx`; `ocean_mask` u1 (ny, nx) |
@@ -1109,7 +1111,8 @@ Pre-multiplying the resource forcing by its multiplier in Python is exact:
 **Versioning.** `contract.version` is an integer. The C# engine accepts exactly the versions it
 lists; anything else throws before any work. Adding an optional entry does not bump it; changing
 the meaning or shape of an existing entry does. `contract.features` names what the bundle
-needs; the engine compares it with what it implements and refuses on any missing bit (D11).
+needs, as catalogue ids; the engine compares them with what it implements and refuses, naming
+every missing feature (D11, section 8.6).
 
 **Validation.** `SimulationConfig` is turned into an immutable, strongly typed
 `EngineParameters` once, at the start of `RunSimulation`. That step checks presence, dtype,
@@ -1155,9 +1158,8 @@ public sealed class RunSummary
 ```
 
 `RunSimulation` is the only method that does work. `SimulationConfig` is data. There is no
-second entry point for capabilities: the supported contract versions and feature bits are
-written at build time to `Osmose.Engine.capabilities.json` beside the assembly, and Python
-reads that file.
+second entry point for capabilities: the feature catalogue (section 8.6) is embedded in the
+assembly and copied beside it as `Osmose.Engine.capabilities.json`.
 
 **Addresses are `Int64`.** pythonnet converts a Python `int` to `System.Int64` through an
 explicit case in its converter; whether it converts to `IntPtr` implicitly was not established
@@ -1270,6 +1272,36 @@ event loop must keep polling. It is the second check of the bridge spike.
 wraps a callable as a delegate and takes the GIL when it is invoked), but it adds a
 re-entrancy path for one integer that the control block already carries. The live map needs
 the whole school table and stays on the Python engine (section 9.2).
+
+
+### 8.6 The feature catalogue and key coverage (task 1.1)
+
+**One source.** `osmose/engine_cs/features.json` (package data) lists every optional feature:
+a stable id, name, phase or status (`planned` with phase 1–4, `refused` per Q4, `not_planned`),
+and whether the C# engine implements it. The C# project embeds it (`FeatureCatalog`) and copies
+it beside the assembly as `Osmose.Engine.capabilities.json`. `csharp_engine_available()`
+compares that copy with the package's file and reports a stale build. A cross-language test
+compares the C# catalogue with the Python one.
+
+**Detectors** (`osmose/engine_cs/capabilities.py`), one per feature, decide from the parsed
+`EngineConfig`, and the raw dict for switches read outside it, whether a config uses the
+feature. Where the engine has a predicate (`resources.depletable_enabled`,
+`resources.oxygen_benthos_enabled`, `incoming_flux.incoming_flux_enabled`,
+`initialization._flag_enabled`), the detector calls it. Per-species arrays padded with
+background entries (`lmax` 0.0, movement `none`) are read focal-only.
+
+**Key coverage closes the gap detectors leave.** A detector only catches a feature someone
+listed. So every key the Python engine reads (`config_validation`'s known keys minus its
+Java-only set: 432 patterns on 2026-11-18) must match a rule in `KEY_RULES`: `phase1`, `inert`,
+`internal`, or a named feature whose detector then decides. A key the Python engine reads that no
+rule classifies blocks the run, naming the key. A test fails when a new engine key is
+unclassified, which enforces plan rule 7 mechanically. Keys the Python engine never reads
+(unknown, or Java-only) follow Python: they have no effect on either engine.
+
+**The engine side.** `EngineParameters.From` reads the header (contract, run, time, grid). It
+lists every structural problem in one `BundleValidationException`, then throws one
+`UnsupportedFeatureException` naming every declared feature not marked implemented. A feature's
+`implemented` flag is flipped only in the PR that makes it run end to end; `core` in task 1.8.
 
 ---
 
@@ -1651,6 +1683,10 @@ machine image, at any thread count.
 - **D12's sequencing:** calibration and scripts in Phase 1, the UI in Phase 2.
 
 Q4 takes its recommendation (refuse), which follows from D11 (fail closed). The rest stand as recommended until the owner says otherwise.
+
+**Q4's scope, fixed 2026-11-18 (task 1.1):** refuse exactly the three named cases: catch-based fishing, by-class rates, and selectivity types other than -1, 0 and 1. Keys the Python engine never reads are valid OSMOSE/Java keys with no effect there (81 on Baltic). They **follow Python** and are not refused: equivalence with the Python engine is the target, and refusing them would block Baltic forever.
+
+**G0 was decided GO by the owner on 2026-11-18.**
 
 **Which gate Q2 makes go/no-go.** There are two, at different times:
 - **G0, the kernel spike (plan, Phase 0).** Go if the best kernel variant is at least 1.0x

@@ -17,6 +17,11 @@ from osmose.engine.grid import Grid
 from osmose.engine.state import SchoolState
 
 
+def incoming_flux_enabled(config: dict[str, str]) -> bool:
+    """Whether incoming flux is switched on (``simulation.incoming.flux.enabled``)."""
+    return config.get("simulation.incoming.flux.enabled", "false").lower() == "true"
+
+
 class _SpeciesFlux:
     """Pre-computed flux data for a single species."""
 
@@ -87,7 +92,7 @@ class IncomingFluxState:
         engine_config: EngineConfig,
         grid: Grid,
     ) -> None:
-        self.enabled = config.get("simulation.incoming.flux.enabled", "false").lower() == "true"
+        self.enabled = incoming_flux_enabled(config)
         self._fluxes: list[_SpeciesFlux] = []
         self._engine_config = engine_config
         self._grid = grid
