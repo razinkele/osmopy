@@ -17,6 +17,7 @@ time with its name rather than inside the engine.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -33,6 +34,11 @@ STAGE_METRICS = {"size": 0, "age": 1, "weight": 2, "tl": 3}
 ACCESS_NONE, ACCESS_SPECIES, ACCESS_STAGE = 0, 1, 2
 #: ``growth.class`` codes.
 GROWTH_CLASSES = {"VB": 0, "GOMPERTZ": 1}
+#: ``movement.method`` codes.
+MOVEMENT_METHODS = {"none": 0, "random": 1, "maps": 2}
+#: Domain separator for the random-patch generator (ASCII "PATC"): the patches get their own
+#: stream, derived from the run seed, so they never share one with anything else.
+PATCH_STREAM = 0x50415443
 
 
 class BundleBuildError(ValueError):
@@ -94,6 +100,7 @@ def build_bundle(
     _fishing(b, config, grid, n_total)
     _reproduction(b, config, n_total)
     _resources(b, config, grid)
+    _movement(b, config, grid, n_total, seed)
     _output(b, config, n_total)
     return b
 
@@ -403,6 +410,86 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
     b.set_array("resources.accessibility_by_step", access_by_step)
 
 
+def _movement(b: Bundle, config: Any, grid: Any, n_total: int, seed: int) -> None:
+    """Map and random movement, as the Python engine sets them up at the start of a run.
+
+    Maps: the engine's own ``MovementMapSet`` per map-moving focal species (as ``simulate`` builds
+    them) flattened by its ``_flatten_all_map_sets``. A school's map is
+    ``species_offset[sp] + index[sp][age, step]`` (-1 = none), and ``_precompute_map_indices``'s
+    same-map rule follows from the same table. Random: the placement domain of each random-moving
+    species, built by the engine's ``build_random_patches`` on a stream of its own derived from
+    the run seed (only a configured ``ncell`` smaller than the ocean draws anything).
+    """
+    from osmose.engine.movement_maps import MovementMapSet
+    from osmose.engine.processes.movement import _flatten_all_map_sets, build_random_patches
+
+    n_focal = config.n_species
+    methods = list(config.movement_method)
+    unknown = sorted(set(methods) - set(MOVEMENT_METHODS))
+    if unknown or len(methods) != n_total:
+        raise BundleBuildError(f"movement.method: {len(methods)} entries, unknown {unknown}")
+    b.set_array(
+        "movement.method", np.asarray([MOVEMENT_METHODS[m] for m in methods], dtype=np.uint8)
+    )
+    b.set_array(
+        "movement.walk_range", _i4("movement.walk_range", config.random_walk_range, (n_total,))
+    )
+
+    map_sets = {}
+    for sp in range(n_focal):
+        if methods[sp] == "maps":
+            map_sets[sp] = MovementMapSet(
+                config=config.raw_config,
+                species_name=config.species_names[sp],
+                n_dt_per_year=config.n_dt_per_year,
+                n_years=config.n_year,
+                lifespan_dt=int(config.lifespan_dt[sp]),
+                ny=grid.ny,
+                nx=grid.nx,
+                config_dir=config.raw_config.get("_osmose.config.dir", ""),
+                strict=config.movement_strict_coverage,
+            )
+    b.set_int("movement.maps.n_species", len(map_sets))
+    if map_sets:
+        stack, max_proba, is_null, offset = _flatten_all_map_sets(
+            map_sets, n_focal, grid.ny, grid.nx
+        )
+        b.set_array("movement.maps.stack", np.ascontiguousarray(stack, dtype=np.float64))
+        b.set_array("movement.maps.max_proba", np.asarray(max_proba, dtype=np.float64))
+        b.set_array("movement.maps.is_null", np.asarray(is_null, dtype=np.uint8))
+        b.set_array("movement.maps.species_offset", np.asarray(offset, dtype=np.int32))
+        offsets = np.zeros(n_focal + 1, dtype=np.int64)
+        shapes = np.zeros((n_focal, 2), dtype=np.int32)
+        tables = []
+        for sp in range(n_focal):
+            im = map_sets[sp].index_maps if sp in map_sets else np.zeros((0, 0), dtype=np.int32)
+            shapes[sp] = im.shape
+            tables.append(np.ascontiguousarray(im, dtype=np.int32).ravel())
+            offsets[sp + 1] = offsets[sp] + im.size
+        b.set_array("movement.maps.index", np.concatenate(tables).astype(np.int32))
+        b.set_array("movement.maps.index.offsets", offsets)
+        b.set_array("movement.maps.index.shape", shapes)
+
+    rng = np.random.default_rng(
+        np.random.SeedSequence([int(seed) & 0xFFFFFFFFFFFFFFFF, PATCH_STREAM])
+    )
+    domains = build_random_patches(config, grid, rng)
+    offsets = np.zeros(n_focal + 1, dtype=np.int32)
+    cells = []
+    for sp in range(n_focal):
+        d = domains.get(sp) if methods[sp] == "random" else None
+        if d is not None:
+            cells.append(np.asarray(d, dtype=np.int32))
+            offsets[sp + 1] = offsets[sp] + len(d)
+        else:
+            offsets[sp + 1] = offsets[sp]
+    b.set_array("movement.random.domain.offsets", offsets)
+    b.set_array(
+        "movement.random.domain.cells",  # (x, y) pairs, in build_random_patches' order
+        np.ascontiguousarray(np.concatenate(cells)) if cells else np.zeros((0, 2), dtype=np.int32),
+    )
+
+
 def _output(b: Bundle, config: Any, n_total: int) -> None:
     cutoff = config.output_cutoff_age
     b.set_array(
@@ -412,3 +499,50 @@ def _output(b: Bundle, config: Any, n_total: int) -> None:
     b.set_int("output.record_frequency", int(config.output_record_frequency))
     b.set_int("output.step0_include", int(bool(config.output_step0_include)))
     b.set_int("output.families", 0)  # 0 = output.minimal.enabled; full families are Phase 2
+
+
+# --------------------------------------------------------------------------- result buffers
+
+#: Columns of ``result.mortality``, in ``MortalityCause`` order.
+N_MORTALITY_CAUSES = 8
+CONTROL_SLOTS = 8
+
+
+@dataclass
+class RunBuffers:
+    """The arrays the C# engine writes into, owned by Python (spec 8.4/8.5). Keep this object
+    alive until ``RunSimulation`` has returned: the engine holds raw addresses."""
+
+    record_step: np.ndarray  # i4 (n_records): last step of each window, -1 for the initial record
+    window_steps: np.ndarray  # i4 (n_records): steps folded into each record
+    biomass: np.ndarray  # f8 (n_records, n_total): window mean, tonnes
+    abundance: np.ndarray  # f8 (n_records, n_total): window mean
+    mortality: np.ndarray  # f8 (n_records, n_focal, 8): window sum of deaths by cause
+    yield_: np.ndarray  # f8 (n_records, n_focal): window sum, tonnes
+    control: np.ndarray  # i8 (8): [0] cancel (Python), [1] steps done, [2] records, [3] schools
+
+
+def n_records(n_steps: int, record_frequency: int, step0_include: bool) -> int:
+    """How many records a run writes: one per full window plus a trailing partial one (as
+    ``simulate`` flushes it), plus the initial record when ``output.step0.include`` is set."""
+    return int(bool(step0_include)) + -(-int(n_steps) // int(record_frequency))
+
+
+def allocate_results(b: Bundle, config: Any) -> RunBuffers:
+    """Allocate the result buffers and the control block and register them in ``b``."""
+    n_total, n_focal = config.n_species + config.n_background, config.n_species
+    n = n_records(config.n_steps, config.output_record_frequency, config.output_step0_include)
+    buffers = RunBuffers(
+        record_step=np.full(n, -2, dtype=np.int32),
+        window_steps=np.zeros(n, dtype=np.int32),
+        biomass=np.zeros((n, n_total)),
+        abundance=np.zeros((n, n_total)),
+        mortality=np.zeros((n, n_focal, N_MORTALITY_CAUSES)),
+        yield_=np.zeros((n, n_focal)),
+        control=np.zeros(CONTROL_SLOTS, dtype=np.int64),
+    )
+    for name in ("record_step", "window_steps", "biomass", "abundance", "mortality"):
+        b.set_array(f"result.{name}", getattr(buffers, name))
+    b.set_array("result.yield", buffers.yield_)
+    b.set_array("control.block", buffers.control)
+    return buffers

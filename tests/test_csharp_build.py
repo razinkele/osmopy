@@ -467,3 +467,151 @@ def test_resource_multipliers_reach_the_capacity(runs):
             assert (frames[r, fbs[step, r]] * abs_[step, r]).tobytes() == rs.biomass[r].tobytes()
     assert {s.multiplier for s in rs.species} != {1.0}
     rs.close()
+
+
+# ------------------------------------------------------------------ 1.2c: movement
+
+
+def engine_map_sets(config, grid) -> dict:
+    """map_sets exactly as simulate() builds them."""
+    from osmose.engine.movement_maps import MovementMapSet
+
+    return {
+        sp: MovementMapSet(
+            config=config.raw_config, species_name=config.species_names[sp],
+            n_dt_per_year=config.n_dt_per_year, n_years=config.n_year,
+            lifespan_dt=int(config.lifespan_dt[sp]), ny=grid.ny, nx=grid.nx,
+            config_dir=config.raw_config.get("_osmose.config.dir", ""),
+            strict=config.movement_strict_coverage,
+        )
+        for sp in range(config.n_species)
+        if config.movement_method[sp] == "maps"
+    }  # fmt: skip
+
+
+def reference_map_index(b: Bundle, species: np.ndarray, age: np.ndarray, step: int):
+    off, shapes, flat = (
+        b.get(k)
+        for k in ("movement.maps.index.offsets", "movement.maps.index.shape", "movement.maps.index")
+    )
+
+    def at(sp, a, s):
+        n_ages, n_steps = shapes[sp]
+        if not (0 <= a < n_ages and 0 <= s < n_steps):
+            return -1
+        return int(flat[off[sp] + a * n_steps + s])
+
+    cur = np.array([at(sp, a, step) for sp, a in zip(species, age, strict=True)], dtype=np.int32)
+    prev = np.array(
+        [at(sp, a - 1, step - 1) for sp, a in zip(species, age, strict=True)], dtype=np.int32
+    )
+    return cur, (cur == prev) & (age > 0) & (step > 0)
+
+
+def test_map_indices_from_the_bundle_equal_precompute_map_indices(runs):
+    from osmose.engine.processes.movement import _precompute_map_indices
+
+    config, _, grid, b = runs["eec_full"]
+    map_sets = engine_map_sets(config, grid)
+    rng = np.random.default_rng(31)
+    n = 3000
+    sp = np.asarray(sorted(map_sets))[rng.integers(0, len(map_sets), n)].astype(np.int32)
+    age = rng.integers(-1, np.asarray(config.lifespan_dt)[sp] + 2).astype(np.int32)
+    uses = np.ones(n, dtype=bool)
+    seen_change = False
+    for step in (0, 1, 23, 24, 25, config.n_steps - 1, config.n_steps):
+        want = _precompute_map_indices(sp, age, uses, map_sets, step)
+        got = reference_map_index(b, sp, age, step)
+        assert np.array_equal(want[0], got[0]), f"step {step}: current index"
+        assert np.array_equal(want[1], got[1]), f"step {step}: same-map flag"
+        seen_change |= bool((~want[1] & (want[0] >= 0)).any())
+    assert seen_change  # the instrument sees map changes
+
+
+def test_map_stack_holds_each_species_maps(runs):
+    config, _, grid, b = runs["eec_full"]
+    map_sets = engine_map_sets(config, grid)
+    stack, null, offset = (
+        b.get(k)
+        for k in ("movement.maps.stack", "movement.maps.is_null", "movement.maps.species_offset")
+    )
+    for sp, ms in map_sets.items():
+        for k, m in enumerate(ms.maps):
+            g = offset[sp] + k
+            if m is None:
+                assert null[g] == 1 and not stack[g].any()
+            else:
+                assert (
+                    null[g] == 0 and stack[g].tobytes() == np.asarray(m, dtype=np.float64).tobytes()
+                )
+    assert null.any()  # EEC's null maps (out of domain) are carried
+
+
+def test_bay_of_biscay_random_domains_are_the_whole_ocean(runs):
+    config, _, grid, b = runs["bay_of_biscay"]
+    off, cells = b.get("movement.random.domain.offsets"), b.get("movement.random.domain.cells")
+    ys, xs = np.nonzero(grid.ocean_mask)
+    whole = np.column_stack((xs, ys))
+    for sp in range(config.n_species):
+        assert config.movement_method[sp] == "random"
+        assert np.array_equal(cells[off[sp] : off[sp + 1]], whole)
+
+
+def test_a_configured_ncell_gives_a_connected_patch_of_that_size(runs):
+    config, raw, grid, _ = runs["bay_of_biscay"]
+    cfg = copy.copy(config)
+    cfg.random_distribution_ncell = np.array([25] + [0] * (config.n_species - 1), dtype=np.int32)
+    b1 = build_bundle(cfg, raw, grid, seed=7)
+    off, cells = b1.get("movement.random.domain.offsets"), b1.get("movement.random.domain.cells")
+    patch = cells[off[0] : off[1]]
+    assert len(patch) == 25 and all(grid.ocean_mask[y, x] for x, y in patch)
+    for i in range(1, len(patch)):  # BFS order: every cell touches an earlier one
+        assert any(max(abs(patch[i][0] - q[0]), abs(patch[i][1] - q[1])) <= 1 for q in patch[:i])
+    again = build_bundle(cfg, raw, grid, seed=7).get("movement.random.domain.cells")
+    assert np.array_equal(again, cells)  # deterministic in the run seed
+
+
+# ------------------------------------------------------------------ result buffers
+
+
+@pytest.mark.parametrize(
+    ("n_steps", "freq", "step0", "want"),
+    [
+        (24, 24, False, 1),
+        (50, 24, False, 3),
+        (50, 24, True, 4),
+        (24, 10, False, 3),
+        (1, 5, True, 2),
+    ],
+)
+def test_record_count_formula(n_steps, freq, step0, want):
+    from osmose.engine_cs.build import n_records
+
+    assert n_records(n_steps, freq, step0) == want
+
+
+def test_record_count_matches_a_real_python_run_with_a_partial_window(runs):
+    from osmose.engine.simulate import simulate
+    from osmose.engine_cs.build import n_records
+
+    _, raw, _, _ = runs["bay_of_biscay"]
+    cfg = raw | {"simulation.time.nyear": "1", "output.recordfrequency.ndt": "10"}
+    config, grid, rng, mv, mo = PythonEngine()._prepare_run(cfg, 3)
+    outputs = simulate(config, grid, rng, movement_rngs=mv, mortality_rngs=mo)
+    assert (
+        len(outputs)
+        == n_records(config.n_steps, config.output_record_frequency, config.output_step0_include)
+        == 3
+    )
+
+
+def test_result_buffers_are_registered_by_address(runs):
+    from osmose.engine_cs.build import allocate_results
+
+    config, raw, grid, _ = runs["eec_full"]
+    b = build_bundle(config, raw, grid, seed=7)
+    buf = allocate_results(b, config)
+    # The bundle holds the SAME memory the engine will write into (no copy).
+    assert b.get("result.biomass").ctypes.data == buf.biomass.ctypes.data
+    assert b.get("control.block").ctypes.data == buf.control.ctypes.data
+    assert buf.mortality.shape[1:] == (config.n_species, 8)
