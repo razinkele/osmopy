@@ -44,6 +44,18 @@ FIXTURES = {
 GATES = {"baltic": {1: 1.15, 14: 1.5}}
 
 
+def resolve_config(name: str) -> tuple[Path, str | None]:
+    """``--config`` as an absolute path, and the fixture it is (None for any other file).
+
+    The path is resolved from the caller's directory, because the workers run in ``ROOT``. The
+    fixture is recognised by its FILE, so that a path to Baltic's config gets Baltic's gate, not
+    the 1.0 default.
+    """
+    path = (FIXTURES[name] if name in FIXTURES else Path(name)).resolve()
+    fixture = next((k for k, v in FIXTURES.items() if v.resolve() == path), None)
+    return path, fixture
+
+
 def _prepare(config: Path, years: int):
     from osmose.config.reader import OsmoseConfigReader
     from osmose.engine import PythonEngine
@@ -187,11 +199,11 @@ def main() -> None:
         "--config", default="eec_full", help=f"a fixture ({', '.join(FIXTURES)}) or a config path"
     )
     args = ap.parse_args()
-    config = FIXTURES.get(args.config, Path(args.config))
+    config, fixture = resolve_config(args.config)
     if not config.is_file():
         ap.error(f"--config: {args.config!r} is neither a fixture nor a file")
-    gates = GATES.get(args.config, {})
-    print(f"config {config}")
+    gates = GATES.get(fixture or "", {})
+    print(f"config {config} ({fixture or 'not a fixture: gate 1.0'})")
     load = os.getloadavg()
     print(
         f"load average {load[0]:.2f} {load[1]:.2f} {load[2]:.2f} on {os.cpu_count()} CPUs"
