@@ -26,7 +26,7 @@ import numpy as np
 
 from osmose.config.reader import OsmoseConfigReader
 from osmose.demo import osmose_demo
-from osmose.engine import PythonEngine
+from osmose.engine.select import get_engine
 
 _JAR = Path(
     os.environ.get(
@@ -178,10 +178,23 @@ def _species_row(bio, sp: str) -> dict:
     return {"min": vmin, "late_mean": late_mean, "persists": persists, "in_envelope": in_env}
 
 
+#: The in-process engines the certification can run on, and how the note names them.
+ENGINE_LABELS = {"python": "Python", "csharp": "C#"}
+
+
 def certify_python(
-    params: dict[str, str], n_years: int, seeds, seeding_mode: str | None = None
+    params: dict[str, str],
+    n_years: int,
+    seeds,
+    seeding_mode: str | None = None,
+    engine: str = "python",
 ) -> dict:
-    """Run Python n_years x seeds; aggregate per-species persist/in-envelope (worst-case across seeds).
+    """Run an in-process engine n_years x seeds; aggregate per-species persist/in-envelope
+    (worst-case across seeds). ``engine`` is ``"python"`` (the default, and the name's origin)
+    or ``"csharp"``: the same config, the same seeds and the same criterion, so the two tables
+    can be compared verdict by verdict (:func:`compare_verdicts`). The C# engine draws from its
+    own random stream, so the numbers differ; its results do not depend on its thread count,
+    so it is given the machine's physical cores.
 
     ``seeding_mode`` (GitHub #143) must match the mode the params were CALIBRATED under — certifying
     linear-refitted parameters under stock_recruitment seeding would score them against dynamics they
@@ -196,9 +209,15 @@ def certify_python(
     if seeding_mode is not None:
         cfg["population.seeding.mode"] = seeding_mode
         print(f"Seeding mode: {seeding_mode}")
+    if engine == "csharp":
+        from osmose.engine.thread_policy import physical_budget
+
+        runner = get_engine("csharp", threads=physical_budget())
+    else:
+        runner = get_engine(engine)
     per_seed = []
     for seed in seeds:
-        bio = PythonEngine().run_in_memory(cfg, seed=seed).biomass()
+        bio = runner.run_in_memory(cfg, seed=seed).biomass()
         per_seed.append({sp: _species_row(bio, sp) for sp in FOCAL})
     # worst-case: a species passes only if it persists AND is in-envelope in EVERY seed
     table = {}
@@ -327,6 +346,72 @@ def java_table_from_series(series: dict[str, list[float]]) -> dict:
     return table
 
 
+def compare_verdicts(reference: dict, other: dict) -> list[dict]:
+    """The verdicts on which two certification tables differ: one entry per species and
+    criterion (``persists``, ``in_envelope``), with both tables' final-decade mean ranges so a
+    difference can be read (a stock sitting on an envelope bound flips on a small change; a
+    collapse does not). An empty list means every verdict agrees."""
+    differences = []
+    for sp in FOCAL:
+        for criterion in ("persists", "in_envelope"):
+            if reference[sp][criterion] != other[sp][criterion]:
+                differences.append(
+                    {
+                        "species": sp,
+                        "criterion": criterion,
+                        "reference": reference[sp][criterion],
+                        "other": other[sp][criterion],
+                        "reference_range": reference[sp]["late_mean_range"],
+                        "other_range": other[sp]["late_mean_range"],
+                        "envelope": ENVELOPE[sp],
+                    }
+                )
+    return differences
+
+
+def cross_engine_lines(reference_label: str, other_label: str, differences: list[dict]) -> list:
+    """The note's section comparing two engines' verdicts on the same seeds."""
+    n = 2 * len(FOCAL)
+    if not differences:
+        agree = (
+            f"\n**{other_label} cross-check (same seeds, same criterion): all {n} verdicts "
+            f"agree with {reference_label}'s** ({len(FOCAL)} species x persists, in-envelope)."
+        )
+        return [agree]
+    summary = (
+        f"\n**{other_label} cross-check (same seeds, same criterion): {len(differences)} of {n} "
+        f"verdicts DIFFER from {reference_label}'s.** The engines draw from different random "
+        "streams, so a stock whose final-decade mean sits near an envelope bound can fall on "
+        "either side; each difference is listed with both ranges for that reading.\n"
+    )
+    header = (
+        f"| species | criterion | {reference_label} | {other_label} | {reference_label} range | "
+        f"{other_label} range | envelope |"
+    )
+    lines = [summary, header, "|---|---|---|---|---|---|---|"]
+    for d in differences:
+        lines.append(
+            f"| {d['species']} | {d['criterion']} | {'✓' if d['reference'] else '✗'} | "
+            f"{'✓' if d['other'] else '✗'} | {d['reference_range']} | {d['other_range']} | "
+            f"{list(d['envelope'])} |"
+        )
+    return lines
+
+
+def java_cross_check_line(reference_label: str, j_ok: int, ref_surv: set, j_surv: set) -> str:
+    """The Java survivor-set note. ``reference_label`` is the engine that was certified (with
+    ``--engine csharp`` the survivors compared with Java's are the C# engine's, not Python's)."""
+    agree = ref_surv == j_surv
+    return (
+        f"\n**Java cross-check: {j_ok}/{len(FOCAL)} persistent (single run, Java's own RNG "
+        f"— Java 4.4.1 has no numeric seed).** Survivor sets "
+        f"{'AGREE' if agree else 'DIFFER'} with {reference_label} — {reference_label} "
+        f"{sorted(ref_surv)}, "
+        f"Java {sorted(j_surv)}. Coarse consistency check only (Baltic is not bit-equal "
+        "cross-engine); a DIFFER is a flag to inspect, not an automatic failure."
+    )
+
+
 def _print_table(engine: str, table: dict) -> int:
     """Print the per-species table. Returns the ASSESSED-tier pass count (the headline)."""
     print(f"\n=== {engine}: per-species certification ===")
@@ -373,19 +458,33 @@ def main() -> int:
         "Java always seeds linearly — the key is Python-only — so --seeding-mode linear is the "
         "setting under which the two engines are actually comparable.",
     )
+    ap.add_argument(
+        "--engine",
+        choices=sorted(ENGINE_LABELS),
+        default="python",
+        help="the in-process engine the certification runs on (default: python)",
+    )
+    ap.add_argument(
+        "--csharp",
+        action="store_true",
+        help="also run the C# engine on the same seeds and compare the verdicts one by one",
+    )
     ap.add_argument("--java", action="store_true", help="also run a single Java 4.4.1 cross-check")
     ap.add_argument("--out", default="docs/baltic_stability_certification_2026-07-01.md")
     args = ap.parse_args()
 
     params = _load_params(args.params)
-    py_table = certify_python(params, args.years, tuple(args.seeds), args.seeding_mode)
-    py_ok = _print_table("Python", py_table)
+    label = ENGINE_LABELS[args.engine]
+    py_table = certify_python(
+        params, args.years, tuple(args.seeds), args.seeding_mode, engine=args.engine
+    )
+    py_ok = _print_table(label, py_table)
 
     lines = [
         "# Baltic stability — SP-A certification\n",
         (
             f"**Params:** {args.params}  ·  **horizon:** {args.years} yr  ·  **seeds:** {args.seeds}"
-            f"  ·  **seeding:** {args.seeding_mode or 'config default'}\n"
+            f"  ·  **seeding:** {args.seeding_mode or 'config default'}  ·  **engine:** {label}\n"
         ),
         "| species | persists | in-envelope | min biomass | final-decade mean range |",
         "|---|---|---|---|---|",
@@ -399,7 +498,7 @@ def main() -> int:
     n_assessed, n_ind = len(ASSESSED), len(INDICATIVE)
     ind_ok = sum(1 for sp in INDICATIVE if py_table[sp]["persists"] and py_table[sp]["in_envelope"])
     verdict = (
-        f"\n**Python verdict: {py_ok}/{n_assessed} ASSESSED species persistent & in-envelope.** "
+        f"\n**{label} verdict: {py_ok}/{n_assessed} ASSESSED species persistent & in-envelope.** "
         + (
             f"All {n_assessed} pass — candidate is certifiable; verify value round-trip before "
             "writing data/baltic."
@@ -420,6 +519,25 @@ def main() -> int:
     )
     lines.append(verdict)
 
+    if args.csharp and args.engine != "csharp":
+        print("\n=== C# cross-check (same seeds, same criterion) ===")
+        cs_table = certify_python(
+            params, args.years, tuple(args.seeds), args.seeding_mode, engine="csharp"
+        )
+        _print_table("C#", cs_table)
+        differences = compare_verdicts(py_table, cs_table)
+        section = cross_engine_lines(label, "C#", differences)
+        print("\n".join(section))
+        lines.extend(section)
+        lines.append("\n| species | C# persists | C# in-envelope | C# final-decade mean range |")
+        lines.append("|---|---|---|---|")
+        for sp in FOCAL:
+            t = cs_table[sp]
+            lines.append(
+                f"| {sp} | {'✓' if t['persists'] else '✗'} | {'✓' if t['in_envelope'] else '✗'} "
+                f"| {t['late_mean_range']} |"
+            )
+
     if args.java:
         print("\n=== Java 4.4.1 cross-check (single run, Java's own RNG, staged via C2) ===")
         j_table = certify_java(params, args.years)
@@ -427,14 +545,7 @@ def main() -> int:
             j_ok = _print_table("Java 4.4.1", j_table)
             py_surv = {sp for sp in FOCAL if py_table[sp]["persists"]}
             j_surv = {sp for sp in FOCAL if j_table[sp]["persists"]}
-            agree = py_surv == j_surv
-            lines.append(
-                f"\n**Java cross-check: {j_ok}/{len(FOCAL)} persistent (single run, Java's own RNG "
-                f"— Java 4.4.1 has no numeric seed).** Survivor sets "
-                f"{'AGREE' if agree else 'DIFFER'} with Python — Python {sorted(py_surv)}, "
-                f"Java {sorted(j_surv)}. Coarse consistency check only (Baltic is not bit-equal "
-                "cross-engine); a DIFFER is a flag to inspect, not an automatic failure."
-            )
+            lines.append(java_cross_check_line(label, j_ok, py_surv, j_surv))
         else:
             lines.append(
                 "\n_Java cross-check unavailable (jar missing or run failed) — see console._"

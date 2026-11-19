@@ -221,6 +221,45 @@ def test_a_stock_run_hands_on_exactly_the_records_the_engine_computed(demo, tmp_
         assert last.ssb is not None and last.ssb.sum() > 0
 
 
+def test_the_stock_baltic_run_is_the_same_at_1_2_and_14_threads(tmp_path):
+    """The spec's determinism goal on the config AS SHIPPED, every output family on: the diet
+    rows are written per predator school inside the parallel kernel, and the families are folded
+    from what the threads leave behind. The records must not depend on the thread count, and
+    must depend on the seed (or the digest would be blind)."""
+    extra = {"output.recordfrequency.ndt": "6", "output.step0.include": "true"}
+    raw = _raw("baltic", tmp_path, 2, minimal=False, extra=extra)
+    _child("thread_digests", raw, tmp_path / "d.json", "1,7")
+    got = json.loads((tmp_path / "d.json").read_text())
+    assert set(got) == {f"{seed}:{threads}" for seed in (1, 7) for threads in (1, 2, 14)}
+    for seed in (1, 7):
+        one, two, many = (got[f"{seed}:{threads}"] for threads in (1, 2, 14))
+        assert one["records"] == two["records"] == many["records"] > 2
+        assert one["digest"] == two["digest"], f"seed {seed}: 1 and 2 threads differ"
+        assert one["digest"] == many["digest"], f"seed {seed}: 1 and 14 threads differ"
+    assert got["1:1"]["digest"] != got["7:1"]["digest"]
+    # The digest covers the families Baltic ships with, not only the minimal outputs.
+    assert {
+        "biomass", "abundance", "yield_by_species", "mortality_by_cause", "abundance_by_stage",
+        "biomass_by_age", "ssb", "yield_n", "mean_size", "mean_tl", "diet_by_species",
+    } <= set(got["1:1"]["fields"])  # fmt: skip
+
+
+def test_a_run_leaves_its_arrays_to_no_later_run(tmp_path):
+    """Spec 10.4's memory budget, for a process that runs many simulations (a calibration
+    worker, the UI). A run's own arrays are dead when it returns. Left to the collector's
+    schedule they stayed for two or three more runs (measured on Baltic, 2026-11-19: a managed
+    heap sawing between 30 and 88 MB, resident memory up to 324 MB against the Python engine's
+    309). ``OsmoseEngine.RunSimulation`` collects them before it returns: the heap is back to a
+    megabyte or two after EVERY run, and every run shows a full collection."""
+    raw = _raw("baltic", tmp_path, 3, minimal=False)
+    _child("heap_after_runs", raw, tmp_path / "h.json", "5")
+    rows = json.loads((tmp_path / "h.json").read_text())
+    assert len(rows) == 5
+    heaps, gen2 = [r["heap_mb"] for r in rows], [r["gen2"] for r in rows]
+    assert max(heaps) < 5.0, heaps
+    assert gen2 == sorted(set(gen2)), gen2  # strictly rising: a full collection in every run
+
+
 def _structure(frame) -> tuple:
     return (frame.shape, list(frame.columns), [str(t) for t in frame.dtypes])
 

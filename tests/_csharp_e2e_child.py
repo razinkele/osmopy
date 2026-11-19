@@ -57,6 +57,61 @@ def files(out: Path) -> None:
     CSharpEngine().run(_raw(), out, seed=3)
 
 
+def thread_digests(out: Path) -> None:
+    """One digest of a run's whole record list per (seed, thread count): every field of every
+    record, arrays by their bytes. With the fields the last record carries, so the caller can
+    check the digest covers the families it means to."""
+    import hashlib
+    from dataclasses import fields
+
+    from osmose.engine_cs import CSharpEngine
+
+    def feed(h, value) -> None:
+        if isinstance(value, np.ndarray):
+            h.update(str(value.dtype).encode() + str(value.shape).encode())
+            h.update(np.ascontiguousarray(value).tobytes())
+        elif isinstance(value, dict):
+            for key in sorted(value):
+                h.update(repr(key).encode())
+                feed(h, value[key])
+        else:
+            h.update(repr(value).encode())
+
+    result = {}
+    for seed in (int(s) for s in sys.argv[5].split(",")):
+        for threads in (1, 2, 14):
+            _config, _grid, records = CSharpEngine(threads=threads)._execute(_raw(), seed, None)
+            h = hashlib.sha256()
+            for record in records:
+                for f in fields(record):
+                    h.update(f.name.encode())
+                    feed(h, getattr(record, f.name))
+            present = [
+                f.name for f in fields(records[-1]) if getattr(records[-1], f.name) is not None
+            ]
+            result[f"{seed}:{threads}"] = {
+                "digest": h.hexdigest(), "records": len(records), "fields": present,
+            }  # fmt: skip
+    out.write_text(json.dumps(result))
+
+
+def heap_after_runs(out: Path) -> None:
+    """The managed heap and the generation-2 collection count after each of several runs in
+    this one process (read without forcing a collection)."""
+    from osmose.engine_cs import CSharpEngine
+
+    engine, rows = CSharpEngine(threads=2), []
+    for seed in range(int(sys.argv[5])):
+        engine._execute(_raw(), seed, None)
+        import System  # the CLR is hosted once the first run has loaded the engine
+
+        rows.append({
+            "heap_mb": float(System.GC.GetTotalMemory(False)) / 2**20,
+            "gen2": int(System.GC.CollectionCount(2)),
+        })  # fmt: skip
+    out.write_text(json.dumps(rows))
+
+
 def cancel_at(out: Path) -> None:
     """Cancel through slot 0 once slot 1 (steps completed) reaches k; result rows past the
     records written are prefilled with NaN so they are provably untouched."""
@@ -230,6 +285,8 @@ if __name__ == "__main__":
         "outputs": outputs,
         "frames": frames,
         "files": files,
+        "thread_digests": thread_digests,
+        "heap_after_runs": heap_after_runs,
         "cancel_at": cancel_at,
         "cancel_thread": cancel_from_thread,
         "error": expect_error,

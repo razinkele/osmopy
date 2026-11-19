@@ -14,7 +14,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the O
 - **Run app:** `.venv/bin/shiny run app.py --host 0.0.0.0 --port 8000`
 - **Lint:** `.venv/bin/ruff check osmose/ ui/ tests/ scripts/ app.py`
 - **Format:** `.venv/bin/ruff format osmose/ ui/ tests/ scripts/ app.py`
-- **C# engine:** build `bash scripts/build_csharp_engine.sh`; tests `OSMOSE_REQUIRE_CSHARP=1 .venv/bin/python -m pytest tests/test_csharp_*.py` plus `dotnet test csharp/Osmose.Engine.sln`; a deployed environment checks itself with `python -m osmose.engine_cs.selftest`
+- **C# engine:** build `bash scripts/build_csharp_engine.sh`; tests `OSMOSE_REQUIRE_CSHARP=1 .venv/bin/python -m pytest tests/test_csharp_*.py tests/test_engine_select.py` plus `dotnet test csharp/Osmose.Engine.sln` (run `test_engine_select.py` WITH the engine built: without it, its config checks stop at "unavailable" and pass, which hid a wrong test until 2026-11-19); a deployed environment checks itself with `python -m osmose.engine_cs.selftest`; cross-engine checks: `scripts/cross_engine_parity_440.py --engines python,python-control,csharp` (biomass, abundance, yield, mean weight), `scripts/csharp/families_equivalence.py` (the full output families), `scripts/baltic_stability_certify.py --csharp` (verdict by verdict), `scripts/csharp/ab_eec.py --config baltic` (speed and memory); the Phase 2 record is `docs/baltic_csharp_crosscheck_2026-11-19.md`
 - **Type-check:** `.venv/bin/pyright` (no flags needed since 2026-09-27 — `pyrightconfig.json` now pins `venvPath`/`venv`; see Gotchas if you get a wall of import errors)
 
 ## Architecture
