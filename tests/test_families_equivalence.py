@@ -145,7 +145,7 @@ def test_three_arms_of_one_distribution_pass_and_report_nothing_unseen():
     result = fam.judge(_arms(), splits=200)
     assert fam.passed(result)
     assert result["asymmetric"] == {} and result["one_sided"] == [] and result["dropped"] == []
-    assert result["constant"] == []
+    assert result["constant"] == [] and result["invalid"] == [] and result["floored"] == []
     assert set(result["margins"]) == {"ssb", "mean_tl"}
     assert len(result["treatment"]) == 4
 
@@ -246,14 +246,38 @@ def test_a_cell_the_python_engine_itself_lacks_is_reported_and_does_not_fail():
     assert fam.passed(result)
 
 
-def test_a_family_with_no_testable_cell_does_not_stop_the_others():
-    """``ssb`` comes first in the margins; with every one of its cells dropped, the rule used
-    to be handed an empty family and stopped (it sizes the arms from the first cell)."""
+def test_a_gap_in_an_output_that_always_exists_fails_the_run():
+    """SSB, the yields, the life stages and the diet exist for every species in every record.
+    A missing or non-finite value there, in ANY arm, is bad evidence, not a cell to leave out:
+    left out, a Python arm with one NaN would hide a C# arm of zeros in the same cell."""
     arms = _arms()
-    for sp in ("cod", "sprat"):
-        arms["python-control"]["ssb"][sp][0] = np.nan
+    arms["python-control"]["ssb"]["cod"][0] = np.nan
     result = fam.judge(arms, splits=200)
-    assert sorted(result["dropped"]) == ["ssb/cod", "ssb/sprat"]
+    assert result["invalid"] == ["ssb/cod"] and result["dropped"] == []
+    assert result["verdict"].passed and not fam.passed(result)
+    arms["csharp"]["ssb"]["cod"] = np.zeros(8)  # the case the gap would have hidden
+    result = fam.judge(arms, splits=200)
+    assert result["invalid"] == ["ssb/cod"] and not fam.passed(result)
+    arms = _arms()
+    arms["csharp"]["ssb"]["sprat"][2] = np.inf
+    assert fam.judge(arms, splits=200)["invalid"] == ["ssb/sprat"]
+    arms = _arms()
+    del arms["python"]["ssb"]["sprat"]
+    result = fam.judge(arms, splits=200)
+    assert result["invalid"] == ["ssb/sprat"] and not fam.passed(result)
+    # The same gap in a weighted mean is only reported (the test above this one).
+    assert set(fam.EXTENSIVE) & {"mean_size", "mean_tl"} == set()
+
+
+def test_a_family_with_no_testable_cell_does_not_stop_the_others():
+    """With every cell of the first family dropped, the rule used to be handed an empty family
+    and stopped (it sizes the arms from the first cell). Two weighted means, the only outputs a
+    species may be absent from: ``mean_size`` comes first in the margins."""
+    arms = _arms(metrics=("mean_size", "mean_tl"))
+    for sp in ("cod", "sprat"):
+        arms["python-control"]["mean_size"][sp][0] = np.nan
+    result = fam.judge(arms, splits=200)
+    assert sorted(result["dropped"]) == ["mean_size/cod", "mean_size/sprat"]
     assert set(result["margins"]) == {"mean_tl"}
     assert fam.passed(result)
     for sp in ("cod", "sprat"):

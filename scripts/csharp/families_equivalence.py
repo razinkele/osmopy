@@ -155,8 +155,11 @@ def judge(arms: dict, splits: int) -> dict:
       ``COLLAPSE`` as ``COLLAPSE``, so zeros against values under 1 would read as no difference.
     - ``floored``: a tested cell with values between 0 and ``COLLAPSE``. The rule clamps them,
       so it sees less than there is; listed.
-    - ``dropped``: a cell a Python arm itself lacks in some replicate (a species absent from a
-      mean). Not testable, and reported.
+    - ``invalid``: a missing or non-finite value in an EXTENSIVE output, in any arm. Those
+      outputs exist for every species in every record, so this is bad evidence, not a cell to
+      leave out. A failure.
+    - ``dropped``: a cell of a weighted MEAN that a Python arm itself lacks in some replicate
+      (a species with no qualifying school is absent from a mean). Not testable, and reported.
     - ``constant``: a tested cell that is one same number in every replicate of every arm (a
       predator that eats no fish). It counts as equivalent and carries no information; it is
       listed so that the count of equivalent cells is not read as more than it is.
@@ -172,6 +175,7 @@ def judge(arms: dict, splits: int) -> dict:
     margins: dict[str, float] = {}
     dropped: list[str] = []
     one_sided: list[str] = []
+    invalid: list[str] = []
     constant: list[str] = []
     floored: list[str] = []
     for metric, margin in MARGINS.items():
@@ -189,6 +193,8 @@ def judge(arms: dict, splits: int) -> dict:
                     one_sided.append(f"{metric}/{sp}")
                 else:
                     keep.append(sp)
+            elif metric in EXTENSIVE:  # always defined: a gap is bad evidence, whoever has it
+                invalid.append(f"{metric}/{sp}")
             elif py == control and py != cs:  # Python agrees with itself; C# differs
                 one_sided.append(f"{metric}/{sp}")
             else:
@@ -205,6 +211,7 @@ def judge(arms: dict, splits: int) -> dict:
                     floored.append(f"{metric}/{sp}")
     result: dict = {
         "margins": margins, "dropped": dropped, "one_sided": one_sided, "asymmetric": asymmetric,
+        "invalid": invalid,
         "constant": constant, "floored": floored, "verdict": None,
     }  # fmt: skip
     if not margins:
@@ -221,13 +228,14 @@ def judge(arms: dict, splits: int) -> dict:
 
 def passed(result: dict) -> bool:
     """The rule's verdict, and nothing the rule could not see: at least one testable cell, no
-    family only some arms produced, no cell only one engine has."""
+    family only some arms produced, no cell only one engine has, no gap in an extensive output."""
     verdict = result["verdict"]
     return (
         verdict is not None
         and verdict.passed
         and not result["asymmetric"]
         and not result["one_sided"]
+        and not result["invalid"]
     )
 
 
@@ -236,6 +244,10 @@ def report(result: dict) -> None:
         print(f"FAMILY NOT IN EVERY ARM: {metric} is missing from {', '.join(missing)}")
     if result["one_sided"]:
         print(f"CELLS ONLY ONE ENGINE HAS: {', '.join(result['one_sided'])}")
+    if result["invalid"]:
+        print(
+            f"MISSING OR NON-FINITE VALUES IN AN EXTENSIVE OUTPUT: {', '.join(result['invalid'])}"
+        )
     if result["dropped"]:
         print(f"not testable (a Python arm lacks the value): {', '.join(result['dropped'])}")
     if result["floored"]:
@@ -275,7 +287,7 @@ def report(result: dict) -> None:
     for failure in v.failures:
         print(f"  {failure}")
     if v.passed and not passed(result):
-        print("  the rule passes on the cells it saw, but an engine lacks outputs the other has")
+        print("  the rule passes on the cells it saw; the failure is what is listed at the top")
     by_metric: dict[str, list[float]] = {}
     for (metric, _sp), cell in treatment.items():
         by_metric.setdefault(metric, []).append(abs(cell.d))
