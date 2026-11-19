@@ -139,8 +139,26 @@ def test_three_arms_of_one_distribution_pass_and_report_nothing_unseen():
     result = fam.judge(_arms(), splits=200)
     assert fam.passed(result)
     assert result["asymmetric"] == {} and result["one_sided"] == [] and result["dropped"] == []
+    assert result["constant"] == []
     assert set(result["margins"]) == {"ssb", "mean_tl"}
     assert len(result["treatment"]) == 4
+
+
+def test_a_cell_that_is_one_number_everywhere_is_counted_and_listed():
+    """A predator that eats no fish reads 0 in every replicate of every arm. The rule counts the
+    cell as equivalent; it is listed, so the count is not read as more than it is. A cell that
+    is constant in each arm but NOT the same number across arms is an ordinary cell."""
+    arms = _arms()
+    for name in fam.ARMS:
+        arms[name]["mean_tl"]["sprat"] = np.full(8, 2.0)
+    result = fam.judge(arms, splits=200)
+    assert result["constant"] == ["mean_tl/sprat"]
+    assert ("mean_tl", "sprat") in result["treatment"] and fam.passed(result)
+    arms["csharp"]["mean_tl"]["sprat"] = np.full(8, 3.0)
+    result = fam.judge(arms, splits=200)
+    assert result["constant"] == []
+    assert not result["treatment"][("mean_tl", "sprat")].equivalent
+    assert not fam.passed(result)
 
 
 def test_a_family_one_engine_omits_fails_the_run():

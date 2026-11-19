@@ -152,6 +152,9 @@ def judge(arms: dict, splits: int) -> dict:
       (or the reverse). A failure, for the same reason.
     - ``dropped``: a cell a Python arm itself lacks in some replicate (a species absent from a
       mean). Not testable, and reported.
+    - ``constant``: a tested cell that is one same number in every replicate of every arm (a
+      predator that eats no fish). It counts as equivalent and carries no information; it is
+      listed so that the count of equivalent cells is not read as more than it is.
     """
     from osmose.validation.engine_equivalence import acceptance, calibrate, compare
 
@@ -164,6 +167,7 @@ def judge(arms: dict, splits: int) -> dict:
     margins: dict[str, float] = {}
     dropped: list[str] = []
     one_sided: list[str] = []
+    constant: list[str] = []
     for metric, margin in MARGINS.items():
         if not all(metric in arms[name] for name in ARMS):
             continue
@@ -183,9 +187,13 @@ def judge(arms: dict, splits: int) -> dict:
             margins[metric] = margin
             for name in ARMS:
                 tested[name][metric] = {sp: arms[name][metric][sp] for sp in keep}
+            for sp in keep:
+                values = np.concatenate([np.asarray(arms[name][metric][sp]) for name in ARMS])
+                if np.all(values == values[0]):
+                    constant.append(f"{metric}/{sp}")
     result: dict = {
         "margins": margins, "dropped": dropped, "one_sided": one_sided, "asymmetric": asymmetric,
-        "verdict": None,
+        "constant": constant, "verdict": None,
     }  # fmt: skip
     if not margins:
         return result
@@ -241,6 +249,11 @@ def report(result: dict) -> None:
         f"\nequivalent cells: C# {v.n_equivalent}, control {v.n_equivalent_control} of "
         f"{len(treatment)}; largest |d|: C# {v.max_d:.4f}, control {v.max_d_control:.4f}"
     )
+    if result["constant"]:
+        print(
+            f"of those, {len(result['constant'])} are one same number in every replicate of "
+            f"every arm and carry no information: {', '.join(result['constant'])}"
+        )
     print(f"VERDICT: {'PASS' if passed(result) else 'FAIL'}")
     for failure in v.failures:
         print(f"  {failure}")

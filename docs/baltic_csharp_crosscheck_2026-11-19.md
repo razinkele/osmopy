@@ -59,36 +59,59 @@ interval (0.029) is wider than the 1.05x margin (0.021). Between the two Python 
 difference itself (0.034) is beyond the margin. So 32 replicates cannot resolve that cell for
 any pair of arms: it is a power limit of the cell, not an engine difference.
 
-The background species' columns (grey seal, cormorant) are identical on every arm: nothing
-preys on them, so they depend on no draw.
+**Six of the 42 cells carry no information.** The biomass, abundance and mean weight of the
+two background species (grey seal, cormorant) are set by the forcing and are one same number in
+every replicate of every arm: nothing preys on them, so they depend on no draw. The rule counts
+them as equivalent, so of the 36 cells that vary, 35 are equivalent on each arm.
+
+**This run predates the collection added in this PR**, as does the certification below. The
+collection changes no result (see the end of the next section).
 
 ## The full output families
 
 The ensemble above runs minimal outputs. For the families the C# engine collects since task 2.6,
 `scripts/csharp/families_equivalence.py` applies the same design and the same rule to runs of
-the config as shipped: 16 replicates per arm, 15 years, the first 5 dropped. Each run is reduced
-per species to post-spin-up means.
+the config as shipped: 15 years, the first 5 dropped. Each run is reduced per species to
+post-spin-up means. As above, the 32-replicate run is the measurement and the 16-replicate
+column is its first 16 replicates per arm.
 
-**Verdict: PASS.** 102 of 103 cells are equivalent, on the C# arm and on the control arm alike.
-Frozen rung: slack 4, ratio 3.0, variance 6; false-fail rate for identical engines 3.6%.
+| | 32 replicates per arm | The first 16 |
+|---|---|---|
+| Verdict | **PASS** | **PASS** |
+| Equivalent cells, C# / control, of 103 | 103 / 102 | 102 / 102 |
+| Largest difference, Python vs C# | 0.0098 log10 (1.023x) | 0.0173 (1.041x) |
+| Largest difference, Python vs Python | 0.0154 (1.036x) | 0.0155 (1.036x) |
+| Frozen rung (slack, ratio, variance) and its false-fail rate for identical engines | 2, 2.0, 4: 1.5% | 4, 3.0, 6: 3.6% |
 
-| Family | Metric | Margin | Largest difference, Python vs C# | Python vs Python |
+Largest difference by family, at 32 replicates, in log10 units:
+
+| Family | Metric | Margin | Python vs C# | Python vs Python |
 |---|---|---|---|---|
-| SSB | `ssb` | 1.25x | 0.0124 | 0.0118 |
-| Yield in numbers | `yield_n` | 1.25x | 0.0135 | 0.0118 |
-| Life stages | eggs | 1.25x | 0.0045 | 0.0083 |
-| | juveniles | 1.25x | 0.0055 | 0.0091 |
-| | adults | 1.25x | 0.0161 | 0.0096 |
-| By age | biomass in age class 0 | 1.25x | 0.0173 | 0.0091 |
-| | biomass in older classes | 1.25x | 0.0109 | 0.0116 |
-| Diet | fish eaten, by predator | 1.25x | 0.0099 | 0.0155 |
-| | resources eaten, by predator | 1.25x | 0.0121 | 0.0106 |
-| Mean size | `mean_size` | 1.05x | 0.0054 | 0.0103 |
-| Mean trophic level | `mean_tl` | 1.05x | 0.0004 | 0.0012 |
+| SSB | `ssb` | 1.25x | 0.0075 | 0.0122 |
+| Yield in numbers | `yield_n` | 1.25x | 0.0097 | 0.0151 |
+| Life stages | eggs | 1.25x | 0.0028 | 0.0082 |
+| | juveniles | 1.25x | 0.0055 | 0.0154 |
+| | adults | 1.25x | 0.0098 | 0.0124 |
+| By age | biomass in age class 0 | 1.25x | 0.0089 | 0.0089 |
+| | biomass in older classes | 1.25x | 0.0070 | 0.0120 |
+| Diet | fish eaten, by predator | 1.25x | 0.0065 | 0.0122 |
+| | resources eaten, by predator | 1.25x | 0.0065 | 0.0113 |
+| Mean size | `mean_size` | 1.05x | 0.0036 | 0.0132 |
+| Mean trophic level | `mean_tl` | 1.05x | 0.0002 | 0.0004 |
 
-Differences are in log10 units; the largest, 0.0173, is 1.041x. The diet rows include the two
-background predators. The one cell that is not equivalent, on both arms, is the mean size of
-pikeperch: the same species and the same reason as above.
+In every family the C# engine is at least as close to the Python engine as a second Python arm
+is. The diet rows include the two background predators. The one cell that is not equivalent,
+on the control arm only at 32 replicates and on both arms at 16, is the mean size of pikeperch:
+the same species and the same reason as above.
+
+**Four of the 103 cells carry no information.** They are one same number in every replicate of
+every arm: stickleback eats no fish, the two background predators eat no resources, and
+stickleback's trophic level is exactly 2. The rule counts them as equivalent; 99 cells vary.
+
+**This run also checks the collection added in this PR** (Budgets, below). The 16-replicate
+run was made before it and the 32-replicate run after it, on the same seeds. The first 16
+replicates of the later run equal the earlier run bit for bit, in all 103 cells of all three
+arms. So 15-year runs with every output on are unchanged by it.
 
 **What this does not cover:**
 - **By size** is covered through the mean size only, not class by class.
@@ -223,8 +246,8 @@ bash scripts/build_csharp_engine.sh
 PYTHONPATH=. python scripts/cross_engine_parity_440.py --engines python,python-control,csharp \
   --config data/baltic/baltic_all-parameters.csv --n 32 --years 15 --spinup-years 5 \
   --persist-results equiv_baltic.json
-# the full output families (about 25 minutes)
-PYTHONPATH=. python scripts/csharp/families_equivalence.py --config baltic --n 16 --years 15 \
+# the full output families (about 50 minutes)
+PYTHONPATH=. python scripts/csharp/families_equivalence.py --config baltic --n 32 --years 15 \
   --spinup-years 5 --json families_baltic.json
 # the certification on both engines (about 20 minutes)
 PYTHONPATH=. python scripts/baltic_stability_certify.py --csharp --out certification.md

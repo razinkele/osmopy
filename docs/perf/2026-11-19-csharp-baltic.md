@@ -62,7 +62,9 @@ about 4 ms. Measured the same way after the change:
 The managed heap is back to 1.2 MB after every run. The C# engine now peaks 60 to 77 MB under
 the Python engine at either thread count, with the full outputs too, and does not depend on
 how many runs the process has done. The results do not change: the digests of EEC and Bay of
-Biscay equal master's, and the stock Baltic digests are the same before and after. A test holds
+Biscay equal master's, the stock Baltic digests are the same before and after, and 16 Baltic
+replicates of 15 years with every output on are bit-identical before and after on each engine
+(`docs/baltic_csharp_crosscheck_2026-11-19.md`). A test holds
 the managed heap after each of five Baltic runs under 5 MB; without the collection it reads 16
 to 40 MB.
 
