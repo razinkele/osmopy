@@ -16,7 +16,7 @@ questions, with the spec's own recommendations:
 
 | Question | Spec's recommendation | What Phase 2 adds |
 |---|---|---|
-| Q8. Should calibration switch to the C# engine by default? | Opt-in until one full Baltic certification reproduces on the C# engine. | That certification now reproduces: all 18 verdicts agree. One calibration generation on Baltic went through the C# engine and ranked its candidates as the Python engine did. A worker that runs many simulations stays about 95 MB under a Python one (all three below). |
+| Q8. Should calibration switch to the C# engine by default? | Opt-in until one full Baltic certification reproduces on the C# engine. | That certification now reproduces: all 18 verdicts agree. Calibration generations on Baltic went through the C# engine and ranked their candidates as the Python engine did. In a loop of many runs in one process (the engine called directly, not a calibration worker), the C# engine's resident memory stays about 95 MB under the Python engine's (all three below). |
 | Q5. Where does the scope end; is bioenergetics worth porting? | Decide after the Phase 2 measurements. Genetics and economics stay on the Python engine. | The measurements: 2.47x at one thread and 6.81x at 14 on Baltic. |
 
 ## Phase 2 acceptance (spec 7.2)
