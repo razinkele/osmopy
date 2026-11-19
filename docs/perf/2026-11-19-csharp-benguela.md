@@ -98,7 +98,7 @@ on the C# engine, here for one year at least.
 | Fine-grid Baltic, upsampled | accepted | yes, one year, with the grid and forcing files of a local checkout (they are not in the repository) |
 | Fine-grid Baltic, real | accepted | no: it does not load on either engine in that checkout (its movement maps resolve to the coarse grid's files) |
 | `baltic_a2` | refused: depletable resources (plan task 3.1) | |
-| `baltic_depensation` | refused: the depensation gate (plan task 3.6) | |
+| `baltic_depensation` | accepted since the depensation gate was ported (plan task 3.6, the same day); it was refused when this table was first written | yes: the end-to-end tests and a small ensemble (`docs/perf/2026-11-19-csharp-depensation.md`) |
 | `examples_bioen`, `baltic_ev` | refused: bioenergetics or genetics, which stay on the Python engine | |
 
 ## Reproduce

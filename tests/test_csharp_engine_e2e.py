@@ -472,6 +472,46 @@ def test_a_capped_run_with_an_immobile_species_is_the_same_at_1_2_and_14_threads
     assert got["1:1"]["digest"] != got["7:1"]["digest"]
 
 
+# ------------------------------------------------ task 3.6: the depensation gate
+
+GATE_OFF = {"reproduction.depensation.gate.enabled": "false"}
+
+
+def _cod_west(records: list) -> np.ndarray:
+    return np.array([float(np.asarray(r.biomass)[0]) for r in records])
+
+
+def test_the_depensation_demo_runs_and_its_gate_reaches_the_output(tmp_path):
+    """The shipped ``baltic_depensation`` demo, refused until its gate was ported. The gate is
+    on cod_west with an S50 of 90 000 t, far above the stock, so it all but shuts recruitment
+    as soon as cod spawns for real. Until then cod is seeded, and a seeded species is spared:
+    the first year is the same numbers with the gate on and off. By the fifth year the gated
+    stock is a fraction of the other."""
+    from osmose.engine_cs.capabilities import csharp_engine_block_reason
+
+    raw = _raw("baltic_depensation", tmp_path, 5, minimal=False)
+    assert raw["reproduction.depensation.gate.s50.sp0"] == "90000"
+    assert csharp_engine_block_reason(raw) is None
+    on = _run_records("csharp", raw, tmp_path / "on.pkl")
+    off = _run_records("csharp", raw | GATE_OFF, tmp_path / "off.pkl")
+    assert len(on) == len(off) == 5
+    assert np.asarray(on[0].biomass).tobytes() == np.asarray(off[0].biomass).tobytes()
+    assert 0 < _cod_west(on)[-1] < 0.5 * _cod_west(off)[-1]
+    assert _cod_west(off)[-1] > _cod_west(off)[1]  # ungated, the stock is still building up
+
+
+def test_the_depensation_demo_is_the_same_at_1_2_and_14_threads(tmp_path):
+    """Five years, so that the gate acts within the run."""
+    raw = _raw("baltic_depensation", tmp_path, 5, minimal=False)
+    _child("thread_digests", raw, tmp_path / "d.json", "1,7")
+    got = json.loads((tmp_path / "d.json").read_text())
+    for seed in (1, 7):
+        one, two, many = (got[f"{seed}:{threads}"] for threads in (1, 2, 14))
+        assert one["records"] == two["records"] == many["records"] == 5
+        assert one["digest"] == two["digest"] == many["digest"], f"seed {seed}"
+    assert got["1:1"]["digest"] != got["7:1"]["digest"]
+
+
 def test_live_map_observer_is_refused(tmp_path):
     with pytest.raises(CSharpEngineError, match="live map"):
         CSharpEngine().run(

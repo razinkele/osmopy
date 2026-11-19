@@ -229,7 +229,7 @@ Phase 3 task.
 | 3.3 | MPAs | S |
 | 3.4 | By-year fishing rate, by-step additional and larva rates, additional-mortality maps | S |
 | 3.5 | Logistic selectivity | S |
-| 3.6 | Ceiling, thermal and depensation gates; spatial RV egg survival | M |
+| 3.6 | Ceiling, thermal and depensation gates; spatial RV egg survival. **The depensation gate is done** (2026-11-19, for `baltic_depensation`); the other three are not, and are still refused by name | M |
 | 3.7 | Type II and III functional response | S |
 | 3.8 | Species-level accessibility matrix; dynamic accessibility | M |
 | 3.9 | Gompertz growth; feeding stages by age, weight and trophic level | S |

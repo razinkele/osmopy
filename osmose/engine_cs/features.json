@@ -22,7 +22,7 @@
     {"id": 17, "name": "selectivity_length", "phase": 3, "status": "planned", "implemented": false, "description": "length knife-edge selectivity (type -1 with L50 > 0)"},
     {"id": 18, "name": "recruitment_ceiling", "phase": 3, "status": "planned", "implemented": false, "description": "recruitment ceiling gate"},
     {"id": 19, "name": "thermal_gate", "phase": 3, "status": "planned", "implemented": false, "description": "thermal recruitment gate"},
-    {"id": 20, "name": "depensation_gate", "phase": 3, "status": "planned", "implemented": false, "description": "depensation recruitment gate"},
+    {"id": 20, "name": "depensation_gate", "phase": 3, "status": "planned", "implemented": true, "description": "depensation recruitment gate"},
     {"id": 21, "name": "rv_spatial", "phase": 3, "status": "planned", "implemented": false, "description": "spatial reproductive-volume egg survival"},
     {"id": 22, "name": "functional_response_2_3", "phase": 3, "status": "planned", "implemented": false, "description": "Holling type II or III functional response"},
     {"id": 23, "name": "species_accessibility", "phase": 3, "status": "planned", "implemented": false, "description": "species-level accessibility matrix with no stage matrix"},

@@ -110,9 +110,11 @@ public static class LifeCycle
     /// <summary>
     /// <c>regulate_recruitment</c> for one species, in its order: the stock-recruitment curve
     /// (<c>apply_stock_recruitment</c>; skipped at <c>ssb &lt;= 0</c>), the linear seeding mode
-    /// (a seeded species keeps the linear count), then the reproductive-volume gate (skipped on a
-    /// seeded step). <paramref name="ssb"/> is the stock AFTER seeding. Ricker's <c>exp</c> and
-    /// Shepherd's <c>pow</c> are the C library's (tier L against NumPy's <c>exp</c>).
+    /// (a seeded species keeps the linear count), then the reproductive-volume gate and the
+    /// depensation gate, in that order (both skipped on a seeded step, so that the bootstrap from
+    /// an empty stock is neither scaled nor trapped). <paramref name="ssb"/> is the stock AFTER
+    /// seeding. Ricker's <c>exp</c> and the two <c>pow</c> are the C library's (tier L against
+    /// NumPy's <c>exp</c>).
     /// </summary>
     public static double RegulateRecruitment(
         ReproductionParameters r, int sp, int nFocal, int year, double linear, double ssb, bool seeded)
@@ -142,7 +144,28 @@ public static class LifeCycle
             eggs *= r.RvFactorByYear[(year * nFocal) + sp];
         }
 
+        if (!seeded && r.DepensationEnabled.Length > 0 && r.DepensationEnabled[sp] != 0)
+        {
+            eggs *= DepensationFactor(ssb, r.DepensationS50[sp], r.DepensationTheta[sp]);
+        }
+
         return eggs;
+    }
+
+    /// <summary>
+    /// <c>depensation_factor</c> for one species: the Allee term
+    /// <c>S^theta / (S50^theta + S^theta)</c>, which is one half at <c>S = S50</c>, goes to 1
+    /// above it and to 0 below it; 0 at an empty stock.
+    /// </summary>
+    public static double DepensationFactor(double ssb, double s50, double theta)
+    {
+        if (ssb <= 0.0)
+        {
+            return 0.0;
+        }
+
+        double s = Math.Pow(ssb, theta);
+        return s / (Math.Pow(s50, theta) + s);
     }
 
     /// <summary>

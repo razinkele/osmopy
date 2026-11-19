@@ -551,3 +551,73 @@ def test_rv_gate_scales_unseeded_enabled_species_and_clamps_past_its_series(
     assert eggs[on_real] == plain[on_real] * series[-1]
     untouched = np.arange(n) != on_real
     assert eggs[untouched].tobytes() == plain[untouched].tobytes()  # the seeded one included
+
+
+# --------------------------------------------------------- task 3.6: the depensation gate
+
+
+def _depensation_case(got: dict, tmp: Path, theta: float, ratio: float, **more):
+    """The gate on one seeded species that lays eggs and on one with a real stock, whose S50 is
+    ``ratio`` times that stock. Returns (config, want, res, base, real species, seeded species,
+    the stocks, S50)."""
+    n = got["config"].n_species
+    base = _stage(got, "reproduction", tmp)
+    seeded = np.asarray(base.get("life.seeded")).astype(bool)
+    ssb = np.array(base.get("life.ssb"))  # after seeding: what the gate sees
+    lays = _eggs(base) > 0
+    on_seeded = int(np.flatnonzero(seeded & lays)[0])
+    on_real = int(np.flatnonzero(~seeded & lays)[0])
+    enabled = np.zeros(n, dtype=bool)
+    enabled[[on_seeded, on_real]] = True
+    s50 = np.ones(n, dtype=np.float64)
+    s50[on_seeded] = 2.0 * ssb[on_seeded]  # would halve it, if a seeded species were gated
+    s50[on_real] = ratio * ssb[on_real]
+    cfg, want, res = _repro_case(
+        got, tmp, depensation_gate_enabled=enabled, depensation_s50=s50,
+        depensation_theta=np.full(n, theta, dtype=np.float64), **more,
+    )  # fmt: skip
+    return cfg, want, res, base, on_real, on_seeded, ssb, s50
+
+
+@pytest.mark.parametrize("theta", [1.0, 2.5, 4.0])
+@pytest.mark.parametrize("ratio", [0.37, 2.3])
+def test_depensation_gate_scales_an_unseeded_enabled_species_by_the_allee_term(
+    cycled, theta, ratio, tmp_path
+):
+    """A = S^theta / (S50^theta + S^theta), on the stock of the step: above one half when the
+    stock is above its S50, below it otherwise. A seeded species is spared, so that the
+    bootstrap from an empty stock cannot be trapped. Production is the reference, bit for bit
+    (the power is the C library's on both sides)."""
+    got = cycled["eec_full"]
+    cfg, want, res, base, real, seeded, ssb, s50 = _depensation_case(got, tmp_path, theta, ratio)
+    assert required_features(cfg, got["raw"]) == ["core", "depensation_gate"]
+    _assert_exact(res, want, ALL_FIELDS)
+    eggs, plain = _eggs(res), _eggs(base)
+    allee = ssb[real] ** theta / (s50[real] ** theta + ssb[real] ** theta)
+    assert eggs[real] == plain[real] * allee
+    assert (allee > 0.5) == (ratio < 1.0) and 0.0 < allee < 1.0
+    untouched = np.arange(cfg.n_species) != real
+    assert eggs[untouched].tobytes() == plain[untouched].tobytes()  # the seeded one included
+    assert plain[seeded] > 0
+
+
+def test_depensation_gate_comes_after_the_rv_gate(cycled, tmp_path):
+    """Both gates on the same species: the eggs are scaled by the one, then by the other, in
+    production's order. Two multiplications in another order need not round alike, so the
+    order is part of what must be equal."""
+    got = cycled["eec_full"]
+    n = got["config"].n_species
+    base = _stage(got, "reproduction", tmp_path)
+    seeded = np.asarray(base.get("life.seeded")).astype(bool)
+    real = int(np.flatnonzero(~seeded & (_eggs(base) > 0))[0])
+    rv = np.zeros(n, dtype=bool)
+    rv[real] = True
+    cfg, want, res, base, real2, _seeded, ssb, s50 = _depensation_case(
+        got, tmp_path, 2.5, 1.7, rv_gate_enabled=rv,
+        rv_gate_factor_by_index=np.array([0.9, 0.3]), rv_gate_offset=0,
+    )  # fmt: skip
+    assert real2 == real
+    assert required_features(cfg, got["raw"]) == ["core", "rv_gate", "depensation_gate"]
+    _assert_exact(res, want, ALL_FIELDS)
+    allee = ssb[real] ** 2.5 / (s50[real] ** 2.5 + ssb[real] ** 2.5)
+    assert _eggs(res)[real] == (_eggs(base)[real] * 0.3) * allee

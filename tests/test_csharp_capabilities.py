@@ -31,7 +31,7 @@ def demos(tmp_path_factory) -> dict:
     """(EngineConfig, raw) per (demo, minimal). The demo copies stay on disk for the module:
     csharp_engine_block_reason re-parses the raw config, which reads its files."""
     out = {}
-    for demo in ("eec_full", "bay_of_biscay", "baltic", "benguela"):
+    for demo in ("eec_full", "bay_of_biscay", "baltic", "benguela", "baltic_depensation"):
         info = osmose_demo(demo, tmp_path_factory.mktemp(demo))
         base = dict(OsmoseConfigReader().read(Path(info["config_file"])))
         for minimal in (False, True):
@@ -61,11 +61,13 @@ def test_the_implemented_features_are_exactly_these():
     # oxygen_benthos in task 2.5, the recruitment three in task 2.3, salinity_gate in task 2.4,
     # background_species in task 2.1, full_outputs in task 2.6c (with its last family, the diet),
     # lmax_cap and movement_none in the follow-up to task 2.2 (the code was in the Phase 1 core;
-    # what they waited for was a test of a whole step and of a whole run).
+    # what they waited for was a test of a whole step and of a whole run), depensation_gate in
+    # task 3.6 (that gate only: the ceiling and thermal gates of the same task are not ported).
     implemented = {f.name for f in cap.load_catalog().values() if f.implemented}
     assert implemented == {
         "core", "oxygen_benthos", "stock_recruitment", "rv_gate", "seeding_linear",
         "salinity_gate", "background_species", "full_outputs", "lmax_cap", "movement_none",
+        "depensation_gate",
     }  # fmt: skip
 
 
@@ -196,6 +198,12 @@ EXPECTED = {
         "core", "background_species", "stock_recruitment", "rv_gate", "salinity_gate",
         "oxygen_benthos",
     },
+    # The Baltic demo with the depensation gate on cod_west, and WITHOUT the oxygen coupling
+    # (the variant does not include it: CLAUDE.md, the oxygen gotcha).
+    "baltic_depensation": {
+        "core", "background_species", "stock_recruitment", "rv_gate", "salinity_gate",
+        "depensation_gate",
+    },
 }  # fmt: skip
 
 
@@ -213,7 +221,8 @@ def test_demo_needs_exactly_these_features(demos, demo, minimal):
 def test_every_demo_runs_as_shipped_and_with_minimal_outputs(demos, demo, minimal):
     """EEC and Bay of Biscay need nothing beyond core, and Baltic only implemented features
     since task 2.1 (its background species were the last). Since task 2.6c the full outputs are
-    implemented too, so the stock demos run as shipped."""
+    implemented too, so the stock demos run as shipped. The depensation variant of Baltic runs
+    since its gate was ported (task 3.6)."""
     assert cap.csharp_engine_block_reason(demos[(demo, minimal)][1]) is None
 
 

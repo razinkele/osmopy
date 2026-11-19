@@ -260,6 +260,16 @@ public sealed record ReproductionParameters
     /// <summary><c>[year * nFocal + species]</c>: the reproductive-volume egg multiplier of each
     /// model year, resolved by the builder with the Python engine's <c>rv_gate_factor</c>.</summary>
     public double[] RvFactorByYear { get; init; } = [];
+
+    /// <summary>Feature <c>depensation_gate</c>: 1 for each gated species; empty without the
+    /// feature.</summary>
+    public byte[] DepensationEnabled { get; init; } = [];
+
+    /// <summary>The spawning stock, in tonnes, at which the gate lets half the eggs through.</summary>
+    public double[] DepensationS50 { get; init; } = [];
+
+    /// <summary>The gate's steepness, 1 or more.</summary>
+    public double[] DepensationTheta { get; init; } = [];
 }
 
 /// <summary>Outputs (bundle group <c>output</c>, spec 6.9).</summary>
@@ -528,7 +538,7 @@ internal static class ModelReader
     /// a problem without it (a curve, a linear seeding mode or a gate table the engine was not
     /// told about would otherwise be applied, or ignored, silently).</summary>
     public static ReproductionParameters Reproduction(
-        BundleReader r, int nSteps, int nFocal, int ndt, bool curves, bool rvGate, bool seedingLinear)
+        BundleReader r, int nSteps, int nFocal, int ndt, bool curves, bool rvGate, bool seedingLinear, bool depensationGate)
     {
         byte[] srType = r.Array("reproduction.sr.type", DType.U1, nFocal)?.ToArray<byte>() ?? [];
         if (srType.Any(t => t > 4))
@@ -576,6 +586,29 @@ internal static class ModelReader
             Undeclared(r, "rv_gate", "reproduction.rv.enabled", "reproduction.rv.factor_by_year");
         }
 
+        byte[] depEnabled = [];
+        double[] depS50 = [];
+        double[] depTheta = [];
+        if (depensationGate)
+        {
+            depEnabled = r.Array("reproduction.depensation.enabled", DType.U1, nFocal)?.ToArray<byte>() ?? [];
+            depS50 = F8(r, "reproduction.depensation.s50", nFocal);
+            depTheta = F8(r, "reproduction.depensation.theta", nFocal);
+            int n = Math.Min(depEnabled.Length, Math.Min(depS50.Length, depTheta.Length));
+            for (int sp = 0; sp < n; sp++)
+            {
+                // The Python loader refuses these too; a bundle built by hand must not get past.
+                if (depEnabled[sp] != 0 && !(depS50[sp] > 0.0 && depTheta[sp] >= 1.0))
+                {
+                    r.Problem($"reproduction.depensation: species {sp} has s50 {depS50[sp]} and theta {depTheta[sp]}; a gated species needs s50 > 0 and theta >= 1");
+                }
+            }
+        }
+        else
+        {
+            Undeclared(r, "depensation_gate", "reproduction.depensation.enabled", "reproduction.depensation.s50", "reproduction.depensation.theta");
+        }
+
         return Reproduction(r, nSteps, nFocal) with
         {
             SrType = srType,
@@ -584,6 +617,9 @@ internal static class ModelReader
             SeedingMode = seedingMode,
             RvEnabled = rvEnabled,
             RvFactorByYear = rvFactor,
+            DepensationEnabled = depEnabled,
+            DepensationS50 = depS50,
+            DepensationTheta = depTheta,
         };
     }
 

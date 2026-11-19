@@ -319,8 +319,11 @@ def _reproduction(b: Bundle, config: Any, n_total: int) -> None:
     - ``seeding_mode`` (1 = linear, feature ``seeding_linear``): a seeded species skips the curve;
     - the reproductive-volume gate (feature ``rv_gate``): ``rv.enabled`` and ``rv.factor_by_year``,
       the latter filled by the engine's own ``rv_gate_factor`` for each model year, so its
-      offset and its clamp past the end of the series are the engine's.
-    The ceiling, thermal and depensation gates are phase 3 features; the engine refuses them.
+      offset and its clamp past the end of the series are the engine's;
+    - the depensation gate (feature ``depensation_gate``): ``depensation.enabled``, ``.s50`` and
+      ``.theta``, the Allee term's two numbers per species.
+    The ceiling and thermal gates sit between those two in ``regulate_recruitment``. They are
+    phase 3 features, and the engine refuses them.
     """
     n_steps, ndt, n_focal = int(config.n_steps), int(config.n_dt_per_year), config.n_species
     for name in ("sex_ratio", "relative_fecundity", "maturity_size", "seeding_biomass"):
@@ -393,6 +396,16 @@ def _reproduction(b: Bundle, config: Any, n_total: int) -> None:
         b.set_array(
             "reproduction.rv.factor_by_year", np.ascontiguousarray(by_year, dtype=np.float64)
         )
+    gated = config.depensation_gate_enabled
+    if gated is not None and np.asarray(gated)[:n_focal].any():
+        b.set_array(
+            "reproduction.depensation.enabled", np.asarray(gated)[:n_focal].astype(np.uint8)
+        )
+        for name, source in (("s50", "depensation_s50"), ("theta", "depensation_theta")):
+            entry = f"reproduction.depensation.{name}"
+            b.set_array(
+                entry, _f8(entry, np.asarray(getattr(config, source))[:n_focal], (n_focal,))
+            )
 
 
 def _resources(b: Bundle, config: Any, grid: Any) -> None:

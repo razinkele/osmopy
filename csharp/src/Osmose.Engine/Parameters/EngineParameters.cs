@@ -245,7 +245,8 @@ public sealed class EngineParameters
             (int)ndt,
             curves: features.Contains(FeatureCatalog.Named("stock_recruitment")),
             rvGate: features.Contains(FeatureCatalog.Named("rv_gate")),
-            seedingLinear: features.Contains(FeatureCatalog.Named("seeding_linear")));
+            seedingLinear: features.Contains(FeatureCatalog.Named("seeding_linear")),
+            depensationGate: features.Contains(FeatureCatalog.Named("depensation_gate")));
         MovementParameters movement = ModelReader.Movement(
             model,
             (int)nSteps,
