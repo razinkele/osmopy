@@ -33,6 +33,32 @@ def test_approaches_one_at_high_ssb():
     assert f[0] == pytest.approx(1.0, abs=1e-3)
 
 
+@pytest.mark.parametrize("theta", [62.0, 80.0, 400.0])
+def test_a_power_too_large_for_a_double_does_not_make_the_term_nan(theta):
+    """Found in review. 90 000 ** 62 is more than a double holds, and inf / (inf + inf) is
+    NaN, which then went into the egg count. The term itself is nowhere near a limit: it is
+    one half at S50, and each of its two ratios is at most 1."""
+    s50 = np.full(3, 90_000.0)
+    ssb = np.array([90_000.0, 180_000.0, 45_000.0])  # at S50, twice it, half of it
+    with np.errstate(over="raise"):  # and no overflow warning on the way
+        out = depensation_factor(ssb, s50, np.full(3, theta), np.ones(3, dtype=bool))
+    assert np.isfinite(out).all()
+    assert out[0] == 0.5
+    assert out[1] == 1.0 / (1.0 + 0.5**theta) and out[1] > 0.5
+    assert out[2] == 0.5**theta / (1.0 + 0.5**theta) and 0.0 <= out[2] < 0.5
+
+
+@pytest.mark.parametrize("theta", [1.0, 2.5, 4.0, 12.0])
+def test_an_ordinary_power_gives_the_number_it_always_gave(theta):
+    """The guard above must not move a single bit of an ordinary result: the certified runs
+    use theta 4, and the C# engine is compared with this function bit for bit."""
+    ssb = np.array([3_000.0, 90_000.0, 250_000.0, 0.37])
+    s50 = np.array([90_000.0, 90_000.0, 90_000.0, 1.0])
+    out = depensation_factor(ssb, s50, np.full(4, theta), np.ones(4, dtype=bool))
+    for i in range(4):
+        assert out[i] == ssb[i] ** theta / (s50[i] ** theta + ssb[i] ** theta)
+
+
 def test_disabled_is_one():
     f = depensation_factor(
         np.array([1_000.0]), np.array([50_000.0]), np.array([4.0]), np.array([False])

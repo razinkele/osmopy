@@ -182,7 +182,7 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "summary": "The Baltic demo with the recruitment depensation/Allee gate enabled for cod "
         "— a low-SSB recruitment trap that can create bistability (a healthy and a collapsed cod "
         "state). Operating point (s50/theta/larval-M) is a placeholder pending the placement "
-        "sweep. Python engine only (the depensation gate has no Java equivalent).",
+        "sweep. No Java run: the depensation gate has no Java equivalent.",
     },
     "minimal": {
         "title": "Minimal",

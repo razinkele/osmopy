@@ -18,6 +18,9 @@ public sealed class RecruitmentTests : IDisposable
     private static readonly double[] Half = [900.0, 2100.0, 900.0, 2100.0, 900.0];
     private static readonly double[] Beta = [1.63, 1.63, 1.63, 1.63, 1.63];
     private static readonly double[] GateByYear = [0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.25, 0.25, 0.25, 0.25];
+    private static readonly byte[] Allee = [0, 0, 1, 0, 1];
+    private static readonly double[] S50 = [0.0, 0.0, 700.0, 0.0, 3000.0]; // below and above the stock
+    private static readonly double[] Theta = [1.0, 1.0, 2.5, 1.0, 4.0];
 
     private readonly List<GCHandle> _pins = [];
 
@@ -29,7 +32,7 @@ public sealed class RecruitmentTests : IDisposable
         }
     }
 
-    private static ReproductionParameters Parameters(byte type, int seedingMode = 0, bool gate = false) => new()
+    private static ReproductionParameters Parameters(byte type, int seedingMode = 0, bool gate = false, bool allee = false) => new()
     {
         SrType = [type, type, type, type, type],
         SrSsbHalf = Half,
@@ -37,7 +40,13 @@ public sealed class RecruitmentTests : IDisposable
         SeedingMode = seedingMode,
         RvEnabled = gate ? [0, 0, 1, 1, 0] : [],
         RvFactorByYear = gate ? GateByYear : [],
+        DepensationEnabled = allee ? Allee : [],
+        DepensationS50 = allee ? S50 : [],
+        DepensationTheta = allee ? Theta : [],
     };
+
+    private static double AlleeTerm(int sp, double ssb = Ssb) =>
+        Math.Pow(ssb, Theta[sp]) / (Math.Pow(S50[sp], Theta[sp]) + Math.Pow(ssb, Theta[sp]));
 
     private static double Eggs(ReproductionParameters r, int sp, int year = 0, bool seeded = false, double ssb = Ssb) =>
         LifeCycle.RegulateRecruitment(r, sp, NFocal, year, Linear, ssb, seeded);
@@ -46,6 +55,65 @@ public sealed class RecruitmentTests : IDisposable
     public void WithoutACurveTheLinearCountPassesThrough()
     {
         Assert.Equal(Linear, Eggs(Parameters(0), 0));
+    }
+
+    [Fact]
+    public void TheDepensationGateIsTheAlleeTermOfTheStock()
+    {
+        ReproductionParameters r = Parameters(0, allee: true);
+        Assert.Equal(Linear * AlleeTerm(2), Eggs(r, 2)); // stock above its S50: more than half
+        Assert.Equal(Linear * AlleeTerm(4), Eggs(r, 4)); // stock below its S50: less than half
+        Assert.True(AlleeTerm(2) > 0.5 && AlleeTerm(4) < 0.5);
+        Assert.Equal(0.5, LifeCycle.DepensationFactor(700.0, 700.0, 2.5)); // one half at S50
+        Assert.Equal(0.0, LifeCycle.DepensationFactor(0.0, 700.0, 2.5)); // nothing from an empty stock
+        Assert.Equal(Linear, Eggs(r, 1)); // a species the gate is not on
+        Assert.Equal(Linear, Eggs(r, 2, seeded: true)); // a seeded species is spared
+    }
+
+    [Theory]
+    [InlineData(63.0)] // the first whole theta at which 90 000 ^ theta overflows
+    [InlineData(80.0)]
+    [InlineData(400.0)]
+    public void APowerTooLargeForADoubleDoesNotMakeTheTermNaN(double theta)
+    {
+        // Found in review: 90 000 ^ 62 overflows, and inf / (inf + inf) is NaN, which went into
+        // the egg count. Each of the term's two ratios is at most 1, so it can be written
+        // without either power.
+        Assert.True(double.IsInfinity(Math.Pow(90_000.0, theta)));
+        Assert.Equal(0.5, LifeCycle.DepensationFactor(90_000.0, 90_000.0, theta));
+        Assert.Equal(1.0 / (1.0 + Math.Pow(0.5, theta)), LifeCycle.DepensationFactor(180_000.0, 90_000.0, theta));
+        double low = Math.Pow(0.5, theta);
+        Assert.Equal(low / (1.0 + low), LifeCycle.DepensationFactor(45_000.0, 90_000.0, theta));
+    }
+
+    [Fact]
+    public void TheDepensationGateComesAfterTheReproductiveVolumeGate()
+    {
+        // Species 2 has both. The order of the two multiplications is production's, and it is
+        // what makes the result equal to the last bit.
+        // A volume factor that is no power of two: multiplying by 0.5 or 0.25 is exact, and with
+        // such a factor no order of the two multiplications could ever show.
+        const double Volume = 0.3;
+        ReproductionParameters r = Parameters(0, gate: true, allee: true) with
+        {
+            RvFactorByYear = [.. Enumerable.Repeat(Volume, 2 * NFocal)],
+        };
+        int otherOrderDiffers = 0;
+        for (int i = 0; i < 200; i++)
+        {
+            double ssb = 400.0 + (37.0 * i);
+            double allee = AlleeTerm(2, ssb);
+            Assert.Equal((Linear * Volume) * allee, Eggs(r, 2, year: 1, ssb: ssb));
+            if ((Linear * Volume) * allee != Linear * (Volume * allee))
+            {
+                otherOrderDiffers++;
+            }
+        }
+
+        // Or the loop above could not tell the orders apart, and would pin nothing.
+        Assert.True(otherOrderDiffers > 0);
+        Assert.Equal(Linear * Volume, Eggs(r, 3, year: 0)); // the volume gate alone
+        Assert.Equal(Linear * AlleeTerm(4), Eggs(r, 4, year: 1)); // the depensation gate alone
     }
 
     [Fact]
@@ -100,7 +168,7 @@ public sealed class RecruitmentTests : IDisposable
         return h.AddrOfPinnedObject();
     }
 
-    private SimulationConfig Bundle(byte type = 0, bool curveEntries = false, bool gateEntries = false, int seedingMode = 0)
+    private SimulationConfig Bundle(byte type = 0, bool curveEntries = false, bool gateEntries = false, int seedingMode = 0, bool alleeEntries = false, double[]? s50 = null)
     {
         var c = new SimulationConfig(1);
         double[] ones = [1.0, 1.0, 1.0, 1.0, 1.0];
@@ -126,14 +194,44 @@ public sealed class RecruitmentTests : IDisposable
             c.SetArray("reproduction.rv.factor_by_year", DType.F8, Pin(GateByYear), 2, NFocal);
         }
 
+        if (alleeEntries)
+        {
+            c.SetArray("reproduction.depensation.enabled", DType.U1, Pin((byte[])Allee.Clone()), NFocal);
+            c.SetArray("reproduction.depensation.s50", DType.F8, Pin(s50 ?? S50), NFocal);
+            c.SetArray("reproduction.depensation.theta", DType.F8, Pin(Theta), NFocal);
+        }
+
         return c;
     }
 
     private static (ReproductionParameters Parameters, IReadOnlyList<string> Problems) Read(
-        SimulationConfig c, bool curves = false, bool rvGate = false, bool seedingLinear = false)
+        SimulationConfig c, bool curves = false, bool rvGate = false, bool seedingLinear = false, bool depensationGate = false)
     {
         var r = new BundleReader(c, 1);
-        return (ModelReader.Reproduction(r, NSteps, NFocal, Ndt, curves, rvGate, seedingLinear), r.Problems);
+        return (ModelReader.Reproduction(r, NSteps, NFocal, Ndt, curves, rvGate, seedingLinear, depensationGate), r.Problems);
+    }
+
+    [Fact]
+    public void TheDepensationGateReadsItsEntriesAndRefusesThemUndeclared()
+    {
+        (ReproductionParameters p, IReadOnlyList<string> none) = Read(Bundle(alleeEntries: true), depensationGate: true);
+        Assert.Empty(none);
+        Assert.Equal(Allee, p.DepensationEnabled);
+        Assert.Equal(S50, p.DepensationS50);
+        Assert.Equal(Theta, p.DepensationTheta);
+
+        (_, IReadOnlyList<string> undeclared) = Read(Bundle(alleeEntries: true));
+        Assert.Equal(3, undeclared.Count);
+        Assert.All(undeclared, m => Assert.Contains("present, but the bundle does not declare feature depensation_gate", m, StringComparison.Ordinal));
+
+        (_, IReadOnlyList<string> missing) = Read(Bundle(), depensationGate: true);
+        Assert.Equal(3, missing.Count); // a declared feature with none of its three entries
+
+        // A gated species with no S50 would divide by a zero power: refused, as the Python
+        // loader refuses it. An ungated species may hold anything.
+        (_, IReadOnlyList<string> bad) = Read(Bundle(alleeEntries: true, s50: [0.0, 0.0, 0.0, 0.0, 3000.0]), depensationGate: true);
+        string only = Assert.Single(bad);
+        Assert.Contains("reproduction.depensation: species 2 has s50 0", only, StringComparison.Ordinal);
     }
 
     [Fact]

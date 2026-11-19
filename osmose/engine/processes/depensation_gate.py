@@ -33,5 +33,19 @@ def depensation_factor(
                 0.0  # full suppression at SSB=0; harmless (n_eggs already 0) + skipped-when-seeded
             )
             continue
-        out[sp] = s ** theta[sp] / (s50[sp] ** theta[sp] + s ** theta[sp])
+        with np.errstate(over="ignore"):
+            top = s ** theta[sp]
+            half = s50[sp] ** theta[sp]
+        if np.isinf(top) or np.isinf(half):
+            # A power that does not fit a double (theta in the dozens): inf / (inf + inf) would
+            # be NaN, and the NaN would go into the egg count. The same term written as ratios,
+            # each at most 1. For powers that fit, the line below is untouched, so an ordinary
+            # result does not move by a bit (the C# engine is compared with it bit for bit).
+            if s >= s50[sp]:
+                out[sp] = 1.0 / (1.0 + (s50[sp] / s) ** theta[sp])
+            else:
+                low = (s / s50[sp]) ** theta[sp]
+                out[sp] = low / (1.0 + low)
+            continue
+        out[sp] = top / (half + top)
     return out
