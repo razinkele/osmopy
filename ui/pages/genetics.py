@@ -2,6 +2,7 @@
 
 from shiny import render
 
+from osmose.engine_capabilities import engine_supports
 from ui.components.placeholder import engine_mode_hint, placeholder_content, placeholder_ui
 from ui.state import AppState
 
@@ -13,7 +14,7 @@ def genetics_ui():
 def genetics_server(input, output, session, state: AppState):
     @render.ui
     def genetics_content():
-        if state.engine_mode.get() != "python":
+        if not engine_supports(state.engine_mode.get(), "genetics"):
             return engine_mode_hint("Genetics")
         return placeholder_content(
             heading="Ev-OSMOSE Genetics Module",

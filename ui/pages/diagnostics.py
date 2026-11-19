@@ -2,6 +2,7 @@
 
 from shiny import render, ui
 
+from osmose.engine_capabilities import engine_supports
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.pages._helpers import format_timing_pairs
 from ui.state import AppState
@@ -55,7 +56,7 @@ def diagnostics_ui():
 def diagnostics_server(input, output, session, state: AppState):
     @render.ui
     def diag_timing():
-        if state.engine_mode.get() != "python":
+        if not engine_supports(state.engine_mode.get(), "diagnostics"):
             return ui.p("Switch to Python engine to view diagnostics.", style=STYLE_EMPTY)
         result = state.run_result.get()
         if result is None:

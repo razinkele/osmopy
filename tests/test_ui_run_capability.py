@@ -45,7 +45,8 @@ def test_run_page_source_has_indicator_and_capability_slots():
 def test_run_page_imports_describe_engine_and_renders_capability():
     with open(run_page.__file__, encoding="utf-8") as _f:
         text = _f.read()
-    assert "from osmose.engine_capabilities import describe_engine" in text
+    imports = text[text.index("from osmose.engine_capabilities import") :].split(")", 1)[0]
+    assert "describe_engine" in imports
     assert "def engine_capability" in text
 
 
