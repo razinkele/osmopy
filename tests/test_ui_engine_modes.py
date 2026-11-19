@@ -204,6 +204,9 @@ def test_the_csharp_gate_checks_the_config_that_runs_overrides_included(monkeypa
     blocked = run_mod.csharp_block_reason(config, "species.lmax.sp0 = 25\n# a note\n")
     assert blocked is not None and "lmax_cap" in blocked
     assert run_mod.csharp_block_reason(config | {"species.lmax.sp0": "25"}, "") is not None
+    # An override spelled as config files spell keys is applied, so the gate must see it too.
+    spelled = run_mod.csharp_block_reason(config, "species.lMax.sp0 = 25")
+    assert spelled is not None and "lmax_cap" in spelled
     text = (ROOT / "ui" / "pages" / "run.py").read_text(encoding="utf-8")
     assert 'csharp_block_reason(config, input.py_param_overrides() or "")' in text
     # The gate and the run build their config with the same function, from the same input.
