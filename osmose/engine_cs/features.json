@@ -39,6 +39,7 @@
     {"id": 34, "name": "java_compat_rng", "phase": 0, "status": "not_planned", "implemented": false, "description": "engine.rng.java_compat: the Python engine's Java-compatible RNG mode"},
     {"id": 35, "name": "fishing_catches", "phase": 0, "status": "refused", "implemented": false, "description": "catch-based fishing (spec Q4: refused)"},
     {"id": 36, "name": "rate_by_class", "phase": 0, "status": "refused", "implemented": false, "description": "fishing or additional rates by age or size class (spec Q4: refused)"},
-    {"id": 37, "name": "selectivity_type_2_3", "phase": 0, "status": "refused", "implemented": false, "description": "fishing selectivity types other than -1, 0 and 1 (spec Q4: refused)"}
+    {"id": 37, "name": "selectivity_type_2_3", "phase": 0, "status": "refused", "implemented": false, "description": "fishing selectivity types other than -1, 0 and 1 (spec Q4: refused)"},
+    {"id": 38, "name": "kill_if_no_school", "phase": 0, "status": "not_planned", "implemented": false, "description": "simulation.kill.if.no.school.enabled (stop the run when a species has no fish left); runs on the Python engine"}
   ]
 }

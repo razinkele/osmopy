@@ -1521,6 +1521,15 @@ def _collect_spatial_outputs(
     return sb, sa, sy
 
 
+def _species_without_fish(state: SchoolState, config: EngineConfig) -> list[str]:
+    """The focal species whose schools hold no fish at all (the names, in species order)."""
+    focal = state.species_id < config.n_species
+    total = np.bincount(
+        state.species_id[focal], weights=state.abundance[focal], minlength=config.n_species
+    )
+    return [config.species_names[sp] for sp in np.flatnonzero(total[: config.n_species] == 0)]
+
+
 def _collect_outputs(
     state: SchoolState,
     config: EngineConfig,
@@ -2000,6 +2009,10 @@ def simulate(
     if config.output_step0_include:
         outputs.append(_collect_outputs(state, config, step=-1, grid=grid))
 
+    # simulation.kill.if.no.school.enabled: Java's yearMaxSeeding, one number for the run
+    # (the longest seeding period; SimulationStep.init).
+    seeding_ends = int(np.max(config.seeding_max_step[: config.n_species], initial=0))
+
     for step in range(config.n_steps):
         # C4 Phase B: cooperative cancellation. The check is once per step
         # (not per process inside a step) — interactive UI cancel latency
@@ -2231,6 +2244,20 @@ def simulate(
             # state length (pre-repro schools + n_new offspring schools).
             if phenotypes is not None:
                 phenotypes = express_traits(ctx.genetic_state, state.species_id)
+
+        # As Java does at the end of a step (SimulationStep.step): a species with no fish
+        # left after the seeding period stops the run, if the config asks for it.
+        if config.kill_if_no_school and step > seeding_ends:
+            gone = _species_without_fish(state, config)
+            if gone:
+                from osmose.engine import SpeciesCollapsed
+
+                raise SpeciesCollapsed(
+                    f"{', '.join(gone)} had no fish left at step {step} "
+                    f"(year {step / config.n_dt_per_year:.2f}), after the seeding period that "
+                    f"ended at step {seeding_ends}; simulation.kill.if.no.school.enabled "
+                    "stops the run"
+                )
 
         # Collect focal outputs after reproduction
         step_out = _collect_outputs(

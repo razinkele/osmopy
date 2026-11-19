@@ -29,6 +29,16 @@ class SimulationCancelled(Exception):
     """
 
 
+class SpeciesCollapsed(RuntimeError):
+    """Raised when ``simulation.kill.if.no.school.enabled`` is on and a focal species has no
+    fish left once the seeding period is over.
+
+    The switch is OSMOSE 4.4.1's (a debug aid: a run that has lost a species is not worth
+    finishing). Java stops the process with status 1 (``SimulationStep.step``); here the run
+    ends with this exception, which names the species and the step.
+    """
+
+
 class PythonEngine:
     """Vectorized in-process OSMOSE simulation engine."""
 

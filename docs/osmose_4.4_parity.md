@@ -28,9 +28,10 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 | Background `species.multiplier.spN` | done (2026-11-06) | **Java arms ran Cormorant at 1× instead of 2× before this.** The staged inline series is the raw NetCDF, and `species.multiplier` defaulted to 1. Now carried from `species.biomass.multiplier.spN`, and the Python engine reads either key |
 | Background inline `species.biomass.spN` series | done (staging) | `osmose/java_background_staging.py`; Baltic-specific tables |
 | `species.multiplier.log.spN` | TODO | Not read |
-| `simulation.fixed.seed.enabled` | TODO | Python has its own keys (`stochastic.mortality.randomseed.fixed` and siblings; CLAUDE.md, RNG gotcha). The 4.4.0 key is neither aliased nor read. Cross-engine runs are never bit-equal anyway (PCG64 vs MT19937) |
+| `simulation.fixed.seed.enabled` | done (2026-11-19) | 4.4.0 replaces five per-process keys by this one. The Python engine reads two of the five (`movement.randomseed.fixed`, `stochastic.mortality.randomseed.fixed`), and the new key now sets both. The old keys are still read: configs of both generations are run. Cross-engine runs are never bit-equal anyway (PCG64 vs MT19937) |
 | `simulation.nschool.multiplier` | TODO | Not read |
-| `species.is.enabled.spX`, `simulation.kill.if.no.school.enabled` (4.4.1 debug toggles) | TODO | Not read |
+| `simulation.kill.if.no.school.enabled` (4.4.1 debug switch) | done (2026-11-19) | After the seeding period (`population.seeding.year.max`, or the longest lifespan), a step that ends with a focal species holding no fish stops the run: `osmose.engine.SpeciesCollapsed`, where Java exits with status 1 (`SimulationStep.step`). The C# engine has no such check and refuses a config that switches it on |
+| `species.is.enabled.spX` (4.4.1 debug switch) | TODO, not small | Java drops the species from its list of focal species and counts on (`Configuration.java`, v4.4.1 lines 525-545), so every later `sp` index keeps its file number while the engine's own numbering closes up. The Python engine numbers focal species `0..n-1` straight from the file. Doing this means a pass that renumbers a config (species keys, maps, fisheries and accessibility matrices), as the cod split needed; it is not a key to read |
 
 ## Processes
 
@@ -65,8 +66,9 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 ## Phase plan (from the issue)
 
 - **Phase 1** (config alignment, low risk): this document; the resource-forcing and background
-  multiplier key alignment (done 2026-11-06). Still open: `simulation.fixed.seed.enabled` as an
-  alias for the Python seed keys, and the `species.is.enabled` / `kill.if.no.school` toggles.
+  multiplier key alignment (done 2026-11-06); `simulation.fixed.seed.enabled` and the
+  `kill.if.no.school` switch (done 2026-11-19). Still open: `species.is.enabled`, which is a
+  renumbering pass over a config and not a key to read (see its row above).
 - **Phase 2** (process parity): region-aware mortality, stochastic maturity, post-reproduction
   mortality. Each changes engine outputs and needs its own parity run.
 - **Phase 3** (extensions): simplified bioenergetics, gradient movement, log `computePercent`,

@@ -140,6 +140,7 @@ DETECTORS: dict[str, Any] = {
     "genetics": lambda c, raw: bool(c.genetics_enabled),
     "economics": lambda c, raw: bool(c.economics_enabled),
     "java_compat_rng": lambda c, raw: bool(c.java_compat_rng),
+    "kill_if_no_school": lambda c, raw: bool(c.kill_if_no_school),
     "fishing_catches": lambda c, raw: (
         (c.fishing_catches is not None and bool(np.any(np.asarray(c.fishing_catches) > 0)))
         or _any_set(c.fishing_catches_by_year)
@@ -171,7 +172,12 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
         "inert",
     ),
     # No effect on the Python engine's results (per-species generators never consumed, 2026-11-17).
-    (r"(movement|stochastic\.mortality)\.randomseed\.fixed", "inert"),
+    # simulation.fixed.seed.enabled is OSMOSE 4.4.0's one key for the same two flags.
+    (
+        r"(movement|stochastic\.mortality)\.randomseed\.fixed|simulation\.fixed\.seed\.enabled",
+        "inert",
+    ),
+    (r"simulation\.kill\.if\.no\.school\.enabled", "kill_if_no_school"),
     (r"engine\.rng\.java_compat", "java_compat_rng"),
     (r"module\.genetics\.enabled|evolution\..+", "genetics"),
     (r"module\.bioeconomics\.enabled|simulation\.economic\..+|economic\.fleet\..+", "economics"),
