@@ -62,17 +62,28 @@ def resolve_dotnet_root() -> Path | None:
 
 
 def csharp_engine_available() -> tuple[bool, str]:
-    """Whether the C# engine could be loaded here, and why not. Never loads the CLR."""
+    """Whether the C# engine could be loaded here, and why not. Never loads the CLR, and never
+    raises: the engine is optional, so a build this process cannot read (wrong owner or mode on
+    a deployed server) is a reason it is unavailable, not an error for the caller."""
     if importlib.util.find_spec("pythonnet") is None:
         return False, 'pythonnet is not installed (pip install -e ".[csharp]")'
     bin_dir = assembly_dir()
-    for name in (f"{ASSEMBLY_NAME}.dll", f"{ASSEMBLY_NAME}.runtimeconfig.json", CAPABILITIES_FILE):
-        if not (bin_dir / name).is_file():
-            return False, f"{name} not found in {bin_dir}; build it with: {BUILD_COMMAND}"
-    # The build copies features.json beside the assembly. A different copy means the assembly
-    # was built from another catalogue: its feature checks would not match this package's.
-    built = (bin_dir / CAPABILITIES_FILE).read_bytes()
-    if built != (Path(__file__).resolve().parent / "features.json").read_bytes():
+    try:
+        for name in (
+            f"{ASSEMBLY_NAME}.dll",
+            f"{ASSEMBLY_NAME}.runtimeconfig.json",
+            CAPABILITIES_FILE,
+        ):
+            if not (bin_dir / name).is_file():
+                return False, f"{name} not found in {bin_dir}; build it with: {BUILD_COMMAND}"
+        # The build copies features.json beside the assembly. A different copy means the
+        # assembly was built from another catalogue: its feature checks would not match this
+        # package's.
+        built = (bin_dir / CAPABILITIES_FILE).read_bytes()
+        packaged = (Path(__file__).resolve().parent / "features.json").read_bytes()
+    except OSError as exc:
+        return False, f"the built engine in {bin_dir} cannot be read: {exc}"
+    if built != packaged:
         return (
             False,
             f"the built engine is stale (its feature catalogue differs); rebuild: {BUILD_COMMAND}",

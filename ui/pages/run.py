@@ -90,6 +90,27 @@ def parse_overrides(text: str) -> dict[str, str]:
     return result
 
 
+def effective_run_config(config: dict[str, str], overrides_text: str) -> dict[str, str]:
+    """The config an in-process run uses: the loaded one with the run panel's overrides applied.
+
+    One function for the gate and for the run, so the gate cannot check a different config from
+    the one that runs."""
+    effective = dict(config or {})
+    effective.update(parse_overrides(overrides_text or ""))
+    return effective
+
+
+def csharp_block_reason(config: dict[str, str], overrides_text: str) -> str | None:
+    """Why the C# engine cannot run ``config`` WITH the run panel's overrides applied, or None.
+
+    The overrides are part of what runs: one of them can turn on a feature the engine does not
+    implement, and checking the loaded config alone would let that run start and then fail."""
+    cap = describe_engine("csharp", effective_run_config(config, overrides_text))
+    if cap.can_run:
+        return None
+    return cap.block_reason or "The C# engine cannot run this configuration."
+
+
 def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) -> list[str]:
     """Copy ancillary data files referenced in config from source_dir to dest_dir.
 
@@ -634,11 +655,13 @@ def run_server(input, output, session, state: AppState):
 
     @render.ui
     def live_movement_status():
+        # An engine without a live view gets the note whatever an earlier run left in the
+        # status: with the pane expanded, "done" over an empty map would read as a live run.
+        if not engine_supports(state.engine_mode.get(), "live_view"):
+            return ui.p("Live view is available for the Python engine only.", class_="text-muted")
         status_v = _live_status_val.get()
         snap = _live_snapshot.get()
         if not status_v:
-            if not engine_supports(state.engine_mode.get(), "live_view"):
-                return ui.p("Live view available for the Python engine.", class_="text-muted")
             return ui.div()
         prog = f"step {snap.step + 1}/{snap.n_steps}" if snap is not None else ""
         extra = ""
@@ -837,9 +860,8 @@ def run_server(input, output, session, state: AppState):
             # The C# engine refuses a config with a feature it does not implement (and says
             # which), and it may not be installed here. Same shape as the Java guard: block
             # early with the reason instead of starting a run that can only fail.
-            cap = describe_engine("csharp", config)
-            if not cap.can_run:
-                block = cap.block_reason or "The C# engine cannot run this configuration."
+            block = csharp_block_reason(config, input.py_param_overrides() or "")
+            if block:
                 run_log.set(["--- RUN BLOCKED (engine not supported) ---", block])
                 status.set("C# engine not supported for this configuration")
                 ui.notification_show(block, type="error", duration=20)
@@ -897,9 +919,7 @@ def run_server(input, output, session, state: AppState):
             # reactive polls (_drain_live_queue + _drain_run_done) flush live frames and the
             # final result on the main thread. Awaiting the run here would suspend handle_run
             # and Shiny would defer every flush until the run finished (no live updates).
-            overrides = parse_overrides(input.py_param_overrides() or "")
-            run_config = dict(config)
-            run_config.update(overrides)
+            run_config = effective_run_config(config, input.py_param_overrides() or "")
             if source_dir:
                 run_config["_osmose.config.dir"] = str(source_dir)
             output_dir = work_dir / "output"

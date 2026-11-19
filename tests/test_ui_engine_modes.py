@@ -117,6 +117,13 @@ def test_the_run_page_shows_each_engines_own_settings():
     assert engine_supports("java", "jar_settings") and not engine_supports("csharp", "jar_settings")
     # The live view and the step progress are asked for by name.
     assert 'engine_supports(state.engine_mode.get(), "live_view")' in text
+    # The live pane says so for an engine without a live view BEFORE it looks at the status an
+    # earlier run left: "done" over an empty map would read as a live run.
+    pane = text[text.index("def live_movement_status():") :]
+    assert pane.index('engine_supports(state.engine_mode.get(), "live_view")') < pane.index(
+        "_live_status_val.get()"
+    )
+    assert "Live view is available for the Python engine only." in pane[:900]
     assert 'engine_supports(engine_mode, "live_view")' in text
     assert 'engine_supports(engine_mode, "step_progress")' in text
     assert "if is_java(engine_mode):" in text and "if is_in_process(engine_mode):" in text
@@ -140,9 +147,76 @@ def test_the_server_accepts_the_csharp_mode_only_where_the_engine_is_installed()
     assert app.accepts_engine_mode("csharp") is app.CSHARP_ENGINE_OFFERED
 
 
+def test_a_failing_probe_does_not_stop_the_app_it_only_withholds_the_engine(monkeypatch):
+    """The C# engine is optional. Its probe runs when the app is imported, so an exception there
+    would take the Python and Java engines down too."""
+    import app
+
+    def boom():
+        raise PermissionError("features.json: permission denied")
+
+    monkeypatch.setattr(app, "csharp_engine_available", boom)
+    assert app._csharp_engine_offered() is False
+    monkeypatch.setattr(app, "csharp_engine_available", lambda: (True, ""))
+    assert app._csharp_engine_offered() is True
+    monkeypatch.setattr(app, "csharp_engine_available", lambda: (False, "not built"))
+    assert app._csharp_engine_offered() is False
+
+
+def test_a_build_the_process_cannot_read_is_unavailable_not_an_error(tmp_path, monkeypatch):
+    """A deployed build with the wrong owner or mode: ``csharp_engine_available`` says why,
+    it does not raise (calibration and the capability panel call it too)."""
+    from osmose import engine_cs
+
+    for name in (
+        f"{engine_cs.ASSEMBLY_NAME}.dll",
+        f"{engine_cs.ASSEMBLY_NAME}.runtimeconfig.json",
+        engine_cs.CAPABILITIES_FILE,
+    ):
+        (tmp_path / name).write_bytes(b"x")
+    monkeypatch.setattr(engine_cs, "assembly_dir", lambda: tmp_path)
+    monkeypatch.setattr(engine_cs.importlib.util, "find_spec", lambda name: object())
+    real = Path.read_bytes
+
+    def read_bytes(self):
+        if self.parent == tmp_path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    available, why = engine_cs.csharp_engine_available()
+    assert available is False
+    assert "cannot be read" in why and "Permission denied" in why and str(tmp_path) in why
+
+
+def test_the_csharp_gate_checks_the_config_that_runs_overrides_included(monkeypatch):
+    """An override in the run panel can turn on a feature the engine does not implement. The
+    gate must see it, or the run starts and then fails instead of being blocked with the
+    reason."""
+    import ui.pages.run as run_mod
+    from osmose import engine_cs
+    from osmose.config.reader import OsmoseConfigReader
+
+    monkeypatch.setattr(engine_cs, "csharp_engine_available", lambda: (True, ""))
+    config = dict(OsmoseConfigReader().read(ROOT / "data" / "eec_full" / "eec_all-parameters.csv"))
+    assert run_mod.csharp_block_reason(config, "") is None
+    assert run_mod.csharp_block_reason(config, "simulation.time.nyear=3\n") is None
+    blocked = run_mod.csharp_block_reason(config, "species.lmax.sp0 = 25\n# a note\n")
+    assert blocked is not None and "lmax_cap" in blocked
+    assert run_mod.csharp_block_reason(config | {"species.lmax.sp0": "25"}, "") is not None
+    text = (ROOT / "ui" / "pages" / "run.py").read_text(encoding="utf-8")
+    assert 'csharp_block_reason(config, input.py_param_overrides() or "")' in text
+    # The gate and the run build their config with the same function, from the same input.
+    assert 'run_config = effective_run_config(config, input.py_param_overrides() or "")' in text
+    assert text.count("parse_overrides(input.py_param_overrides()") == 0
+    merged = run_mod.effective_run_config(config, "simulation.time.nyear = 3\nnot a pair\n")
+    assert merged["simulation.time.nyear"] == "3" and len(merged) == len(config)
+    assert config["simulation.time.nyear"] != "3"  # the loaded config is not modified
+
+
 def test_the_header_offers_the_csharp_button_only_where_the_engine_is_installed():
     text = (ROOT / "app.py").read_text(encoding="utf-8")
-    assert "CSHARP_ENGINE_OFFERED = csharp_engine_available()[0]" in text
+    assert "CSHARP_ENGINE_OFFERED = _csharp_engine_offered()" in text
     button = text.index('id="engineBtnCsharp"')
     assert "if CSHARP_ENGINE_OFFERED" in text[button : button + 400]
     # The script knows the three buttons and falls back to Python for a mode without one (a
