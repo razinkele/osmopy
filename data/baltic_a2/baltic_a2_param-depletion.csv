@@ -1,7 +1,7 @@
 # Chunk A2 depletable-plankton keys for the baltic_a2 preset.
 # Phytoplankton (Diatoms sp9, Dinoflagellates sp10) regrow fast (fixed 5.0, ~non-limiting);
 # depletable zooplankton (sp11-13) and benthos (sp14) use the converged zoo regrowth rate.
-# Python engine only.
+# No Java equivalent: the Python and C# engines run it.
 # Source: enable_a2_base_config() + a2_on_converged zoo regrowth (scripts/calibrate_baltic.py,
 # whose _PHYTO_RESOURCE_INDICES / _ZOO_RESOURCE_INDICES are the same post-split indices).
 # Re-indexed 2026-11-17 (#273): this file kept its pre-split indices (sp8-13) after the cod split
