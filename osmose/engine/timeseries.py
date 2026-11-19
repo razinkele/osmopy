@@ -42,8 +42,16 @@ def _read_csv_column(path: Path, col: int = 1) -> list[float]:
 
 
 def _cycle_to_length(values: list[float], target_len: int) -> NDArray[np.float64]:
-    """Cycle values array to fill target_len, matching Java cycling behavior."""
+    """Cycle values array to fill target_len, matching Java cycling behavior.
+
+    An empty series cannot be cycled to a positive length (a file with a header and no rows):
+    that is an error. Without the check the loop below never advanced and loading hung.
+    """
     n = len(values)
+    if n == 0 and target_len > 0:
+        raise ValueError(
+            f"cannot cycle an empty series to {target_len} values: the file has no rows"
+        )
     if n >= target_len:
         return np.array(values[:target_len], dtype=np.float64)
     result = np.empty(target_len, dtype=np.float64)
@@ -418,23 +426,28 @@ def load_timeseries(
     """
     sp = f"sp{species_idx}"
 
+    def find(key: str) -> str | None:
+        # The reader lowercases keys; a dict built by hand may use the config-file spelling.
+        value = config.get(key.lower())
+        return value if value is not None else config.get(key)
+
     # Check byYear.file
-    key = f"{key_prefix}.byYear.file.{sp}"
-    if key in config:
+    path = find(f"{key_prefix}.byYear.file.{sp}")
+    if path is not None:
         n_years = ndt_simu // ndt_per_year
-        return ByYearTimeSeries.from_csv(Path(config[key]), n_years)
+        return ByYearTimeSeries.from_csv(Path(path), n_years)
 
     # Check byDt.byAge.file or byDt.bySize.file
     for variant in ["byDt.byAge", "byDt.bySize"]:
-        key = f"{key_prefix}.{variant}.file.{sp}"
-        if key in config:
-            return ByClassTimeSeries.from_csv(Path(config[key]), ndt_per_year, ndt_simu)
+        path = find(f"{key_prefix}.{variant}.file.{sp}")
+        if path is not None:
+            return ByClassTimeSeries.from_csv(Path(path), ndt_per_year, ndt_simu)
 
     # Check byDt.file (correct) or bytDt.file (Java typo)
     for variant in ["byDt", "bytDt"]:
-        key = f"{key_prefix}.{variant}.file.{sp}"
-        if key in config:
-            return SingleTimeSeries.from_csv(Path(config[key]), ndt_per_year, ndt_simu)
+        path = find(f"{key_prefix}.{variant}.file.{sp}")
+        if path is not None:
+            return SingleTimeSeries.from_csv(Path(path), ndt_per_year, ndt_simu)
 
     # Check scalar value
     key = f"{key_prefix}.{sp}"

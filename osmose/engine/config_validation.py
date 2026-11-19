@@ -81,9 +81,28 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "osmose.configuration.movement",
         "osmose.configuration.output",
         "osmose.configuration.oxygen",
+        # Read in osmose/engine/economics/fleet.py, outside config.py, so the AST walk misses them.
+        "economic.fleet.fuel.cost.fsh{idx}",
+        "economic.fleet.gear.fsh{idx}",
+        "economic.fleet.homeport.x.fsh{idx}",
+        "economic.fleet.homeport.y.fsh{idx}",
+        "economic.fleet.max.days.fsh{idx}",
+        "economic.fleet.name.fsh{idx}",
+        "economic.fleet.number",
+        "economic.fleet.nvessels.fsh{idx}",
+        "economic.fleet.operating.cost.fsh{idx}",
+        "economic.fleet.price.sp{idx}.fsh{idx}",
+        "economic.fleet.stock.elasticity.sp{idx}.fsh{idx}",
+        "economic.fleet.target.species.fsh{idx}",
         # Read in osmose/engine/incoming_flux.py, outside config.py, so the AST walk misses them.
         "flux.incoming.bydt.byage.file.sp{idx}",
         "flux.incoming.bydt.bysize.file.sp{idx}",
+        # Built from a variant inside an f-string in config.py, so the AST walk sees only
+        # "mortality.additional.rate.{idx}.file.sp{idx}" and never these spellings (issue #297).
+        "mortality.additional.larva.rate.bydt.file.sp{idx}",
+        "mortality.additional.larva.rate.bytdt.file.sp{idx}",
+        "mortality.additional.rate.bydt.byage.file.sp{idx}",
+        "mortality.additional.rate.bydt.bysize.file.sp{idx}",
         "osmose.configuration.plankton",
         "osmose.configuration.predation",
         "osmose.configuration.reproduction",
