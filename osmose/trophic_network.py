@@ -56,19 +56,75 @@ def _is_engine_diet(df: pd.DataFrame) -> bool:
     return "Prey" not in df.columns
 
 
-def _engine_pairs(df: pd.DataFrame) -> list[tuple[str, str, str]]:
-    """``(column, predator, prey)`` for each ``<pred>_<prey>`` column.
-
-    Split on the FIRST ``_`` — predator names carry no underscore (the prey name is the
-    remainder), matching osmose/engine/output.py and make_diet_heatmap.
-    """
-    out: list[tuple[str, str, str]] = []
-    for c in df.columns:
-        if c in _ENGINE_META_COLS or "_" not in c:
+def _grid_splits(cols: list[str]) -> list[tuple[list[str], list[str]]]:
+    """Every ``(predators, prey)`` under which ``cols`` is the full grid ``<pred>_<prey>``,
+    predator by predator and every predator over the same prey list, as the engine writes it
+    (``osmose/engine/output.py``)."""
+    n = len(cols)
+    first = cols[0]
+    found: list[tuple[list[str], list[str]]] = []
+    for k in range(1, len(first) - 1):
+        if first[k] != "_":
             continue
-        pred, _, prey = c.partition("_")
-        out.append((c, pred, prey))
-    return out
+        head = first[: k + 1]  # "<first predator>_", if the name ends at this underscore
+        for q in range(1, n + 1):
+            if not cols[q - 1].startswith(head) or len(cols[q - 1]) == len(head):
+                break  # the first block cannot be this long, nor any longer
+            if n % q:
+                continue
+            prey = [c[len(head) :] for c in cols[:q]]
+            if len(set(prey)) != q:
+                continue
+            tail = "_" + prey[0]
+            predators: list[str] = []
+            for b in range(0, n, q):
+                lead = cols[b]
+                pred = lead[: -len(tail)]
+                if not lead.endswith(tail) or not pred:
+                    break
+                if any(cols[b + m] != f"{pred}_{prey[m]}" for m in range(q)):
+                    break
+                predators.append(pred)
+            if len(predators) == n // q and len(set(predators)) == len(predators):
+                found.append((predators, prey))
+    return found
+
+
+def diet_column_pairs(columns) -> list[tuple[str, str, str]]:
+    """``(column, predator, prey)`` for each ``<pred>_<prey>`` column, in the columns' order.
+
+    A species name may hold an underscore (Baltic's ``cod_west``), so no fixed underscore is
+    the split: at the first one, ``cod_west_herring`` reads as ``cod`` eating ``west_herring``.
+    The matrix settles it. The engine writes the full grid, predator by predator, every
+    predator over the same prey list, and normally one split only makes the columns such a
+    grid. Where several do, the one taken has, in this order:
+
+    1. the most predators that are also prey. Every fish is both, so a split through a fish's
+       name loses one (a single predator ``cod_west`` is not ``cod`` eating ``west_...``);
+    2. the longer prey axis. The engine's prey axis holds every fish and the resources
+       besides. Resources called ``west_cod`` and ``west_herring`` beside the fish ``cod`` and
+       ``herring`` allow a second grid lying on its side, four predators over two prey, and
+       this rules it out;
+    3. the earliest underscore, as before.
+
+    Names alone cannot always decide, so these give the likelier reading, not a proof.
+    Columns that are no grid at all (a frame made by hand, a subset of columns) are split at
+    the first underscore, as before. Metadata columns and names with no underscore are skipped.
+    """
+    cols = [str(c) for c in columns if str(c) not in _ENGINE_META_COLS and "_" in str(c)]
+    if not cols:
+        return []
+    splits = _grid_splits(cols)  # in the order of the first name's underscores
+    if not splits:
+        return [(c, *c.split("_", 1)) for c in cols]  # type: ignore[misc]
+    # max() keeps the first of equals, which is rule 3.
+    predators, prey = max(splits, key=lambda s: (len(set(s[0]) & set(s[1])), len(s[1])))
+    return [(f"{a}_{b}", a, b) for a in predators for b in prey]
+
+
+def _engine_pairs(df: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """``(column, predator, prey)`` for each ``<pred>_<prey>`` column of an engine frame."""
+    return diet_column_pairs(df.columns)
 
 
 def available_times(output_dir: Path | str) -> list[float]:
