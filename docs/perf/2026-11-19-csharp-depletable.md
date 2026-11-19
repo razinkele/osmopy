@@ -34,6 +34,10 @@ refused for this feature and are accepted now (`tests/test_calibrate_baltic_engi
 was calibrated here. Anyone who runs one should read the caveat below first: the search would
 run on the regrowth as it is.
 
+Those calibrations run on the production Baltic base, where bottom oxygen scales the benthos.
+The demo leaves that coupling out, so the benthos there is depletable and not oxygen-scaled.
+The combination is checked in "With the oxygen coupling too", below.
+
 ## A caveat that is not about the port: negative biomass (issue #337)
 
 The function caps its result at K and does not bound it below. When a resource is carried
@@ -100,6 +104,91 @@ more replicates would be needed for that.
 The ensemble ran before the merge of the seeding-period fix of the same evening (#334). That
 fix changes nothing on this demo: measured, the same seed gives the same numbers over 25 years
 with and without it.
+
+## With the oxygen coupling too (follow-up, the same evening)
+
+The demo plus the one include it leaves out (`osmose.configuration.oxygen;baltic_param-oxygen.csv`
+appended to its master file): the benthos is then both oxygen-scaled and depletable, as on the
+base the depletion calibrations use.
+
+**What the tests cover of this case.** The update, bit for bit, on Baltic with the coupling
+(above), and a mutation that applies the oxygen factor after the regrowth fails there. The
+whole-step and the no-fish tests run on EEC, which has no coupling. So for the combination the
+deterministic checks stop at the update, and the rest is the ensemble below.
+
+**The ensemble at 16 replicates failed, and more replicates do not bear the failure out.**
+
+| Sample | Verdict | Equivalent cells (C#, control, of 36) | Largest difference: C#, control | cod_east abundance, Python minus C# (log10, 90% half-width) |
+|---|---|---|---|---|
+| 16 per arm, 15 years | **FAIL** | 30, 33 | 0.086, 0.0135 | +0.086 (0.093) |
+| 32 per arm (those 16 and 16 new seeds each) | **PASS** | 33, 34 | 0.020, 0.032 | +0.018 (0.067) |
+| The same, with all 64 C# replicates | **PASS** | 33, 34 | 0.029, 0.032 | -0.011 (0.055) |
+
+The 16-replicate run failed one criterion: its largest difference, cod_east abundance, was more
+than 5 times the control's largest. That is the cell that was largest on the demo too, with the
+same sign (+0.116). The rule passed there because the control's largest difference was on that
+cell too (0.062), and the rule allows 5 times the control's. Two ensembles agreeing looked like
+an engine difference. The evidence for one did not hold up:
+
+1. **The two ensembles are one draw seen twice.** The harness gives each arm fixed seeds, so
+   both ensembles ran the same seeds. Seed by seed, the C# arm's cod_east in the one config
+   predicts its cod_east in the other (correlation 0.81; 0.40 and 0.22 for the two Python arms).
+2. **On new seeds the sign reverses.** The same config, Python on 32 new seeds and C# on 48:
+   cod_east abundance, Python minus C#, is -0.046 (standard error 0.035).
+3. **Pooled, the estimate is compatible with zero.** All 64 Python replicates against all 64 C#
+   replicates: -0.015, 90% interval -0.061 to +0.031. That excludes a difference as large as
+   the one that failed (+0.086). It does not exclude a smaller one. (A rank test gives
+   p = 0.71, which on its own establishes nothing.)
+
+The 32-per-arm sample is split by seed order: each arm keeps its 16 replicates and takes the
+next 16 new seeds. It is the only split tried, and it was chosen after the new-seed result was
+known, so it is not a blind test; the variant with all 64 C# replicates gives the same verdict.
+Both were judged by the rule itself (`--rejudge`). Its
+frozen rung is 5, 4.0, 8, with a false-fail rate of 3.7% for identical engines; at 16 replicates
+the rung was 6, 5.0, 10 and the rate 7.6%. Three cells are not equivalent at 32, all of them mean
+weights, which have the narrowest margin: cod_east and herring, in the control as well, and
+pikeperch against the C# engine only (-0.0175, half-width 0.0137, which is 4%).
+
+**What to take from it.**
+
+- On cod_east no engine difference is detected, and one larger than about 1.15x is excluded.
+  cod_west, flounder and sprat agree within 0.005 in log10. **One cell is open: pikeperch**
+  (below).
+- **16 replicates are too few on the depletable configs.** At 16, the 90% half-width of the
+  engine difference on cod_east abundance is 0.09 to 0.16 in log10 there, against 0.002 on the
+  depensation demo. The demo's pass at 16 was as weak as this fail. Use 32.
+- **Ensembles on related configs are not independent evidence**, because they share their seeds
+  and the C# arm's outcome follows its seed across a small change of config. A second ensemble
+  that agrees with the first needs other seeds before it counts as a replication.
+
+**One open cell: pikeperch (issue #342).** At 32 per arm, pikeperch mean weight was the one
+cell whose interval excluded zero while the control's did not. So it was named, and then every
+species and metric was read on the new seeds alone, which share nothing with the failed
+ensemble. Python minus C#, in log10, with the 90% half-width:
+
+| Sample | Mean weight | Biomass | Abundance |
+|---|---|---|---|
+| New seeds only: Python 32, C# 48 | -0.0205 (0.0114), z = -3.0 | -0.0066 (0.0040) | +0.0139 (0.0113) |
+| Every replicate: Python 64, C# 64 | -0.0165 (0.0095), z = -2.8 | -0.0056 (0.0034) | +0.0108 (0.0090) |
+
+That is a mean weight 3.7% lower in the Python engine, with 1.3% less biomass and 2.5% more
+fish. No other species shows it: of the 36 cells read on the new seeds, the ones past 2
+standard errors are pikeperch's four and stickleback yield, which is gone when pooled.
+
+- It is inside what the rule accepts, by a wide margin.
+- **Whether it comes from depletable resources is not known.** The same cell reads -0.013
+  (0.025) on the production config at 32 per arm, -0.012 (0.017) on the demo without the
+  coupling and +0.032 (0.030) on the depensation demo. None of them can see 0.017.
+- On two of those ensembles the two Python arms differ from each other on this cell by about 2
+  standard errors, so the nominal errors may understate its spread.
+
+**Not done:** the demo itself, without the coupling, was not re-run on new seeds. Its verdict
+stands on 16 replicates.
+
+How it was run: the 16 x 15 ensemble with the command below on the edited master file; the new
+seeds with the harness's own per-replicate function (`in_memory_rep`, 15 years, the first 2
+dropped), Python seeds 30000 to 30031 and C# seeds 40000 to 40047; then the rule with
+`--rejudge` on the assembled replicates.
 
 ## Reproduce
 
