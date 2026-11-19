@@ -199,7 +199,8 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "resources": "4 ROMS plankton groups",
         "engine": "Python",
         "summary": "Southern Benguela upwelling ecosystem (anchovy, sardine, redeye, hakes, "
-        "snoek, …) forced by ROMS plankton; unfished. Python engine only. Uncalibrated example; "
+        "snoek, …) forced by ROMS plankton; unfished. Python engine (or the optional C# engine); "
+        "not Java. Uncalibrated example; "
         "the mesopelagic group declines over the 15-yr demo horizon.",
     },
 }
