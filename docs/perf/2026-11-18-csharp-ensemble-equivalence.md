@@ -95,6 +95,16 @@ threshold estimated from the data, and one strongly divergent species still fail
 
 Re-judge without simulating: `--rejudge <saved json>` (the raw replicates are in it).
 
+**Bay of Biscay, run again on 2026-11-19 with the seeding period fixed (#334).** The last of
+its five years is past Anchovy's own lifespan. Every species is now seeded for the longest
+lifespan, as in Java, so the saved replicates above no longer reproduce. The three arms were
+run again on the fixed tree, same design: **PASS**, 26 of 26 counted cells equivalent on
+both arms, largest |d| 0.0085 (C#) and 0.0008 (control). The calibration lands on the same
+rung (6, 5.0, 10). Its false-fail rate for identical engines is 16.1% on this run, all of it
+from the variance criterion; it was 2.0%. That is above the 5% the ladder aims for, so this
+pass rests on a rule that is noisier on this run than it was. The EEC numbers are not
+affected: the fix changes nothing on EEC.
+
 ## Reproduce
 
 ```bash

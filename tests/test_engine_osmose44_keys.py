@@ -130,7 +130,8 @@ def test_the_seeding_period_is_spared(tmp_path):
     the longer, so the switch does not act yet."""
     raw = _minimal(tmp_path, f"{KILL} ; true", **NO_HAKE)
     config = EngineConfig.from_dict(raw)
-    assert sorted(config.seeding_max_step[: config.n_species].tolist()) == [48, 144]
+    assert (config.lifespan_dt[: config.n_species]).tolist() == [48, 144]
+    assert config.seeding_max_step[: config.n_species].tolist() == [144, 144]  # issue #334
     res = _run(raw, years=5)
     assert float(res.abundance().iloc[-1]["Hake"]) == 0.0
 

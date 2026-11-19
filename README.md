@@ -10,7 +10,7 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 
 | Surface | State |
 |---|---|
-| Python engine | Within 1 order of magnitude of Java on Eastern English Channel (14/14) and Bay of Biscay (7/8). The exception is Bay of Biscay Hake, whose biomass runs ~123× Java's, a pre-existing gap. Anchovy, ~3× low, is inside 1 OoM but not equivalent at 3×. Faster than Java on every benchmarked config. |
+| Python engine | Within 1 order of magnitude of Java on Eastern English Channel (14/14) and Bay of Biscay (7/8). The exception is Bay of Biscay Hake, whose biomass runs ~129× Java's, a pre-existing gap. The other seven Bay of Biscay species are equivalent to Java on every metric. Faster than Java on every benchmarked config. |
 | Java engine | Async subprocess runner. OSMOSE **4.4.1 JAR by default** (4.3.3 still selectable). Bundled configs are native 4.4.0; background-species configs (e.g. Baltic) stage + run on the 4.4.1 jar from the UI. |
 | Shiny UI | End-to-end UI: Setup · Grid · Forcing · Fishing · Movement · Run · Results (with Scenario Diff & Config Diff) · Spatial Results · Diagnostics · Calibration · **Sensitivity** · Scenarios · Advanced · Map Viewer. Live-during-run movement map; in-app About (README/Changelog) + a per-version startup "what's new" modal. |
 | Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
