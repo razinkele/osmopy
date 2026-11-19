@@ -282,26 +282,33 @@ def run_equivalence(args) -> None:
     print(
         f"\n{'metric':12s} {'species':22s} {'d(P-C#)':>9s} {'ci90':>7s} {'eq':>3s} {'d(P-P)':>9s} {'eq':>3s} {'var':>6s}"
     )
+    not_counted = set(verdict.vacuous)
     for key in sorted(treatment):
         tc, cc = treatment[key], control[key]
-        flag = " vacuous" if tc.vacuous else ""
+        flag = " not counted" if key in not_counted else ""
         print(
             f"{key[0]:12s} {key[1]:22s} {tc.d:9.4f} {tc.ci:7.4f} {'Y' if tc.equivalent else 'n':>3s} "
             f"{cc.d:9.4f} {'Y' if cc.equivalent else 'n':>3s} {tc.var_ratio:6.2f}{flag}"
         )
     print(
-        f"\nequivalent cells: C# {verdict.n_equivalent}, control {verdict.n_equivalent_control}; "
+        f"\nequivalent cells: C# {verdict.n_equivalent}, control {verdict.n_equivalent_control} "
+        f"of {verdict.n_counted} counted; "
         f"largest |d|: C# {verdict.max_d:.4f}, control {verdict.max_d_control:.4f}"
     )
+    if verdict.vacuous:
+        print(
+            f"not counted: {len(verdict.vacuous)} cells that are one same number in every "
+            "replicate of every arm: " + ", ".join(f"{m}/{sp}" for m, sp in verdict.vacuous)
+        )
     print(f"VERDICT: {'PASS' if verdict.passed else 'FAIL'}  ({time.time() - t0:.0f} s)")
     for f in verdict.failures:
         print(f"  - {f}")
     # Diagnostic, not part of the rule: the control and the treatment SHARE arm A, so an
     # atypical arm A shows as the same difference in both. B against C# separates them.
     pairs = {"A vs C#": compare(a, c), "A vs B (control)": control, "B vs C#": compare(b, c)}
-    print("\npairwise (non-vacuous cells):")
+    print("\npairwise (counted cells):")
     for label, cells in pairs.items():
-        live = [k for k in cells if not cells[k].vacuous]
+        live = [k for k in cells if k not in not_counted]
         ds = sorted(abs(cells[k].d) for k in live)
         over = sum(abs(cells[k].d) > MARGINS[k[0]] for k in live)
         print(
@@ -315,7 +322,7 @@ def run_equivalence(args) -> None:
             "passed": verdict.passed, "failures": verdict.failures,
             "cells": {f"{k[0]}/{k[1]}": {"d": treatment[k].d, "ci": treatment[k].ci, "eq": treatment[k].equivalent,
                        "d_control": control[k].d, "ci_control": control[k].ci, "eq_control": control[k].equivalent,
-                       "var_ratio": treatment[k].var_ratio, "vacuous": treatment[k].vacuous} for k in treatment},
+                       "var_ratio": treatment[k].var_ratio, "vacuous": k in not_counted} for k in treatment},
             "replicates": {arm: {m: {sp: list(map(float, v)) for sp, v in by.items()} for m, by in data.items()}
                            for arm, data in arms.items()},
         }, indent=1, default=float))  # fmt: skip

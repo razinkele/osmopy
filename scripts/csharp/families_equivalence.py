@@ -160,9 +160,9 @@ def judge(arms: dict, splits: int) -> dict:
       leave out. A failure.
     - ``dropped``: a cell of a weighted MEAN that a Python arm itself lacks in some replicate
       (a species with no qualifying school is absent from a mean). Not testable, and reported.
-    - ``constant``: a tested cell that is one same number in every replicate of every arm (a
-      predator that eats no fish). It counts as equivalent and carries no information; it is
-      listed so that the count of equivalent cells is not read as more than it is.
+    - ``constant``: a cell that is one same number in every replicate of every arm (a predator
+      that eats no fish). The rule leaves such cells out of its counts (its criterion 5) and
+      they are listed here.
     """
     from osmose.validation.engine_equivalence import COLLAPSE, acceptance, calibrate, compare
 
@@ -176,7 +176,6 @@ def judge(arms: dict, splits: int) -> dict:
     dropped: list[str] = []
     one_sided: list[str] = []
     invalid: list[str] = []
-    constant: list[str] = []
     floored: list[str] = []
     for metric, margin in MARGINS.items():
         if not all(metric in arms[name] for name in ARMS):
@@ -205,24 +204,23 @@ def judge(arms: dict, splits: int) -> dict:
                 tested[name][metric] = {sp: arms[name][metric][sp] for sp in keep}
             for sp in keep:
                 values = np.concatenate([np.asarray(arms[name][metric][sp]) for name in ARMS])
-                if np.all(values == values[0]):
-                    constant.append(f"{metric}/{sp}")
                 if np.any((values > 0) & (values < COLLAPSE)):
                     floored.append(f"{metric}/{sp}")
     result: dict = {
         "margins": margins, "dropped": dropped, "one_sided": one_sided, "asymmetric": asymmetric,
         "invalid": invalid,
-        "constant": constant, "floored": floored, "verdict": None,
+        "constant": [], "floored": floored, "verdict": None,
     }  # fmt: skip
     if not margins:
         return result
     a, b, c = (tested[name] for name in ARMS)
     chosen, rates, attribution = calibrate(a, b, n_splits=splits, margins=margins)
     control, treatment = compare(a, b, margins), compare(a, c, margins)
+    verdict = acceptance(control, treatment, margins, chosen)
     return result | {
         "chosen": chosen, "rates": rates, "attribution": attribution, "control": control,
-        "treatment": treatment, "other": compare(b, c, margins),
-        "verdict": acceptance(control, treatment, margins, chosen),
+        "treatment": treatment, "other": compare(b, c, margins), "verdict": verdict,
+        "constant": [f"{metric}/{sp}" for metric, sp in verdict.vacuous],
     }  # fmt: skip
 
 
@@ -276,12 +274,12 @@ def report(result: dict) -> None:
     v = result["verdict"]
     print(
         f"\nequivalent cells: C# {v.n_equivalent}, control {v.n_equivalent_control} of "
-        f"{len(treatment)}; largest |d|: C# {v.max_d:.4f}, control {v.max_d_control:.4f}"
+        f"{v.n_counted} counted; largest |d|: C# {v.max_d:.4f}, control {v.max_d_control:.4f}"
     )
     if result["constant"]:
         print(
-            f"of those, {len(result['constant'])} are one same number in every replicate of "
-            f"every arm and carry no information: {', '.join(result['constant'])}"
+            f"not counted: {len(result['constant'])} cells that are one same number in every "
+            f"replicate of every arm: {', '.join(result['constant'])}"
         )
     print(f"VERDICT: {'PASS' if passed(result) else 'FAIL'}")
     for failure in v.failures:

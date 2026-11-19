@@ -23,8 +23,16 @@ exactly (fixed seed sets on both engines).
 | | Bay of Biscay | EEC |
 |---|---|---|
 | Equivalent cells, C# / control | 32 / 32 | 24 / 23 |
+| The same, re-judged on 2026-11-19 (see the note below the table) | 26 / 26 of 26 counted | 24 / 23 of 54 counted |
 | Largest \|d\|, C# / control | 0.011 / 0.007 | 0.314 / 0.382 |
 | Verdict under the rule as specified | **PASS** | **FAIL** (criterion 1, 5 divergent cells) |
+
+**Re-judged on 2026-11-19 under the amended criterion 5.** A cell that is one same number in
+every replicate of all three arms is now listed and left out of the counts; before, only an
+all-zero yield was. On Bay of Biscay that removes six cells (the abundance, biomass and mean
+weight of Mackerel and Sole, which take one value on every seed of both engines), so 26 cells
+are counted and all 26 are equivalent on both arms. On EEC nothing changes: its two vacuous
+cells were zero yields already. Both verdicts and both frozen rungs are unchanged.
 
 Pairwise, outside the rule (non-vacuous cells; d in log10):
 

@@ -18,7 +18,13 @@ Acceptance (spec 10.2), all of:
    within its margin;
 4. each cell's variance ratio within ``var_factor`` (either way), except where the control cell
    fails it too;
-5. cells with zero yield in both arms are vacuous: listed, not counted.
+5. a cell that is one same number in every replicate of all three arms is vacuous: listed, not
+   counted. Nothing draws for such a cell (a background species' forced biomass, the zero yield
+   of an unfished species, a value under the log floor), so it carries no information, and
+   counting it made the number of equivalent cells read as more than it was. "The same number"
+   is on the log scale and to rounding (``SPREAD_FLOOR``). Amended on the owner's instruction,
+   2026-11-19; as specified only an all-zero yield was left out. A cell that is one number on
+   both Python arms and NOT on the other engine is counted like any cell: that is a difference.
 
 ``calibrate`` measures the rule's false-fail rate for IDENTICAL engines by re-splitting the
 pooled Python replicates, and picks the first constants on a fixed ladder whose rate is at most
@@ -120,12 +126,13 @@ def compare(
                 np.asarray(x[metric][sp], dtype=np.float64),
                 np.asarray(y[metric][sp], dtype=np.float64),
             )
-            vacuous = metric == "yield" and not a.any() and not b.any()
             floor = FLOORS.get(metric, COLLAPSE)
             d, ci, p, eq, ks, vr = tost(a, b, margin, floor=floor, with_ks=with_ks)
             la, lb = _log(a, floor), _log(b, floor)
             se = float(np.sqrt(la.var(ddof=1) / len(la) + lb.var(ddof=1) / len(lb)))
             df = len(la) + len(lb) - 2
+            # One same number in every replicate of both arms, to rounding (criterion 5).
+            vacuous = se < SPREAD_FLOOR and abs(d) < SPREAD_FLOOR
             cells[(metric, sp)] = Cell(metric, sp, d, ci, p, bool(eq), ks, vr, vacuous, se, df)
     return cells
 
@@ -168,6 +175,7 @@ class Verdict:
     max_d_control: float
     variance_failures: list[tuple[str, str]]
     vacuous: list[tuple[str, str]] = field(default_factory=list)
+    n_counted: int = 0  # the cells the criteria were applied to
 
 
 def _divergent(cell: Cell, margin: float, m: int) -> bool:
@@ -191,11 +199,13 @@ def acceptance(
     margins: dict[str, float] = MARGINS,
     constants: Constants = LADDER[0],
 ) -> Verdict:
-    """Spec 10.2's rule. Counted cells are those present and non-vacuous in both comparisons."""
-    keys = sorted(
-        k for k in treatment if k in control and not treatment[k].vacuous and not control[k].vacuous
-    )
-    vacuous = sorted(k for k in treatment if treatment[k].vacuous)
+    """Spec 10.2's rule. A cell is left out (and listed) only if it is vacuous in BOTH
+    comparisons, that is, one same number on all three arms. Vacuous in the control alone means
+    the Python engine gives a constant the other engine does not: that cell is counted."""
+    both = [k for k in treatment if k in control]
+    vacuous = sorted(k for k in both if treatment[k].vacuous and control[k].vacuous)
+    left_out = set(vacuous)
+    keys = sorted(k for k in both if k not in left_out)
     failures: list[str] = []
     failed: set[int] = set()
 
@@ -234,6 +244,7 @@ def acceptance(
         max_c,
         var_fail,
         vacuous,
+        len(keys),
     )
 
 
