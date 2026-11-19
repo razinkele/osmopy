@@ -11,8 +11,19 @@ owner's gate G2. The Phase 1 record is `docs/csharp_cross_check_2026-11-18.md`.
 > bioenergetics is worth porting (Q5).
 
 G2 is a decision, not a threshold: the plan gives it no pass mark. What it rests on is the
-Phase 2 acceptance below, which holds in full. **The decision has not been taken.** The two
-questions, with the spec's own recommendations:
+Phase 2 acceptance below, which holds in full.
+
+**The owner decided on 2026-11-19:**
+
+- **Calibration (Q8): opt-in.** The Python engine stays the default for calibration. The C#
+  engine is available where it is asked for, and `scripts/calibrate_baltic.py --engine csharp`
+  was made to work (it refused until then; see "Scope and limits"). No recalibration was run.
+- **Scope (Q5): bioenergetics is not ported for now.** It stays on the Python engine, with
+  genetics and economics. To revisit if a bioenergetics config heads for production. C# work
+  continues with Phase 3's optional features only as they are needed.
+- **The Python-engine diet defect** found on the way is recorded as issue #322.
+
+The two questions as they were put, with the spec's own recommendations:
 
 | Question | Spec's recommendation | What Phase 2 adds |
 |---|---|---|
@@ -242,9 +253,14 @@ refused, by name.
   case. Whether to fix it in the Python engine is the owner's call.
 - **The UI gives a C# run no step progress and no live view.** The engine does not expose its
   schools. Progress could come from its control block later.
-- **`scripts/calibrate_baltic.py --engine csharp` still refuses.** The engine can run the config;
-  the script's DE pool forks, and the .NET runtime must not be hosted in a process that forks.
-  `OsmoseCalibrationProblem(engine="csharp")` (forkserver workers) does work, since task 1.12.
+- **`scripts/calibrate_baltic.py --engine csharp` works since the G2 follow-up**, with
+  `--optimizer de` only (the other two optimizers evaluate through joblib, which was not tried
+  with the C# engine). When this note was first written the script refused, on the belief that
+  its forking DE pool ruled the C# engine out. Measured since: a child forked from a process
+  that has NOT loaded the .NET runtime runs the engine normally; only a fork made AFTER the
+  runtime is loaded kills the child. So the script forks its workers first and runs the engine
+  in its own process only after the last fork, and a guard turns the wrong order into an error.
+  A C# run writes `phase<N>_csharp_*.json`, so it never replaces a Python result.
 - **Production is unchanged until a deploy opts in** (`OSMOSE_DEPLOY_CSHARP=1`, DEPLOY.md). The
   UI shows the C# button only where the engine is installed.
 - **Two implementations of one model** (spec risk R3). A PR that changes Python engine semantics

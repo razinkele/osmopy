@@ -356,8 +356,12 @@ def test_pool_initializers_apply_the_worker_policy():
     de_script = (
         Path(__file__).resolve().parent.parent / "scripts" / "calibrate_baltic.py"
     ).read_text()
-    assert "initializer=apply_worker_threads" in de_script, "DE pool lost its worker initializer"
-    assert "apply_worker_threads(n_workers)" in inspect.getsource(calibrate_baltic._eval_child)
+    # The DE pool and the isolated-eval children go through one worker initializer, which
+    # applies the rule for the Python engine (the C# engine takes its threads per run:
+    # tests/test_calibrate_baltic_engine.py).
+    assert "initializer=_init_worker" in de_script, "DE pool lost its worker initializer"
+    assert "_init_worker(n_workers, engine)" in inspect.getsource(calibrate_baltic._eval_child)
+    assert "apply_worker_threads(n_workers)" in inspect.getsource(calibrate_baltic._init_worker)
 
 
 def test_calibration_spec_carries_the_resolved_worker_count(monkeypatch, tmp_path):
