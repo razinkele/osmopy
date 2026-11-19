@@ -212,6 +212,8 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
         if prey not in prey_names:
             prey_names.append(prey)
         cells[(pred, prey)] = mean_of[col]
+    if not cells:  # pair-like column names, none of them numeric
+        return go.Figure().update_layout(title="Diet Composition (no prey data)", template=template)
     z = np.array([[cells.get((p, q), 0.0) for q in prey_names] for p in predators], dtype=float)
     # Per-predator-row normalisation to diet proportions (rows with no diet stay 0).
     row_sums = z.sum(axis=1, keepdims=True)

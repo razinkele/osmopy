@@ -97,19 +97,28 @@ def diet_column_pairs(columns) -> list[tuple[str, str, str]]:
     the split: at the first one, ``cod_west_herring`` reads as ``cod`` eating ``west_herring``.
     The matrix settles it. The engine writes the full grid, predator by predator, every
     predator over the same prey list, and normally one split only makes the columns such a
-    grid. Where several do (one predator; every name sharing a first word), the one with the
-    most predators that are also prey is taken, since a fish species is always both.
+    grid. Where several do, the one taken has, in this order:
 
-    Columns that are no such grid (a frame made by hand, a subset of columns) are split at the
-    first underscore, as before. Metadata columns and names with no underscore are skipped.
+    1. the most predators that are also prey. Every fish is both, so a split through a fish's
+       name loses one (a single predator ``cod_west`` is not ``cod`` eating ``west_...``);
+    2. the longer prey axis. The engine's prey axis holds every fish and the resources
+       besides. Resources called ``west_cod`` and ``west_herring`` beside the fish ``cod`` and
+       ``herring`` allow a second grid lying on its side, four predators over two prey, and
+       this rules it out;
+    3. the earliest underscore, as before.
+
+    Names alone cannot always decide, so these give the likelier reading, not a proof.
+    Columns that are no grid at all (a frame made by hand, a subset of columns) are split at
+    the first underscore, as before. Metadata columns and names with no underscore are skipped.
     """
     cols = [str(c) for c in columns if str(c) not in _ENGINE_META_COLS and "_" in str(c)]
     if not cols:
         return []
-    splits = _grid_splits(cols)
+    splits = _grid_splits(cols)  # in the order of the first name's underscores
     if not splits:
         return [(c, *c.split("_", 1)) for c in cols]  # type: ignore[misc]
-    predators, prey = min(splits, key=lambda s: (-len(set(s[0]) & set(s[1])), len(s[0][0])))
+    # max() keeps the first of equals, which is rule 3.
+    predators, prey = max(splits, key=lambda s: (len(set(s[0]) & set(s[1])), len(s[1])))
     return [(f"{a}_{b}", a, b) for a in predators for b in prey]
 
 

@@ -311,6 +311,38 @@ def test_a_predator_whose_name_starts_another_predators_name():
     assert [(p, q) for _, p, q in pairs] == [(p, q) for p in predators for q in prey]
 
 
+def test_resources_named_after_the_fish_do_not_turn_the_grid_on_its_side():
+    """Found in review. Fish `cod` and `herring`, resources `west_cod` and `west_herring`: the
+    columns are a 2 x 4 grid, and also a 4 x 2 grid of predators `cod`, `cod_west`, `herring`,
+    `herring_west` over the prey `cod` and `herring`. In both, two predators are also prey.
+    The engine's prey axis holds every fish and the resources besides, so the longer prey axis
+    is taken. Split at the first underscore, this frame was read correctly: it must stay so."""
+    predators, prey = ["cod", "herring"], ["cod", "herring", "west_cod", "west_herring"]
+    pairs = diet_column_pairs(_engine_columns(predators, prey))
+    assert [(p, q) for _, p, q in pairs] == [(p, q) for p in predators for q in prey]
+
+
+def test_one_fish_and_a_resource_named_after_it_is_one_predator_over_two_prey():
+    """`cod_cod, cod_west_cod`: the fish `cod` over the prey `cod` and `west_cod`, or the
+    predators `cod` and `cod_west` over the one prey `cod`. Both are layouts the engine could
+    write. The longer prey axis is taken: a run with no resource at all is the rarer one."""
+    pairs = diet_column_pairs(["cod_cod", "cod_west_cod"])
+    assert [(p, q) for _, p, q in pairs] == [("cod", "cod"), ("cod", "west_cod")]
+
+
+def test_a_full_grid_in_another_order_than_the_engines_is_still_read_as_a_grid():
+    """Prey in another order than the predators: not laid out as the engine does, but a full
+    grid all the same."""
+    predators, prey = ["a_x", "b"], ["b", "a_x"]
+    pairs = diet_column_pairs(_engine_columns(predators, prey))
+    assert [(p, q) for _, p, q in pairs] == [(p, q) for p in predators for q in prey]
+    # One predator, so two readings: the one in which the predator is also a prey is taken.
+    pairs = diet_column_pairs(_engine_columns(["a_x"], ["z", "a_x"]))
+    assert [(p, q) for _, p, q in pairs] == [("a_x", "z"), ("a_x", "a_x")]
+    # Nothing tells two readings apart: the first underscore, as before.
+    assert diet_column_pairs(["a_b_x", "c_b_x"]) == [("a_b_x", "a", "b_x"), ("c_b_x", "c", "b_x")]
+
+
 def test_a_single_predator_with_an_underscore_is_read_as_a_species_that_is_also_prey():
     """One predator leaves two readings (`cod` eating `west_...`, or `cod_west`). A fish
     species is always among its own prey names, and that settles it."""

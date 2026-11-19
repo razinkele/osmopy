@@ -227,6 +227,13 @@ def test_make_diet_heatmap_keeps_a_species_name_with_an_underscore_whole():
     assert z[2][3] == pytest.approx(1.0)
 
 
+def test_make_diet_heatmap_with_no_numeric_pair_shows_no_data():
+    """A column that looks like a pair and holds text: nothing to draw, and no crash."""
+    fig = make_diet_heatmap(pd.DataFrame({"Time": [0], "note_text": ["unavailable"]}))
+    assert "no prey data" in (fig.layout.title.text or "").lower()
+    assert len(fig.data) == 0
+
+
 def test_make_diet_heatmap_predator_prey_matrix():
     """The engine writes the diet matrix wide, as `<predator>_<prey>` columns
     (osmose/engine/output.py), plus a Time column and a constant `species` column
