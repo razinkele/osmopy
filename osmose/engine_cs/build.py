@@ -409,7 +409,13 @@ def _reproduction(b: Bundle, config: Any, n_total: int) -> None:
 
 
 def _resources(b: Bundle, config: Any, grid: Any) -> None:
-    """The LTL resources as ``ResourceState.update`` computes them, non-depletable (Phase 1).
+    """The LTL resources as ``ResourceState.update`` computes them.
+
+    Depletable resources (feature ``depletable_ltl``): the carrying capacity is the same table;
+    what changes is that the engine regrows the biomass it carried over toward that capacity
+    (``logistic_regrow``) where it would otherwise reset to it. The bundle adds the two numbers
+    the regrowth needs, ``depletable.floor`` and one ``depletable.regrowth_rate`` per resource,
+    exactly when ``ltl.depletable.enabled`` is on.
 
     Each step's carrying capacity is ``frame * access``: ``resources.forcing[r, frame]`` holds
     the regridded forcing already multiplied by the multiplier (Python's left-to-right
@@ -486,6 +492,12 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
                 )
             else:
                 access_by_step[step, i] = rsc.accessibility
+    if rs.depletable:
+        b.set_float("resources.depletable.floor", float(rs.depletable_floor))
+        b.set_array(
+            "resources.depletable.regrowth_rate",
+            np.asarray([rsc.regrowth_rate for rsc in rs.species], dtype=np.float64),
+        )
     if coupling:
         coupled = np.zeros(n_rsc, dtype=np.uint8)
         factor = np.ones((1, n_cells), dtype=np.float64)

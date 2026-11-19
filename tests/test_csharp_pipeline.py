@@ -155,6 +155,7 @@ def _capture_step(raw: dict, step: int, edge_ages: bool = False, edit=None) -> d
         if edit is not None:
             edit(state, config_)
         got["entry"] = copy.deepcopy(state)
+        got["rsc_entry"] = resources.biomass.copy()  # after this step's update, before predation
         record: list = []
         got["record"] = record
         natural.np = growth_mod.np = _LibmNumpy()  # restored when the step's outputs are collected
@@ -178,6 +179,7 @@ def _capture_step(raw: dict, step: int, edge_ages: bool = False, edit=None) -> d
         if ctx is not None and ctx.diet_tracking_enabled and ctx.diet_matrix is not None:
             got["diet"] = ctx.diet_matrix[: ctx._diet_active_rows].copy()
             got["after_mortality"] = copy.deepcopy(after)
+        got["rsc_after"] = resources.biomass.copy()  # what predation left to the next step
         return after
 
     def collect_spy(*args, **kwargs):

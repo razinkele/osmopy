@@ -236,7 +236,8 @@ public sealed class EngineParameters
         MortalityParameters mortality = ModelReader.Mortality(model, (int)nSteps, species.NFocal, nTotal);
         FishingParameters fishing = ModelReader.Fishing(model, config, (int)nSteps, species.NFocal, nTotal, (int)ny, (int)nx);
         bool oxygen = features.Contains(FeatureCatalog.Named("oxygen_benthos"));
-        ResourceParameters resources = ModelReader.Resources(model, (int)nSteps, (int)(ny * nx), oxygen);
+        bool depletable = features.Contains(FeatureCatalog.Named("depletable_ltl"));
+        ResourceParameters resources = ModelReader.Resources(model, (int)nSteps, (int)(ny * nx), oxygen, depletable);
         OutputParameters output = ModelReader.Output(model, nTotal, species.NFocal, features.Contains(FeatureCatalog.Named("full_outputs")), resources.N);
         ReproductionParameters reproduction = ModelReader.Reproduction(
             model,

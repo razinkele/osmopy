@@ -170,8 +170,8 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "production Baltic mortality, uncalibrated under A2. The fit it reached before the split "
         "was the best achievable community fit, NOT fully ICES-calibrated: herring, sprat and "
         "stickleback in-band, cod just above band, coastal percids (perch/pike-perch) "
-        "structurally over at this grid resolution. Python engine only (depletable plankton has "
-        "no Java equivalent).",
+        "structurally over at this grid resolution. No Java run: depletable plankton has no "
+        "Java equivalent.",
     },
     "baltic_depensation": {
         "title": "Baltic Sea (depensation/Allee)",

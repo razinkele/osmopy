@@ -23,6 +23,24 @@ public static class PipelineProbe
         EngineParameters p = EngineParameters.From(model, checkFeatures: false);
         var run = new SimulationRun(p, model);
         int n = Load(state, p, run.Store);
+        int nRsc = p.Resources.N, nCells = p.Ny * p.Nx;
+
+        // Optional: the resource biomass the run carried into this step, Python's
+        // (n_rsc, n_cells). Depletable resources regrow from it; otherwise it is overwritten.
+        if (state.TryGet("state.resources", out _))
+        {
+            var rr = new BundleReader(state, 1);
+            double[] carried = rr.Array("state.resources", DType.F8, nRsc, nCells)!.ToArray<double>();
+            rr.ThrowIfProblems();
+            Span<double> buffer = run.ResourceBuffer;
+            for (int r = 0; r < nRsc; r++)
+            {
+                for (int c = 0; c < nCells; c++)
+                {
+                    buffer[(c * nRsc) + r] = carried[(r * nCells) + c];
+                }
+            }
+        }
 
         // A regroup reorders schools but not the per-step scratch, so a real step inherits the
         // previous step's values at each position. Poison them: the pipeline must clear them.
@@ -31,6 +49,7 @@ public static class PipelineProbe
         run.Regroup();
         var draws = new InjectedCellDraws(InjectedDraws.FromBundle(drawsBundle, run.Store.CellStart, p.Ny * p.Nx, p.NSubdt));
         run.Mortality<InjectedCellDraws, InjectedDrawSource>(step, ref draws);
+        double[] resourcesAfter = ResourceMajor(run.ResourceBuffer, nRsc, nCells);
 
         // The rest is RunStep's order. First the diet: each school's row by id (the input's
         // order), then the step's diet by predator species, while the background schools are
@@ -94,6 +113,8 @@ public static class PipelineProbe
                 output.SetArray("s.diet", DType.F8, Pin(handles, dietById), n, cols);
             }
 
+            // The run's own buffer after the cells ran: what the kernel left to the next step.
+            output.SetArray("s.resources", DType.F8, Pin(handles, resourcesAfter), Math.Max(1, nRsc), nCells);
             WriteResults(output, handles, run.Results);
             output.Save(outPath);
         }
@@ -184,11 +205,16 @@ public static class PipelineProbe
         var run = new SimulationRun(p, model);
         RunSummary summary = run.Run();
         long[] counts = [(long)summary.Status, summary.StepsCompleted, summary.RecordsWritten, summary.PeakSchools];
+        int nRsc = p.Resources.N, nCells = p.Ny * p.Nx;
+        double[] resources = ResourceMajor(run.ResourceBuffer, nRsc, nCells);
         var handles = new List<GCHandle>();
         try
         {
             var output = new SimulationConfig(1);
             WriteResults(output, handles, run.Results);
+
+            // The resource biomass the run ended with, Python's (n_rsc, n_cells).
+            output.SetArray("out.resources", DType.F8, Pin(handles, resources), Math.Max(1, nRsc), nCells);
             output.SetArray("out.summary", DType.I8, Pin(handles, counts), counts.Length);
             output.Save(outPath);
         }
@@ -196,6 +222,20 @@ public static class PipelineProbe
         {
             Free(handles);
         }
+    }
+
+    private static double[] ResourceMajor(ReadOnlySpan<double> cellMajor, int nRsc, int nCells)
+    {
+        double[] rows = new double[Math.Max(1, nRsc) * nCells];
+        for (int r = 0; r < nRsc; r++)
+        {
+            for (int c = 0; c < nCells; c++)
+            {
+                rows[(r * nCells) + c] = cellMajor[(c * nRsc) + r];
+            }
+        }
+
+        return rows;
     }
 
     /// <summary>Steady-state allocation (plan 1.9): run <paramref name="warmSteps"/> steps, let

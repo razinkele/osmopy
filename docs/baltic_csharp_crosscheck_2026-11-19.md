@@ -249,10 +249,11 @@ and of a whole run (`tests/test_csharp_pipeline.py`, `tests/test_csharp_engine_e
 ## Scope and limits (what Phase 2 does not do)
 
 - **Features still refused, by name:** Phase
-  3's optional features (depletable resources, incoming flux, marine protected areas,
+  3's optional features (incoming flux, marine protected areas,
   time-varying rates, the ceiling and thermal recruitment gates, spatial and carbon outputs,
-  and others). The depensation gate runs since the follow-up of the same day
-  (`docs/perf/2026-11-19-csharp-depensation.md`).
+  and others). The depensation gate and depletable resources run since the follow-ups
+  of the same day (`docs/perf/2026-11-19-csharp-depensation.md`,
+  `docs/perf/2026-11-19-csharp-depletable.md`).
   Benguela was refused for `incoming_flux` when this note was written. It runs since the
   follow-up of the same day: it switches that feature on and gives no species a flux file,
   which does nothing (`docs/perf/2026-11-19-csharp-benguela.md`). Bioenergetics, genetics and
