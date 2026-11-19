@@ -2,6 +2,9 @@
 
 > Date: 2026-11-17. Companion to `2026-11-17-csharp-engine-design.md` ("the spec"); section
 > numbers below refer to it. Nothing here has been started.
+>
+> Status on 2026-11-19: Phases 0, 1 and 2 are done and gates G0, G1 and G2 are decided; each
+> gate's decision is recorded where the gate is defined below.
 
 Each task is one reviewable PR. Sizes are relative: **S** (a day or two of focused work),
 **M** (several days), **L** (a week or more). They are estimates, not measurements.
@@ -189,7 +192,20 @@ difference explained; the Baltic performance gates (1.15x at one thread, 1.5x at
 **Deliverables:** `docs/baltic_csharp_crosscheck_<date>.md`, `docs/perf/<date>-csharp-baltic.md`.
 
 **Gate G2 (owner).** Decide whether calibration may use the C# engine (Q8) and whether
-bioenergetics is worth porting (Q5).
+bioenergetics is worth porting (Q5). **Decided by the owner on 2026-11-19**
+(`docs/baltic_csharp_crosscheck_2026-11-19.md`):
+
+- **Q8: calibration stays opt-in.** The Python engine remains the default. The C# engine is
+  used where it is asked for, and `scripts/calibrate_baltic.py --engine csharp` was made to
+  work for it (with `--optimizer de`).
+- **Q5: bioenergetics is not ported for now.** Phase 4 does not start. To revisit if a
+  bioenergetics config heads for production.
+- **Phase 3 is done only as its features are needed**, not as a programme.
+
+**Phase 2 as delivered.** Tasks 2.1 and 2.3 to 2.8 are merged. Of task 2.2, out-of-domain
+mortality was already part of the Phase 1 core; the length cap (`species.lmax`) and immobile
+focal species are not implemented, because no shipped config uses them, and a config that does
+is refused by name.
 
 ---
 
@@ -197,6 +213,13 @@ bioenergetics is worth porting (Q5).
 
 Each: bundle entries, capability bit, process fixture, the off-is-identical A/B, and a small
 ensemble on the demo variant that uses it (`osmose/demo.py`).
+
+**Since gate G2, only as needed.** Before porting a feature because a shipped config "needs"
+it, check that the config uses it: Benguela switches incoming flux on (task 3.2) and gives no
+species a flux file, which does nothing, so it runs without 3.2
+(`docs/perf/2026-11-19-csharp-benguela.md`, which also lists what each shipped config still
+needs). Of the shipped demos, only `baltic_a2` (3.1) and `baltic_depensation` (3.6) wait on a
+Phase 3 task.
 
 | # | Feature | Size |
 |---|---|---|
@@ -220,7 +243,8 @@ ensemble on the demo variant that uses it (`osmose/demo.py`).
 Not planned in detail. First task: a design note that reads `_bioen_step`,
 `_bioen_reproduction` and the `bioen_*` process modules (none of which the spec author read)
 against CLAUDE.md's bioen notes, and lists the semantics with tiers as spec section 6 does.
-Only then size the work. Entry criterion: gate G2 and a "yes" to Q5.
+Only then size the work. Entry criterion: gate G2 and a "yes" to Q5. **Q5 was answered "not
+now" on 2026-11-19, so this phase has not started.**
 
 Genetics and economics are not planned (spec 7.1).
 
