@@ -143,7 +143,13 @@ def test_precancel_and_deadline_stop_at_step_zero(kind, error, tmp_path):
 
 # ------------------------------------------------- stock configs: the full outputs (task 2.6c)
 
-STOCK = {"eec_full": 2, "baltic": 1, "bay_of_biscay": 1}  # demo: years
+# demo: years. Benguela since 2026-11-19: it switches incoming flux on and gives no species a
+# flux file, which the capability check no longer takes for a use of the feature.
+STOCK = {"eec_full": 2, "baltic": 1, "bay_of_biscay": 1, "benguela": 1}
+#: Demos that ship with most output switches off (Benguela: biomass, yield, mortality and the
+#: life-stage outputs only). What they do ship must still match; the checks that a config
+#: exercises the diet and the distributions do not apply to them.
+SPARSE = {"benguela"}
 
 
 def _families_row(record, name: str, n_species: int) -> np.ndarray | None:
@@ -205,12 +211,18 @@ def test_a_stock_run_hands_on_exactly_the_records_the_engine_computed(demo, tmp_
                 assert _same(row, want), (name, i)
 
     # The demo's own switches: every family it ships with came through, and did something.
+    last = records[-1]
+    assert last.abundance_by_stage is not None and last.abundance_by_stage.sum() > 0
+    if demo in SPARSE:
+        assert {"abundance_by_stage", "mortality_rate_by_cause_stage"} <= set(names)
+        assert last.diet_by_species is None and last.biomass_by_age is None  # switched off
+        assert last.biomass.sum() > 0
+        return
     want = {"abundance_by_stage", "mortality_rate_by_cause_stage", "diet_by_species",
             "biomass_by_age", "biomass_by_size", "abundance_by_size", "mean_tl", "mean_size",
             "yield_n"} | ({"ssb"} if demo == "baltic" else set())  # fmt: skip
     assert want <= set(names)
     # (Over the run, not in the last record: Bay of Biscay's fish stop feeding within the year.)
-    last = records[-1]
     assert last.diet_by_species is not None
     assert sum(r.diet_by_species.sum() for r in records if r.diet_by_species is not None) > 0
     assert any(r.mean_tl for r in records) and any(r.mean_size for r in records)
@@ -221,13 +233,24 @@ def test_a_stock_run_hands_on_exactly_the_records_the_engine_computed(demo, tmp_
         assert last.ssb is not None and last.ssb.sum() > 0
 
 
-def test_the_stock_baltic_run_is_the_same_at_1_2_and_14_threads(tmp_path):
+_MINIMAL_FIELDS = {"biomass", "abundance", "yield_by_species", "mortality_by_cause"}
+STOCK_FAMILIES = {
+    "baltic": _MINIMAL_FIELDS | {
+        "abundance_by_stage", "biomass_by_age", "ssb", "yield_n", "mean_size", "mean_tl",
+        "diet_by_species",
+    },
+    "benguela": _MINIMAL_FIELDS | {"abundance_by_stage", "mortality_rate_by_cause_stage"},
+}  # fmt: skip
+
+
+@pytest.mark.parametrize("demo", ["baltic", "benguela"])
+def test_a_stock_run_is_the_same_at_1_2_and_14_threads(demo, tmp_path):
     """The spec's determinism goal on the config AS SHIPPED, every output family on: the diet
     rows are written per predator school inside the parallel kernel, and the families are folded
     from what the threads leave behind. The records must not depend on the thread count, and
     must depend on the seed (or the digest would be blind)."""
     extra = {"output.recordfrequency.ndt": "6", "output.step0.include": "true"}
-    raw = _raw("baltic", tmp_path, 2, minimal=False, extra=extra)
+    raw = _raw(demo, tmp_path, 2, minimal=False, extra=extra)
     _child("thread_digests", raw, tmp_path / "d.json", "1,7")
     got = json.loads((tmp_path / "d.json").read_text())
     assert set(got) == {f"{seed}:{threads}" for seed in (1, 7) for threads in (1, 2, 14)}
@@ -237,11 +260,8 @@ def test_the_stock_baltic_run_is_the_same_at_1_2_and_14_threads(tmp_path):
         assert one["digest"] == two["digest"], f"seed {seed}: 1 and 2 threads differ"
         assert one["digest"] == many["digest"], f"seed {seed}: 1 and 14 threads differ"
     assert got["1:1"]["digest"] != got["7:1"]["digest"]
-    # The digest covers the families Baltic ships with, not only the minimal outputs.
-    assert {
-        "biomass", "abundance", "yield_by_species", "mortality_by_cause", "abundance_by_stage",
-        "biomass_by_age", "ssb", "yield_n", "mean_size", "mean_tl", "diet_by_species",
-    } <= set(got["1:1"]["fields"])  # fmt: skip
+    # The digest covers the families the demo ships with, not only the minimal outputs.
+    assert STOCK_FAMILIES[demo] <= set(got["1:1"]["fields"]), sorted(got["1:1"]["fields"])
 
 
 def test_a_run_leaves_its_arrays_to_no_later_run(tmp_path):
@@ -273,7 +293,7 @@ def test_a_stock_run_gives_the_frames_the_python_engine_gives(demo, tmp_path):
     _child("frames", raw, tmp_path / "cs.pkl", "11")
     cs = pickle.loads((tmp_path / "cs.pkl").read_bytes())
     py = PythonEngine().run_in_memory(raw, seed=11)._csv_cache
-    assert sorted(cs) == sorted(py) and len(py) > 10
+    assert sorted(cs) == sorted(py) and len(py) > (3 if demo in SPARSE else 10)
     labels: set[str] = set()
     for key in py:
         a, b = cs[key], py[key]
@@ -285,6 +305,9 @@ def test_a_stock_run_gives_the_frames_the_python_engine_gives(demo, tmp_path):
         else:
             assert _structure(a) == _structure(b), key
             labels.update(map(str, b.columns))
+    if demo in SPARSE:  # no diet frame, so no prey labels: the species columns are there
+        assert any("anchovy" in label.lower() for label in labels)
+        return
     resource = {"eec_full": "Dinoflagellates", "baltic": "Benthos", "bay_of_biscay": "SmallPhyto"}
     assert any(resource[demo] in label for label in labels)  # a resource is a prey label
 
@@ -313,8 +336,9 @@ def test_a_stock_run_writes_the_files_the_python_engine_writes(demo, tmp_path):
         return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
 
     files = tree(tmp_path / "py")
-    assert tree(tmp_path / "cs") == files and len(files) > 20
-    assert any("diet" in f.lower() for f in files) and any("mortality" in f.lower() for f in files)
+    assert tree(tmp_path / "cs") == files and len(files) > (10 if demo in SPARSE else 20)
+    assert any("mortality" in f.lower() for f in files)
+    assert any("diet" in f.lower() for f in files) != (demo in SPARSE)
     for rel in files:
         if not rel.endswith(".csv"):
             continue

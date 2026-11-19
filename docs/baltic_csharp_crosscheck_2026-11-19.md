@@ -35,7 +35,7 @@ The two questions as they were put, with the spec's own recommendations:
 | Criterion | Status | Evidence |
 |---|---|---|
 | A process fixture per feature against its Python function, and an A/B: feature off is byte-identical to before | **Met** for every task | The PRs in "Phase 2 tasks" below. Each carries its fixtures, its mutation list, and the result digests of EEC and Bay of Biscay, equal to master's in all 8 cases. |
-| Determinism at 1, 2 and 14 threads | **Met** | Byte-identical on EEC and on the Baltic-derived config, for the minimal outputs and for every output family (`tests/test_csharp_parallel.py`, `tests/test_csharp_outputs_*.py`); and on the Baltic config as shipped, every family on, two seeds (`tests/test_csharp_engine_e2e.py::test_the_stock_baltic_run_is_the_same_at_1_2_and_14_threads`, added with this note). |
+| Determinism at 1, 2 and 14 threads | **Met** | Byte-identical on EEC and on the Baltic-derived config, for the minimal outputs and for every output family (`tests/test_csharp_parallel.py`, `tests/test_csharp_outputs_*.py`); and on the Baltic config as shipped, every family on, two seeds (`tests/test_csharp_engine_e2e.py::test_a_stock_run_is_the_same_at_1_2_and_14_threads`, added with this note). |
 | Ensemble equivalence on Baltic | **Met**: PASS | "Ensemble equivalence" below. |
 | The full default output families agree with Python's frames in shape, and statistically in value | **Met** | Shape: stock EEC, Baltic and Bay of Biscay give the Python engine's frame keys, shapes, labels and dtypes, and the same files (`tests/test_csharp_engine_e2e.py`). Value: "The full output families" below. |
 | `baltic_stability_certify.py` on the C# engine gives the Python engine's verdicts on the same seeds | **Met**: all 18 agree | "Certification" below. |
@@ -244,8 +244,10 @@ refused, by name.
 - **Features still refused, by name:** the growth cap and immobile species (above), and Phase
   3's optional features (depletable resources, incoming flux, marine protected areas,
   time-varying rates, the other recruitment gates, spatial and carbon outputs, and others).
-  Benguela is refused for `incoming_flux`. Bioenergetics, genetics and economics run on the
-  Python engine only.
+  Benguela was refused for `incoming_flux` when this note was written. It runs since the
+  follow-up of the same day: it switches that feature on and gives no species a flux file,
+  which does nothing (`docs/perf/2026-11-19-csharp-benguela.md`). Bioenergetics, genetics and
+  economics run on the Python engine only.
 - **A Python-engine defect was reproduced, not fixed.** When a background school is eaten, the
   Python engine books it in the diet column of the resource with the same index
   (`mortality.py`, `diet_matrix[p, species_id[q]]`). It is inert on Baltic as shipped, because

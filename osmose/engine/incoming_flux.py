@@ -6,6 +6,8 @@ new schools each timestep based on CSV-defined biomass inputs per age or size cl
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from io import StringIO
 from pathlib import Path
 
@@ -17,9 +19,28 @@ from osmose.engine.grid import Grid
 from osmose.engine.state import SchoolState
 
 
-def incoming_flux_enabled(config: dict[str, str]) -> bool:
+def incoming_flux_enabled(config: Mapping[str, str]) -> bool:
     """Whether incoming flux is switched on (``simulation.incoming.flux.enabled``)."""
     return config.get("simulation.incoming.flux.enabled", "false").lower() == "true"
+
+
+_FLUX_FILE_KEY = re.compile(r"flux\.incoming\.bydt\.(byage|bysize)\.file\.sp\d+")
+
+
+def incoming_flux_in_use(config: Mapping[str, str]) -> bool:
+    """Whether incoming flux would do anything: the switch is on AND a species has a flux file.
+
+    The switch alone does nothing. ``IncomingFluxState`` then loads no flux, creates no school
+    and draws no random number, and the Benguela demo ships exactly so. A caller that must
+    decide whether a config USES the feature (the C# engine's capability check refuses what it
+    does not implement) asks this, not ``incoming_flux_enabled``.
+
+    It errs towards "in use": any non-empty value counts, as the loader's own test does, and so
+    does a key for a species index the config does not have.
+    """
+    if not incoming_flux_enabled(config):
+        return False
+    return any(_FLUX_FILE_KEY.fullmatch(key) and value != "" for key, value in config.items())
 
 
 class _SpeciesFlux:
