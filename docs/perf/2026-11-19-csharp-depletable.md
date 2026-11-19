@@ -34,6 +34,10 @@ refused for this feature and are accepted now (`tests/test_calibrate_baltic_engi
 was calibrated here. Anyone who runs one should read the caveat below first: the search would
 run on the regrowth as it is.
 
+Those calibrations run on the production Baltic base, where bottom oxygen scales the benthos.
+The demo leaves that coupling out, so the benthos there is depletable and not oxygen-scaled.
+The combination is checked in "With the oxygen coupling too", below.
+
 ## A caveat that is not about the port: negative biomass (issue #337)
 
 The function caps its result at K and does not bound it below. When a resource is carried
@@ -100,6 +104,62 @@ more replicates would be needed for that.
 The ensemble ran before the merge of the seeding-period fix of the same evening (#334). That
 fix changes nothing on this demo: measured, the same seed gives the same numbers over 25 years
 with and without it.
+
+## With the oxygen coupling too (follow-up, the same evening)
+
+The demo plus the one include it leaves out (`osmose.configuration.oxygen;baltic_param-oxygen.csv`
+appended to its master file): the benthos is then both oxygen-scaled and depletable, as on the
+base the depletion calibrations use.
+
+**What the tests cover of this case.** The update, bit for bit, on Baltic with the coupling
+(above), and a mutation that applies the oxygen factor after the regrowth fails there. The
+whole-step and the no-fish tests run on EEC, which has no coupling. So for the combination the
+deterministic checks stop at the update, and the rest is the ensemble below.
+
+**The ensemble at 16 replicates failed, and the failure was the draw.**
+
+| Sample | Verdict | Equivalent cells (C#, control, of 36) | Largest difference: C#, control | cod_east abundance, Python minus C# (log10, 90% half-width) |
+|---|---|---|---|---|
+| 16 per arm, 15 years | **FAIL** | 30, 33 | 0.086, 0.0135 | +0.086 (0.093) |
+| 32 per arm (those 16 and 16 new seeds each) | **PASS** | 33, 34 | 0.020, 0.032 | +0.018 (0.067) |
+| The same, with all 64 C# replicates | **PASS** | 33, 34 | 0.029, 0.032 | -0.011 (0.055) |
+
+The 16-replicate run failed one criterion: its largest difference, cod_east abundance, was more
+than 5 times the control's largest. That is the cell that was largest on the demo too, with the
+same sign (+0.116). The rule passed there because the control's largest difference was on that
+cell too (0.062), and the rule allows 5 times the control's. Two ensembles agreeing looked like
+an engine difference. It was not:
+
+1. **The two ensembles are one draw seen twice.** The harness gives each arm fixed seeds, so
+   both ensembles ran the same seeds. Seed by seed, the C# arm's cod_east in the one config
+   predicts its cod_east in the other (correlation 0.81; 0.40 and 0.22 for the two Python arms).
+2. **On new seeds the sign reverses.** The same config, Python on 32 new seeds and C# on 48:
+   cod_east abundance, Python minus C#, is -0.046 (standard error 0.035).
+3. **Pooled, there is nothing.** All 64 Python replicates against all 64 C# replicates: -0.015,
+   90% interval 0.046 either way. A rank test gives p = 0.71.
+
+The 32-per-arm sample was fixed by seed order before any value was looked at (each arm keeps its
+16 replicates and takes the next 16 new seeds), and judged by the rule itself (`--rejudge`). Its
+frozen rung is 5, 4.0, 8, with a false-fail rate of 3.7% for identical engines; at 16 replicates
+the rung was 6, 5.0, 10 and the rate 7.6%. Three cells are not equivalent at 32, all of them mean
+weights, which have the narrowest margin: cod_east and herring, in the control as well, and
+pikeperch against the C# engine only (-0.0175, half-width 0.0137, which is 4%).
+
+**What to take from it.**
+
+- No engine difference shows on the combination, at a resolution of about 1.15x on cod_east and
+  far finer on the other species (cod_west, flounder and sprat agree within 0.005 in log10).
+- **16 replicates are too few on the depletable configs.** At 16, the 90% half-width of the
+  engine difference on cod_east abundance is 0.09 to 0.16 in log10 there, against 0.002 on the
+  depensation demo. The demo's pass at 16 was as weak as this fail. Use 32.
+- **Ensembles on related configs are not independent evidence**, because they share their seeds
+  and the C# arm's outcome follows its seed across a small change of config. A second ensemble
+  that agrees with the first needs other seeds before it counts as a replication.
+
+How it was run: the 16 x 15 ensemble with the command below on the edited master file; the new
+seeds with the harness's own per-replicate function (`in_memory_rep`, 15 years, the first 2
+dropped), Python seeds 30000 to 30031 and C# seeds 40000 to 40047; then the rule with
+`--rejudge` on the assembled replicates.
 
 ## Reproduce
 
