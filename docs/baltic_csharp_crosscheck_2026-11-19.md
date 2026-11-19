@@ -16,8 +16,8 @@ questions, with the spec's own recommendations:
 
 | Question | Spec's recommendation | What Phase 2 adds |
 |---|---|---|
-| Q8. Should calibration switch to the C# engine by default? | Opt-in until one full Baltic certification reproduces on the C# engine. | That certification now reproduces: all 18 verdicts agree (below). |
-| Q5. Where does the scope end; is bioenergetics worth porting? | Decide after the Phase 2 measurements. Genetics and economics stay on the Python engine. | The measurements: 2.46x at one thread and 6.76x at 14 on Baltic. |
+| Q8. Should calibration switch to the C# engine by default? | Opt-in until one full Baltic certification reproduces on the C# engine. | That certification now reproduces: all 18 verdicts agree. One calibration generation on Baltic went through the C# engine and ranked its candidates as the Python engine did. A worker that runs many simulations stays about 95 MB under a Python one (all three below). |
+| Q5. Where does the scope end; is bioenergetics worth porting? | Decide after the Phase 2 measurements. Genetics and economics stay on the Python engine. | The measurements: 2.47x at one thread and 6.81x at 14 on Baltic. |
 
 ## Phase 2 acceptance (spec 7.2)
 
@@ -28,7 +28,7 @@ questions, with the spec's own recommendations:
 | Ensemble equivalence on Baltic | **Met**: PASS | "Ensemble equivalence" below. |
 | The full default output families agree with Python's frames in shape, and statistically in value | **Met** | Shape: stock EEC, Baltic and Bay of Biscay give the Python engine's frame keys, shapes, labels and dtypes, and the same files (`tests/test_csharp_engine_e2e.py`). Value: "The full output families" below. |
 | `baltic_stability_certify.py` on the C# engine gives the Python engine's verdicts on the same seeds | **Met**: all 18 agree | "Certification" below. |
-| The Baltic performance gates: 1.15x at one thread, 1.5x at 14 | **Met**: 2.46x and 6.76x | `docs/perf/2026-11-19-csharp-baltic.md`. |
+| The Baltic performance gates: 1.15x at one thread, 1.5x at 14 | **Met**: 2.47x and 6.81x | `docs/perf/2026-11-19-csharp-baltic.md`. |
 
 ## Ensemble equivalence (spec 10.2)
 
@@ -126,9 +126,38 @@ are the smallest and largest of the five seeds' final-decade means.
 
 | Budget | Result | Status |
 |---|---|---|
-| First call in a fresh process, at most 2 s | 0.52 s (1 thread), 0.37 s (14) | Met |
+| First call in a fresh process, at most 2 s | 0.51 s (1 thread), 0.35 s (14) | Met |
 | Bundle build plus marshalling, at most 5% of a run | 0.5% (1 thread), 3.0% (14) | Met |
-| Peak memory, no more than the Python engine's | 296 vs 308 MB (1 thread); 307 vs 309 MB (14) | Met in the gate measurement. **Not firm at 14 threads:** five readings ran from 290 to 336 MB against 309. See the performance report. |
+| Peak memory, no more than the Python engine's | 232 vs 308 MB (1 thread); 238 vs 310 MB (14) | Met, by about 70 MB. **It was not met before this PR** for a process that runs many simulations: see below. |
+
+**Memory over many runs.** The harness's five readings at 14 threads had ranged from 290 to
+336 MB against the Python engine's 309. Run many times in one process, the C# engine at one
+thread drifted up to a 324 MB peak over 60 runs, above the Python engine's. The cause was the
+.NET collector leaving each run's dead arrays (about 30 MB) for two or three more runs; nothing
+leaked outside the managed heap. The engine now collects once when a run returns (about 4 ms).
+After that, resident memory after a run is flat at 203 to 213 MB at either thread count, with
+the full outputs too, against the Python engine's 299 MB; peaks are 232 to 246 MB against 309.
+The results are unchanged, byte for byte. The measurements are in the performance report.
+
+## Calibration through the C# engine
+
+One generation of four candidates on the Baltic config as shipped (5 years; herring's
+additional mortality at 0.1, 0.2, 0.4 and 0.8; objective: biomass RMSE against a Python
+baseline run), through `OsmoseCalibrationProblem`, on each engine:
+
+| Herring additional mortality | Python objective | C# objective | Ratio |
+|---|---|---|---|
+| 0.1 | 84,597 | 59,384 | 0.70 |
+| 0.2 (as shipped) | 18,879 | 25,681 | 1.36 |
+| 0.4 | 133,347 | 134,394 | 1.008 |
+| 0.8 | 266,342 | 266,958 | 1.002 |
+
+Both engines rank the candidates the same way (0.2, 0.1, 0.4, 0.8). The C# generation ran on a
+forkserver pool of two workers, one thread each, and the .NET runtime was never loaded in the
+parent process. The two candidates far from the baseline agree within 1%. The two near it
+differ more because each is a single 5-year run on its own seed, and at 0.2 the objective is
+nothing but seed noise (the candidate is the baseline's own config). This shows the path works
+on Baltic and orders candidates sensibly; it is one generation, not a calibration.
 
 ## Phase 2 tasks
 
@@ -143,7 +172,7 @@ are the smallest and largest of the five seeds' final-decade means.
 | 2.6b Outputs: by age, by size, SSB, yield in numbers, mean size, mean trophic level | #318 |
 | 2.6c Outputs: the diet; the full outputs switched on | #319 |
 | 2.7 UI: three engines | #320 |
-| 2.8 Baltic validation (this note, the performance report, the two harness changes) | this PR |
+| 2.8 Baltic validation (this note, the performance report, the harness changes, the collection at the end of a run) | this PR |
 
 **Task 2.2 was not needed and is not done.** Out-of-domain mortality was already in the Phase 1
 core. Its other two features, the growth cap (`species.lmax`) and immobile focal species
@@ -162,7 +191,6 @@ refused, by name.
   (`mortality.py`, `diet_matrix[p, species_id[q]]`). It is inert on Baltic as shipped, because
   nothing eats a seal or a cormorant. The C# engine copies it for parity, and a test forces the
   case. Whether to fix it in the Python engine is the owner's call.
-- **Memory at 14 threads is not firmly under the Python engine's** (Budgets, above).
 - **The UI gives a C# run no step progress and no live view.** The engine does not expose its
   schools. Progress could come from its control block later.
 - **`scripts/calibrate_baltic.py --engine csharp` still refuses.** The engine can run the config;

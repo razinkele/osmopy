@@ -2,8 +2,8 @@
 
 Date: 2026-11-19. Harness: `scripts/csharp/ab_eec.py --config baltic`. Spec 10.4's protocol:
 Baltic, 10 years, seed 42, `output.minimal.enabled` on both engines, 7 interleaved pairs per
-thread count, each engine in its own warmed-up process. Code state: master with tasks 2.1 to
-2.6c merged, plus the UI branch (task 2.7), which does not touch either engine.
+thread count, each engine in its own warmed-up process. Code state: this PR's head (tasks 2.1
+to 2.7 merged, plus the collection at the end of a run described under "Memory").
 
 This is the measurement for gate G2. The earlier note
 (`2026-11-18-csharp-baltic-indicative.md`) was a first reading on task 2.1's branch.
@@ -12,51 +12,71 @@ This is the measurement for gate G2. The earlier note
 
 | Threads | Python median | C# median | Ratio | Gate / target (spec 10.4) | Smallest pair | Pairs agree | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1 | 26.22 s | 10.66 s | **2.46x** | 1.15x / 1.4x | 2.45x | 7 / 7 | **PASS**, above the target |
-| 14 | 11.45 s | 1.69 s | **6.76x** | 1.5x / 2.0x | 6.68x | 7 / 7 | **PASS**, above the target |
+| 1 | 26.15 s | 10.57 s | **2.47x** | 1.15x / 1.4x | 2.47x | 7 / 7 | **PASS**, above the target |
+| 14 | 11.48 s | 1.69 s | **6.81x** | 1.5x / 2.0x | 6.73x | 7 / 7 | **PASS**, above the target |
 
-The machine was idle when the measurement started (load average 0.61 on 28 logical CPUs).
+Load average at the start: 1.5 on 28 logical CPUs. The same measurement an hour earlier, on an
+idle machine (load 0.6) and before the collection was added, gave 2.46x and 6.76x.
 
 ## The budgets
 
 | Budget (spec 10.4) | 1 thread | 14 threads | Verdict |
 |---|---|---|---|
-| First call in a fresh process, at most 2 s | 0.52 s | 0.37 s | PASS |
+| First call in a fresh process, at most 2 s | 0.51 s | 0.35 s | PASS |
 | Bundle build plus marshalling, at most 5% of a run | 0.5% | 3.0% | PASS |
-| Peak memory, no more than the Python engine's | 296 vs 308 MB | 307 vs 309 MB | PASS here; see below |
+| Peak memory, no more than the Python engine's | 232 vs 308 MB | 238 vs 310 MB | PASS, by about 70 MB |
 
-**Peak memory at 14 threads varies from one measurement to the next.** Five readings:
+## Memory
 
-| Reading | Pairs | Machine | C# peak | Python peak |
-|---|---|---|---|---|
-| 2026-11-18, task 2.1's branch | 7 | busy (load 2 to 7) | **336 MB** | 309 MB |
-| This measurement | 7 | idle | 307 MB | 309 MB |
-| Repeat 1 | 3 | lightly loaded | 292 MB | 309 MB |
-| Repeat 2 | 3 | lightly loaded | 292 MB | 309 MB |
-| Repeat 3 | 3 | lightly loaded | 290 MB | 309 MB |
+**Before this PR the memory budget was not met for a process that runs many simulations.** The
+harness had read the C# engine's peak at 14 threads as 336, 307, 292, 292 and 290 MB on five
+occasions, against the Python engine's steady 309 MB. To see what a long-lived process does,
+each engine ran Baltic (10 years) many times in one process, with resident memory read after
+every run:
 
-Four readings are under the Python engine's and one is 27 MB over. The Python engine's peak does
-not move; the C# engine's does, by up to 46 MB. The process keeps the .NET heap between runs,
-and how far that heap grows before a collection depends on timing. The engine itself allocates
-nothing per step in steady state (task 1.9). So the budget is met in the measurement taken for
-the gate, but not with a margin that a busy machine cannot erase. Two ways to make it firm, not
-taken here: a collection at the end of each run, or the runtime's memory-conserving setting.
-Either needs its own measurement of the cost.
+| Engine, threads | Runs | Resident memory after a run | Peak |
+|---|---|---|---|
+| Python, 1 | 12 | 299 MB, flat from the first run | 309 MB |
+| C#, 14, before | 40 | about 265 MB from the fourth run on (236 to 282) | 291 MB |
+| C#, 1, before | 60 | sawing between 260 and 312 MB from about run 20 | **324 MB** |
 
-At one thread the C# engine is under in every reading taken during Phase 2 (284 to 296 MB
-against 307 to 309 MB, five readings).
+The cause, measured and not inferred:
+
+- **The part of the process outside the .NET heap never moved**: resident memory minus what the
+  collector had committed averaged 204 to 211 MB in every block of ten runs out of the 60. Nothing
+  leaks in Python, NumPy or native memory.
+- **The .NET heap held dead runs.** A run's own arrays (the school store, the scratch, the
+  tables; about 30 MB) are dead when the run returns, but the collector, on its own schedule,
+  cleared them only every second or third run. The managed heap sawed between about 21 and
+  88 MB, and the resident memory followed it.
+
+**The remedy is one collection when a run returns** (`OsmoseEngine.RunSimulation`). It takes
+about 4 ms. Measured the same way after the change:
+
+| Engine, threads, outputs | Runs | Resident memory after a run | Peak |
+|---|---|---|---|
+| C#, 1, minimal | 25 | 203 MB, flat | 235 MB |
+| C#, 14, minimal | 30 | 204 MB, flat | 232 MB |
+| C#, 14, full | 40 | 213 MB, flat | 246 MB |
+
+The managed heap is back to 1.2 MB after every run. The C# engine now peaks 60 to 77 MB under
+the Python engine at either thread count, with the full outputs too, and does not depend on
+how many runs the process has done. The results do not change: the digests of EEC and Bay of
+Biscay equal master's, and the stock Baltic digests are the same before and after. A test holds
+the managed heap after each of five Baltic runs under 5 MB; without the collection it reads 16
+to 40 MB.
 
 ## Where the C# time goes
 
 | Phase | 1 thread | 14 threads |
 |---|---|---|
-| mortality | 9.71 s (91%) | 1.09 s (65%) |
-| movement | 0.56 s | 0.18 s |
+| mortality | 9.62 s (92%) | 1.09 s (67%) |
+| movement | 0.55 s | 0.18 s |
 | life cycle | 0.20 s | 0.21 s |
-| regroup | 0.11 s | 0.12 s |
+| regroup | 0.12 s | 0.12 s |
 | outputs | 0.02 s | 0.02 s |
 
-Mortality scales 8.9x on 14 threads and movement 3.1x. The life cycle and the regroup are serial.
+Mortality scales 8.8x on 14 threads and movement 3.0x. The life cycle and the regroup are serial.
 
 ## With the full outputs (not a gate)
 
@@ -64,14 +84,14 @@ The gates are defined on minimal outputs. With the config as shipped (every outp
 Baltic asks for: life-stage, by age, by size, SSB, mean size, mean trophic level, yield in
 numbers, diet), 5 pairs, `--outputs full`:
 
-| Threads | Python | C# | Ratio | C# peak memory | Python peak memory |
-|---|---|---|---|---|---|
-| 1 | 28.49 s | 10.95 s | 2.60x | 296 MB | 315 MB |
-| 14 | 12.96 s | 1.90 s | 6.83x | 310 MB | 316 MB |
+| Threads | Python | C# | Ratio |
+|---|---|---|---|
+| 1 | 28.49 s | 10.95 s | 2.60x |
+| 14 | 12.96 s | 1.90 s | 6.83x |
 
-The machine was not idle for this table (load 6.4 at the start). The ratio is a paired
-measurement (the two engines interleaved); the absolute times are not comparable with the gate
-table's, which was taken at another time.
+This table was taken before the collection was added and on a machine that was not idle (load
+6.4 at the start). The ratio is a paired measurement (the two engines interleaved); the absolute
+times are not comparable with the gate table's.
 
 **What the full outputs cost the C# engine**, measured on their own: one process, minimal and
 full runs interleaved, the order alternating from pair to pair.
@@ -88,18 +108,19 @@ life cycle weigh more against a much shorter run.
 **This replaces two earlier figures.** PR #319 gave 7.5%, and a comment on that PR gave 2.7%.
 Neither was a paired measurement: each compared a minimal run and a full run taken at different
 times under different load, and load alone moves a run by more than a percent. 4.8% is the one
-to use. The Python engine's own cost was not measured in pairs; the two tables above put it
+to use. The Python engine's own cost was not measured in pairs; the two harness tables put it
 near 2 s at one thread.
 
-## Against the first reading
+## Three readings of the gate
 
-| | First reading (2026-11-18) | This measurement |
-|---|---|---|
-| 1 thread | 2.55x (27.46 s / 10.75 s) | 2.46x (26.22 s / 10.66 s) |
-| 14 threads | 6.83x (12.19 s / 1.79 s) | 6.76x (11.45 s / 1.69 s) |
+| | 2026-11-18, task 2.1's branch | 2026-11-19, idle, before the collection | 2026-11-19, this PR's head |
+|---|---|---|---|
+| 1 thread | 2.55x (27.46 s / 10.75 s) | 2.46x (26.22 s / 10.66 s) | 2.47x (26.15 s / 10.57 s) |
+| 14 threads | 6.83x (12.19 s / 1.79 s) | 6.76x (11.45 s / 1.69 s) | 6.81x (11.48 s / 1.69 s) |
+| C# peak memory, 1 / 14 threads | 286 / 336 MB | 296 / 307 MB | 232 / 238 MB |
 
-Both engines are a little faster on the idle machine, the Python engine more so. The C# time
-did not grow with tasks 2.6a to 2.6c: the minimal path was checked before and after each of them.
+The C# time did not grow with the output tasks (2.6a to 2.6c): the minimal path was checked
+before and after each of them. The collection did not cost measurable time.
 
 ## Reproduce
 
@@ -109,4 +130,7 @@ PYTHONPATH=. python scripts/csharp/ab_eec.py --config baltic --pairs 7 --threads
 PYTHONPATH=. python scripts/csharp/ab_eec.py --config baltic --outputs full --pairs 5 --threads 1 14 --years 10
 ```
 
-About 7 minutes and 5 minutes.
+About 7 minutes and 5 minutes. The many-runs series and the minimal-against-full pairs were
+taken with a scratch script (a loop over `build_bundle`, `bridge.run` and `_step_outputs`,
+reading `/proc/self/statm` and `System.GC.GetGCMemoryInfo()` after each run); the test named
+above is what keeps the result.
