@@ -202,7 +202,7 @@ class TestBioenReproductionOverride:
 
 class TestBioenReproductionSeededOutFlag:
     """Regression for Task 6: `_bioen_reproduction`'s population-seeding window
-    (`population.seeding.year.max`, default the species lifespan) is independent of and
+    (`population.seeding.year.max`, default the longest lifespan of any species) is independent of and
     can outlast genetics' `evolution.seeding.year`. Discovered live on baltic_ev sp6
     (smelt, step 343, 15y genetics-on run,
     `test_ev_osmose_activation.py::test_baltic_ev_runs_15_years_with_genetics_on`):

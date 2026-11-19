@@ -791,7 +791,7 @@ def _bioen_reproduction(
     `seeded_out`, if given a dict, is populated with `{"seeded_this_step": <bool[n_sp]>}`
     before return — per-species whether THIS step's eggs came from the SSB==0 population
     bootstrap (`config.seeding_biomass`) rather than a real spawning school. That window
-    (`population.seeding.year.max`, default the species lifespan) is independent of and
+    (`population.seeding.year.max`, default the longest lifespan of any species) is independent of and
     can outlast genetics' `evolution.seeding.year`: a species whose SSB never recovers
     (e.g. baltic_ev smelt, structurally collapsed pending bioen-param tuning, plan Task
     7.4) keeps producing bootstrap eggs long after genetics stops treating new schools as

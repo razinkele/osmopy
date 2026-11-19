@@ -157,7 +157,8 @@ Both items shipped. Coverage under `tests/test_engine_phase4.py` (4 tests; 11 si
 - **Anchovy:** biomass d = −0.51 (3.2× below Java), yield −0.55, abundance −0.51 on master; +0.02, −0.02 and +0.02 with the fix. Equivalent on all five metrics.
 - **Every species but Hake** is now equivalent on all five metrics, each within |d| = 0.03 (1.07×). 36 of 40 cells are equivalent, against 33 on master.
 - **Hake is unchanged in kind:** biomass d = 2.11 (129×; 2.08 on master), yield −1.06, mean weight 1.62, mean size −0.26. Its seeding period was 12 years already, longer than the run, so this fix was never going to reach it.
-- **Baltic and EEC do not move:** the same seeds give the same numbers with and without the fix, on the Python engine (25 and 30 years) and at five more seeds on the C# engine (30 years). No species there is without spawners between its own lifespan and the longest one.
+- **Baltic and EEC do not move:** the same seeds give the same numbers with and without the fix, on the Python engine (25 and 30 years) and at five more seeds on the C# engine (30 years). No species there is without spawners between its own lifespan and the longest one. The same holds for the two Baltic variants, `baltic_depensation` and `baltic_a2` (Python engine, 25 years). The bioenergetic Bay of Biscay config (`data/examples_bioen`) differs from year 5, like the plain one.
+- **"Does not move" is measured at the shipped parameter values.** A parameter set that leaves a short-lived species without spawners before the longest lifespan is over (a calibration candidate, say) is now seeded where it was not, and scores differently.
 - **The Bay of Biscay timeline** (seed 7): short-lived species last about ten years longer (Anchovy to year 19, not 8; Sprat to 20, not 10; Sardine to 23, not 16). The end is the same: total biomass is zero from year 31.
 
 ### 4.2 Deterministic random seeds — SHIPPED

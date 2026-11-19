@@ -754,6 +754,19 @@ Python's fallback `seeding_max_step = lifespan_years × n_dt` (`config.py:544`).
 **The seeding WINDOW is not the difference.** Both engines seed for each species' full lifespan.
 That eliminates the schedule hypothesis raised in the previous section.
 
+> **Correction, 2026-11-19 (issue #334).** The bytecode above was misread. `yearMaxSeeding` is
+> ONE `int` field, and the excerpt leaves out the loop and the `Math.max` around
+> `getLifespanDt()`: with the key absent, Java seeds EVERY species for the longest lifespan of
+> any species, not each for its own. The source says so in both trees
+> (`ReproductionProcess.init`). The Python engine used each species' own lifespan until the
+> fix of 2026-11-19.
+>
+> The conclusion drawn here still holds for Baltic, for another reason: measured on the
+> Python engine, the two rules give the same numbers on Baltic over 25 years (no species
+> there is without spawners between its own lifespan and the longest one). It does not hold
+> for Bay of Biscay, where the two rules differ from year 5 and the difference was the whole
+> of the Anchovy gap against Java (`docs/parity-roadmap.md`, section 4.1).
+
 Also visible: Java reads `population.initialization.relativebiomass.enabled`, which is absent from the
 Baltic config (Java logs "assumes it is false"), so neither engine uses relative-biomass initialisation.
 
