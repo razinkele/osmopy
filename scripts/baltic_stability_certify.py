@@ -398,6 +398,20 @@ def cross_engine_lines(reference_label: str, other_label: str, differences: list
     return lines
 
 
+def java_cross_check_line(reference_label: str, j_ok: int, ref_surv: set, j_surv: set) -> str:
+    """The Java survivor-set note. ``reference_label`` is the engine that was certified (with
+    ``--engine csharp`` the survivors compared with Java's are the C# engine's, not Python's)."""
+    agree = ref_surv == j_surv
+    return (
+        f"\n**Java cross-check: {j_ok}/{len(FOCAL)} persistent (single run, Java's own RNG "
+        f"— Java 4.4.1 has no numeric seed).** Survivor sets "
+        f"{'AGREE' if agree else 'DIFFER'} with {reference_label} — {reference_label} "
+        f"{sorted(ref_surv)}, "
+        f"Java {sorted(j_surv)}. Coarse consistency check only (Baltic is not bit-equal "
+        "cross-engine); a DIFFER is a flag to inspect, not an automatic failure."
+    )
+
+
 def _print_table(engine: str, table: dict) -> int:
     """Print the per-species table. Returns the ASSESSED-tier pass count (the headline)."""
     print(f"\n=== {engine}: per-species certification ===")
@@ -531,14 +545,7 @@ def main() -> int:
             j_ok = _print_table("Java 4.4.1", j_table)
             py_surv = {sp for sp in FOCAL if py_table[sp]["persists"]}
             j_surv = {sp for sp in FOCAL if j_table[sp]["persists"]}
-            agree = py_surv == j_surv
-            lines.append(
-                f"\n**Java cross-check: {j_ok}/{len(FOCAL)} persistent (single run, Java's own RNG "
-                f"— Java 4.4.1 has no numeric seed).** Survivor sets "
-                f"{'AGREE' if agree else 'DIFFER'} with Python — Python {sorted(py_surv)}, "
-                f"Java {sorted(j_surv)}. Coarse consistency check only (Baltic is not bit-equal "
-                "cross-engine); a DIFFER is a flag to inspect, not an automatic failure."
-            )
+            lines.append(java_cross_check_line(label, j_ok, py_surv, j_surv))
         else:
             lines.append(
                 "\n_Java cross-check unavailable (jar missing or run failed) — see console._"

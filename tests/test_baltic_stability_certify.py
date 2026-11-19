@@ -151,3 +151,17 @@ def test_the_certification_runs_on_the_named_engine(certify, engine, monkeypatch
     assert ("threads" in seen["kwargs"]) is (engine == "csharp")
     assert all(table[sp]["persists"] and table[sp]["in_envelope"] for sp in certify.FOCAL)
     assert certify.ENGINE_LABELS == {"python": "Python", "csharp": "C#"}
+
+
+def test_the_java_note_names_the_engine_that_was_certified(certify):
+    """With ``--engine csharp --java`` the survivors compared with Java's are the C# engine's.
+    The default wording, for the Python engine, is unchanged."""
+    line = certify.java_cross_check_line("Python", 7, {"sprat", "herring"}, {"sprat", "herring"})
+    assert (
+        "Survivor sets AGREE with Python — Python ['herring', 'sprat'], Java ['herring', 'sprat']."
+        in line
+    )
+    assert f"Java cross-check: 7/{len(certify.FOCAL)} persistent" in line
+    line = certify.java_cross_check_line("C#", 7, {"sprat"}, {"sprat", "herring"})
+    assert "Survivor sets DIFFER with C# — C# ['sprat'], Java ['herring', 'sprat']." in line
+    assert "Python" not in line

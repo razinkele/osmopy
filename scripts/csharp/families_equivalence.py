@@ -56,14 +56,17 @@ MARGINS = {m: float(np.log10(1.25)) for m in EXTENSIVE} | {
 def reduce_records(records: list, config, spinup_years: int) -> dict[str, dict[str, float]]:
     """One run's records -> {metric: {species: post-spin-up mean}}.
 
-    The spin-up is dropped by the record's step (records are windows; the initial record, step
-    -1, is always dropped). A species absent from a mean in some record (no qualifying school)
+    The spin-up is dropped by the record's window: a record is kept only if its whole window
+    lies after the spin-up (the initial record, step -1, is always dropped). A species absent
+    from a mean in some record (no qualifying school)
     is averaged over the records that have it; absent from all, it is left out of that metric.
     """
     nf, n_bkg = config.n_species, config.n_background
     names = list(config.all_species_names)[: nf + n_bkg]
     first = spinup_years * config.n_dt_per_year
-    kept = [r for r in records if r.step >= first]
+    # A record is a window that ENDS at ``step``: keep it only if it also starts after the
+    # spin-up, or spin-up steps would be averaged into the post-spin-up numbers.
+    kept = [r for r in records if r.step - r.window_steps + 1 >= first]
     if not kept:
         raise ValueError(f"no record after the {spinup_years}-year spin-up")
     out: dict[str, dict[str, float]] = {}
@@ -136,37 +139,88 @@ def run_arm(name: str, config_path: Path, years: int, n: int, spinup: int, threa
     return arm
 
 
+ARMS = ("python", "python-control", "csharp")
+
+
 def judge(arms: dict, splits: int) -> dict:
+    """Apply the rule to every cell all three arms have in every replicate, and record what the
+    rule could not see:
+
+    - ``asymmetric``: a family some arms produced and others did not. A failure: left out
+      silently, a run in which one engine omits an output altogether would pass.
+    - ``one_sided``: a cell both Python arms have in every replicate and the C# arm does not
+      (or the reverse). A failure, for the same reason.
+    - ``dropped``: a cell a Python arm itself lacks in some replicate (a species absent from a
+      mean). Not testable, and reported.
+    """
     from osmose.validation.engine_equivalence import acceptance, calibrate, compare
 
-    a, b, c = arms["python"], arms["python-control"], arms["csharp"]
-    # A cell needs the metric in all three arms and a value in every replicate: a species absent
-    # from a mean in some replicate cannot be tested, and is reported instead.
-    margins, dropped = {}, []
+    asymmetric = {
+        metric: [name for name in ARMS if metric not in arms[name]]
+        for metric in MARGINS
+        if 0 < sum(metric in arms[name] for name in ARMS) < len(ARMS)
+    }
+    tested: dict[str, dict[str, dict[str, np.ndarray]]] = {name: {} for name in ARMS}
+    margins: dict[str, float] = {}
+    dropped: list[str] = []
+    one_sided: list[str] = []
     for metric, margin in MARGINS.items():
-        if not all(metric in arm for arm in (a, b, c)):
+        if not all(metric in arms[name] for name in ARMS):
             continue
-        margins[metric] = margin
-        for sp in sorted(set(a[metric]) | set(b[metric]) | set(c[metric])):
-            complete = all(
-                sp in arm[metric] and np.isfinite(arm[metric][sp]).all() for arm in (a, b, c)
+        keep = []
+        for sp in sorted(set().union(*(arms[name][metric] for name in ARMS))):
+            py, control, cs = (
+                sp in arms[name][metric] and bool(np.isfinite(arms[name][metric][sp]).all())
+                for name in ARMS
             )
-            if not complete:
+            if py and control and cs:
+                keep.append(sp)
+            elif py == control and py != cs:  # Python agrees with itself; C# differs
+                one_sided.append(f"{metric}/{sp}")
+            else:
                 dropped.append(f"{metric}/{sp}")
-                for arm in (a, b, c):
-                    arm[metric].pop(sp, None)
+        if keep:  # a family with no testable cell is left out: the rule needs a cell to size from
+            margins[metric] = margin
+            for name in ARMS:
+                tested[name][metric] = {sp: arms[name][metric][sp] for sp in keep}
+    result: dict = {
+        "margins": margins, "dropped": dropped, "one_sided": one_sided, "asymmetric": asymmetric,
+        "verdict": None,
+    }  # fmt: skip
+    if not margins:
+        return result
+    a, b, c = (tested[name] for name in ARMS)
     chosen, rates, attribution = calibrate(a, b, n_splits=splits, margins=margins)
     control, treatment = compare(a, b, margins), compare(a, c, margins)
-    verdict = acceptance(control, treatment, margins, chosen)
-    other = compare(b, c, margins)
-    return {
-        "margins": margins, "dropped": dropped, "chosen": chosen, "rates": rates,
-        "attribution": attribution, "control": control, "treatment": treatment, "other": other,
-        "verdict": verdict,
+    return result | {
+        "chosen": chosen, "rates": rates, "attribution": attribution, "control": control,
+        "treatment": treatment, "other": compare(b, c, margins),
+        "verdict": acceptance(control, treatment, margins, chosen),
     }  # fmt: skip
 
 
+def passed(result: dict) -> bool:
+    """The rule's verdict, and nothing the rule could not see: at least one testable cell, no
+    family only some arms produced, no cell only one engine has."""
+    verdict = result["verdict"]
+    return (
+        verdict is not None
+        and verdict.passed
+        and not result["asymmetric"]
+        and not result["one_sided"]
+    )
+
+
 def report(result: dict) -> None:
+    for metric, missing in result["asymmetric"].items():
+        print(f"FAMILY NOT IN EVERY ARM: {metric} is missing from {', '.join(missing)}")
+    if result["one_sided"]:
+        print(f"CELLS ONLY ONE ENGINE HAS: {', '.join(result['one_sided'])}")
+    if result["dropped"]:
+        print(f"not testable (a Python arm lacks the value): {', '.join(result['dropped'])}")
+    if result["verdict"] is None:
+        print("\nVERDICT: FAIL (no cell is testable)")
+        return
     print(
         "\n[calibration] false-fail rate of the rule for identical engines (Python A+B re-split):"
     )
@@ -174,8 +228,6 @@ def report(result: dict) -> None:
         mark = "  <- frozen" if rung == result["chosen"] else ""
         print(f"  slack {rung.eq_slack}, ratio {rung.max_ratio}, variance {rung.var_factor}: {rate:.3f}{mark}")  # fmt: skip
     print(f"  at the frozen rung, splits failing each criterion: {result['attribution']}")
-    if result["dropped"]:
-        print(f"\nnot testable (a replicate lacks the value): {', '.join(result['dropped'])}")
     control, treatment = result["control"], result["treatment"]
     print(f"\n{'metric':16s} {'species':14s} {'d(P-C#)':>8s} {'ci90':>7s} {'eq':>3s} {'d(P-P)':>8s} {'eq':>3s}")  # fmt: skip
     for key in sorted(treatment):
@@ -189,9 +241,11 @@ def report(result: dict) -> None:
         f"\nequivalent cells: C# {v.n_equivalent}, control {v.n_equivalent_control} of "
         f"{len(treatment)}; largest |d|: C# {v.max_d:.4f}, control {v.max_d_control:.4f}"
     )
-    print(f"VERDICT: {'PASS' if v.passed else 'FAIL'}")
+    print(f"VERDICT: {'PASS' if passed(result) else 'FAIL'}")
     for failure in v.failures:
         print(f"  {failure}")
+    if v.passed and not passed(result):
+        print("  the rule passes on the cells it saw, but an engine lacks outputs the other has")
     by_metric: dict[str, list[float]] = {}
     for (metric, _sp), cell in treatment.items():
         by_metric.setdefault(metric, []).append(abs(cell.d))
@@ -228,7 +282,7 @@ def main() -> None:
         if not config.is_file():
             ap.error(f"--config: {args.config!r} is neither a fixture nor a file")
         arms = {}
-        for name in ("python", "python-control", "csharp"):
+        for name in ARMS:
             t = time.time()
             arms[name] = run_arm(name, config, args.years, args.n, args.spinup_years, args.csharp_threads)  # fmt: skip
             print(f"[arm] {name}: {args.n} replicates in {time.time() - t:.0f} s", flush=True)
@@ -243,7 +297,7 @@ def main() -> None:
     result = judge(arms, args.calibration_splits)
     report(result)
     print(f"({time.time() - t0:.0f} s)")
-    sys.exit(0 if result["verdict"].passed else 1)
+    sys.exit(0 if passed(result) else 1)
 
 
 if __name__ == "__main__":

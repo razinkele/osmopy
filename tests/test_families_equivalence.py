@@ -29,13 +29,16 @@ CONFIG = SimpleNamespace(
 )
 
 
-def _record(step: int, scale: float, *, tl: dict | None = None, full: bool = True) -> StepOutput:
+def _record(
+    step: int, scale: float, *, tl: dict | None = None, full: bool = True, window: int = 1
+) -> StepOutput:
     """A record whose every value is ``scale`` times a fixed pattern."""
     zeros = np.zeros(3)
     if not full:
         return StepOutput(step=step, biomass=zeros, abundance=zeros, mortality_by_cause=np.zeros((2, 8)))  # fmt: skip
     return StepOutput(
         step=step,
+        window_steps=window,
         biomass=zeros,
         abundance=zeros,
         mortality_by_cause=np.zeros((2, 8)),
@@ -105,3 +108,104 @@ def test_the_margins_cover_every_metric_once():
     assert all(fam.MARGINS[m] == pytest.approx(np.log10(1.25)) for m in fam.EXTENSIVE)
     assert all(fam.MARGINS[m] == pytest.approx(np.log10(1.05)) for m in fam.INTENSIVE)
     assert fam.SEEDS == {"python": 1000, "python-control": 5000, "csharp": 9000}  # spec 10.2
+
+
+def test_a_window_that_starts_inside_the_spin_up_is_dropped():
+    """A record is a window ending at its step. One that ends after the spin-up but starts
+    inside it would average spin-up steps into the post-spin-up numbers."""
+    records = [
+        _record(35, 1000.0, window=24),  # steps 12..35: straddles the end of year 1
+        _record(47, 1.0, window=24),  # steps 24..47: the whole of year 2
+        _record(71, 3.0, window=24),
+    ]
+    out = fam.reduce_records(records, CONFIG, spinup_years=1)
+    assert out["ssb"] == {"cod": 20.0, "sprat": 40.0}  # scales 1 and 3 only
+    with pytest.raises(ValueError, match="no record after the 1-year spin-up"):
+        fam.reduce_records(records[:1], CONFIG, spinup_years=1)
+
+
+def _arms(metrics=("ssb", "mean_tl"), species=("cod", "sprat"), n: int = 8) -> dict:
+    """Three arms drawn from one distribution, a tenth of a percent of noise."""
+    arms = {}
+    for k, name in enumerate(fam.ARMS):
+        rng = np.random.default_rng(100 + k)
+        arms[name] = {
+            m: {sp: 100.0 * 10 ** rng.normal(0.0, 0.0005, n) for sp in species} for m in metrics
+        }
+    return arms
+
+
+def test_three_arms_of_one_distribution_pass_and_report_nothing_unseen():
+    result = fam.judge(_arms(), splits=200)
+    assert fam.passed(result)
+    assert result["asymmetric"] == {} and result["one_sided"] == [] and result["dropped"] == []
+    assert set(result["margins"]) == {"ssb", "mean_tl"}
+    assert len(result["treatment"]) == 4
+
+
+def test_a_family_one_engine_omits_fails_the_run():
+    """Left out silently, a run in which the C# engine never writes an output would pass on the
+    cells that remain."""
+    arms = _arms()
+    del arms["csharp"]["ssb"]
+    result = fam.judge(arms, splits=200)
+    assert result["asymmetric"] == {"ssb": ["csharp"]}
+    assert result["verdict"].passed, "the rule itself passes on what is left: that is the trap"
+    assert not fam.passed(result)
+    arms = _arms()
+    del arms["python"]["mean_tl"], arms["python-control"]["mean_tl"]
+    result = fam.judge(arms, splits=200)
+    assert result["asymmetric"] == {"mean_tl": ["python", "python-control"]}
+    assert not fam.passed(result)
+
+
+@pytest.mark.parametrize("how", ["one replicate", "every replicate"])
+def test_a_cell_only_one_engine_has_fails_the_run(how):
+    arms = _arms()
+    if how == "one replicate":
+        arms["csharp"]["mean_tl"]["sprat"][3] = np.nan
+    else:
+        del arms["csharp"]["mean_tl"]["sprat"]
+    result = fam.judge(arms, splits=200)
+    assert result["one_sided"] == ["mean_tl/sprat"] and result["dropped"] == []
+    assert ("mean_tl", "sprat") not in result["treatment"]
+    assert result["verdict"].passed and not fam.passed(result)
+    # The other way round: the C# engine has a cell neither Python arm has.
+    arms = _arms()
+    del arms["python"]["mean_tl"]["sprat"], arms["python-control"]["mean_tl"]["sprat"]
+    result = fam.judge(arms, splits=200)
+    assert result["one_sided"] == ["mean_tl/sprat"] and not fam.passed(result)
+
+
+def test_a_cell_the_python_engine_itself_lacks_is_reported_and_does_not_fail():
+    """A species absent from a mean in some replicate of a PYTHON arm cannot be tested, and that
+    is not an engine difference."""
+    arms = _arms()
+    arms["python-control"]["mean_tl"]["sprat"][0] = np.nan
+    result = fam.judge(arms, splits=200)
+    assert result["dropped"] == ["mean_tl/sprat"] and result["one_sided"] == []
+    assert fam.passed(result)
+    arms = _arms()  # absent from all three: nothing to compare, nothing to fail
+    for name in fam.ARMS:
+        arms[name]["mean_tl"]["sprat"][1] = np.nan
+    result = fam.judge(arms, splits=200)
+    assert result["dropped"] == ["mean_tl/sprat"] and result["one_sided"] == []
+    assert fam.passed(result)
+
+
+def test_a_family_with_no_testable_cell_does_not_stop_the_others():
+    """``ssb`` comes first in the margins; with every one of its cells dropped, the rule used
+    to be handed an empty family and stopped (it sizes the arms from the first cell)."""
+    arms = _arms()
+    for sp in ("cod", "sprat"):
+        arms["python-control"]["ssb"][sp][0] = np.nan
+    result = fam.judge(arms, splits=200)
+    assert sorted(result["dropped"]) == ["ssb/cod", "ssb/sprat"]
+    assert set(result["margins"]) == {"mean_tl"}
+    assert fam.passed(result)
+    for sp in ("cod", "sprat"):
+        arms["python-control"]["mean_tl"][sp][0] = np.nan
+    result = fam.judge(arms, splits=200)
+    assert result["verdict"] is None and result["margins"] == {}
+    assert not fam.passed(result), "nothing testable is not a pass"
+    fam.report(result)  # prints the dropped cells and a FAIL, and does not raise
