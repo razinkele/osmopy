@@ -138,8 +138,10 @@ an engine difference. It was not:
 3. **Pooled, there is nothing.** All 64 Python replicates against all 64 C# replicates: -0.015,
    90% interval 0.046 either way. A rank test gives p = 0.71.
 
-The 32-per-arm sample was fixed by seed order before any value was looked at (each arm keeps its
-16 replicates and takes the next 16 new seeds), and judged by the rule itself (`--rejudge`). Its
+The 32-per-arm sample is split by seed order: each arm keeps its 16 replicates and takes the
+next 16 new seeds. It is the only split tried, and it was chosen after the new-seed result was
+known, so it is not a blind test; the variant with all 64 C# replicates gives the same verdict.
+Both were judged by the rule itself (`--rejudge`). Its
 frozen rung is 5, 4.0, 8, with a false-fail rate of 3.7% for identical engines; at 16 replicates
 the rung was 6, 5.0, 10 and the rate 7.6%. Three cells are not equivalent at 32, all of them mean
 weights, which have the narrowest margin: cod_east and herring, in the control as well, and
@@ -147,14 +149,38 @@ pikeperch against the C# engine only (-0.0175, half-width 0.0137, which is 4%).
 
 **What to take from it.**
 
-- No engine difference shows on the combination, at a resolution of about 1.15x on cod_east and
-  far finer on the other species (cod_west, flounder and sprat agree within 0.005 in log10).
+- cod_east shows no engine difference, at a resolution of about 1.15x, and cod_west, flounder
+  and sprat agree within 0.005 in log10. **One cell is open: pikeperch** (below).
 - **16 replicates are too few on the depletable configs.** At 16, the 90% half-width of the
   engine difference on cod_east abundance is 0.09 to 0.16 in log10 there, against 0.002 on the
   depensation demo. The demo's pass at 16 was as weak as this fail. Use 32.
 - **Ensembles on related configs are not independent evidence**, because they share their seeds
   and the C# arm's outcome follows its seed across a small change of config. A second ensemble
   that agrees with the first needs other seeds before it counts as a replication.
+
+**One open cell: pikeperch (issue #342).** At 32 per arm, pikeperch mean weight was the one
+cell whose interval excluded zero while the control's did not. So it was named, and then every
+species and metric was read on the new seeds alone, which share nothing with the failed
+ensemble. Python minus C#, in log10, with the 90% half-width:
+
+| Sample | Mean weight | Biomass | Abundance |
+|---|---|---|---|
+| New seeds only: Python 32, C# 48 | -0.0205 (0.0114), z = -3.0 | -0.0066 (0.0040) | +0.0139 (0.0113) |
+| Every replicate: Python 64, C# 64 | -0.0165 (0.0095), z = -2.8 | -0.0056 (0.0034) | +0.0108 (0.0090) |
+
+That is a mean weight 3.7% lower in the Python engine, with 1.3% less biomass and 2.5% more
+fish. No other species shows it: of the 36 cells read on the new seeds, the ones past 2
+standard errors are pikeperch's four and stickleback yield, which is gone when pooled.
+
+- It is inside what the rule accepts, by a wide margin.
+- **Whether it comes from depletable resources is not known.** The same cell reads -0.013
+  (0.025) on the production config at 32 per arm, -0.012 (0.017) on the demo without the
+  coupling and +0.032 (0.030) on the depensation demo. None of them can see 0.017.
+- On two of those ensembles the two Python arms differ from each other on this cell by about 2
+  standard errors, so the nominal errors may understate its spread.
+
+**Not done:** the demo itself, without the coupling, was not re-run on new seeds. Its verdict
+stands on 16 replicates.
 
 How it was run: the 16 x 15 ensemble with the command below on the edited master file; the new
 seeds with the harness's own per-replicate function (`in_memory_rep`, 15 years, the first 2
