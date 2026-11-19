@@ -105,10 +105,10 @@ on the C# engine, here for one year at least.
 
 ```bash
 bash scripts/build_csharp_engine.sh
-PYTHONPATH=. python scripts/cross_engine_parity_440.py --engines python,python-control,csharp \
+PYTHONPATH=. .venv/bin/python scripts/cross_engine_parity_440.py --engines python,python-control,csharp \
   --config data/benguela/benguela_all-parameters.csv --n 32 --years 15 --spinup-years 5 \
   --persist-results equiv_benguela.json
-PYTHONPATH=. python scripts/csharp/ab_eec.py --config data/benguela/benguela_all-parameters.csv \
+PYTHONPATH=. .venv/bin/python scripts/csharp/ab_eec.py --config data/benguela/benguela_all-parameters.csv \
   --pairs 5 --threads 1 14 --years 10
 ```
 
