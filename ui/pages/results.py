@@ -192,22 +192,26 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
         fig.update_layout(template=template)
         return fig
 
-    # Engine wide layout: `<predator>_<prey>` columns. Split on the first "_"
-    # (predator names carry no underscore; the remainder is the prey name).
+    # Engine wide layout: `<predator>_<prey>` columns. A species name may hold an underscore
+    # (Baltic's cod_west), so the split comes from the matrix itself (diet_column_pairs).
     pair_cols = [c for c in df.columns if "_" in c and c not in _DIET_META_COLS]
     if not pair_cols:
         return go.Figure().update_layout(title="Diet Composition (no prey data)", template=template)
+    from osmose.trophic_network import diet_column_pairs
+
     means = cast("pd.Series", df[pair_cols].mean(numeric_only=True))
     predators: list[str] = []
     prey_names = []
     cells: dict[tuple[str, str], float] = {}
-    for col, val in means.items():
-        pred, _, prey = str(col).partition("_")
+    mean_of = {str(col): float(val) for col, val in means.items()}
+    for col, pred, prey in diet_column_pairs(pair_cols):
+        if col not in mean_of:  # a column with no numeric mean
+            continue
         if pred not in predators:
             predators.append(pred)
         if prey not in prey_names:
             prey_names.append(prey)
-        cells[(pred, prey)] = float(val)
+        cells[(pred, prey)] = mean_of[col]
     z = np.array([[cells.get((p, q), 0.0) for q in prey_names] for p in predators], dtype=float)
     # Per-predator-row normalisation to diet proportions (rows with no diet stay 0).
     row_sums = z.sum(axis=1, keepdims=True)

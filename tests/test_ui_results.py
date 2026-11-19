@@ -209,6 +209,24 @@ def test_make_diet_heatmap_empty():
     assert isinstance(fig, go.Figure)
 
 
+def test_make_diet_heatmap_keeps_a_species_name_with_an_underscore_whole():
+    """Baltic has cod_west and cod_east. Split at the first underscore, both collapsed into a
+    predator `cod` whose prey were `west_herring`, `east_herring`, and so on."""
+    predators, prey = (
+        ["cod_west", "herring", "cod_east"],
+        ["cod_west", "herring", "cod_east", "Zoo"],
+    )
+    data = {"Time": [0.9, 1.9]} | {f"{p}_{q}": [0.0, 0.0] for p in predators for q in prey}
+    data |= {"cod_west_herring": [2.0, 4.0], "cod_west_Zoo": [1.0, 1.0], "cod_east_Zoo": [5.0, 5.0]}
+    fig = make_diet_heatmap(pd.DataFrame(data | {"species": ["all", "all"]}))
+    trace = fig.data[0]
+    assert list(trace.y) == predators
+    assert list(trace.x) == prey
+    z = np.asarray(trace.z, dtype=float)
+    assert z[0][1] == pytest.approx(0.75) and z[0][3] == pytest.approx(0.25)
+    assert z[2][3] == pytest.approx(1.0)
+
+
 def test_make_diet_heatmap_predator_prey_matrix():
     """The engine writes the diet matrix wide, as `<predator>_<prey>` columns
     (osmose/engine/output.py), plus a Time column and a constant `species` column

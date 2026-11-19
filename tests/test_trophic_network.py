@@ -9,6 +9,7 @@ from osmose.trophic_network import (
     _read_diet_matrix,
     _split_species,
     available_times,
+    diet_column_pairs,
     diet_network_at,
     make_trophic_network_html,
     network_node_universe,
@@ -270,3 +271,116 @@ def test_engine_format_available_times(tmp_path):
         [{"Time": 0.0, "cod_herring": 1.0}, {"Time": 1.0, "cod_herring": 2.0}],
     )
     assert available_times(tmp_path) == [0.0, 1.0]
+
+
+# ── Species names with an underscore (Baltic's cod_west, cod_east) ──
+# A column is `<predator>_<prey>` and either name may hold an underscore, so no fixed
+# underscore is the split. Splitting at the first one read `cod_west_herring` as the predator
+# `cod` eating `west_herring`, on the shipped Baltic config.
+
+_BALTIC_PREDATORS = ["cod_west", "herring", "cod_east", "GreySeal"]
+_BALTIC_PREY = ["cod_west", "herring", "cod_east", "GreySeal", "Mesozooplankton"]
+
+
+def _engine_columns(predators, prey):
+    """The engine's column order: predator by predator, every predator over the same prey."""
+    return [f"{p}_{q}" for p in predators for q in prey]
+
+
+def test_a_name_with_an_underscore_is_split_where_the_matrix_says():
+    cols = _engine_columns(_BALTIC_PREDATORS, _BALTIC_PREY)
+    pairs = diet_column_pairs(["Time", *cols, "species"])
+    assert [c for c, _, _ in pairs] == cols  # the metadata columns are not pairs
+    assert [(p, q) for _, p, q in pairs] == [
+        (p, q) for p in _BALTIC_PREDATORS for q in _BALTIC_PREY
+    ]
+
+
+def test_the_older_layout_without_background_prey_is_split_the_same_way():
+    """Before the background species had prey columns, the background predators were not
+    among the prey. The block structure alone still settles the split."""
+    prey = ["cod_west", "herring", "cod_east", "Mesozooplankton"]
+    pairs = diet_column_pairs(_engine_columns(_BALTIC_PREDATORS, prey))
+    assert [(p, q) for _, p, q in pairs] == [(p, q) for p in _BALTIC_PREDATORS for q in prey]
+
+
+def test_a_predator_whose_name_starts_another_predators_name():
+    """`cod` next to `cod_west`: a run of columns starting `cod_` covers both blocks."""
+    predators, prey = ["cod", "cod_west", "sprat"], ["cod", "cod_west", "sprat", "Zoo"]
+    pairs = diet_column_pairs(_engine_columns(predators, prey))
+    assert [(p, q) for _, p, q in pairs] == [(p, q) for p in predators for q in prey]
+
+
+def test_a_single_predator_with_an_underscore_is_read_as_a_species_that_is_also_prey():
+    """One predator leaves two readings (`cod` eating `west_...`, or `cod_west`). A fish
+    species is always among its own prey names, and that settles it."""
+    pairs = diet_column_pairs(_engine_columns(["cod_west"], ["cod_west", "Zoo"]))
+    assert [(p, q) for _, p, q in pairs] == [("cod_west", "cod_west"), ("cod_west", "Zoo")]
+
+
+def test_names_without_underscores_and_frames_made_by_hand_read_as_before():
+    assert diet_column_pairs(_engine_columns(["cod", "sprat"], ["cod", "sprat", "Zoo"])) == [
+        (f"{p}_{q}", p, q) for p in ["cod", "sprat"] for q in ["cod", "sprat", "Zoo"]
+    ]
+    # Not a full predator x prey grid: nothing to infer from, so the first underscore it is.
+    ragged = ["cod_herring", "cod_sprat", "herring_sprat", "herring_cod"]
+    assert diet_column_pairs(ragged) == [
+        ("cod_herring", "cod", "herring"),
+        ("cod_sprat", "cod", "sprat"),
+        ("herring_sprat", "herring", "sprat"),
+        ("herring_cod", "herring", "cod"),
+    ]
+    # The second block starts like the first and then differs: still no grid.
+    assert diet_column_pairs(["a_x", "a_y", "b_x", "b_z"]) == [
+        ("a_x", "a", "x"),
+        ("a_y", "a", "y"),
+        ("b_x", "b", "x"),
+        ("b_z", "b", "z"),
+    ]
+    assert diet_column_pairs(["Time", "species"]) == []
+
+
+def test_the_network_of_a_baltic_named_matrix_has_the_real_species(tmp_path):
+    cols = _engine_columns(_BALTIC_PREDATORS, _BALTIC_PREY)
+    row = {"Time": 0.0} | dict.fromkeys(cols, 0.0)
+    row |= {"cod_west_herring": 30.0, "cod_west_cod_east": 10.0, "cod_east_Mesozooplankton": 5.0}
+    _write_engine_diet(tmp_path / "osm_dietMatrix_Simu0.csv", [row])
+    assert set(network_node_universe(tmp_path)) == set(_BALTIC_PREY)
+    net = diet_network_at(tmp_path, time=0.0, threshold=1.0)
+    west = net[net["predator"] == "cod_west"].set_index("prey")["proportion"]
+    assert west["herring"] == pytest.approx(75.0) and west["cod_east"] == pytest.approx(25.0)
+    east = net[net["predator"] == "cod_east"].set_index("prey")["proportion"]
+    assert east["Mesozooplankton"] == pytest.approx(100.0)
+    assert "cod" not in set(net["predator"]) | set(net["prey"])
+
+
+def test_the_reader_splits_back_what_the_writer_wrote():
+    """The names come from the engine's own writer, underscores in every kind of name: focal,
+    background and resource. Whatever the prey axis is, the reader recovers both axes."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from osmose.engine.output import (
+        _build_diet_dataframe,
+        diet_prey_names,
+        pressure_predator_names,
+    )
+
+    cfg = SimpleNamespace(
+        n_dt_per_year=2,
+        output_record_frequency=1,
+        n_species=3,
+        n_background=1,
+        species_names=["cod_west", "herring", "cod_east"],
+        all_species_names=["cod_west", "herring", "cod_east", "Grey_Seal"],
+        resource_names=["Meso_zooplankton", "Benthos"],
+    )
+    predators, prey = pressure_predator_names(cfg), diet_prey_names(cfg)
+    mat = np.arange(len(predators) * len(prey), dtype=float).reshape(len(predators), len(prey))
+    outputs = [SimpleNamespace(step=1, diet_by_species=mat, window_steps=1)]
+    df = _build_diet_dataframe(outputs, cfg)["dietMatrix"]
+    pairs = diet_column_pairs(df.columns)
+    assert len(pairs) == len(predators) * len(prey)
+    assert [(p, q) for _, p, q in pairs] == [(p, q) for p in predators for q in prey]
+    assert all(c in df.columns for c, _, _ in pairs)
