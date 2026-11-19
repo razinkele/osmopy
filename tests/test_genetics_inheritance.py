@@ -2,6 +2,7 @@
 """Tests for gametic inheritance: parent selection, gamete formation, offspring creation."""
 
 import numpy as np
+import pytest
 
 from osmose.engine.genetics.genotype import GeneticState
 from osmose.engine.genetics.inheritance import (
@@ -104,3 +105,31 @@ class TestCreateOffspringGenotypes:
         parent_vals = set(parent_alleles.flatten())
         for val in offspring_gs.alleles["imax"].flatten():
             assert val in parent_vals
+
+    def test_no_parent_with_gonad_weight_says_what_sets_gonad_weight(self):
+        """#338. Outside the seeding window parents are chosen by gonad weight. With none the
+        routine stops, as it should. Its message must say what sets gonad weight: someone who
+        only switched genetics on has no "upstream caller" to fix."""
+        registry = self._make_registry()
+
+        def offspring(gonad_weight):
+            return create_offspring_genotypes(
+                parent_gs=GeneticState(
+                    alleles={"imax": np.ones((2, 3, 2))},
+                    env_noise={"imax": np.zeros(2)},
+                    registry=registry,
+                ),
+                gonad_weight=gonad_weight,
+                species_id=np.array([0, 0], dtype=np.int32),
+                offspring_species=0,
+                n_offspring=5,
+                rng=np.random.default_rng(1),
+            )
+
+        with pytest.raises(ValueError) as err:
+            offspring(np.zeros(2))
+        message = str(err.value)
+        assert "no eligible parents" in message
+        assert "module.bioenergetics.enabled" in message
+        # The control: the same schools are parents once one of them carries gonad weight.
+        assert offspring(np.array([1.0, 0.0])).alleles["imax"].shape == (5, 3, 2)
