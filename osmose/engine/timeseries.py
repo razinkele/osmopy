@@ -418,23 +418,28 @@ def load_timeseries(
     """
     sp = f"sp{species_idx}"
 
+    def find(key: str) -> str | None:
+        # The reader lowercases keys; a dict built by hand may use the config-file spelling.
+        value = config.get(key.lower())
+        return value if value is not None else config.get(key)
+
     # Check byYear.file
-    key = f"{key_prefix}.byYear.file.{sp}"
-    if key in config:
+    path = find(f"{key_prefix}.byYear.file.{sp}")
+    if path is not None:
         n_years = ndt_simu // ndt_per_year
-        return ByYearTimeSeries.from_csv(Path(config[key]), n_years)
+        return ByYearTimeSeries.from_csv(Path(path), n_years)
 
     # Check byDt.byAge.file or byDt.bySize.file
     for variant in ["byDt.byAge", "byDt.bySize"]:
-        key = f"{key_prefix}.{variant}.file.{sp}"
-        if key in config:
-            return ByClassTimeSeries.from_csv(Path(config[key]), ndt_per_year, ndt_simu)
+        path = find(f"{key_prefix}.{variant}.file.{sp}")
+        if path is not None:
+            return ByClassTimeSeries.from_csv(Path(path), ndt_per_year, ndt_simu)
 
     # Check byDt.file (correct) or bytDt.file (Java typo)
     for variant in ["byDt", "bytDt"]:
-        key = f"{key_prefix}.{variant}.file.{sp}"
-        if key in config:
-            return SingleTimeSeries.from_csv(Path(config[key]), ndt_per_year, ndt_simu)
+        path = find(f"{key_prefix}.{variant}.file.{sp}")
+        if path is not None:
+            return SingleTimeSeries.from_csv(Path(path), ndt_per_year, ndt_simu)
 
     # Check scalar value
     key = f"{key_prefix}.{sp}"

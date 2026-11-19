@@ -174,7 +174,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"(movement|stochastic\.mortality)\.randomseed\.fixed", "inert"),
     (r"engine\.rng\.java_compat", "java_compat_rng"),
     (r"module\.genetics\.enabled|evolution\..+", "genetics"),
-    (r"module\.bioeconomics\.enabled|simulation\.economic\..+", "economics"),
+    (r"module\.bioeconomics\.enabled|simulation\.economic\..+|economic\.fleet\..+", "economics"),
     (
         (
             r"module\.bioenergetics\.enabled|simulation\.bioen\..+|species\.bioen\..+"
@@ -206,6 +206,10 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"mortality\.fishing\.rate\.(bydt\.by(age|size)|\{idx\})\.file\..+", "rate_by_class"),
     (r"mortality\.additional\.rate\.\{idx\}\.file\..+", "additional_rate_by_step,rate_by_class"),
     (r"mortality\.additional\.larva\.rate\.\{idx\}\.file\..+", "larva_rate_by_step"),
+    # The same two families as config files spell them once the reader has lowercased them
+    # (issue #297: until then the engine never matched these, so they never reached a detector).
+    (r"mortality\.additional\.rate\.bydt\.(byage|bysize)\.file\..+", "rate_by_class"),
+    (r"mortality\.additional\.larva\.rate\.byt?dt\.file\..+", "larva_rate_by_step"),
     (r"mortality\.additional\.spatial\.distrib\.file\..+", "additional_maps"),
     (r"output\.spatial\..+", "spatial_outputs"),
     (r"output\.carbon\..+|carbon\..+", "carbon_output"),

@@ -26,9 +26,24 @@ from osmose.engine.config_validation import (
 # Independent reference: the exact 155-key allowlist as of pre-#123 (copied from Step 1 output),
 # plus the two incoming-flux file keys added on 2026-11-19 (the engine reads them in
 # incoming_flux.py; they were missing, so a config that used them was told its key was unknown).
+# Plus the four time-varying mortality file keys of issue #297, added the same day: the engine
+# builds them from a variant inside an f-string, so the AST walk never saw these spellings.
+# Plus the twelve economics fleet keys, read in economics/fleet.py and never listed.
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
+        "economic.fleet.fuel.cost.fsh{idx}",
+        "economic.fleet.gear.fsh{idx}",
+        "economic.fleet.homeport.x.fsh{idx}",
+        "economic.fleet.homeport.y.fsh{idx}",
+        "economic.fleet.max.days.fsh{idx}",
+        "economic.fleet.name.fsh{idx}",
+        "economic.fleet.number",
+        "economic.fleet.nvessels.fsh{idx}",
+        "economic.fleet.operating.cost.fsh{idx}",
+        "economic.fleet.price.sp{idx}.fsh{idx}",
+        "economic.fleet.stock.elasticity.sp{idx}.fsh{idx}",
+        "economic.fleet.target.species.fsh{idx}",
         "economic.output.stage",
         "evolution.trait.{name}.envvar.sp{idx}",
         "evolution.trait.{name}.mean.sp{idx}",
@@ -60,6 +75,10 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "ltl.regrowth.rate.rsc{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
+        "mortality.additional.larva.rate.bydt.file.sp{idx}",
+        "mortality.additional.larva.rate.bytdt.file.sp{idx}",
+        "mortality.additional.rate.bydt.byage.file.sp{idx}",
+        "mortality.additional.rate.bydt.bysize.file.sp{idx}",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",
         "mortality.fishing.catches.bydt.bysize.file.sp{idx}",
         "mortality.fishing.rate.bydt.byage.file.sp{idx}",

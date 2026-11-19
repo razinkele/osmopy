@@ -1617,8 +1617,9 @@ def _load_additional_mortality_by_dt_by_class(
     for i in range(n_species):
         for variant in ["byDt.byAge", "byDt.bySize"]:
             key = f"mortality.additional.rate.{variant}.file.sp{i}"
-            if key in cfg:
-                path = _require_file(cfg[key], _cfg_dir(cfg), key)
+            file_key = _either_spelling(cfg, key)
+            if file_key is not None:
+                path = _require_file(file_key, _cfg_dir(cfg), key)
                 ts = ByClassTimeSeries.from_csv(path, n_dt_per_year, n_dt_simu)
                 # Java converts age thresholds from years to time steps
                 if "byAge" in variant:
@@ -1629,12 +1630,25 @@ def _load_additional_mortality_by_dt_by_class(
     return result if found else None
 
 
+def _either_spelling(cfg: dict[str, str], key: str) -> str | None:
+    """The value of ``key`` as the reader stores it (lowercase), or else as config files spell
+    it (``key`` itself, for a dict built by hand), or None.
+
+    ``OsmoseConfigReader`` lowercases every key. These two families were looked up in the
+    config-file spelling (``byDt``, ``byAge``, ``bySize``), so a config read from disk never
+    matched and its time-varying mortality files were dropped without a word (issue #297).
+    """
+    value = cfg.get(key.lower())
+    return value if value is not None else cfg.get(key)
+
+
 def _detect_larva_by_dt_key(cfg: dict[str, str], species_idx: int) -> str | None:
     """Detect larval by-dt file, supporting both bytDt (Java typo) and byDt."""
     for variant in ["bytDt", "byDt"]:
         key = f"mortality.additional.larva.rate.{variant}.file.sp{species_idx}"
-        if key in cfg:
-            return cfg[key]
+        value = _either_spelling(cfg, key)
+        if value is not None:
+            return value
     return None
 
 
