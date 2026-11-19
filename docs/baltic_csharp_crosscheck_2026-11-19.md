@@ -260,7 +260,9 @@ refused, by name.
   that has NOT loaded the .NET runtime runs the engine normally; only a fork made AFTER the
   runtime is loaded kills the child. So the script forks its workers first and runs the engine
   in its own process only after the last fork, and a guard turns the wrong order into an error.
-  A C# run writes `phase<N>_csharp_*.json`, so it never replaces a Python result.
+  A C# run writes `phase<N>_csharp_*.json`, so it never replaces a Python result. Where a run
+  reads an earlier phase's results (phase 2, `--validate`), it reads its own engine's first;
+  the C# engine falls back to the Python engine's, and says so in its log.
 - **Production is unchanged until a deploy opts in** (`OSMOSE_DEPLOY_CSHARP=1`, DEPLOY.md). The
   UI shows the C# button only where the engine is installed.
 - **Two implementations of one model** (spec risk R3). A PR that changes Python engine semantics

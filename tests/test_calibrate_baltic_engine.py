@@ -351,3 +351,93 @@ def test_the_csharp_workers_split_the_cores_as_the_python_workers_do(monkeypatch
     with pytest.raises(SystemExit, match="dispatched"):
         _stub_run(monkeypatch, tmp_path, "csharp", workers="4")
     assert seen == {"threads": max(1, physical_budget() // 4), "engine": "csharp", "workers": 4}
+
+
+# --------------------------------------------------------------------------------------------
+# Which earlier results a run reads
+# --------------------------------------------------------------------------------------------
+def _results(directory: Path, name: str, value: float) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / name).write_text(json.dumps({"parameters": {"species.k.sp0": value}}))
+
+
+def test_an_engine_reads_its_own_earlier_results_first(monkeypatch, tmp_path):
+    """Phase 2 and --validate read an earlier phase's results. A C# run reads the C# file; with
+    none, it reads the Python engine's (the calibration of record) and SAYS SO, because that is
+    a cross-check and not a C# chain. The Python engine reads only its own file."""
+    monkeypatch.setattr(cb, "RESULTS_DIR", tmp_path)
+    assert cb._earlier_phase_results("1", "python") == (None, "")
+    assert cb._earlier_phase_results("1", "csharp") == (None, "")
+    _results(tmp_path, "phase1_results.json", 0.25)
+    assert cb._earlier_phase_results("1", "python") == (tmp_path / "phase1_results.json", "")
+    assert cb._earlier_phase_results("1", "csharp") == (
+        tmp_path / "phase1_results.json", cb.CROSS_ENGINE_NOTE,
+    )  # fmt: skip
+    _results(tmp_path, "phase1_csharp_results.json", 0.5)
+    assert cb._earlier_phase_results("1", "csharp") == (tmp_path / "phase1_csharp_results.json", "")
+    # A C# file never reaches a Python run.
+    assert cb._earlier_phase_results("1", "python") == (tmp_path / "phase1_results.json", "")
+    (tmp_path / "phase1_results.json").unlink()
+    assert cb._earlier_phase_results("1", "python") == (None, "")
+
+
+@pytest.mark.parametrize(
+    ("engine", "files", "value", "says"),
+    [
+        ("python", {"phase1_results.json": 0.25}, "0.25", "Loaded phase 1 parameters (1 params)\n"),
+        ("csharp", {"phase1_results.json": 0.25}, "0.25",
+         "(1 params) from phase1_results.json, calibrated on the PYTHON engine"),
+        ("csharp", {"phase1_results.json": 0.25, "phase1_csharp_results.json": 0.5}, "0.5",
+         "(1 params) from phase1_csharp_results.json\n"),
+        ("csharp", {"phase1_csharp_results.json": 0.5}, "0.5",
+         "(1 params) from phase1_csharp_results.json\n"),
+        ("python", {"phase1_csharp_results.json": 0.5}, None, "No calibration results found"),
+    ],
+)  # fmt: skip
+def test_validation_runs_the_parameters_of_the_engine_asked_for(
+    monkeypatch, tmp_path, capsys, engine, files, value, says
+):
+    for name, v in files.items():
+        _results(tmp_path, name, v)
+    monkeypatch.setattr(cb, "RESULTS_DIR", tmp_path)
+    monkeypatch.setattr(cb, "_require_csharp", lambda *a, **k: None)
+    calls: list[tuple] = []
+
+    def fake_run_simulation(config, overrides, **kw):
+        calls.append((dict(overrides), kw["engine"]))
+        return {f"{sp}_mean": 1000.0 for sp in cb.SPECIES_NAMES}
+
+    monkeypatch.setattr(cb, "run_simulation", fake_run_simulation)
+    cb.validate_calibration(n_years=1, n_seeds=2, engine=engine)
+    assert says in capsys.readouterr().out
+    if value is None:
+        assert calls == []  # a C# calibration is not a Python one: nothing to validate
+    else:
+        assert calls == [({"species.k.sp0": value}, engine)] * 2
+
+
+def test_phase_two_inherits_from_the_engine_asked_for(monkeypatch, tmp_path, capsys):
+    _results(tmp_path, "phase1_results.json", 0.25)
+    _results(tmp_path, "phase1_csharp_results.json", 0.5)
+    monkeypatch.setattr(cb, "RESULTS_DIR", tmp_path)
+    seen: dict = {}
+
+    def stop(base_config, targets, param_keys, **kw):
+        seen.update(k=base_config["species.k.sp0"], engine=kw["engine"])
+        raise SystemExit("objective")
+
+    monkeypatch.setattr(cb, "make_objective", stop)
+    monkeypatch.setattr(cb, "_require_csharp", lambda *a, **k: None)
+    for engine, want, line in (
+        ("python", "0.25", "calibrated params from phase1_results.json\n"),
+        ("csharp", "0.5", "calibrated params from phase1_csharp_results.json\n"),
+    ):
+        with pytest.raises(SystemExit, match="objective"):
+            cb.run_calibration(phase="2", engine=engine)
+        assert seen == {"k": want, "engine": engine}
+        assert line in capsys.readouterr().out
+    (tmp_path / "phase1_csharp_results.json").unlink()
+    with pytest.raises(SystemExit, match="objective"):
+        cb.run_calibration(phase="2", engine="csharp")
+    assert seen == {"k": "0.25", "engine": "csharp"}
+    assert "from phase1_results.json, calibrated on the PYTHON engine" in capsys.readouterr().out

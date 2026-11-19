@@ -5,8 +5,9 @@ Calibrates larval mortality rates (phase 1) and optionally adult mortality / fis
 rates (phase 2) to match target equilibrium biomass for 8 focal species.
 
 Uses the PythonEngine directly (no Java required). ``--engine csharp`` runs the evaluations on
-the C# engine instead (an optional build; DE only). It reads the same inputs and writes its
-checkpoint and results under ``phase<N>_csharp_*.json``, so it never replaces a Python result.
+the C# engine instead (an optional build; DE only). It writes its checkpoint and results under
+``phase<N>_csharp_*.json``, so it never replaces a Python result; where it reads an earlier
+phase's results it reads its own first, then the Python engine's, and says which.
 
 Usage:
     .venv/bin/python scripts/calibrate_baltic.py [--phase 1] [--maxiter 200] [--seeds 3]
@@ -1410,6 +1411,28 @@ def _engine_tag(engine: str) -> str:
     return "" if engine == "python" else f"_{engine}"
 
 
+CROSS_ENGINE_NOTE = ", calibrated on the PYTHON engine"
+
+
+def _earlier_phase_results(phase_label: str, engine: str) -> tuple[Path | None, str]:
+    """The results file a run on ``engine`` reads for an EARLIER phase, and a note for the log.
+
+    An engine reads its own results first. The C# engine falls back to the Python engine's
+    file, which is the calibration of record, and the note says so: a C# run on parameters the
+    Python engine calibrated is a legitimate cross-check, but it must not pass for a C# chain.
+    The Python engine reads only its own file, as it always has, and its note is empty.
+    """
+    canonical = RESULTS_DIR / f"phase{phase_label}_results.json"
+    if engine == "python":
+        return (canonical if canonical.exists() else None), ""
+    own = RESULTS_DIR / f"phase{phase_label}{_engine_tag(engine)}_results.json"
+    if own.exists():
+        return own, ""
+    if canonical.exists():
+        return canonical, CROSS_ENGINE_NOTE
+    return None, ""
+
+
 def run_calibration(
     phase: str,
     seeding_mode: str | None = None,
@@ -1541,15 +1564,15 @@ def run_calibration(
     # overrides. Without this, phase 2 would run with R18 defaults, which would reintroduce
     # the smelt/stickleback extinction risk phase 1 just eliminated.
     if phase == "2":
-        p1_file = RESULTS_DIR / "phase1_results.json"
-        if p1_file.exists():
+        p1_file, p1_note = _earlier_phase_results("1", engine)
+        if p1_file is not None:
             with open(p1_file) as f:
                 p1_data = json.load(f)
             for key, val in p1_data.get("parameters", {}).items():
                 base_config[key.lower()] = str(val)
             print(
                 f"Phase 2: inherited {len(p1_data.get('parameters', {}))} "
-                f"calibrated params from phase1_results.json"
+                f"calibrated params from {p1_file.name}{p1_note}"
             )
         else:
             print(
@@ -1928,13 +1951,14 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3, engine: str = "pyt
     # Load best parameters from all phases
     overrides: dict[str, str] = {}
     for phase_num in [1, 2]:
-        results_file = RESULTS_DIR / f"phase{phase_num}_results.json"
-        if results_file.exists():
+        results_file, note = _earlier_phase_results(str(phase_num), engine)
+        if results_file is not None:
             with open(results_file) as f:
                 data = json.load(f)
             for key, val in data["parameters"].items():
                 overrides[key] = str(val)
-            print(f"Loaded phase {phase_num} parameters ({len(data['parameters'])} params)")
+            source = "" if engine == "python" else f" from {results_file.name}{note}"
+            print(f"Loaded phase {phase_num} parameters ({len(data['parameters'])} params){source}")
 
     if not overrides:
         print("No calibration results found. Run calibration first.")
@@ -2031,6 +2055,8 @@ def main():
         default="python",
         help="engine of the evaluations. csharp: the C# engine (an optional build), with "
         "--optimizer de; it writes phase<N>_csharp_*.json and never replaces a Python result. "
+        "Where a run reads an earlier phase (phase 2, --validate) it reads its own engine's "
+        "results first; the C# engine falls back to the Python engine's and says so. "
         "As with the Python engine, --isolated-eval is the mode that survives a worker that "
         "crashes or hangs (it becomes a penalty); the plain pool would wait for it",
     )
