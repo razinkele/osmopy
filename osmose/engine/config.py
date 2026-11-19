@@ -533,16 +533,21 @@ def _parse_reproduction_params(
     seeding_biomass = _species_float_optional(
         cfg, "population.seeding.biomass.sp{i}", n_sp, default=0.0
     )
-    # Seeding max step: global-only key — verified 2026-04-12 against Java OSMOSE
-    # source (ReproductionProcess.java:83,146). Java uses a single `int yearMaxSeeding`
-    # for all species, NOT per-species. Python's np.full broadcast is correct parity.
+    # The seeding period is ONE number for every species, as in Java
+    # (ReproductionProcess.init: a single `int yearMaxSeeding`; the same in the 4.3.3-era tree
+    # and at v4.4.1). With the key set it is that many years. With the key unset it is the
+    # LONGEST lifespan of any species, for all of them. Until 2026-11-19 the unset case used
+    # each species' own lifespan here: issue #334. The two agree on Baltic and EEC, and differ
+    # on Bay of Biscay and data/minimal, where short-lived species live on seeding alone.
     seeding_mode = _parse_seeding_mode(cfg)
     seeding_max_year_str = cfg.get("population.seeding.year.max", "")
     if seeding_max_year_str:
         seeding_max_years = float(seeding_max_year_str)
         seeding_max_step = np.full(n_sp, int(seeding_max_years * n_dt), dtype=np.int32)
     else:
-        seeding_max_step = (lifespan_years * n_dt).astype(np.int32)
+        lifespans_dt = (lifespan_years * n_dt).astype(np.int32)
+        longest = int(lifespans_dt.max()) if n_sp else 0
+        seeding_max_step = np.full(n_sp, longest, dtype=np.int32)
     # Warm-start standing-stock init disables egg-seeding: the standing population IS the
     # initialization, so the SSB==0 egg-rescue must not continuously re-inject a suppressed
     # species (which would stop a cod-absent / clupeid-dominated basin from being maintained).
