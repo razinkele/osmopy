@@ -29,6 +29,14 @@ CONFIG = SimpleNamespace(
 )
 
 
+# [predator: cod, sprat, seal] x [prey: cod, sprat, seal, resource 0, resource 1]
+_DIET = [
+    [1.0, 2.0, 0.5, 4.0, 8.0],
+    [0.0, 0.0, 0.0, 16.0, 32.0],
+    [64.0, 128.0, 0.0, 0.0, 0.0],
+]
+
+
 def _record(
     step: int, scale: float, *, tl: dict | None = None, full: bool = True, window: int = 1
 ) -> StepOutput:
@@ -47,9 +55,7 @@ def _record(
         abundance_by_stage=scale * np.array([[100.0, 10.0, 1.0], [200.0, 20.0, 2.0]]),
         abundance_by_age={0: scale * np.array([5.0, 3.0, 2.0]), 1: scale * np.array([7.0, 1.0])},
         biomass_by_age={0: scale * np.array([0.5, 30.0, 20.0]), 1: scale * np.array([0.25, 1.5])},
-        # [predator: cod, sprat, seal] x [prey: cod, sprat, resource 0, resource 1]
-        diet_by_species=scale
-        * np.array([[1.0, 2.0, 4.0, 8.0], [0.0, 0.0, 16.0, 32.0], [64.0, 128.0, 0.0, 0.0]]),
+        diet_by_species=scale * np.array(_DIET),
         mean_size={0: scale * 30.0, 1: scale * 10.0},
         mean_tl={0: 4.0, 1: 3.0} if tl is None else tl,
     )
@@ -79,7 +85,8 @@ def test_the_spin_up_and_the_initial_record_are_dropped_and_the_rest_averaged():
 
 def test_the_diet_is_split_into_fish_and_resources_and_background_predators_have_rows():
     out = fam.reduce_records([_record(47, 1.0)], CONFIG, spinup_years=1)
-    assert out["eaten_fish"] == {"cod": 3.0, "sprat": 0.0, "seal": 192.0}
+    # A background prey is a school prey: the half tonne of seal cod ate counts as fish.
+    assert out["eaten_fish"] == {"cod": 3.5, "sprat": 0.0, "seal": 192.0}
     assert out["eaten_resources"] == {"cod": 12.0, "sprat": 48.0, "seal": 0.0}
     # Only the diet has background rows: every other metric is per focal species.
     assert all("seal" not in out[m] for m in out if not m.startswith("eaten_"))

@@ -273,7 +273,7 @@ public sealed class StageOutputsTests : IDisposable
     private static (OutputParameters Output, IReadOnlyList<string> Problems) Read(SimulationConfig c, bool feature)
     {
         var r = new BundleReader(c, 1);
-        return (ModelReader.Output(r, NTotal, NFocal, feature), r.Problems);
+        return (ModelReader.Output(r, NTotal, NFocal, feature, nResources: 0), r.Problems);
     }
 
     [Fact]

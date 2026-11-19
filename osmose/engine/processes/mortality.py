@@ -644,8 +644,9 @@ def _apply_predation_for_school(
             _diet_en = ctx.diet_tracking_enabled if ctx else False
             _d_mat = ctx.diet_matrix if ctx else None
             if _diet_en and _d_mat is not None and resources:
-                rsc_col = config.n_species + r
-                if p_idx < _d_mat.shape[0] and rsc_col < _d_mat.shape[1]:
+                # The resources are the LAST columns, after every species (focal, background).
+                rsc_col = _d_mat.shape[1] - resources.biomass.shape[0] + r
+                if p_idx < _d_mat.shape[0] and 0 <= rsc_col < _d_mat.shape[1]:
                     _d_mat[p_idx, rsc_col] += eaten_from_prey
 
     # --- Phase 3: Update predation success rate ONCE (matching Java) ---
@@ -1288,8 +1289,9 @@ if _HAS_NUMBA:
                     tl_weighted_sum[p_idx] += r_tl * eaten_from_prey
 
                 if diet_enabled:
-                    rsc_col = n_species + r_idx
-                    if p_idx < diet_matrix.shape[0] and rsc_col < diet_matrix.shape[1]:
+                    # The resources are the LAST columns, after every species (focal, background).
+                    rsc_col = diet_matrix.shape[1] - rsc_biomass.shape[0] + r_idx
+                    if p_idx < diet_matrix.shape[0] and 0 <= rsc_col < diet_matrix.shape[1]:
                         diet_matrix[p_idx, rsc_col] += eaten_from_prey
 
         # Phase 3: Update predation success rate

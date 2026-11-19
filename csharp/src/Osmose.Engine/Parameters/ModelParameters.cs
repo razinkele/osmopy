@@ -613,7 +613,7 @@ internal static class ModelReader
     /// families this engine collects; without it the mask is 0. The two binning tables exist
     /// exactly with their families: <c>output.age_bin_offsets</c> with a by-age family,
     /// <c>output.size_edges</c> with a by-size one.</summary>
-    public static OutputParameters Output(BundleReader r, int nTotal, int nFocal, bool feature)
+    public static OutputParameters Output(BundleReader r, int nTotal, int nFocal, bool feature, int nResources)
     {
         long families = r.Int("output.families");
         long unknown = families & ~(long)Step.OutputFamilies.Known;
@@ -681,9 +681,13 @@ internal static class ModelReader
         if ((on & Step.OutputFamilies.Diet) != 0)
         {
             dietColumns = (int)Math.Clamp(r.Int("output.diet_columns"), 0, int.MaxValue);
-            if (r.Has("output.diet_columns") && dietColumns < nFocal)
+
+            // The kernel books a school prey at its species id and a resource in the LAST
+            // columns. Any other count would put a resource under a species' label, or the
+            // reverse, without a word.
+            if (r.Has("output.diet_columns") && dietColumns != nTotal + nResources)
             {
-                r.Problem($"output.diet_columns: {dietColumns}, but the prey columns start with the {nFocal} focal species");
+                r.Problem($"output.diet_columns: {dietColumns}, but the prey columns are the {nTotal} species (focal, then background) and the {nResources} resources");
                 dietColumns = 0;
             }
         }

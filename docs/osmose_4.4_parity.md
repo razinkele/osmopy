@@ -51,7 +51,7 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 
 | 4.4.x change | Status | Notes |
 |---|---|---|
-| Background species always included | done | Biomass and abundance tables span `all_species_names`. `predatorPressure` gained background predators in #198 and `dietMatrix` in #207. Java 4.4.1's `DietOutput` writes them; its `PredatorPressureOutput` accumulates them but prints focal predator columns only |
+| Background species always included | done | Biomass and abundance tables span `all_species_names`. `predatorPressure` gained background predators in #198 and `dietMatrix` in #207. Java 4.4.1's `DietOutput` writes them; its `PredatorPressureOutput` accumulates them but prints focal predator columns only. The PREY axis of both outputs is `DietOutput`'s since #322: focal species, background species, resources (a background prey has its own column) |
 | Ragged 4.4.1 mortality header | done | #141 |
 | NetCDF chunking default | N/A | Writer-side Java detail |
 

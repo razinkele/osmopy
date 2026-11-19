@@ -784,10 +784,11 @@ def size_edges(config: Any) -> np.ndarray:
 
 
 def diet_columns(config: Any) -> int:
-    """The diet's prey columns, as ``simulate()`` sizes its diet matrix: the focal species, then
-    the resources ``ResourceState`` discovered. ``config.resource_names`` is published at run
+    """The diet's prey columns, as ``simulate()`` sizes its diet matrix: the focal species, the
+    background species, then the resources ``ResourceState`` discovered (Java's ``DietOutput``;
+    ``osmose.engine.output.diet_prey_names``). ``config.resource_names`` is published at run
     time (by ``simulate()``, and by ``build_bundle``), so call this after one of them."""
-    return config.n_species + len(config.resource_names)
+    return config.n_species + config.n_background + len(config.resource_names)
 
 
 def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:

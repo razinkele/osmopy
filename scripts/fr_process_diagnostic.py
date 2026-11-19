@@ -56,10 +56,9 @@ import numpy as np
 from calibrate_baltic import BALTIC_CONFIG, SPECIES_NAMES
 from evaluate_calibration_vs_ices import FR_PREDATOR_SP, _apply_mode
 
-# Diet matrix width for the diagnostic (focal + background + resources). Production's width is
-# n_species + n_resources (#146); we widen so the matrix is complete. We only normalise
-# against the 8 FOCAL prey (which have biomass in results.biomass()).
-_DIET_WIDTH = 16
+# The production diet matrix is complete since #322 (focal, background, resources), so the
+# diagnostic no longer widens it. We only normalise against the FOCAL prey (which have biomass
+# in results.biomass()).
 _N_BACKGROUND = 2  # GreySeal, Cormorant
 _N_FOCAL = len(SPECIES_NAMES)
 _N_TOTAL = _N_FOCAL + _N_BACKGROUND
@@ -174,13 +173,11 @@ def _build_base_config(params: dict, *, fr_on: bool, k: float) -> dict[str, str]
 
 
 def _run_with_diet(cfg: dict[str, str], n_years: int, seed: int):
-    """Run one sim with width-16 diet tracking; return (window_diet, biomass_df).
+    """Run one sim with diet tracking; return (window_diet, biomass_df).
 
-    Reuses the width-16 monkeypatch pattern from
-    tests/test_engine_functional_response.py::_run_baltic_short_with_diet:
-      - widen ``enable_diet_tracking`` so resource columns survive,
-      - capture each step's RAW wide diet matrix + species_id, then truncate the
-        aggregated result back to the production width so the run completes.
+    Captures each step's RAW per-school diet matrix + species_id as production aggregates it
+    (the pattern of tests/test_engine_functional_response.py::_run_baltic_short_with_diet).
+    The production matrix is complete since #322: focal, background and resource prey columns.
 
     Returns:
         window_diet: (n_total, n_prey_cols) per-predator-species diet summed over
@@ -189,18 +186,12 @@ def _run_with_diet(cfg: dict[str, str], n_years: int, seed: int):
         n_steps: number of captured diet steps.
     """
     import osmose.engine.output as _output
-    import osmose.engine.processes.predation as _pred
     from osmose.engine import PythonEngine
     from osmose.engine.output import aggregate_diet_all_predators
 
     cfg = dict(cfg)
     cfg["simulation.time.nyear"] = str(n_years)
     cfg["output.diet.composition.enabled"] = "true"
-
-    real_enable = _pred.enable_diet_tracking
-
-    def _wide_enable(n_schools, n_species, ctx=None):
-        return real_enable(n_schools, _DIET_WIDTH, ctx=ctx)
 
     real_agg = _output.aggregate_diet_by_species
     step_aggs: list[np.ndarray] = []
@@ -210,18 +201,9 @@ def _run_with_diet(cfg: dict[str, str], n_years: int, seed: int):
         sid = np.asarray(species_id)
         # Per-step per-predator-species diet INCLUDING background slots 8/9.
         step_aggs.append(aggregate_diet_all_predators(dm, sid, n_total=_N_TOTAL))
-        result = real_agg(diet_matrix, species_id, n_pred_species)
-        # Production width is focal + resources (#146); n_pred_species now also counts the
-        # background rows, so take the focal count from the config.
-        prod_width = int(cfg["simulation.nspecies"]) + int(cfg.get("simulation.nresource", "0"))
-        if result.shape[1] > prod_width:
-            return result[:, :prod_width]
-        return result
+        return real_agg(diet_matrix, species_id, n_pred_species)
 
-    with (
-        mock.patch.object(_pred, "enable_diet_tracking", _wide_enable),
-        mock.patch.object(_output, "aggregate_diet_by_species", _capturing_agg),
-    ):
+    with mock.patch.object(_output, "aggregate_diet_by_species", _capturing_agg):
         results = PythonEngine().run_in_memory(cfg, seed=seed)
 
     if not step_aggs:

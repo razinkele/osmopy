@@ -84,10 +84,11 @@ def test_the_prey_columns_are_the_reference_s(demo, n_resources, tmp_path):
     assert config.resource_names == names and len(names) > 0  # as simulate() publishes them
     if n_resources is not None:
         assert len(names) == n_resources and names[0] == "Dinoflagellates"
-    assert b.get("output.diet_columns") == diet_columns(config) == config.n_species + len(names)
+    n_species_all = config.n_species + config.n_background
+    assert b.get("output.diet_columns") == diet_columns(config) == n_species_all + len(names)
     buffers = allocate_results(b, config)
     n, rows = len(buffers.record_step), config.n_species + config.n_background
-    assert buffers.families["diet_by_species"].shape == (n, rows, config.n_species + len(names))
+    assert buffers.families["diet_by_species"].shape == (n, rows, n_species_all + len(names))
     assert list(family_shapes(config))[-1] == "diet_by_species"
     assert config.n_background == (2 if demo == "tutorial" else 0)
 
@@ -334,14 +335,15 @@ def test_one_production_step_equals_the_python_kernel_and_its_aggregate(
 # ------------------------------------------------- D. a background school as prey
 
 
-def test_a_background_prey_is_booked_under_its_species_id_as_the_reference_does(
+def test_a_background_prey_is_booked_in_its_own_column_on_both_engines(
     engine_ok,  # noqa: F811
     tmp_path,
 ):
-    """The reference writes ``diet_matrix[p, species_id[q]]`` for a school prey, and the diet
-    has no column for a background species: its id, ``n_species + k``, is the column of resource
-    ``k``. Inert on Baltic as shipped; here every third background school is shrunk to 8 cm so
-    that fish eat it. The C# engine must book it where the Python engine does."""
+    """Issue #322. A school prey is booked at its species id, and a background school's is
+    ``n_species + k``. The prey axis now has a column there (focal, background, resources, as
+    Java's DietOutput), where it used to be the column of resource ``k``. Inert on Baltic as
+    shipped; here every third background school is shrunk to 8 cm so that fish eat it. Both
+    engines must book it in the background species' own column, and nowhere else."""
 
     def shrink(state, config):
         background = np.flatnonzero(state.is_background)
@@ -350,25 +352,24 @@ def test_a_background_prey_is_booked_under_its_species_id_as_the_reference_does(
     step = STEPS["tutorial"]
     got = _capture_step(_raw("tutorial", tmp_path, step // 24 + 1, DIET), step, edit=shrink)
     config, entry, after = got["config"], got["entry"], got["after_mortality"]
-    nf = config.n_species
+    nf, nb = config.n_species, config.n_background
     eaten = after.n_dead[:, PREDATION] * entry.weight  # tonnes of each school eaten
     assert eaten[entry.is_background].sum() > 0  # the forced case happened
 
     res = _step(got, tmp_path)
     rows = res.get("s.diet")
+    assert rows.shape[1] == nf + nb + len(config.resource_names)
     assert _worst(rows, got["diet"]) <= TIER_L
     assert _worst(res.get("out.diet_by_species")[0], got["output"].diet_by_species) <= TIER_L
 
-    # Where it was booked. A species' column holds what was eaten of its schools; the first
-    # n_background resource columns hold the resource AND the background species of the same
-    # index. So the school columns do not account for the background biomass eaten...
-    by_prey_species = np.bincount(
-        entry.species_id, weights=eaten, minlength=nf + config.n_background
-    )
-    assert np.allclose(rows[:, :nf].sum(axis=0), by_prey_species[:nf], rtol=1e-9)
-    # ...and the resource columns of the same index hold at least that much more.
-    shared = rows[:, nf : nf + config.n_background].sum(axis=0)
-    assert (shared >= by_prey_species[nf:] * (1 - 1e-9)).all() and by_prey_species[nf:].sum() > 0
+    # Where it was booked, on the C# engine's own rows: every species column, the background
+    # ones included, holds what was eaten of that species' schools and nothing else.
+    by_prey_species = np.bincount(entry.species_id, weights=eaten, minlength=nf + nb)
+    assert by_prey_species[nf:].sum() > 0
+    assert np.allclose(rows[:, : nf + nb].sum(axis=0), by_prey_species, rtol=1e-9)
+    # The resources are the last columns; a predator's row sums to what it ate.
+    assert rows[:, nf + nb :].sum() > 0
+    assert np.allclose(rows.sum(axis=1), after.preyed_biomass[: len(rows)], rtol=1e-9, atol=1e-12)
 
 
 # --------------------------------------------------------------------- E. whole runs
