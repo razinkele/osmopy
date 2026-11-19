@@ -1579,6 +1579,12 @@ at 1.25x (inferred from the t interval). Noisier cells are judged against the co
    also fails it. Kolmogorov-Smirnov p-values are reported, not gated.
 5. Cells with zero yield in both engines (unfished species) are listed as vacuous, as the Java
    note does, and not counted.
+   *Amended on the owner's instruction, 2026-11-19: any cell that is one same number in every
+   replicate of all three arms (to rounding, on the log scale) is listed and not counted, not
+   only a zero yield. A background species' forced biomass and a value under the log floor are
+   such cells, and counting them as equivalent made the count read as more than it was. A cell
+   that is one number on both Python arms and not on the other engine is counted like any
+   other.*
 
 **The rule is calibrated before any C# data are looked at.** Criteria 1 and 3 can fail by
 chance on a noisy cell. So the Python replicates of arms A and B are pooled and re-split at

@@ -190,3 +190,85 @@ def test_a_cell_the_plain_interval_flags_is_not_divergent_under_bonferroni():
     assert acceptance(cells, treat, constants=Constants(99, 1e9, 1e9)).divergent == [
         ("biomass", "sp0")
     ]
+
+
+# --------------------------------------------------------------------------------------------
+# Cells that are one same number on every arm (rule amended on the owner's instruction, 2026-11-19)
+# --------------------------------------------------------------------------------------------
+def _three(rng_seeds=(1, 2, 3)):
+    return [_arm(np.random.default_rng(s)) for s in rng_seeds]
+
+
+def _set(arms, metric, sp, values):
+    for arm, v in zip(arms, values, strict=True):
+        arm[metric][sp] = np.asarray(v, dtype=float) if np.ndim(v) else np.full(N, float(v))
+
+
+def test_a_cell_that_is_one_number_on_every_arm_is_listed_not_counted():
+    """A background species' forced biomass, a predator that eats no fish: nothing draws for
+    them, so they are the same number in every replicate of every arm. Such a cell used to be
+    counted as equivalent (only an all-zero yield was left out), which made the count of
+    equivalent cells read as more than it was."""
+    a, b, c = _three()
+    _set((a, b, c), "biomass", "sp3", (4500.0, 4500.0, 4500.0))
+    _set((a, b, c), "abundance", "sp3", (0.0, 0.0, 0.0))  # below the log floor: also one number
+    control, treatment = compare(a, b), compare(a, c)
+    v = acceptance(control, treatment, constants=LADDER[-1])
+    assert v.vacuous == [("abundance", "sp3"), ("biomass", "sp3")]
+    assert v.n_counted == len(treatment) - 2 and v.n_equivalent <= v.n_counted
+    # Leaving them out changes no criterion: the same arms without the two constants give the
+    # same counts of equivalent cells on the cells that remain.
+    plain = acceptance(
+        compare(*_three()[:2]), compare(_three()[0], _three()[2]), constants=LADDER[-1]
+    )
+    assert plain.vacuous == [] and plain.n_counted == len(treatment)
+    assert v.passed and plain.passed
+
+
+def test_rounding_residue_on_one_engine_is_still_one_number():
+    """Measured on Bay of Biscay: a species identical across Python seeds read a C# spread of
+    4.7e-17 (its outputs are summed in a seed-dependent order). That is the same number."""
+    a, b, c = _three()
+    wobble = 4500.0 * (1.0 + 5e-17 * np.arange(N))
+    _set((a, b, c), "biomass", "sp3", (4500.0, 4500.0, wobble))
+    v = acceptance(compare(a, b), compare(a, c), constants=LADDER[-1])
+    assert v.vacuous == [("biomass", "sp3")] and v.passed
+
+
+def test_a_constant_on_the_python_arms_that_the_other_engine_does_not_give_is_judged():
+    """The case leaving such cells out must NOT hide: both Python arms give one number and the
+    other engine gives another, or varies. It is counted like any cell, and it fails."""
+    for other, why in (
+        (9000.0, "another constant"),
+        (
+            4500.0 * 10.0 ** np.random.default_rng(9).normal(0.0, 0.03, N),
+            "the same level, with spread",
+        ),
+        (
+            4500.0 * 10.0 ** np.random.default_rng(9).normal(0.3, 0.03, N),
+            "another level, with spread",
+        ),
+    ):
+        a, b, c = _three()
+        _set((a, b, c), "biomass", "sp3", (4500.0, 4500.0, other))
+        control, treatment = compare(a, b), compare(a, c)
+        assert control[("biomass", "sp3")].vacuous and not treatment[("biomass", "sp3")].vacuous
+        v = acceptance(control, treatment, constants=LADDER[-1])
+        assert ("biomass", "sp3") not in v.vacuous, why
+        assert not v.passed, why
+    # A zero yield on both Python arms and a real yield on the other engine: the old rule left
+    # the cell out of the count AND out of the list.
+    a, b, c = _three()
+    _set((a, b, c), "yield", "sp7", (0.0, 0.0, 250.0))
+    v = acceptance(compare(a, b), compare(a, c), constants=LADDER[-1])
+    assert not v.passed and ("yield", "sp7") in v.divergent
+
+
+def test_the_python_engine_disagreeing_with_itself_is_not_vacuous():
+    """One Python arm constant and the other not: the cell is counted (the control is not
+    vacuous), whatever the treatment says."""
+    a, b, c = _three()
+    _set((a, b, c), "biomass", "sp3", (4500.0, b["biomass"]["sp3"], 4500.0))
+    control, treatment = compare(a, b), compare(a, c)
+    assert treatment[("biomass", "sp3")].vacuous and not control[("biomass", "sp3")].vacuous
+    assert ("biomass", "sp3") not in acceptance(control, treatment, constants=LADDER[-1]).vacuous

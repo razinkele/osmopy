@@ -53,12 +53,12 @@ Margins: 1.25x, and 1.05x for mean weight. The rule and its calibration are thos
 | | 32 replicates per arm | The first 16 (the spec's number) |
 |---|---|---|
 | Verdict | **PASS** | **PASS** |
-| Equivalent cells, C# / control, of 42 | 41 / 41 | 41 / 41 |
+| Equivalent cells, C# / control, of the 36 counted | 35 / 35 | 35 / 35 |
 | Largest difference, Python vs C# | 0.0101 log10 (1.024x) | 0.0184 (1.043x) |
 | Largest difference, Python vs Python | 0.0336 (1.080x) | 0.0341 (1.082x) |
-| Median difference, Python vs C# / Python vs Python | 0.0008 / 0.0011 | 0.0015 / 0.0010 |
+| Median difference over the counted cells, Python vs C# / Python vs Python | 0.0016 / 0.0017 | 0.0021 / 0.0015 |
 | Cells beyond the margin, Python vs C# / Python vs Python | 0 / 1 | 0 / 1 |
-| Frozen rung (slack, ratio, variance) and its false-fail rate for identical engines | 5, 4.0, 8: 2.9% | 5, 4.0, 8: 3.5% |
+| Frozen rung (slack, ratio, variance) and its false-fail rate for identical engines | 5, 4.0, 8: 2.9% | 5, 4.0, 8: 3.6% |
 
 The owner's protocol is 32 replicates; the spec's Phase 2 line says 16. The 32-replicate run is
 the measurement, and the 16-replicate column is the same run re-judged on its first 16
@@ -70,10 +70,13 @@ interval (0.029) is wider than the 1.05x margin (0.021). Between the two Python 
 difference itself (0.034) is beyond the margin. So 32 replicates cannot resolve that cell for
 any pair of arms: it is a power limit of the cell, not an engine difference.
 
-**Six of the 42 cells carry no information.** The biomass, abundance and mean weight of the
-two background species (grey seal, cormorant) are set by the forcing and are one same number in
-every replicate of every arm: nothing preys on them, so they depend on no draw. The rule counts
-them as equivalent, so of the 36 cells that vary, 35 are equivalent on each arm.
+**Six of the 42 cells are not counted.** The biomass, abundance and mean weight of the two
+background species (grey seal, cormorant) are set by the forcing and are one same number in
+every replicate of every arm: nothing preys on them, so they depend on no draw. When this note
+was first written the rule counted such cells as equivalent ("41 of 42"); since the amendment
+of the same day (the rule's criterion 5, on the owner's instruction) it lists them and leaves
+them out. The table above is the same run re-judged under the amended rule; the verdict and
+the frozen rung did not change.
 
 **This run predates the collection added in this PR**, as does the certification below. The
 collection changes no result (see the end of the next section).
@@ -89,7 +92,7 @@ column is its first 16 replicates per arm.
 | | 32 replicates per arm | The first 16 |
 |---|---|---|
 | Verdict | **PASS** | **PASS** |
-| Equivalent cells, C# / control, of 103 | 103 / 102 | 102 / 102 |
+| Equivalent cells, C# / control, of the 99 counted | 99 / 98 | 98 / 98 |
 | Largest difference, Python vs C# | 0.0098 log10 (1.023x) | 0.0173 (1.041x) |
 | Largest difference, Python vs Python | 0.0154 (1.036x) | 0.0155 (1.036x) |
 | Frozen rung (slack, ratio, variance) and its false-fail rate for identical engines | 2, 2.0, 4: 1.5% | 4, 3.0, 6: 3.6% |
@@ -115,9 +118,10 @@ is. The diet rows include the two background predators. The one cell that is not
 on the control arm only at 32 replicates and on both arms at 16, is the mean size of pikeperch:
 the same species and the same reason as above.
 
-**Four of the 103 cells carry no information.** They are one same number in every replicate of
+**Four of the 103 cells are not counted.** They are one same number in every replicate of
 every arm: stickleback eats no fish, the two background predators eat no resources, and
-stickleback's trophic level is exactly 2. The rule counts them as equivalent; 99 cells vary.
+stickleback's trophic level is exactly 2. The amended rule lists them and leaves them out; the
+table above is re-judged under it, with the same verdicts and frozen rungs.
 
 **What the script checks beyond the rule.** The rule compares the cells it is given; four
 things would let a missing output through it, and each is a failure of its own:
