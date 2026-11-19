@@ -116,7 +116,7 @@ base the depletion calibrations use.
 whole-step and the no-fish tests run on EEC, which has no coupling. So for the combination the
 deterministic checks stop at the update, and the rest is the ensemble below.
 
-**The ensemble at 16 replicates failed, and the failure was the draw.**
+**The ensemble at 16 replicates failed, and more replicates do not bear the failure out.**
 
 | Sample | Verdict | Equivalent cells (C#, control, of 36) | Largest difference: C#, control | cod_east abundance, Python minus C# (log10, 90% half-width) |
 |---|---|---|---|---|
@@ -128,15 +128,17 @@ The 16-replicate run failed one criterion: its largest difference, cod_east abun
 than 5 times the control's largest. That is the cell that was largest on the demo too, with the
 same sign (+0.116). The rule passed there because the control's largest difference was on that
 cell too (0.062), and the rule allows 5 times the control's. Two ensembles agreeing looked like
-an engine difference. It was not:
+an engine difference. The evidence for one did not hold up:
 
 1. **The two ensembles are one draw seen twice.** The harness gives each arm fixed seeds, so
    both ensembles ran the same seeds. Seed by seed, the C# arm's cod_east in the one config
    predicts its cod_east in the other (correlation 0.81; 0.40 and 0.22 for the two Python arms).
 2. **On new seeds the sign reverses.** The same config, Python on 32 new seeds and C# on 48:
    cod_east abundance, Python minus C#, is -0.046 (standard error 0.035).
-3. **Pooled, there is nothing.** All 64 Python replicates against all 64 C# replicates: -0.015,
-   90% interval 0.046 either way. A rank test gives p = 0.71.
+3. **Pooled, the estimate is compatible with zero.** All 64 Python replicates against all 64 C#
+   replicates: -0.015, 90% interval -0.061 to +0.031. That excludes a difference as large as
+   the one that failed (+0.086). It does not exclude a smaller one. (A rank test gives
+   p = 0.71, which on its own establishes nothing.)
 
 The 32-per-arm sample is split by seed order: each arm keeps its 16 replicates and takes the
 next 16 new seeds. It is the only split tried, and it was chosen after the new-seed result was
@@ -149,8 +151,9 @@ pikeperch against the C# engine only (-0.0175, half-width 0.0137, which is 4%).
 
 **What to take from it.**
 
-- cod_east shows no engine difference, at a resolution of about 1.15x, and cod_west, flounder
-  and sprat agree within 0.005 in log10. **One cell is open: pikeperch** (below).
+- On cod_east no engine difference is detected, and one larger than about 1.15x is excluded.
+  cod_west, flounder and sprat agree within 0.005 in log10. **One cell is open: pikeperch**
+  (below).
 - **16 replicates are too few on the depletable configs.** At 16, the 90% half-width of the
   engine difference on cod_east abundance is 0.09 to 0.16 in log10 there, against 0.002 on the
   depensation demo. The demo's pass at 16 was as weak as this fail. Use 32.
