@@ -579,7 +579,7 @@ def _depensation_case(got: dict, tmp: Path, theta: float, ratio: float, **more):
     return cfg, want, res, base, on_real, on_seeded, ssb, s50
 
 
-@pytest.mark.parametrize("theta", [1.0, 2.5, 4.0])
+@pytest.mark.parametrize("theta", [1.0, 2.5, 4.0, 300.0])
 @pytest.mark.parametrize("ratio", [0.37, 2.3])
 def test_depensation_gate_scales_an_unseeded_enabled_species_by_the_allee_term(
     cycled, theta, ratio, tmp_path
@@ -587,15 +587,26 @@ def test_depensation_gate_scales_an_unseeded_enabled_species_by_the_allee_term(
     """A = S^theta / (S50^theta + S^theta), on the stock of the step: above one half when the
     stock is above its S50, below it otherwise. A seeded species is spared, so that the
     bootstrap from an empty stock cannot be trapped. Production is the reference, bit for bit
-    (the power is the C library's on both sides)."""
+    (the power is the C library's on both sides).
+
+    theta = 300 is the case in which the two powers do not fit a double: both engines then
+    write the same term as ratios, and must still agree to the last bit."""
+    from osmose.engine.processes.depensation_gate import depensation_factor
+
     got = cycled["eec_full"]
     cfg, want, res, base, real, seeded, ssb, s50 = _depensation_case(got, tmp_path, theta, ratio)
     assert required_features(cfg, got["raw"]) == ["core", "depensation_gate"]
     _assert_exact(res, want, ALL_FIELDS)
     eggs, plain = _eggs(res), _eggs(base)
-    allee = ssb[real] ** theta / (s50[real] ** theta + ssb[real] ** theta)
-    assert eggs[real] == plain[real] * allee
-    assert (allee > 0.5) == (ratio < 1.0) and 0.0 < allee < 1.0
+    one = np.ones(1, dtype=bool)
+    allee = float(depensation_factor(ssb[[real]], s50[[real]], np.array([theta]), one)[0])
+    if theta < 100:  # the plain formula, where it can be evaluated
+        assert allee == ssb[real] ** theta / (s50[real] ** theta + ssb[real] ** theta)
+        assert 0.0 < allee < 1.0
+    else:
+        assert np.isinf(max(ssb[real], s50[real]) ** theta)  # the case is the overflowing one
+    assert np.isfinite(eggs).all() and eggs[real] == plain[real] * allee
+    assert (allee > 0.5) == (ratio < 1.0)
     untouched = np.arange(cfg.n_species) != real
     assert eggs[untouched].tobytes() == plain[untouched].tobytes()  # the seeded one included
     assert plain[seeded] > 0

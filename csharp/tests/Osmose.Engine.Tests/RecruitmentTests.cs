@@ -70,6 +70,22 @@ public sealed class RecruitmentTests : IDisposable
         Assert.Equal(Linear, Eggs(r, 2, seeded: true)); // a seeded species is spared
     }
 
+    [Theory]
+    [InlineData(63.0)] // the first whole theta at which 90 000 ^ theta overflows
+    [InlineData(80.0)]
+    [InlineData(400.0)]
+    public void APowerTooLargeForADoubleDoesNotMakeTheTermNaN(double theta)
+    {
+        // Found in review: 90 000 ^ 62 overflows, and inf / (inf + inf) is NaN, which went into
+        // the egg count. Each of the term's two ratios is at most 1, so it can be written
+        // without either power.
+        Assert.True(double.IsInfinity(Math.Pow(90_000.0, theta)));
+        Assert.Equal(0.5, LifeCycle.DepensationFactor(90_000.0, 90_000.0, theta));
+        Assert.Equal(1.0 / (1.0 + Math.Pow(0.5, theta)), LifeCycle.DepensationFactor(180_000.0, 90_000.0, theta));
+        double low = Math.Pow(0.5, theta);
+        Assert.Equal(low / (1.0 + low), LifeCycle.DepensationFactor(45_000.0, 90_000.0, theta));
+    }
+
     [Fact]
     public void TheDepensationGateComesAfterTheReproductiveVolumeGate()
     {

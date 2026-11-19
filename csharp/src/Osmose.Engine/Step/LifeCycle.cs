@@ -155,7 +155,9 @@ public static class LifeCycle
     /// <summary>
     /// <c>depensation_factor</c> for one species: the Allee term
     /// <c>S^theta / (S50^theta + S^theta)</c>, which is one half at <c>S = S50</c>, goes to 1
-    /// above it and to 0 below it; 0 at an empty stock.
+    /// above it and to 0 below it; 0 at an empty stock. When a power does not fit a double
+    /// (<c>theta</c> in the dozens) the same term is written as ratios, each at most 1, as the
+    /// Python function does: <c>inf / (inf + inf)</c> would be NaN.
     /// </summary>
     public static double DepensationFactor(double ssb, double s50, double theta)
     {
@@ -164,8 +166,20 @@ public static class LifeCycle
             return 0.0;
         }
 
-        double s = Math.Pow(ssb, theta);
-        return s / (Math.Pow(s50, theta) + s);
+        double top = Math.Pow(ssb, theta);
+        double half = Math.Pow(s50, theta);
+        if (double.IsInfinity(top) || double.IsInfinity(half))
+        {
+            if (ssb >= s50)
+            {
+                return 1.0 / (1.0 + Math.Pow(s50 / ssb, theta));
+            }
+
+            double low = Math.Pow(ssb / s50, theta);
+            return low / (1.0 + low);
+        }
+
+        return top / (half + top);
     }
 
     /// <summary>
