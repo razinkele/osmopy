@@ -11,7 +11,7 @@
     {"id": 6, "name": "salinity_gate", "phase": 2, "status": "planned", "implemented": true, "description": "salinity movement gate"},
     {"id": 7, "name": "oxygen_benthos", "phase": 2, "status": "planned", "implemented": true, "description": "bottom oxygen scaling the benthos carrying capacity"},
     {"id": 8, "name": "movement_none", "phase": 2, "status": "planned", "implemented": true, "description": "movement method none (immobile schools)"},
-    {"id": 9, "name": "depletable_ltl", "phase": 3, "status": "planned", "implemented": false, "description": "depletable LTL resources with logistic regrowth"},
+    {"id": 9, "name": "depletable_ltl", "phase": 3, "status": "planned", "implemented": true, "description": "depletable LTL resources with logistic regrowth"},
     {"id": 10, "name": "incoming_flux", "phase": 3, "status": "planned", "implemented": false, "description": "incoming flux of schools"},
     {"id": 11, "name": "mpa", "phase": 3, "status": "planned", "implemented": false, "description": "marine protected areas"},
     {"id": 12, "name": "fishing_rate_by_year", "phase": 3, "status": "planned", "implemented": false, "description": "fishing rate by year (file)"},

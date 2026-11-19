@@ -219,12 +219,13 @@ ensemble on the demo variant that uses it (`osmose/demo.py`).
 it, check that the config uses it: Benguela switches incoming flux on (task 3.2) and gives no
 species a flux file, which does nothing, so it runs without 3.2
 (`docs/perf/2026-11-19-csharp-benguela.md`, which also lists what each shipped config still
-needs). Of the shipped demos, only `baltic_a2` (3.1) and `baltic_depensation` (3.6) wait on a
-Phase 3 task.
+needs). Of the shipped demos, `baltic_a2` (3.1) and `baltic_depensation` (3.6) waited on a
+Phase 3 task. Both were done on 2026-11-19, so every shipped demo that is not bioenergetic
+or genetic now runs on the C# engine.
 
 | # | Feature | Size |
 |---|---|---|
-| 3.1 | Depletable LTL with logistic regrowth | S |
+| 3.1 | Depletable LTL with logistic regrowth. **Done** (2026-11-19, for `baltic_a2`; see issue #337 on the regrowth itself) | S |
 | 3.2 | Incoming flux | S |
 | 3.3 | MPAs | S |
 | 3.4 | By-year fishing rate, by-step additional and larva rates, additional-mortality maps | S |

@@ -79,6 +79,11 @@ public sealed class SimulationRun
 
     public SchoolStore Store { get; }
 
+    /// <summary>The run's resource biomass, cell-major (<c>[cell * nRsc + r]</c>): each step's
+    /// update writes it, the kernel eats from it, and with depletable resources the next
+    /// update reads what is left. For the probes.</summary>
+    internal Span<double> ResourceBuffer => _rsc;
+
     public RunResults Results { get; }
 
     public OutputCollector Collector { get; }

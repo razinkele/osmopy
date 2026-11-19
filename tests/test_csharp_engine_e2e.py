@@ -512,6 +512,46 @@ def test_the_depensation_demo_is_the_same_at_1_2_and_14_threads(tmp_path):
     assert got["1:1"]["digest"] != got["7:1"]["digest"]
 
 
+# ------------------------------------------------ task 3.1: depletable resources
+
+RESET = {"ltl.depletable.enabled": "false"}
+
+
+def test_the_depletable_demo_runs_and_depletion_reaches_the_output(tmp_path):
+    """The shipped ``baltic_a2`` demo, refused until depletable resources were ported. With
+    them the resources start from 5% of their capacity and keep what predation leaves, so the
+    run differs from the same config with the resources reset every step, from the first
+    record on."""
+    from osmose.engine_cs.capabilities import csharp_engine_block_reason
+
+    raw = _raw("baltic_a2", tmp_path, 3, minimal=False)
+    assert raw["ltl.depletable.enabled"] == "true"
+    assert csharp_engine_block_reason(raw) is None
+    on = _run_records("csharp", raw, tmp_path / "on.pkl")
+    off = _run_records("csharp", raw | RESET, tmp_path / "off.pkl")
+    assert len(on) == len(off) == 3
+    focal = int(raw["simulation.nspecies"])
+    for a, b in zip(on, off, strict=True):
+        assert (
+            np.isfinite(np.asarray(a.biomass)).all() and (np.asarray(a.biomass)[:focal] > 0).all()
+        )
+        assert np.asarray(a.biomass).tobytes() != np.asarray(b.biomass).tobytes()
+
+
+def test_the_depletable_demo_is_the_same_at_1_2_and_14_threads(tmp_path):
+    """The resources are a buffer the run keeps from step to step, and whose starting content
+    is now read. The child runs six runs in one process: a run that started from the buffer
+    of the run before it would not repeat the first one, whatever the thread count."""
+    raw = _raw("baltic_a2", tmp_path, 3, minimal=False)
+    _child("thread_digests", raw, tmp_path / "d.json", "1,7")
+    got = json.loads((tmp_path / "d.json").read_text())
+    for seed in (1, 7):
+        one, two, many = (got[f"{seed}:{threads}"] for threads in (1, 2, 14))
+        assert one["records"] == two["records"] == many["records"] == 3
+        assert one["digest"] == two["digest"] == many["digest"], f"seed {seed}"
+    assert got["1:1"]["digest"] != got["7:1"]["digest"]
+
+
 def test_live_map_observer_is_refused(tmp_path):
     with pytest.raises(CSharpEngineError, match="live map"):
         CSharpEngine().run(

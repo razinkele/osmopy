@@ -65,6 +65,22 @@ public static class PrepProbe
         StepPreparation.Rates(p, store.Core, store.Life, store.Step, step);
         int nRsc = p.Resources.N, nCells = p.Ny * p.Nx;
         double[] cellMajor = new double[Math.Max(1, nRsc * nCells)];
+
+        // Optional: the biomass carried into the step, Python's (n_rsc, n_cells). Only depletable
+        // resources read it; without the entry the buffer is empty, as at the start of a run.
+        if (state.TryGet("state.resources", out _))
+        {
+            double[] carried = r.Array("state.resources", DType.F8, nRsc, nCells)!.ToArray<double>();
+            r.ThrowIfProblems();
+            for (int rr = 0; rr < nRsc; rr++)
+            {
+                for (int c = 0; c < nCells; c++)
+                {
+                    cellMajor[(c * nRsc) + rr] = carried[(rr * nCells) + c];
+                }
+            }
+        }
+
         StepPreparation.UpdateResources(p, step, cellMajor);
 
         double[] es = new double[n], ea = new double[n], ef = new double[n], ed = new double[n];

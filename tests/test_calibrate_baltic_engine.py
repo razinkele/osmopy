@@ -237,15 +237,37 @@ def test_the_check_sees_the_phase_s_edits_and_the_starting_point(monkeypatch):
         assert config[key] == value
     assert seen["optimizer"] == "de"
 
-    # End to end with the real check: the depletion base switches on a feature the C# engine
-    # does not implement, and the refusal names it.
+    # End to end with the real check: phase 1g switches on a feature the C# engine does not
+    # implement (dynamic accessibility), and the refusal names it.
     monkeypatch.undo()
     monkeypatch.setattr(engine_cs, "csharp_engine_available", lambda: (True, ""))
     monkeypatch.setattr(cb, "_preflight_csharp", _never)  # a missing refusal fails here, at once
-    with pytest.raises(SystemExit, match="cannot run this calibration's config: .*depletable"):
-        cb.run_calibration(phase="1", a2=True, engine="csharp")
+    with pytest.raises(
+        SystemExit, match="cannot run this calibration's config: .*dynamic_accessibility"
+    ):
+        cb.run_calibration(phase="1g", engine="csharp")
     with pytest.raises(SystemExit, match="--optimizer de only"):
         cb.run_calibration(phase="1b", optimizer="cmaes", engine="csharp")
+
+
+@pytest.mark.parametrize("options", [{"phase": "1", "a2": True}, {"phase": "a2r"}])
+def test_the_depletion_base_passes_the_check(monkeypatch, options):
+    """Depletable resources run on the C# engine since plan task 3.1, so the two calibrations
+    on the depletion base are no longer refused: the real check lets them through to the first
+    evaluation. (The depletion base was this file's example of a refused feature until then.)"""
+    from osmose import engine_cs
+
+    seen: dict = {}
+
+    def reached(objective, x0, timeout_s):
+        seen["n_free"] = len(x0)
+        raise SystemExit("reached the first evaluation")
+
+    monkeypatch.setattr(engine_cs, "csharp_engine_available", lambda: (True, ""))
+    monkeypatch.setattr(cb, "_preflight_csharp", reached)
+    with pytest.raises(SystemExit, match="reached the first evaluation"):
+        cb.run_calibration(engine="csharp", **options)
+    assert seen["n_free"] > 0
 
 
 def test_a_first_evaluation_that_fails_stops_the_run(monkeypatch):

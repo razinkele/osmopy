@@ -116,7 +116,7 @@ public sealed class ResourceOxygenTests : IDisposable
     private static (ResourceParameters Parameters, IReadOnlyList<string> Problems) Read(SimulationConfig c, bool feature)
     {
         var r = new BundleReader(c, 1);
-        return (ModelReader.Resources(r, NSteps, NCells, feature), r.Problems);
+        return (ModelReader.Resources(r, NSteps, NCells, feature, depletable: false), r.Problems);
     }
 
     [Fact]

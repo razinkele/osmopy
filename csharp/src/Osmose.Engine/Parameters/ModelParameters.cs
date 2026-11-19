@@ -176,6 +176,17 @@ public sealed class ResourceParameters
 
     /// <summary><c>[step]</c>: the oxygen frame of each step.</summary>
     public int[] OxygenFrameByStep { get; init; } = [];
+
+    /// <summary>Feature <c>depletable_ltl</c>: the biomass predation leaves is carried to the
+    /// next step and regrown toward the carrying capacity, where it is otherwise reset to it.</summary>
+    public bool Depletable { get; init; }
+
+    /// <summary>The fraction of the carrying capacity regrowth starts from at the least, so that
+    /// an emptied cell recovers.</summary>
+    public double DepletableFloor { get; init; }
+
+    /// <summary>Per resource: the logistic regrowth rate, per step.</summary>
+    public double[] RegrowthRate { get; init; } = [];
 }
 
 /// <summary>Background (forced) species (bundle group <c>background</c>, feature
@@ -482,12 +493,38 @@ internal static class ModelReader
         DiscardRate = config.TryGet("fishing.discard_rate", out _) ? F8(r, "fishing.discard_rate", nTotal) : null,
     };
 
-    public static ResourceParameters Resources(BundleReader r, int nSteps, int nCells, bool oxygen)
+    public static ResourceParameters Resources(BundleReader r, int nSteps, int nCells, bool oxygen, bool depletable)
     {
         int n = (int)r.Int("resources.n");
         if (n <= 0)
         {
             return new ResourceParameters { N = 0 };
+        }
+
+        // As for oxygen: required with the feature, a builder error without it.
+        double floor = 0.0;
+        double[] regrowth = [];
+        string[] depletableEntries = ["resources.depletable.floor", "resources.depletable.regrowth_rate"];
+        if (depletable)
+        {
+            floor = r.Float(depletableEntries[0]);
+            regrowth = F8(r, depletableEntries[1], n);
+            if (r.Has(depletableEntries[0]) && !(floor >= 0.0 && floor <= 1.0))
+            {
+                r.Problem($"{depletableEntries[0]}: {floor} must be in [0, 1]");
+            }
+
+            if (regrowth.Any(rate => !(rate >= 0.0) || double.IsInfinity(rate)))
+            {
+                r.Problem($"{depletableEntries[1]}: values must be finite and >= 0");
+            }
+        }
+        else
+        {
+            foreach (string name in depletableEntries.Where(r.Has))
+            {
+                r.Problem($"{name}: present, but the bundle does not declare feature depletable_ltl");
+            }
         }
 
         // The oxygen entries exist exactly when the bundle declares oxygen_benthos: required with
@@ -522,6 +559,9 @@ internal static class ModelReader
             OxygenCoupled = coupled,
             OxygenFactor = factor,
             OxygenFrameByStep = oxygenFrame,
+            Depletable = depletable,
+            DepletableFloor = floor,
+            RegrowthRate = regrowth,
             N = n,
             SizeMin = F8(r, "resources.size_min", n),
             SizeMax = F8(r, "resources.size_max", n),

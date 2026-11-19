@@ -11,8 +11,12 @@ namespace Osmose.Engine.Step;
 /// </summary>
 public static class StepPreparation
 {
-    /// <summary>Carrying capacity of every resource in every cell for <paramref name="step"/>,
-    /// cell-major (<c>[cell * nRsc + r]</c>, spec 4.3): <c>forcing[r, frame] * access</c>.</summary>
+    /// <summary>The resources of every cell for <paramref name="step"/>, cell-major
+    /// (<c>[cell * nRsc + r]</c>, spec 4.3). The carrying capacity is
+    /// <c>forcing[r, frame] * access</c> (times the oxygen factor for a coupled resource). By
+    /// default the buffer is reset to it. With feature <c>depletable_ltl</c> the buffer's own
+    /// content, what the last step's predation left, is regrown toward it
+    /// (<see cref="Regrow"/>), so the buffer must be the run's and must start at zero.</summary>
     public static void UpdateResources(EngineParameters p, int step, Span<double> cellMajor) =>
         UpdateResources(p.Resources, p.Ny * p.Nx, step, cellMajor);
 
@@ -36,14 +40,18 @@ public static class StepPreparation
             int frame = rp.FrameByStep[(step * nRsc) + r];
             double access = rp.AccessByStep[(step * nRsc) + r];
             int baseIdx = ((r * rp.NFrames) + frame) * nCells;
+            double rate = rp.Depletable ? rp.RegrowthRate[r] : 0.0;
             if (rp.OxygenCoupled.Length > 0 && rp.OxygenCoupled[r] != 0)
             {
                 // ResourceState.update: k_row = (forcing * multiplier * access) * f_o2_hill(...),
-                // the same left-to-right product, on the builder's pre-evaluated factor.
+                // the same left-to-right product, on the builder's pre-evaluated factor. The
+                // regrowth, if any, is toward the capacity so scaled.
                 int oxygenBase = rp.OxygenFrameByStep[step] * nCells;
                 for (int c = 0; c < nCells; c++)
                 {
-                    cellMajor[(c * nRsc) + r] = rp.Forcing[baseIdx + c] * access * rp.OxygenFactor[oxygenBase + c];
+                    double k = rp.Forcing[baseIdx + c] * access * rp.OxygenFactor[oxygenBase + c];
+                    int i = (c * nRsc) + r;
+                    cellMajor[i] = rp.Depletable ? Regrow(cellMajor[i], k, rate, rp.DepletableFloor) : k;
                 }
 
                 continue;
@@ -51,9 +59,28 @@ public static class StepPreparation
 
             for (int c = 0; c < nCells; c++)
             {
-                cellMajor[(c * nRsc) + r] = rp.Forcing[baseIdx + c] * access;
+                double k = rp.Forcing[baseIdx + c] * access;
+                int i = (c * nRsc) + r;
+                cellMajor[i] = rp.Depletable ? Regrow(cellMajor[i], k, rate, rp.DepletableFloor) : k;
             }
         }
+    }
+
+    /// <summary>
+    /// <c>logistic_regrow</c> for one cell: from the larger of the carried biomass and
+    /// <c>floor * k</c>, one logistic step toward <paramref name="k"/>, capped at it; 0 where
+    /// there is no capacity. The arithmetic is the Python function's, in its order.
+    /// </summary>
+    public static double Regrow(double carried, double k, double rate, double floor)
+    {
+        if (!(k > 0.0))
+        {
+            return 0.0;
+        }
+
+        double b = Math.Max(carried, floor * k);
+        double grown = b + (rate * b * (1.0 - (b / k)));
+        return Math.Min(grown, k);
     }
 
     /// <summary>Feeding stage and accessibility indices of every school (they depend only on

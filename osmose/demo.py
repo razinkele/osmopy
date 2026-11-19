@@ -170,8 +170,8 @@ DEMO_INFO: dict[str, dict[str, str]] = {
         "production Baltic mortality, uncalibrated under A2. The fit it reached before the split "
         "was the best achievable community fit, NOT fully ICES-calibrated: herring, sprat and "
         "stickleback in-band, cod just above band, coastal percids (perch/pike-perch) "
-        "structurally over at this grid resolution. Python engine only (depletable plankton has "
-        "no Java equivalent).",
+        "structurally over at this grid resolution. No Java run: depletable plankton has no "
+        "Java equivalent.",
     },
     "baltic_depensation": {
         "title": "Baltic Sea (depensation/Allee)",
@@ -270,7 +270,8 @@ def _generate_baltic_a2(output_dir: Path) -> dict:
 
     A thin overlay on the baltic demo: copy baltic's full config (grid/forcing/maps/sub-CSVs),
     then overlay the three baltic_a2 delta files (master + a2 mortality + a2 depletion). No
-    NetCDFs are duplicated. Python-engine only (depletion has no Java equivalent).
+    NetCDFs are duplicated. No Java run: depletion has no Java equivalent. The Python and C#
+    engines run it.
     """
     data_dir = _bundled_data_dir("baltic")
     a2_dir = _bundled_data_dir("baltic_a2")
@@ -300,9 +301,9 @@ def _generate_baltic_depensation(output_dir: Path) -> dict:
 
     A thin overlay on the baltic demo: copy baltic's full config (grid/forcing/maps/sub-CSVs),
     then overlay the baltic_depensation master (same includes as baltic + the depensation gate
-    keys). No NetCDFs are duplicated. Python-engine only (the depensation gate has no Java
-    equivalent). The operating point (s50/theta/larval-M) is a placeholder pending Task 8's
-    placement sweep.
+    keys). No NetCDFs are duplicated. No Java run: the depensation gate has no Java
+    equivalent. The Python and C# engines run it. The operating point (s50/theta/larval-M) is
+    a placeholder pending Task 8's placement sweep.
     """
     data_dir = _bundled_data_dir("baltic")
     dep_dir = _bundled_data_dir("baltic_depensation")
