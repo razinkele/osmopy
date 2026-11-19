@@ -148,5 +148,11 @@ def test_overrides_reach_the_in_process_engines_whatever_their_case():
 
 
 def test_java_overrides_keep_their_case():
-    """The Java engine is case-sensitive: its overrides go to the jar as typed."""
+    """The Java engine is case-sensitive: its overrides go to the jar as typed. Its call site
+    parses them directly and does not go through the in-process merge, which lowercases."""
     assert parse_overrides("species.lInf.sp0 = 120") == {"species.lInf.sp0": "120"}
+    source = (Path(__file__).resolve().parents[1] / "ui" / "pages" / "run.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'parse_overrides(input.param_overrides() or "")' in source
+    assert "effective_run_config(config, input.param_overrides()" not in source
