@@ -1915,6 +1915,10 @@ class EngineConfig:
     # Movement map coverage enforcement
     movement_strict_coverage: bool = False
 
+    # simulation.kill.if.no.school.enabled (OSMOSE 4.4.1): stop the run when a focal species
+    # has no fish left after the seeding period (osmose.engine.SpeciesCollapsed).
+    kill_if_no_school: bool = False
+
     # Gompertz growth parameters (None when no GOMPERTZ species)
     gompertz_ke: NDArray[np.float64] | None = None
     gompertz_lstart: NDArray[np.float64] | None = None
@@ -2504,10 +2508,19 @@ class EngineConfig:
                 ncell_vals.append(0)
         random_distribution_ncell = np.array(ncell_vals, dtype=np.int32) if ncell_found else None
 
-        # Phase 4: Random seed flags
-        movement_seed_fixed = cfg.get("movement.randomseed.fixed", "false").lower() == "true"
+        # Phase 4: Random seed flags. OSMOSE 4.4.0 replaces the per-process keys by one,
+        # simulation.fixed.seed.enabled. Configs of both generations are run here, so either
+        # spelling fixes a stream.
+        all_seeds_fixed = cfg.get("simulation.fixed.seed.enabled", "false").lower() == "true"
+        movement_seed_fixed = (
+            all_seeds_fixed or cfg.get("movement.randomseed.fixed", "false").lower() == "true"
+        )
         mortality_seed_fixed = (
-            cfg.get("stochastic.mortality.randomseed.fixed", "false").lower() == "true"
+            all_seeds_fixed
+            or cfg.get("stochastic.mortality.randomseed.fixed", "false").lower() == "true"
+        )
+        kill_if_no_school = (
+            cfg.get("simulation.kill.if.no.school.enabled", "false").lower() == "true"
         )
         java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
@@ -2808,6 +2821,7 @@ class EngineConfig:
             mortality_seed_fixed=mortality_seed_fixed,
             java_compat_rng=java_compat_rng,
             movement_strict_coverage=movement_strict,
+            kill_if_no_school=kill_if_no_school,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
             vb_species_ids=frozenset(i for i, gc in enumerate(growth_class) if gc == "VB"),
