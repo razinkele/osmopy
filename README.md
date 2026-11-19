@@ -147,7 +147,7 @@ The Baltic example is the newest and most documented. It covers cod, herring, sp
 - **Full provenance** — every parameter family, every value source, every DOI: [`docs/baltic_example.md`](docs/baltic_example.md).
 - **Validation vs ICES** — F rates and biomass envelopes cross-checked against the 2026 advice cycle: [`docs/baltic_ices_validation_2026-11-06.md`](docs/baltic_ices_validation_2026-11-06.md). Unit-aware (the ICES API mislabels some stocks' SSB units; the validator detects this via Blim magnitude).
 - **Refresh workflow** — [`data/baltic/reference/ices_snapshots/README.md`](data/baltic/reference/ices_snapshots/README.md).
-- **Calibration driver** — `scripts/calibrate_baltic.py` (phases: larval mortality, adult mortality + F) runs the Python engine directly, no Java needed.
+- **Calibration driver** — `scripts/calibrate_baltic.py` (phases: larval mortality, adult mortality + F) runs the Python engine directly, no Java needed (`--engine csharp` runs the evaluations on the optional C# engine instead, with `--optimizer de`).
 - **Forcing** — `scripts/rebuild_baltic_mask.py` and `mcp_servers/copernicus/server.py` regenerate the mask + LTL NetCDF from CMEMS data.
 
 ```bash

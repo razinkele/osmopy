@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import sys
 from pathlib import Path
 
 ASSEMBLY_NAME = "Osmose.Engine"
@@ -59,6 +60,15 @@ def resolve_dotnet_root() -> Path | None:
     if on_path:
         return Path(on_path).resolve().parent
     return None
+
+
+def clr_hosted() -> bool:
+    """Whether THIS process hosts the .NET runtime, that is, has loaded the engine. Never loads
+    it. A process that hosts it must not fork afterwards: the runtime's threads do not survive
+    a fork, and the child dies on its first managed call (measured 2026-11-19). Forking BEFORE
+    the runtime is loaded is fine: each child then loads its own."""
+    bridge = sys.modules.get(f"{__name__}.bridge")
+    return "clr" in sys.modules or getattr(bridge, "_engine", None) is not None
 
 
 def csharp_engine_available() -> tuple[bool, str]:

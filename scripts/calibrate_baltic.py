@@ -4,7 +4,10 @@
 Calibrates larval mortality rates (phase 1) and optionally adult mortality / fishing
 rates (phase 2) to match target equilibrium biomass for 8 focal species.
 
-Uses the PythonEngine directly (no Java required).
+Uses the PythonEngine directly (no Java required). ``--engine csharp`` runs the evaluations on
+the C# engine instead (an optional build; DE only). It writes its checkpoint and results under
+``phase<N>_csharp_*.json``, so it never replaces a Python result; where it reads an earlier
+phase's results it reads its own first, then the Python engine's, and says which.
 
 Usage:
     .venv/bin/python scripts/calibrate_baltic.py [--phase 1] [--maxiter 200] [--seeds 3]
@@ -155,14 +158,43 @@ def _run_with_timeout(fn, timeout_s):
         signal.signal(signal.SIGALRM, old)
 
 
-def _eval_child(func, x, conn, n_workers: int = 1) -> None:
+ENGINES = ("python", "csharp")
+
+
+def _assert_may_fork(what: str) -> None:
+    """A process that hosts the .NET runtime must not fork afterwards: the runtime's threads do
+    not survive the fork and the child dies on its first managed call ("Fatal error", measured
+    2026-11-19). Neither way of running DE would say so: the isolated-eval map scores a dead
+    child the ordinary 1e6 penalty, and the fork pool loses the dead worker's task, so its map
+    never returns. Children forked from a parent that never loaded the runtime are fine, which
+    is how the DE workers run the C# engine. This turns a broken order of operations into an
+    error here, at the fork.
+    """
+    from osmose.engine_cs import clr_hosted
+
+    if clr_hosted():
+        raise RuntimeError(
+            f"{what}: this process has already run the C# engine (it hosts the .NET runtime) "
+            "and must not fork; run the engine only in the workers until the last fork is done"
+        )
+
+
+def _init_worker(n_workers: int, engine: str = "python") -> None:
+    """Applied in each worker process. The Python engine gets Numba's worker thread rule. The
+    C# engine takes its thread count per run, from the objective, and must not import Numba
+    for nothing."""
+    if engine == "python":
+        apply_worker_threads(n_workers)
+
+
+def _eval_child(func, x, conn, n_workers: int = 1, engine: str = "python") -> None:
     """Child-process entry: evaluate func(x) and send the scalar back, or None on failure.
 
     The worker thread rule is applied HERE, in the forked child: on Numba's GNU OpenMP layer
     the parent must never touch Numba's threads before forking (see osmose.engine.thread_policy).
     """
     try:
-        apply_worker_threads(n_workers)
+        _init_worker(n_workers, engine)
         conn.send(float(func(x)))
     except BaseException:
         try:
@@ -209,6 +241,7 @@ class _ForkedReeval:
         self.last_per_species_residuals = None
 
     def __call__(self, x) -> float:
+        _assert_may_fork("the forked re-evaluation")
         ctx = mp.get_context("fork")
         parent_conn, child_conn = ctx.Pipe(duplex=False)
         proc = ctx.Process(target=_reeval_child, args=(self._evaluator, x, child_conn))
@@ -235,7 +268,7 @@ class _ForkedReeval:
 
 
 def isolated_eval_map(
-    timeout_s: float, n_workers: int, penalty: float = 1e6
+    timeout_s: float, n_workers: int, penalty: float = 1e6, engine: str = "python"
 ) -> Callable[[Callable[..., float], Iterable], list[float]]:
     """A scipy-DE ``workers``-compatible parallel map that isolates every objective evaluation
     in its own forked subprocess with a hard kill-timeout.
@@ -249,6 +282,7 @@ def isolated_eval_map(
     ctx = mp.get_context("fork")
 
     def _map(func, iterable):
+        _assert_may_fork("the isolated-eval map")
         tasks = list(iterable)
         results = [penalty] * len(tasks)
         for start in range(0, len(tasks), n_workers):
@@ -257,7 +291,9 @@ def isolated_eval_map(
             procs: dict[int, object] = {}
             for i in wave:
                 parent_conn, child_conn = ctx.Pipe(duplex=False)
-                p = ctx.Process(target=_eval_child, args=(func, tasks[i], child_conn, n_workers))
+                p = ctx.Process(
+                    target=_eval_child, args=(func, tasks[i], child_conn, n_workers, engine)
+                )
                 p.start()
                 child_conn.close()  # only the child holds the write end -> clean EOF on crash
                 conns[i] = parent_conn
@@ -295,13 +331,21 @@ def run_simulation(
     seed: int = 42,
     timeout_s: float | None = None,
     recruitment_ages: dict[str, str] | None = None,
+    engine: str = "python",
+    engine_threads: int | None = None,
 ) -> dict[str, float]:
-    """Run PythonEngine with overrides, return last-10-year mean biomass per species.
+    """Run the engine with overrides, return last-10-year mean biomass per species.
 
     Also returns stability metrics (CV, trend slope) for penalty computation.
+
+    ``engine`` is "python" (the default) or "csharp". ``engine_threads`` is the C# engine's
+    thread count for this run (None: the machine's physical cores); the Python engine's threads
+    are set per process, by the worker thread rule, and it ignores this.
     """
-    from osmose.engine import PythonEngine
     from osmose.results import OsmoseResults
+
+    if engine not in ENGINES:
+        raise ValueError(f"engine must be one of {ENGINES}, got {engine!r}")
 
     cfg = dict(config)
     cfg["simulation.time.nyear"] = str(n_years)
@@ -315,10 +359,18 @@ def run_simulation(
 
     with tempfile.TemporaryDirectory(prefix="baltic_cal_") as tmpdir:
         output_dir = Path(tmpdir) / "output"
-        engine = PythonEngine()
+        if engine == "python":
+            from osmose.engine import PythonEngine
+
+            runner = PythonEngine()
+        else:
+            from osmose.engine.select import get_engine
+            from osmose.engine.thread_policy import physical_budget
+
+            runner = get_engine(engine, threads=engine_threads or physical_budget())
         try:
             result = _run_with_timeout(
-                lambda: engine.run(cfg, output_dir=output_dir, seed=seed), timeout_s
+                lambda: runner.run(cfg, output_dir=output_dir, seed=seed), timeout_s
             )
         except _SimTimeout:
             # A pathological candidate hung; treat as a failed eval (objective -> 1e6 penalty).
@@ -414,7 +466,13 @@ class _ObjectiveWrapper:
         w_worst: float = 0.5,
         sim_timeout_s: float | None = None,
         weight_floor: float = 0.0,
+        engine: str = "python",
+        engine_threads: int | None = None,
     ):
+        if engine not in ENGINES:
+            raise ValueError(f"engine must be one of {ENGINES}, got {engine!r}")
+        self.engine = engine
+        self.engine_threads = engine_threads
         self.base_config = base_config
         self.targets = targets
         self.param_keys = param_keys
@@ -506,6 +564,8 @@ class _ObjectiveWrapper:
             n_years=self.n_years,
             seed=self.seed,
             timeout_s=self.sim_timeout_s,
+            engine=self.engine,
+            engine_threads=self.engine_threads,
         )
         return stats or {}
 
@@ -521,6 +581,8 @@ def make_objective(
     w_worst: float = 0.5,
     sim_timeout_s: float | None = None,
     weight_floor: float = 0.0,
+    engine: str = "python",
+    engine_threads: int | None = None,
 ) -> Callable[[np.ndarray], float]:
     """Create objective function for differential evolution.
 
@@ -544,6 +606,8 @@ def make_objective(
         w_worst=w_worst,
         sim_timeout_s=sim_timeout_s,
         weight_floor=weight_floor,
+        engine=engine,
+        engine_threads=engine_threads,
     )
 
 
@@ -1176,6 +1240,7 @@ def _dispatch_optimizer(
     workers: int,
     seed: int,
     de_callback=None,
+    engine: str = "python",
 ) -> dict:
     """Dispatch to the chosen optimizer; return a normalised result dict.
 
@@ -1200,8 +1265,9 @@ def _dispatch_optimizer(
         pool_cm: contextlib.AbstractContextManager = contextlib.nullcontext()
         if isinstance(workers, int) and workers != 1:
             n_pool = (os.cpu_count() or 1) if workers == -1 else workers  # scipy: -1 = all CPUs
+            _assert_may_fork("the DE worker pool")
             pool_cm = mp.get_context("fork").Pool(
-                n_pool, initializer=apply_worker_threads, initargs=(n_pool,)
+                n_pool, initializer=_init_worker, initargs=(n_pool, engine)
             )
         with pool_cm as pool:
             result = differential_evolution(
@@ -1297,6 +1363,76 @@ def apply_warm_start(
     return new_x0, applied, skipped
 
 
+def _require_csharp(effective_config: dict[str, str], optimizer: str = "de") -> None:
+    """Refuse a C# calibration that cannot work, before anything runs. ``effective_config`` is
+    the config the evaluations run: the base after the phase's edits, with the starting point's
+    overrides applied. Checking the stock file would miss a feature a phase switches on."""
+    if optimizer != "de":
+        raise SystemExit(
+            f"--engine csharp runs with --optimizer de only: {optimizer!r} evaluates through "
+            "joblib, which has not been tried with the C# engine"
+        )
+    from osmose.engine_cs import csharp_engine_available
+    from osmose.engine_cs.capabilities import csharp_engine_block_reason
+
+    available, why = csharp_engine_available()
+    if not available:
+        raise SystemExit(f"--engine csharp: the C# engine is not available here: {why}")
+    reason = csharp_engine_block_reason(effective_config)
+    if reason is not None:
+        raise SystemExit(
+            f"--engine csharp: the C# engine cannot run this calibration's config: {reason}"
+        )
+
+
+def _preflight_csharp(objective, x0, timeout_s: float) -> float:
+    """Evaluate the starting point once on the C# engine, in a forked child, and stop if it
+    fails. A failed evaluation scores the 1e6 penalty and a crashed worker does too, so an
+    engine that cannot run here would otherwise hand the optimizer a flat landscape for hours.
+    Forked, because this process must not host the runtime before the workers are forked."""
+    try:
+        value = _ForkedReeval(objective, timeout_s=timeout_s)(np.asarray(x0, dtype=float))
+    except (RuntimeError, TimeoutError) as exc:
+        raise SystemExit(
+            f"--engine csharp: the first evaluation (the starting point) failed: {exc}"
+        ) from exc
+    if not np.isfinite(value) or value >= 1e6:
+        raise SystemExit(
+            "--engine csharp: the first evaluation (the starting point) returned the failure "
+            f"penalty ({value:g}): the C# engine did not complete the simulation"
+        )
+    return float(value)
+
+
+def _engine_tag(engine: str) -> str:
+    """'' for the Python engine, '_csharp' for the C# engine: the suffix of a run's checkpoint
+    and results files, so a C# run never replaces a Python one (other scripts and the phase
+    chain read ``phase<N>_results.json``)."""
+    return "" if engine == "python" else f"_{engine}"
+
+
+CROSS_ENGINE_NOTE = ", calibrated on the PYTHON engine"
+
+
+def _earlier_phase_results(phase_label: str, engine: str) -> tuple[Path | None, str]:
+    """The results file a run on ``engine`` reads for an EARLIER phase, and a note for the log.
+
+    An engine reads its own results first. The C# engine falls back to the Python engine's
+    file, which is the calibration of record, and the note says so: a C# run on parameters the
+    Python engine calibrated is a legitimate cross-check, but it must not pass for a C# chain.
+    The Python engine reads only its own file, as it always has, and its note is empty.
+    """
+    canonical = RESULTS_DIR / f"phase{phase_label}_results.json"
+    if engine == "python":
+        return (canonical if canonical.exists() else None), ""
+    own = RESULTS_DIR / f"phase{phase_label}{_engine_tag(engine)}_results.json"
+    if own.exists():
+        return own, ""
+    if canonical.exists():
+        return canonical, CROSS_ENGINE_NOTE
+    return None, ""
+
+
 def run_calibration(
     phase: str,
     seeding_mode: str | None = None,
@@ -1316,6 +1452,7 @@ def run_calibration(
     sim_timeout_s: float | None = None,
     isolated_eval: bool = False,
     weight_floor: float = 0.0,
+    engine: str = "python",
 ) -> dict:
     """Run differential evolution calibration for the specified phase."""
     from osmose.config.reader import OsmoseConfigReader
@@ -1427,15 +1564,15 @@ def run_calibration(
     # overrides. Without this, phase 2 would run with R18 defaults, which would reintroduce
     # the smelt/stickleback extinction risk phase 1 just eliminated.
     if phase == "2":
-        p1_file = RESULTS_DIR / "phase1_results.json"
-        if p1_file.exists():
+        p1_file, p1_note = _earlier_phase_results("1", engine)
+        if p1_file is not None:
             with open(p1_file) as f:
                 p1_data = json.load(f)
             for key, val in p1_data.get("parameters", {}).items():
                 base_config[key.lower()] = str(val)
             print(
                 f"Phase 2: inherited {len(p1_data.get('parameters', {}))} "
-                f"calibrated params from phase1_results.json"
+                f"calibrated params from {p1_file.name}{p1_note}"
             )
         else:
             print(
@@ -1494,6 +1631,13 @@ def run_calibration(
         current = base_config.get(config_key, "?")
         print(f"  {key}: log10 bounds [{lo:.1f}, {hi:.1f}] (current: {current}, x0: {x0_val:.3f})")
 
+    if engine == "csharp":
+        effective = dict(base_config)
+        effective["output.minimal.enabled"] = "true"  # as run_simulation runs an evaluation
+        effective.update(expand_param_overrides(param_keys, np.asarray(x0, dtype=float), True))
+        _require_csharp(effective, optimizer)
+        print("Engine: C# (evaluations in the workers; results under *_csharp_*.json)", flush=True)
+
     # Build objective
     objective = make_objective(
         base_config,
@@ -1504,6 +1648,7 @@ def run_calibration(
         use_log_space=True,
         sim_timeout_s=sim_timeout_s,
         weight_floor=weight_floor,
+        engine=engine,
     )
 
     # Initialize DE population: mixed strategy
@@ -1545,12 +1690,26 @@ def run_calibration(
     # 2026-04-24). 8 × 400 MB = 3.2 GB — comfortable. Override with
     # OSMOSE_DE_WORKERS env var.
     workers = int(os.environ.get("OSMOSE_DE_WORKERS", "8"))
+    if engine == "csharp":
+        # The C# engine takes its thread count per run. In the workers: the worker rule, as the
+        # Python engine's Numba threads get (physical cores // workers). Then one evaluation of
+        # the starting point, before any worker exists, to fail now and not as penalties.
+        from osmose.engine.thread_policy import physical_budget, worker_thread_count
+
+        n_eval_procs = (os.cpu_count() or 1) if workers == -1 else max(1, workers)
+        objective.engine_threads = worker_thread_count(n_eval_procs) or physical_budget()
+        f0 = _preflight_csharp(objective, x0, timeout_s=sim_timeout_s or 600.0)
+        print(
+            f"C# preflight: the starting point evaluates to {f0:.6f} "
+            f"({objective.engine_threads} thread(s) per evaluation)",
+            flush=True,
+        )
     if isolated_eval:
         # Isolate every eval in a killable subprocess so a pathological candidate that crashes
         # or hangs its worker becomes a penalty instead of deadlocking the DE pool.
         kill_to = sim_timeout_s or 600.0
         n_iso = workers
-        workers = isolated_eval_map(kill_to, n_iso, penalty=1e6)
+        workers = isolated_eval_map(kill_to, n_iso, penalty=1e6, engine=engine)
         print(f"Isolated-eval executor ON ({n_iso} procs, per-eval kill-timeout {kill_to:.0f}s).")
     print(
         f"\nStarting optimizer={optimizer!r} (eff_popsize={eff_popsize}, "
@@ -1578,7 +1737,9 @@ def run_calibration(
     )
     if optimizer == "de" and (checkpoint_every > 0 or patience > 0 or wall_clock_cap_h > 0):
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        checkpoint_path = RESULTS_DIR / f"phase{phase.replace('/', '_')}_checkpoint.json"
+        checkpoint_path = (
+            RESULTS_DIR / f"phase{phase.replace('/', '_')}{_engine_tag(engine)}_checkpoint.json"
+        )
         wall_clock_cap_s = wall_clock_cap_h * 3600.0 if wall_clock_cap_h > 0 else None
         # Derive banded_targets dict from the evaluator's targets for the
         # main-thread re-eval that captures per-species residuals. The
@@ -1630,7 +1791,11 @@ def run_calibration(
         workers=workers,
         seed=42,
         de_callback=de_callback,
+        engine=engine,
     )
+    # The last fork is done. What follows runs in this process, one run at a time: the C#
+    # engine gets the machine's physical cores again.
+    objective.engine_threads = None
 
     elapsed = time.time() - t0
     print(f"\n{optimizer} completed in {elapsed:.0f}s ({elapsed / 60:.1f} min)")
@@ -1661,6 +1826,7 @@ def run_calibration(
             use_log_space=True,
             sim_timeout_s=sim_timeout_s,
             weight_floor=weight_floor,
+            engine=engine,
         )
         obj_val = obj_fn(best_x)
         rerank_objectives.append(obj_val)
@@ -1686,7 +1852,9 @@ def run_calibration(
         overrides = {k: str(v) for k, v in optimized.items()}
         all_stats = []
         for seed in range(n_seeds):
-            stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed)
+            stats = run_simulation(
+                base_config, overrides, n_years=n_years, seed=seed, engine=engine
+            )
             all_stats.append(stats)
             print(
                 f"  Seed {seed}: "
@@ -1724,6 +1892,7 @@ def run_calibration(
         {
             "timestamp": datetime.now(UTC).isoformat(),
             "algorithm": "de",
+            "engine": engine,
             "phase": phase,
             "parameters": list(param_keys),
             "results": {
@@ -1744,10 +1913,11 @@ def run_calibration(
 
     # Save results
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    results_file = RESULTS_DIR / f"phase{phase.replace('/', '_')}_results.json"
+    results_file = RESULTS_DIR / f"phase{phase.replace('/', '_')}{_engine_tag(engine)}_results.json"
     save_data = {
         "phase": phase,
         "optimizer": optimizer,
+        "engine": engine,
         "objective_single_seed": float(result["fun"]),
         "objective_multiseed_mean": mean_obj,
         "objective_multiseed_std": std_obj,
@@ -1768,7 +1938,7 @@ def run_calibration(
 # ---------------------------------------------------------------------------
 # Validation run
 # ---------------------------------------------------------------------------
-def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
+def validate_calibration(n_years: int = 50, n_seeds: int = 3, engine: str = "python") -> None:
     """Run a long validation simulation with calibrated parameters."""
     from osmose.config.reader import OsmoseConfigReader
 
@@ -1781,13 +1951,14 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
     # Load best parameters from all phases
     overrides: dict[str, str] = {}
     for phase_num in [1, 2]:
-        results_file = RESULTS_DIR / f"phase{phase_num}_results.json"
-        if results_file.exists():
+        results_file, note = _earlier_phase_results(str(phase_num), engine)
+        if results_file is not None:
             with open(results_file) as f:
                 data = json.load(f)
             for key, val in data["parameters"].items():
                 overrides[key] = str(val)
-            print(f"Loaded phase {phase_num} parameters ({len(data['parameters'])} params)")
+            source = "" if engine == "python" else f" from {results_file.name}{note}"
+            print(f"Loaded phase {phase_num} parameters ({len(data['parameters'])} params){source}")
 
     if not overrides:
         print("No calibration results found. Run calibration first.")
@@ -1797,12 +1968,15 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
     for k, v in sorted(overrides.items()):
         print(f"  {k} = {v}")
 
+    if engine == "csharp":
+        _require_csharp(dict(base_config) | {"output.minimal.enabled": "true"} | overrides)
+
     # Run validation
     print(f"\nRunning {n_seeds} validation simulations ({n_years} years each)...")
     all_stats = []
     for seed in range(n_seeds):
         print(f"\n  Seed {seed}...")
-        stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed)
+        stats = run_simulation(base_config, overrides, n_years=n_years, seed=seed, engine=engine)
         all_stats.append(stats)
 
     # Summary
@@ -1858,24 +2032,6 @@ def validate_calibration(n_years: int = 50, n_seeds: int = 3) -> None:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-def _refuse_unplumbed_engine(engine: str) -> None:
-    """``--engine csharp``: say why it cannot run here. Since the C# engine's Phase 2 it can
-    run the Baltic config, so the reason is this script's own: the plumbing is not wired. The DE
-    pool FORKS, and the CLR must never be hosted in a process that forks, so a C# calibration
-    needs a spawn pool and an engine argument carried into every evaluation. Should the engine
-    refuse the config itself (a feature it does not implement), that reason is given instead."""
-    from osmose.config.reader import OsmoseConfigReader
-    from osmose.engine_cs.capabilities import csharp_engine_block_reason
-
-    reason = csharp_engine_block_reason(OsmoseConfigReader().read(BALTIC_CONFIG))
-    if reason is not None:
-        raise SystemExit(f"--engine {engine}: the C# engine cannot run the Baltic config: {reason}")
-    raise SystemExit(
-        f"--engine {engine}: the C# engine could run this config, but calibrate_baltic.py does not "
-        "carry it into its evaluations yet (its DE pool forks; a C# run needs a spawn pool)"
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description="Baltic Sea OSMOSE calibration")
     parser.add_argument(
@@ -1897,7 +2053,12 @@ def main():
         "--engine",
         choices=("python", "csharp"),
         default="python",
-        help="engine of the evaluations (csharp refuses the Baltic config in its Phase 1)",
+        help="engine of the evaluations. csharp: the C# engine (an optional build), with "
+        "--optimizer de; it writes phase<N>_csharp_*.json and never replaces a Python result. "
+        "Where a run reads an earlier phase (phase 2, --validate) it reads its own engine's "
+        "results first; the C# engine falls back to the Python engine's and says so. "
+        "As with the Python engine, --isolated-eval is the mode that survives a worker that "
+        "crashes or hangs (it becomes a penalty); the plain pool would wait for it",
     )
     parser.add_argument("--years", type=int, default=40, help="Simulation years per eval")
     parser.add_argument(
@@ -1995,11 +2156,9 @@ def main():
         "of trading them away.",
     )
     args = parser.parse_args()
-    if args.engine != "python":
-        _refuse_unplumbed_engine(args.engine)
 
     if args.validate:
-        validate_calibration(n_years=50, n_seeds=args.seeds)
+        validate_calibration(n_years=50, n_seeds=args.seeds, engine=args.engine)
     else:
         skip_keys = [k.strip() for k in args.skip_warm_start_keys.split(",") if k.strip()]
         run_calibration(
@@ -2021,6 +2180,7 @@ def main():
             sim_timeout_s=(args.sim_timeout or None),
             isolated_eval=args.isolated_eval,
             weight_floor=args.weight_floor,
+            engine=args.engine,
         )
 
 

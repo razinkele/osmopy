@@ -120,20 +120,14 @@ def test_cli_run_dispatches_in_process_engines(tmp_path, monkeypatch):
     )
 
 
-def test_calibrate_baltic_engine_csharp_says_why_it_cannot_run(monkeypatch):
-    """Two reasons, and the script must give the one that applies. Since task 2.6c the C# engine
-    runs the Baltic config as shipped, so today it is the script's own: its DE pool forks. If
-    the engine refuses the config, that is said instead, with the engine's reason."""
+def test_calibrate_baltic_no_longer_refuses_the_csharp_engine_itself():
+    """Since the owner's G2 decision (2026-11-19) the script carries the engine into its
+    evaluations. What it still refuses is a calibration the C# engine cannot run, with the
+    engine's own reason: tests/test_calibrate_baltic_engine.py."""
     sys.path.insert(0, str(ROOT / "scripts"))
     import calibrate_baltic
 
-    import osmose.engine_cs.capabilities as cap
-
-    with pytest.raises(SystemExit, match="does not carry it into its evaluations yet") as shipped:
-        calibrate_baltic._refuse_unplumbed_engine("csharp")
-    assert "cannot run the Baltic config" not in str(shipped.value)
-    assert "pool forks" in str(shipped.value)
-
-    monkeypatch.setattr(cap, "csharp_engine_block_reason", lambda raw: "lmax_cap (phase 2)")
-    with pytest.raises(SystemExit, match=r"cannot run the Baltic config: lmax_cap \(phase 2\)"):
-        calibrate_baltic._refuse_unplumbed_engine("csharp")
+    assert not hasattr(calibrate_baltic, "_refuse_unplumbed_engine")
+    assert calibrate_baltic.ENGINES == ("python", "csharp")
+    source = (ROOT / "scripts" / "calibrate_baltic.py").read_text(encoding="utf-8")
+    assert "does not carry it into its evaluations yet" not in source
