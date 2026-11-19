@@ -66,7 +66,7 @@ def reduce_records(records: list, config, spinup_years: int) -> dict[str, dict[s
     first = spinup_years * config.n_dt_per_year
     # A record is a window that ENDS at ``step``: keep it only if it also starts after the
     # spin-up, or spin-up steps would be averaged into the post-spin-up numbers.
-    kept = [r for r in records if r.step - r.window_steps + 1 >= first]
+    kept = [r for r in records if r.step >= first and r.step - r.window_steps + 1 >= first]
     if not kept:
         raise ValueError(f"no record after the {spinup_years}-year spin-up")
     out: dict[str, dict[str, float]] = {}
@@ -149,14 +149,19 @@ def judge(arms: dict, splits: int) -> dict:
     - ``asymmetric``: a family some arms produced and others did not. A failure: left out
       silently, a run in which one engine omits an output altogether would pass.
     - ``one_sided``: a cell both Python arms have in every replicate and the C# arm does not
-      (or the reverse). A failure, for the same reason.
+      (or the reverse); or a cell that is zero throughout on one engine and not on the other,
+      which is what an output the engine never filled looks like. A failure, for the same
+      reason. The zero test does not lean on the rule: its log scale reads every value under
+      ``COLLAPSE`` as ``COLLAPSE``, so zeros against values under 1 would read as no difference.
+    - ``floored``: a tested cell with values between 0 and ``COLLAPSE``. The rule clamps them,
+      so it sees less than there is; listed.
     - ``dropped``: a cell a Python arm itself lacks in some replicate (a species absent from a
       mean). Not testable, and reported.
     - ``constant``: a tested cell that is one same number in every replicate of every arm (a
       predator that eats no fish). It counts as equivalent and carries no information; it is
       listed so that the count of equivalent cells is not read as more than it is.
     """
-    from osmose.validation.engine_equivalence import acceptance, calibrate, compare
+    from osmose.validation.engine_equivalence import COLLAPSE, acceptance, calibrate, compare
 
     asymmetric = {
         metric: [name for name in ARMS if metric not in arms[name]]
@@ -168,6 +173,7 @@ def judge(arms: dict, splits: int) -> dict:
     dropped: list[str] = []
     one_sided: list[str] = []
     constant: list[str] = []
+    floored: list[str] = []
     for metric, margin in MARGINS.items():
         if not all(metric in arms[name] for name in ARMS):
             continue
@@ -178,7 +184,11 @@ def judge(arms: dict, splits: int) -> dict:
                 for name in ARMS
             )
             if py and control and cs:
-                keep.append(sp)
+                filled = [bool(np.any(np.asarray(arms[name][metric][sp]) != 0)) for name in ARMS]
+                if filled[0] == filled[1] != filled[2]:  # zero throughout on one engine only
+                    one_sided.append(f"{metric}/{sp}")
+                else:
+                    keep.append(sp)
             elif py == control and py != cs:  # Python agrees with itself; C# differs
                 one_sided.append(f"{metric}/{sp}")
             else:
@@ -191,9 +201,11 @@ def judge(arms: dict, splits: int) -> dict:
                 values = np.concatenate([np.asarray(arms[name][metric][sp]) for name in ARMS])
                 if np.all(values == values[0]):
                     constant.append(f"{metric}/{sp}")
+                if np.any((values > 0) & (values < COLLAPSE)):
+                    floored.append(f"{metric}/{sp}")
     result: dict = {
         "margins": margins, "dropped": dropped, "one_sided": one_sided, "asymmetric": asymmetric,
-        "constant": constant, "verdict": None,
+        "constant": constant, "floored": floored, "verdict": None,
     }  # fmt: skip
     if not margins:
         return result
@@ -226,6 +238,11 @@ def report(result: dict) -> None:
         print(f"CELLS ONLY ONE ENGINE HAS: {', '.join(result['one_sided'])}")
     if result["dropped"]:
         print(f"not testable (a Python arm lacks the value): {', '.join(result['dropped'])}")
+    if result["floored"]:
+        print(
+            "values under the rule's floor are read as the floor, so these cells are seen only "
+            f"in part: {', '.join(result['floored'])}"
+        )
     if result["verdict"] is None:
         print("\nVERDICT: FAIL (no cell is testable)")
         return

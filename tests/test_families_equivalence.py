@@ -122,6 +122,12 @@ def test_a_window_that_starts_inside_the_spin_up_is_dropped():
     assert out["ssb"] == {"cod": 20.0, "sprat": 40.0}  # scales 1 and 3 only
     with pytest.raises(ValueError, match="no record after the 1-year spin-up"):
         fam.reduce_records(records[:1], CONFIG, spinup_years=1)
+    # With no spin-up the initial record (step -1) is still dropped, whatever its window says.
+    initial = [_record(-1, 1000.0, window=0), _record(23, 1.0, window=24)]
+    assert fam.reduce_records(initial, CONFIG, spinup_years=0)["ssb"] == {
+        "cod": 10.0,
+        "sprat": 20.0,
+    }
 
 
 def _arms(metrics=("ssb", "mean_tl"), species=("cod", "sprat"), n: int = 8) -> dict:
@@ -193,6 +199,35 @@ def test_a_cell_only_one_engine_has_fails_the_run(how):
     del arms["python"]["mean_tl"]["sprat"], arms["python-control"]["mean_tl"]["sprat"]
     result = fam.judge(arms, splits=200)
     assert result["one_sided"] == ["mean_tl/sprat"] and not fam.passed(result)
+
+
+@pytest.mark.parametrize("level", [100.0, 0.3])
+def test_an_output_one_engine_never_filled_fails_the_run(level):
+    """An output the engine never wrote comes back as zeros, finite and complete. At ``level``
+    0.3 the rule alone cannot see it: its log scale reads every value under 1 as 1, on both
+    sides, and the cell would read as no difference at all."""
+    arms = _arms()
+    for name in fam.ARMS:
+        arms[name]["ssb"]["cod"] = arms[name]["ssb"]["cod"] * (level / 100.0)
+    arms["csharp"]["ssb"]["cod"] = np.zeros(8)
+    result = fam.judge(arms, splits=200)
+    assert result["one_sided"] == ["ssb/cod"] and not fam.passed(result)
+    arms = _arms()  # the other way round: the Python engine reads zero, the C# engine does not
+    for name in ("python", "python-control"):
+        arms[name]["ssb"]["cod"] = np.zeros(8)
+    arms["csharp"]["ssb"]["cod"] = arms["csharp"]["ssb"]["cod"] * (level / 100.0)
+    result = fam.judge(arms, splits=200)
+    assert result["one_sided"] == ["ssb/cod"] and not fam.passed(result)
+
+
+def test_values_under_the_rules_floor_are_listed():
+    arms = _arms()
+    for name in fam.ARMS:
+        arms[name]["ssb"]["cod"] = arms[name]["ssb"]["cod"] * 0.003
+    result = fam.judge(arms, splits=200)
+    assert result["floored"] == ["ssb/cod"] and result["one_sided"] == []
+    assert fam.passed(result)  # reported, not failed: the rule's floor is the owner's
+    assert fam.judge(_arms(), splits=200)["floored"] == []
 
 
 def test_a_cell_the_python_engine_itself_lacks_is_reported_and_does_not_fail():

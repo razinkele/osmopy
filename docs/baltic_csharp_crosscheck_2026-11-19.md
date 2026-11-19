@@ -108,6 +108,14 @@ the same species and the same reason as above.
 every arm: stickleback eats no fish, the two background predators eat no resources, and
 stickleback's trophic level is exactly 2. The rule counts them as equivalent; 99 cells vary.
 
+**What the script checks beyond the rule.** The rule compares the cells it is given; three
+things would let a missing output through it, and each is now a failure of its own:
+a family that only some arms produced, a cell only one engine has, and a cell that is zero
+throughout on one engine and not on the other (an output the engine never filled comes back as
+zeros, and the rule's log scale reads every value under 1 as 1, so zeros against small values
+would read as no difference). None of the three occurs in this run. No cell of it has a value
+under that floor, other than the three that are zero on every arm.
+
 **This run also checks the collection added in this PR** (Budgets, below). The 16-replicate
 run was made before it and the 32-replicate run after it, on the same seeds. The first 16
 replicates of the later run equal the earlier run bit for bit, in all 103 cells of all three
