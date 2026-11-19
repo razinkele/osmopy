@@ -201,12 +201,15 @@ def test_the_csharp_gate_checks_the_config_that_runs_overrides_included(monkeypa
     config = dict(OsmoseConfigReader().read(ROOT / "data" / "eec_full" / "eec_all-parameters.csv"))
     assert run_mod.csharp_block_reason(config, "") is None
     assert run_mod.csharp_block_reason(config, "simulation.time.nyear=3\n") is None
-    blocked = run_mod.csharp_block_reason(config, "species.lmax.sp0 = 25\n# a note\n")
-    assert blocked is not None and "lmax_cap" in blocked
-    assert run_mod.csharp_block_reason(config | {"species.lmax.sp0": "25"}, "") is not None
+    logistic = "fisheries.selectivity.type.fsh0"
+    blocked = run_mod.csharp_block_reason(config, f"{logistic} = 1\n# a note\n")
+    assert blocked is not None and "selectivity_logistic" in blocked
+    assert run_mod.csharp_block_reason(config | {logistic: "1"}, "") is not None
     # An override spelled as config files spell keys is applied, so the gate must see it too.
-    spelled = run_mod.csharp_block_reason(config, "species.lMax.sp0 = 25")
-    assert spelled is not None and "lmax_cap" in spelled
+    spelled = run_mod.csharp_block_reason(config, "predation.predPrey.stage.structure = age")
+    assert spelled is not None and "feeding_stage_metric" in spelled
+    # A growth cap was the example here until the engine ran it: it no longer blocks.
+    assert run_mod.csharp_block_reason(config, "species.lMax.sp0 = 25") is None
     text = (ROOT / "ui" / "pages" / "run.py").read_text(encoding="utf-8")
     assert 'csharp_block_reason(config, input.py_param_overrides() or "")' in text
     # The gate and the run build their config with the same function, from the same input.

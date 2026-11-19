@@ -347,6 +347,131 @@ def test_a_stock_run_writes_the_files_the_python_engine_writes(demo, tmp_path):
         assert len(a.read_text().splitlines()) == len(b.read_text().splitlines()), rel
 
 
+# ------------------------------------------ task 2.2: the growth cap and immobile species
+
+CAP_CM = 12.0  # above every EEC egg size: the dogfish hatches at 9.5 cm
+FINE_SIZE_CLASSES = {
+    "output.distrib.bysize.min": "0",
+    "output.distrib.bysize.max": "60",
+    "output.distrib.bysize.incr": "2",
+}
+FIRST_CLASS_ABOVE_THE_CAP = 7  # [14, 16) cm: the class [12, 14) holds a fish at the cap
+IMMOBILE = 3  # the EEC species given the movement method "none"
+
+
+def _run_records(engine: str, raw: dict, out: Path, seed: int = 5) -> list:
+    """The records of one run: the Python engine here, the C# engine in a child process."""
+    if engine == "csharp":
+        _child("outputs", raw, out, str(seed))
+        # The file was written a moment ago by this test's own child process.
+        return pickle.loads(out.read_bytes())["records"]
+    import osmose.engine.simulate as sim
+
+    config, grid, rng, mv, mo = PythonEngine()._prepare_run(raw, seed)
+    return sim.simulate(config, grid, rng, movement_rngs=mv, mortality_rngs=mo)
+
+
+def _above_the_cap(records: list, n_species: int) -> float:
+    return float(
+        sum(
+            np.asarray(r.abundance_by_size[sp])[FIRST_CLASS_ABOVE_THE_CAP:].sum()
+            for r in records
+            for sp in range(n_species)
+        )
+    )
+
+
+@pytest.mark.parametrize("engine", ["python", "csharp"])
+def test_no_fish_outgrows_its_cap_on_a_whole_run(engine, tmp_path):
+    """``species.lmax`` over a whole run (no shipped config sets it). Every EEC species is
+    capped at 12 cm from the start. No record may hold a fish in a size class above the cap,
+    and fish must have reached it. The uncapped run is the control: there the same classes
+    fill, so an empty class is the cap's doing and not the output's.
+
+    (A cap below a species' egg size would leave its newly laid eggs above the cap until
+    their first growth step, on both engines: the cap is applied in growth.)"""
+    base = _raw("eec_full", tmp_path, 2, minimal=False, extra=FINE_SIZE_CLASSES)
+    n = int(base["simulation.nspecies"])
+    capped = base | {f"species.lmax.sp{i}": str(CAP_CM) for i in range(n)}
+    records = _run_records(engine, capped, tmp_path / "capped.pkl")
+    assert len(records) >= 2
+    assert _above_the_cap(records, n) == 0.0
+    at_the_cap = sum(
+        float(np.asarray(records[-1].abundance_by_size[sp])[FIRST_CLASS_ABOVE_THE_CAP - 1])
+        for sp in range(n)
+    )
+    assert at_the_cap > 0
+    assert _above_the_cap(_run_records(engine, base, tmp_path / "free.pkl"), n) > 0
+
+
+@pytest.mark.parametrize("engine", ["python", "csharp"])
+def test_an_immobile_species_is_never_placed_and_takes_no_part(engine, tmp_path):
+    """The movement method ``none``: the species' schools are never put on the grid. They are
+    not in any cell, so nothing eats them, they starve of nothing, and no fleet catches them.
+    They are still there and counted. The control is the same run with the species moving:
+    there it is eaten and caught, so a zero is the method's doing."""
+    from osmose.engine.state import MortalityCause as C
+
+    base = _raw("eec_full", tmp_path, 2, minimal=False)
+    still = base | {f"movement.distribution.method.sp{IMMOBILE}": "none"}
+    in_a_cell = [int(C.PREDATION), int(C.STARVATION), int(C.FISHING)]
+
+    def losses(records: list) -> float:
+        return float(
+            sum(np.asarray(r.mortality_by_cause)[IMMOBILE, in_a_cell].sum() for r in records)
+        )
+
+    records = _run_records(engine, still, tmp_path / "still.pkl")
+    assert losses(records) == 0.0
+    assert all(float(np.asarray(r.yield_by_species)[IMMOBILE]) == 0.0 for r in records)
+    assert float(np.asarray(records[-1].abundance)[IMMOBILE]) > 0
+    others = [sp for sp in range(int(base["simulation.nspecies"])) if sp != IMMOBILE]
+    assert float(np.asarray(records[-1].mortality_by_cause)[others][:, in_a_cell].sum()) > 0
+    assert losses(_run_records(engine, base, tmp_path / "moving.pkl")) > 0
+
+
+def test_an_immobile_species_reads_the_same_on_both_engines(tmp_path):
+    """The engines draw from different generators, so whole runs are compared in distribution.
+    An immobile species is the exception: no draw touches a school that is never placed. Its
+    series are the same at two seeds on the Python engine (and a moving species' are not, so
+    the comparison is not blind), and the C# engine gives the same numbers."""
+    base = _raw("eec_full", tmp_path, 2, minimal=False, extra={"output.recordfrequency.ndt": "4"})
+    still = base | {f"movement.distribution.method.sp{IMMOBILE}": "none"}
+
+    def series(records: list, name: str, sp: int = IMMOBILE) -> np.ndarray:
+        return np.array([float(np.asarray(getattr(r, name))[sp]) for r in records])
+
+    one = _run_records("python", still, tmp_path / "p5.pkl", seed=5)
+    other = _run_records("python", still, tmp_path / "p6.pkl", seed=6)
+    cs = _run_records("csharp", still, tmp_path / "c5.pkl", seed=5)
+    assert len(one) == len(other) == len(cs) == 12
+    moving = next(sp for sp in range(int(base["simulation.nspecies"])) if sp != IMMOBILE)
+    assert not np.array_equal(series(one, "abundance", moving), series(other, "abundance", moving))
+    for name in ("abundance", "biomass"):
+        ref = series(one, name)
+        assert ref[-1] > 0 and np.array_equal(ref, series(other, name)), name
+        np.testing.assert_allclose(series(cs, name), ref, rtol=1e-12, atol=0.0, err_msg=name)
+    # What it does lose, it loses to the one cause that needs no cell, on both engines alike.
+    lost = np.array([np.asarray(r.mortality_by_cause)[IMMOBILE] for r in one]).sum(axis=0)
+    lost_cs = np.array([np.asarray(r.mortality_by_cause)[IMMOBILE] for r in cs]).sum(axis=0)
+    assert np.count_nonzero(lost) == 1 and lost.sum() > 0
+    np.testing.assert_allclose(lost_cs, lost, rtol=1e-12, atol=0.0)
+
+
+def test_a_capped_run_with_an_immobile_species_is_the_same_at_1_2_and_14_threads(tmp_path):
+    base = _raw("eec_full", tmp_path, 2, minimal=False, extra=FINE_SIZE_CLASSES)
+    n = int(base["simulation.nspecies"])
+    raw = base | {f"species.lmax.sp{i}": str(CAP_CM) for i in range(n)}
+    raw |= {f"movement.distribution.method.sp{IMMOBILE}": "none"}
+    _child("thread_digests", raw, tmp_path / "d.json", "1,7")
+    got = json.loads((tmp_path / "d.json").read_text())
+    for seed in (1, 7):
+        one, two, many = (got[f"{seed}:{threads}"] for threads in (1, 2, 14))
+        assert one["records"] == two["records"] == many["records"] >= 2
+        assert one["digest"] == two["digest"] == many["digest"], f"seed {seed}"
+    assert got["1:1"]["digest"] != got["7:1"]["digest"]
+
+
 def test_live_map_observer_is_refused(tmp_path):
     with pytest.raises(CSharpEngineError, match="live map"):
         CSharpEngine().run(

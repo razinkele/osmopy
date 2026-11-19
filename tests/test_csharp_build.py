@@ -206,8 +206,9 @@ def test_per_species_tables_have_n_total_rows_and_the_engine_values(runs, demo):
 
 def test_the_csharp_engine_accepts_implemented_features_and_refuses_the_others(runs, tmp_path):
     """The minimal EEC bundle passes the header and feature checks (core, since task 1.8), and
-    so does the same config without output.minimal (full_outputs, since task 2.6c). A feature
-    the engine does not implement is refused by name: here the growth cap, species.lmax."""
+    so does the same config without output.minimal (full_outputs, since task 2.6c), and with a
+    growth cap or an immobile species (since the follow-up to task 2.2). A feature the engine
+    does not implement is refused by name: here logistic fishing selectivity."""
     from osmose.engine.config import EngineConfig
 
     ok, why = csharp_engine_available()
@@ -221,10 +222,15 @@ def test_the_csharp_engine_accepts_implemented_features_and_refuses_the_others(r
     build_bundle(EngineConfig.from_dict(stock_raw), stock_raw, grid, seed=7).save(
         tmp_path / "stock.bin"
     )
-    capped_raw = raw | {"species.lmax.sp0": "25"}
-    build_bundle(EngineConfig.from_dict(capped_raw), capped_raw, grid, seed=7).save(
-        tmp_path / "capped.bin"
-    )
+    for name, change in (
+        ("capped", {"species.lmax.sp0": "25"}),
+        ("immobile", {"movement.distribution.method.sp3": "none"}),
+        ("logistic", {"fisheries.selectivity.type.fsh0": "1"}),
+    ):
+        changed = raw | change
+        build_bundle(EngineConfig.from_dict(changed), changed, grid, seed=7).save(
+            tmp_path / f"{name}.bin"
+        )
     code = (
         "import sys, json; sys.path.insert(0, sys.argv[1]); from osmose.engine_cs import bridge; "
         "e = bridge.load()\n"
@@ -243,6 +249,8 @@ def test_the_csharp_engine_accepts_implemented_features_and_refuses_the_others(r
             str(tmp_path / "minimal.bin"),
             str(tmp_path / "stock.bin"),
             str(tmp_path / "capped.bin"),
+            str(tmp_path / "immobile.bin"),
+            str(tmp_path / "logistic.bin"),
         ],
         capture_output=True,
         text=True,
@@ -250,11 +258,11 @@ def test_the_csharp_engine_accepts_implemented_features_and_refuses_the_others(r
         cwd=ROOT,
     )
     assert proc.returncode == 0, proc.stderr[-3000:]
-    (k1, _), (k2, _), (k3, message) = (
-        json.loads(line) for line in proc.stdout.strip().splitlines()[-3:]
+    *accepted, (refused, message) = (
+        json.loads(line) for line in proc.stdout.strip().splitlines()[-5:]
     )
-    assert k1 == "accepted" and k2 == "accepted"
-    assert k3 == "UnsupportedFeatureException" and "lmax_cap" in message, message
+    assert [kind for kind, _ in accepted] == ["accepted"] * 4, accepted
+    assert refused == "UnsupportedFeatureException" and "selectivity_logistic" in message, message
     assert "core" not in message and "full_outputs" not in message
 
 
