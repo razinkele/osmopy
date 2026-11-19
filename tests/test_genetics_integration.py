@@ -2,6 +2,7 @@
 """Integration test: full simulation with Ev-OSMOSE genetics enabled."""
 
 import numpy as np
+import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
@@ -68,3 +69,40 @@ class TestGeneticsIntegration:
 
         for a, b in zip(outputs_off, outputs_none):
             np.testing.assert_array_almost_equal(a.biomass, b.biomass)
+
+
+def _spawning_config(**extra: str) -> dict[str, str]:
+    """`_genetics_config` with a seeding biomass, so the species spawns from the first step,
+    on the standard (non-bioenergetic) reproduction path."""
+    cfg = _genetics_config()
+    cfg["population.seeding.biomass.sp0"] = "1000"
+    cfg.update(extra)
+    return cfg
+
+
+def _run(raw: dict[str, str]):
+    cfg = EngineConfig.from_dict(raw)
+    return simulate(cfg, Grid.from_dimensions(ny=3, nx=3), np.random.default_rng(42))
+
+
+class TestInheritanceWithoutBioenergetics:
+    """#338. Parents are chosen by gonad weight, and only the bioenergetic module sets it. So
+    without bioenergetics a run with genetics stops at its first reproduction outside the
+    genetics seeding window. That behaviour is not changed here; these pin that the message
+    names the cause."""
+
+    def test_the_run_stops_with_a_message_that_names_bioenergetics(self):
+        with pytest.raises(ValueError) as err:
+            _run(_spawning_config())
+        message = str(err.value)
+        assert "no eligible parents" in message
+        assert "module.bioenergetics.enabled" in message
+
+    def test_inside_the_genetics_seeding_window_the_same_config_completes(self):
+        # The control: the config spawns and runs to the end while offspring genotypes are
+        # seeded. So the stop above is the inheritance and not the config.
+        window = {"evolution.seeding.year": "2"}
+        spawning = _run(_spawning_config(**window))
+        barren = _run(_genetics_config() | window)
+        assert len(spawning) == 12
+        assert spawning[-1].abundance.sum() > barren[-1].abundance.sum()

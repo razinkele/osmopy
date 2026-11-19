@@ -106,14 +106,22 @@ def create_offspring_genotypes(
             # toward zero. The seeding branch has its own fallback (bootstrap from
             # the trait allele pool); the non-seeding branch must not invent
             # genetics out of thin air. Surface the upstream bug loudly.
+            #
+            # The commonest way here needs no bug at all (#338): gonad weight is set by
+            # the bioenergetic module only, so with genetics on and bioenergetics off no
+            # school is ever a parent. The message says so first, because the person
+            # who meets it then has changed two config keys and has no caller to fix.
             raise ValueError(
                 f"create_offspring_genotypes(seeding=False) requested "
                 f"n_offspring={n_offspring} for species {offspring_species} "
                 f"trait {name!r} but found no eligible parents "
                 f"(species_id mask matched 0 schools with gonad_weight > 0). "
-                f"This indicates reproduction was triggered without a viable "
-                f"parent pool — fix the upstream caller rather than papering "
-                f"over here."
+                f"Gonad weight is set only by the bioenergetic module: with "
+                f"module.bioenergetics.enabled off, no school can be a parent and "
+                f"genetics cannot pass genes on outside its seeding window "
+                f"(evolution.seeding.year). With bioenergetics on, this indicates "
+                f"reproduction was triggered without a viable parent pool — fix "
+                f"the upstream caller rather than papering over here."
             )
 
         ev = float(trait.env_var[offspring_species])
