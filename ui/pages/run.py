@@ -94,9 +94,17 @@ def effective_run_config(config: dict[str, str], overrides_text: str) -> dict[st
     """The config an in-process run uses: the loaded one with the run panel's overrides applied.
 
     One function for the gate and for the run, so the gate cannot check a different config from
-    the one that runs."""
+    the one that runs.
+
+    Override keys are lowercased, as the config reader lowercases every key it reads: the
+    Python and C# engines look keys up in that form, so an override typed the way config files
+    spell them (``species.lInf.sp0``) would otherwise sit beside the loaded key under another
+    spelling and change nothing. The Java engine is case-sensitive and takes its overrides as
+    typed; it does not come through here."""
     effective = dict(config or {})
-    effective.update(parse_overrides(overrides_text or ""))
+    effective.update(
+        {key.lower(): value for key, value in parse_overrides(overrides_text or "").items()}
+    )
     return effective
 
 

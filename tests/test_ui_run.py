@@ -1,5 +1,7 @@
 """Tests for run page logic -- config writing, override parsing, status flow."""
 
+from pathlib import Path
+
 from osmose.config.validator import validate_config
 from osmose.schema import build_registry
 from ui.pages.run import _inject_random_movement_ncell, parse_overrides, write_temp_config
@@ -118,3 +120,33 @@ def test_species_choices_from_config():
     assert _species_choices(cfg) == {"__all__": "All species", "Cod": "Cod", "Sprat": "Sprat"}
     # empty / missing config -> just the all-option
     assert _species_choices({}) == {"__all__": "All species"}
+
+
+def test_overrides_reach_the_in_process_engines_whatever_their_case():
+    """The config reader lowercases every key and the Python and C# engines read the lowercase
+    form. An override typed the way config files spell keys (``species.lInf.sp0``) must replace
+    the loaded value, not sit beside it under another spelling, where nothing reads it."""
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.engine.config import EngineConfig
+    from ui.pages.run import effective_run_config
+
+    root = Path(__file__).resolve().parents[1]
+    config = dict(OsmoseConfigReader().read(root / "data" / "minimal" / "osm_all-parameters.csv"))
+    years = int(config["simulation.time.nyear"])
+    linf = config["species.linf.sp0"]
+    merged = effective_run_config(
+        config, f"simulation.time.nYear = {years + 3}\nSpecies.lInf.sp0={float(linf) + 1.5}\n"
+    )
+    assert merged["simulation.time.nyear"] == str(years + 3)
+    assert merged["species.linf.sp0"] == str(float(linf) + 1.5)
+    assert len(merged) == len(config), "the override was added as a second key"
+    engine_config = EngineConfig.from_dict(merged)
+    # what the engine runs
+    assert engine_config.n_steps == (years + 3) * engine_config.n_dt_per_year
+    assert float(engine_config.linf[0]) == float(linf) + 1.5
+    assert config["simulation.time.nyear"] == str(years)  # the loaded config is not modified
+
+
+def test_java_overrides_keep_their_case():
+    """The Java engine is case-sensitive: its overrides go to the jar as typed."""
+    assert parse_overrides("species.lInf.sp0 = 120") == {"species.lInf.sp0": "120"}
