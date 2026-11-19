@@ -26,6 +26,14 @@ A run starts with empty resources, so its first update regrows from the floor, n
 - The C# reader refuses the two entries without the feature, a floor outside [0, 1] and a rate
   that is negative or not finite.
 
+## What it unblocks besides the demo
+
+`scripts/calibrate_baltic.py --engine csharp` checks the config its evaluations run, after the
+phase's edits. The two calibrations on the depletion base (`--a2` and `--phase a2r`) were
+refused for this feature and are accepted now (`tests/test_calibrate_baltic_engine.py`). Nothing
+was calibrated here. Anyone who runs one should read the caveat below first: the search would
+run on the regrowth as it is.
+
 ## A caveat that is not about the port: negative biomass (issue #337)
 
 The function caps its result at K and does not bound it below. When a resource is carried
