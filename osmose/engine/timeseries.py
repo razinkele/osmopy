@@ -42,8 +42,16 @@ def _read_csv_column(path: Path, col: int = 1) -> list[float]:
 
 
 def _cycle_to_length(values: list[float], target_len: int) -> NDArray[np.float64]:
-    """Cycle values array to fill target_len, matching Java cycling behavior."""
+    """Cycle values array to fill target_len, matching Java cycling behavior.
+
+    An empty series cannot be cycled to a positive length (a file with a header and no rows):
+    that is an error. Without the check the loop below never advanced and loading hung.
+    """
     n = len(values)
+    if n == 0 and target_len > 0:
+        raise ValueError(
+            f"cannot cycle an empty series to {target_len} values: the file has no rows"
+        )
     if n >= target_len:
         return np.array(values[:target_len], dtype=np.float64)
     result = np.empty(target_len, dtype=np.float64)

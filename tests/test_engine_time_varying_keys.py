@@ -182,3 +182,22 @@ def test_the_validator_knows_the_economics_fleet_keys():
     assert parsed.price_per_tonne.tolist() == [1200.0, 800.0]
     for pattern in ("economic.fleet.number", "economic.fleet.price.sp{idx}.fsh{idx}"):
         assert classify_pattern(pattern) == "economics"
+
+
+def test_a_series_with_no_rows_is_an_error_not_a_hang(tmp_path):
+    """A file with a header and no data. Cycling an empty series to a positive length never
+    advanced, so loading the config hung. The lowercase lookups make that reachable from a
+    config file."""
+    from osmose.engine.timeseries import ByYearTimeSeries, _cycle_to_length, load_timeseries
+
+    with pytest.raises(ValueError, match="empty"):
+        _cycle_to_length([], 3)
+    assert _cycle_to_length([], 0).tolist() == []  # nothing asked for: nothing to cycle
+    assert _cycle_to_length([1.0, 2.0], 5).tolist() == [1.0, 2.0, 1.0, 2.0, 1.0]
+    empty = tmp_path / "empty.csv"
+    empty.write_text("year;rate\n")
+    with pytest.raises(ValueError, match="empty"):
+        ByYearTimeSeries.from_csv(empty, n_years=3)
+    cfg = _read(tmp_path, [f"mortality.fishing.rate.byYear.file.sp0;{empty}"])
+    with pytest.raises(ValueError, match="empty"):
+        load_timeseries(cfg, "mortality.fishing.rate", 0, ndt_per_year=N_DT, ndt_simu=3 * N_DT)
