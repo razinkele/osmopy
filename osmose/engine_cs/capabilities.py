@@ -104,7 +104,9 @@ DETECTORS: dict[str, Any] = {
     "oxygen_benthos": _detect_raw("osmose.engine.resources.oxygen_benthos_enabled"),
     "movement_none": lambda c, raw: "none" in _focal(c, c.movement_method).tolist(),
     "depletable_ltl": _detect_raw("osmose.engine.resources.depletable_enabled"),
-    "incoming_flux": _detect_raw("osmose.engine.incoming_flux.incoming_flux_enabled"),
+    # In use, not merely switched on: the switch without a flux file does nothing (the Benguela
+    # demo ships so), and a config must not be refused for a feature it does not use.
+    "incoming_flux": _detect_raw("osmose.engine.incoming_flux.incoming_flux_in_use"),
     "mpa": lambda c, raw: bool(c.mpa_zones),
     "fishing_rate_by_year": lambda c, raw: _any_set(c.fishing_rate_by_year),
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),
@@ -186,7 +188,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"oxygen\..+", "oxygen_benthos,bioenergetics"),
     (r"ltl\.oxygen\.benthos\..+", "oxygen_benthos"),
     (r"module\.population\.initialisation\.enabled", "warm_start"),
-    (r"simulation\.incoming\.flux\.enabled", "incoming_flux"),
+    (r"simulation\.incoming\.flux\.enabled|flux\.incoming\..+", "incoming_flux"),
     (r"ltl\.depletable\..+|ltl\.regrowth\..+|species\.regrowth\.rate\..+", "depletable_ltl"),
     (r"movement\.salinity\..+", "salinity_gate"),
     (r"reproduction\.rv\.gate\..+", "rv_gate"),

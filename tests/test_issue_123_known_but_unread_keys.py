@@ -23,7 +23,9 @@ from osmose.engine.config_validation import (
     java_only_keys_set,
 )
 
-# Independent reference: the exact 155-key allowlist as of pre-#123 (copied from Step 1 output).
+# Independent reference: the exact 155-key allowlist as of pre-#123 (copied from Step 1 output),
+# plus the two incoming-flux file keys added on 2026-11-19 (the engine reads them in
+# incoming_flux.py; they were missing, so a config that used them was told its key was unknown).
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
@@ -41,6 +43,8 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "fisheries.period.number.fsh{idx}",
         "fisheries.period.start.fsh{idx}",
         "fisheries.rate.byperiod.fsh{idx}",
+        "flux.incoming.bydt.byage.file.sp{idx}",
+        "flux.incoming.bydt.bysize.file.sp{idx}",
         "grid.java.classname",
         "grid.lowright.lat",
         "grid.lowright.lon",

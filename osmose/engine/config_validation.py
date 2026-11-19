@@ -81,6 +81,9 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "osmose.configuration.movement",
         "osmose.configuration.output",
         "osmose.configuration.oxygen",
+        # Read in osmose/engine/incoming_flux.py, outside config.py, so the AST walk misses them.
+        "flux.incoming.bydt.byage.file.sp{idx}",
+        "flux.incoming.bydt.bysize.file.sp{idx}",
         "osmose.configuration.plankton",
         "osmose.configuration.predation",
         "osmose.configuration.reproduction",

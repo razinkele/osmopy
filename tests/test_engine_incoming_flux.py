@@ -310,3 +310,113 @@ class TestMutuallyExclusive:
 
         with pytest.raises(ValueError, match="both byAge and bySize"):
             IncomingFluxState(config=cfg, engine_config=ec, grid=grid)
+
+
+# ---------------------------------------------------------------------------
+# "Switched on" is not "in use"
+# ---------------------------------------------------------------------------
+
+
+class TestOnButUnused:
+    """The flag alone does nothing: a species needs a flux file. The Benguela demo ships with
+    the flag on and no file, and the C# engine's capability check asks ``incoming_flux_in_use``
+    so that it does not refuse a config for a feature the config does not use."""
+
+    def test_in_use_needs_the_flag_and_a_file(self):
+        from osmose.engine.incoming_flux import incoming_flux_in_use
+
+        on = {"simulation.incoming.flux.enabled": "true"}
+        by_age = {"flux.incoming.bydt.byage.file.sp0": "flux.csv"}
+        by_size = {"flux.incoming.bydt.bysize.file.sp7": "flux.csv"}
+        assert incoming_flux_in_use({}) is False
+        assert incoming_flux_in_use(on) is False
+        assert incoming_flux_in_use(by_age) is False  # a file with the flag off is not read
+        assert incoming_flux_in_use(on | by_age) is True
+        assert incoming_flux_in_use(on | by_size) is True
+        assert incoming_flux_in_use(on | {"flux.incoming.bydt.byage.file.sp0": ""}) is False
+        # Any non-empty value counts, as in the loader, which would try to open it.
+        assert incoming_flux_in_use(on | {"flux.incoming.bydt.byage.file.sp0": "  "}) is True
+        assert incoming_flux_in_use(on | {"flux.incoming.other.sp0": "x"}) is False
+        assert incoming_flux_in_use({"simulation.incoming.flux.enabled": "TRUE"} | by_age) is True
+
+    def test_on_with_no_file_injects_nothing_and_draws_nothing(self):
+        """What the predicate claims, checked on the engine's own state object: no flux is
+        loaded, no step yields a school, and the generator is not advanced."""
+        from osmose.engine.incoming_flux import incoming_flux_in_use
+
+        cfg = dict(_BASE_CONFIG) | {"simulation.incoming.flux.enabled": "true"}
+        assert incoming_flux_in_use(cfg) is False
+        ec = EngineConfig.from_dict(cfg)
+        flux = IncomingFluxState(
+            config=cfg, engine_config=ec, grid=Grid.from_dimensions(ny=3, nx=3)
+        )
+        assert flux.enabled and flux._fluxes == []
+        rng = np.random.default_rng(5)
+        before = rng.bit_generator.state
+        assert all(flux.get_incoming_schools(step, rng) is None for step in range(48))
+        assert rng.bit_generator.state == before
+
+    def test_the_predicate_never_misses_a_flux_the_engine_would_load(self, tmp_path):
+        """The other direction, for both file kinds: whenever the engine loads a flux, the
+        predicate says the feature is in use."""
+        from osmose.engine.incoming_flux import incoming_flux_in_use
+
+        for key, path in (
+            ("flux.incoming.bydt.byage.file.sp0", _make_age_csv(tmp_path)),
+            ("flux.incoming.bydt.bysize.file.sp0", _make_size_csv(tmp_path)),
+        ):
+            cfg = dict(_BASE_CONFIG) | {"simulation.incoming.flux.enabled": "true", key: str(path)}
+            ec = EngineConfig.from_dict(cfg)
+            flux = IncomingFluxState(
+                config=cfg, engine_config=ec, grid=Grid.from_dimensions(ny=3, nx=3)
+            )
+            assert len(flux._fluxes) == 1
+            assert incoming_flux_in_use(cfg) is True
+
+    def test_benguela_switches_it_on_and_does_not_use_it(self):
+        from osmose.config.reader import OsmoseConfigReader
+        from osmose.engine.incoming_flux import incoming_flux_enabled, incoming_flux_in_use
+
+        root = Path(__file__).resolve().parents[1]
+        raw = dict(
+            OsmoseConfigReader().read(root / "data" / "benguela" / "benguela_all-parameters.csv")
+        )
+        assert incoming_flux_enabled(raw) is True
+        assert incoming_flux_in_use(raw) is False
+        assert [k for k in raw if k.startswith("flux.incoming.")] == []
+
+    def test_a_benguela_run_is_the_same_with_the_switch_off(self):
+        """The whole claim, on the shipped config and a whole run: with no flux file, the
+        switch changes nothing. Every frame of a one-year run is identical, value for value."""
+        from osmose.config.reader import OsmoseConfigReader
+        from osmose.engine import PythonEngine
+
+        root = Path(__file__).resolve().parents[1]
+        raw = dict(
+            OsmoseConfigReader().read(root / "data" / "benguela" / "benguela_all-parameters.csv")
+        )
+        raw["simulation.time.nyear"] = "1"
+        assert raw["simulation.incoming.flux.enabled"].lower() == "true"
+        on = PythonEngine().run_in_memory(dict(raw), seed=3)
+        off = PythonEngine().run_in_memory(
+            raw | {"simulation.incoming.flux.enabled": "false"}, seed=3
+        )
+        compared = 0
+        for name in ("biomass", "abundance", "yield_biomass", "mortality"):
+            a, b = getattr(on, name)(), getattr(off, name)()
+            frames = zip(a.values(), b.values(), strict=True) if isinstance(a, dict) else [(a, b)]
+            for x, y in frames:
+                assert x.equals(y), name
+                compared += 1
+        assert compared >= 4
+        assert float(on.biomass().select_dtypes("number").to_numpy().sum()) > 0
+
+    def test_the_flux_file_keys_are_known_to_the_config_validator(self):
+        """The engine reads them (in this module, outside config.py, which is where the
+        validator looks), so they must be on its list: or a config that uses them is told its
+        key is unknown."""
+        from osmose.engine.config_validation import _check, build_known_keys
+
+        known = build_known_keys()
+        for key in ("flux.incoming.bydt.byage.file.sp0", "flux.incoming.bydt.bysize.file.sp3"):
+            assert _check(key, known) is None, key

@@ -31,7 +31,7 @@ def demos(tmp_path_factory) -> dict:
     """(EngineConfig, raw) per (demo, minimal). The demo copies stay on disk for the module:
     csharp_engine_block_reason re-parses the raw config, which reads its files."""
     out = {}
-    for demo in ("eec_full", "bay_of_biscay", "baltic"):
+    for demo in ("eec_full", "bay_of_biscay", "baltic", "benguela"):
         info = osmose_demo(demo, tmp_path_factory.mktemp(demo))
         base = dict(OsmoseConfigReader().read(Path(info["config_file"])))
         for minimal in (False, True):
@@ -185,6 +185,9 @@ def test_keys_the_python_engine_never_reads_follow_python(demos):
 EXPECTED = {
     "eec_full": {"core"},
     "bay_of_biscay": {"core"},
+    # Not incoming_flux: Benguela switches it on and gives no species a flux file, which does
+    # nothing (tests/test_engine_incoming_flux.py::TestOnButUnused).
+    "benguela": {"core"},
     # Not lmax_cap or movement_none: Baltic sets no species.lmax, and only its two background
     # species are immobile (their padded entries must not count; see capabilities._focal).
     "baltic": {
@@ -227,6 +230,40 @@ def test_the_output_families_the_engine_does_not_collect_are_still_refused(demos
     assert reason is not None and feature in reason and "full_outputs" not in reason
 
 
+def test_incoming_flux_is_refused_when_used_not_when_merely_switched_on(demos):
+    """Benguela ships with the switch on and no flux file. That does nothing in the Python
+    engine, so it is not a reason to refuse. A flux file is: the C# engine creates no incoming
+    schools, and says so by the feature's name (not as an unclassified key)."""
+    raw = demos[("eec_full", True)][1]
+    on = raw | {"simulation.incoming.flux.enabled": "true"}
+    assert cap.csharp_engine_block_reason(on) is None
+    for key in ("flux.incoming.bydt.byage.file.sp0", "flux.incoming.bydt.bysize.file.sp2"):
+        used = on | {key: "flux.csv"}
+        assert cap.unclassified_keys(used) == []
+        assert cap.classify_pattern(key.rsplit("sp", 1)[0] + "sp{idx}") == "incoming_flux"
+        reason = cap.csharp_engine_block_reason(used)
+        assert reason is not None and "not implemented yet: incoming_flux (phase 3)" in reason
+        # The file key without the switch is not read by the Python engine either.
+        assert cap.csharp_engine_block_reason(raw | {key: "flux.csv"}) is None
+    # Keys are read in their lowercase form (the reader's), by the Python engine and by this
+    # check alike: a camelCase key that did not go through the reader is not a flux file to
+    # either, so the two cannot disagree about it.
+    camel = on | {"flux.incoming.byDt.byAge.file.sp0": "flux.csv"}
+    assert cap.csharp_engine_block_reason(camel) is None
+    from osmose.engine.grid import Grid
+    from osmose.engine.incoming_flux import IncomingFluxState
+
+    state = IncomingFluxState(
+        config=camel,
+        engine_config=EngineConfig.from_dict(camel),
+        grid=Grid.from_dimensions(ny=3, nx=3),
+    )
+    assert state.enabled and state._fluxes == []
+    benguela = demos[("benguela", False)][1]
+    assert benguela["simulation.incoming.flux.enabled"].lower() == "true"
+    assert cap.csharp_engine_block_reason(benguela | {"flux.incoming.bydt.byage.file.sp0": "f.csv"})
+
+
 # --------------------------------------------------------------------------- one positive case per feature
 
 
@@ -265,7 +302,13 @@ def _recipes(c: EngineConfig) -> dict:
         "oxygen_benthos": (c, {"ltl.oxygen.benthos.enabled": "true"}),
         "movement_none": (R(c, movement_method=["none"] + list(c.movement_method)[1:]), {}),
         "depletable_ltl": (c, {"ltl.depletable.enabled": "true"}),
-        "incoming_flux": (c, {"simulation.incoming.flux.enabled": "true"}),
+        "incoming_flux": (
+            c,
+            {
+                "simulation.incoming.flux.enabled": "true",
+                "flux.incoming.bydt.byage.file.sp0": "flux.csv",
+            },
+        ),
         "mpa": (R(c, mpa_zones=[object()]), {}),
         "fishing_rate_by_year": (R(c, fishing_rate_by_year=[np.ones(2)] + nones[1:]), {}),
         "additional_rate_by_step": (R(c, additional_mortality_by_dt=[np.ones(2)] + nones[1:]), {}),
