@@ -141,23 +141,35 @@ The results are unchanged, byte for byte. The measurements are in the performanc
 
 ## Calibration through the C# engine
 
-One generation of four candidates on the Baltic config as shipped (5 years; herring's
-additional mortality at 0.1, 0.2, 0.4 and 0.8; objective: biomass RMSE against a Python
-baseline run), through `OsmoseCalibrationProblem`, on each engine:
+Generations of four candidates on the Baltic config as shipped (5 years; herring's additional
+mortality at 0.1, 0.2, 0.4 and 0.8; objective: biomass RMSE against a Python baseline run on
+seed 0), through `OsmoseCalibrationProblem`. A candidate runs on the seed of its position in
+the population, so the same candidates in another order run on other seeds: three orders on
+the Python engine and two on the C# engine. The spread across seeds within the Python engine
+is the control for the difference between the engines.
 
-| Herring additional mortality | Python objective | C# objective | Ratio |
-|---|---|---|---|
-| 0.1 | 84,597 | 59,384 | 0.70 |
-| 0.2 (as shipped) | 18,879 | 25,681 | 1.36 |
-| 0.4 | 133,347 | 134,394 | 1.008 |
-| 0.8 | 266,342 | 266,958 | 1.002 |
+| Herring additional mortality | Python objective, by seed | C# objective, by seed |
+|---|---|---|
+| 0.1 | 84,597 (seed 0); 62,392 (1); 74,618 (3) | 59,384 (0); 64,259 (3) |
+| 0.2 (as shipped) | 0 (seed 0: the baseline itself); 18,879 (1); 42,176 (2) | 25,681 (1); 40,645 (2) |
+| 0.4 | 121,233 (1); 133,347 (2); 132,386 (3) | 121,333 (1); 134,394 (2) |
+| 0.8 | 265,280 (0); 267,917 (2); 266,342 (3) | 272,012 (0); 266,958 (3) |
 
-Both engines rank the candidates the same way (0.2, 0.1, 0.4, 0.8). The C# generation ran on a
-forkserver pool of two workers, one thread each, and the .NET runtime was never loaded in the
-parent process. The two candidates far from the baseline agree within 1%. The two near it
-differ more because each is a single 5-year run on its own seed, and at 0.2 the objective is
-nothing but seed noise (the candidate is the baseline's own config). This shows the path works
-on Baltic and orders candidates sensibly; it is one generation, not a calibration.
+- **Both engines rank the candidates the same way in every generation** (0.2, 0.1, 0.4, 0.8):
+  the ranges of neighbouring candidates do not overlap on either engine.
+- **The differences between the engines are the size of the Python engine's own seed noise.**
+  Within the Python engine one candidate varies between seeds by 1.36x at 0.1 and 2.2x at 0.2
+  (1.10x at 0.4, 1.01x at 0.8). Every C# value is inside the Python engine's range for its
+  candidate or within 5% of it.
+- **At 0.1 both C# values sit below the three Python values** (59 and 64 thousand against 62,
+  75 and 85 thousand). With two runs against three that is not a distinguishable difference;
+  it is not evidence of equivalence either. The ensembles above are that evidence, at the
+  shipped parameters.
+- **The path is the one calibration uses**: the C# generations ran on a forkserver pool of two
+  workers, one thread each, and the .NET runtime was never loaded in the parent process.
+
+This shows that calibration runs on Baltic through the C# engine and orders candidates as the
+Python engine does. It is five generations of one parameter, not a calibration.
 
 ## Phase 2 tasks
 
