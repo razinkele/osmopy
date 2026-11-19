@@ -307,7 +307,7 @@ public sealed class FamilyOutputsTests : IDisposable
     private static (OutputParameters Output, IReadOnlyList<string> Problems) Read(SimulationConfig c)
     {
         var r = new BundleReader(c, 1);
-        return (ModelReader.Output(r, NTotal, NFocal, feature: true), r.Problems);
+        return (ModelReader.Output(r, NTotal, NFocal, feature: true, nResources: 0), r.Problems);
     }
 
     [Fact]

@@ -429,9 +429,14 @@ public static class MortalityKernel
                 }
 
                 ps.TlWeightedSum += rTl * eaten;
-                if (t.NSpeciesFocal + r < dietCols)
+
+                // The resources are the LAST columns, after every species: focal, background,
+                // resources, as the reference lays the prey axis out. (With the diet off the
+                // column count is 0 and the index is negative.)
+                int rscCol = dietCols - t.NResources + r;
+                if (rscCol >= 0 && rscCol < dietCols)
                 {
-                    diet[t.NSpeciesFocal + r] += eaten;
+                    diet[rscCol] += eaten;
                 }
             }
         }

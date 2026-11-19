@@ -115,8 +115,9 @@ def _two_focal_one_bkg():
         all_species_names=["cod", "sprat", "GreySeal"],
         resource_names=["zoo"],
     )
-    # rows: cod, sprat, GreySeal; prey cols: cod, sprat, zoo
-    mat = np.array([[0.0, 3.0, 1.0], [0.0, 0.0, 5.0], [2.0, 7.0, 0.0]])
+    # rows (predators): cod, sprat, GreySeal; prey cols: cod, sprat, GreySeal, zoo. The seal
+    # has a prey column of its own (#322); here cod eats half a tonne of it.
+    mat = np.array([[0.0, 3.0, 0.5, 1.0], [0.0, 0.0, 0.0, 5.0], [2.0, 7.0, 0.0, 0.0]])
     outputs = [SimpleNamespace(step=1, diet_by_species=mat, window_steps=1)]
     return cfg, outputs
 
@@ -129,6 +130,11 @@ def test_in_memory_predator_pressure_has_background_columns():
     assert list(df.columns) == ["Time", "Prey", "cod", "sprat", "GreySeal"]
     sprat = df[df["Prey"] == "sprat"].iloc[0]
     assert sprat["GreySeal"] == 7.0 and sprat["cod"] == 3.0
+    # The prey rows follow the diet's prey axis: focal, background, resources (#322). What cod
+    # ate of the seal is under the seal, and the resource row holds the resource only.
+    assert df["Prey"].tolist() == ["cod", "sprat", "GreySeal", "zoo"]
+    assert df[df["Prey"] == "GreySeal"].iloc[0]["cod"] == 0.5
+    assert df[df["Prey"] == "zoo"].iloc[0][["cod", "sprat", "GreySeal"]].tolist() == [1.0, 5.0, 0.0]
 
 
 def test_in_memory_diet_matrix_has_background_predators():
@@ -139,13 +145,16 @@ def test_in_memory_diet_matrix_has_background_predators():
     assert [c for c in df.columns if c.startswith("GreySeal_")] == [
         "GreySeal_cod",
         "GreySeal_sprat",
+        "GreySeal_GreySeal",
         "GreySeal_zoo",
     ]
     # each predator's row is percentages over its own prey: the seal ate 2 t cod + 7 t sprat
     assert df.iloc[0]["GreySeal_sprat"] == pytest.approx(700.0 / 9)
     assert df.iloc[0]["GreySeal_cod"] == pytest.approx(200.0 / 9)
-    # and the focal rows are unchanged by it: 3 of cod's 4 tonnes were sprat
-    assert df.iloc[0]["cod_sprat"] == 75.0
+    # cod ate 3 t sprat, 0.5 t seal and 1 t zoo: each under its own name
+    assert df.iloc[0]["cod_sprat"] == pytest.approx(300.0 / 4.5)
+    assert df.iloc[0]["cod_GreySeal"] == pytest.approx(50.0 / 4.5)
+    assert df.iloc[0]["cod_zoo"] == pytest.approx(100.0 / 4.5)
 
 
 @pytest.fixture(scope="module")

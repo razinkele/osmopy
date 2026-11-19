@@ -21,7 +21,8 @@ Phase 2 acceptance below, which holds in full.
 - **Scope (Q5): bioenergetics is not ported for now.** It stays on the Python engine, with
   genetics and economics. To revisit if a bioenergetics config heads for production. C# work
   continues with Phase 3's optional features only as they are needed.
-- **The Python-engine diet defect** found on the way is recorded as issue #322.
+- **The Python-engine diet defect** found on the way was recorded as issue #322 and is fixed
+  since, in both engines (see "Scope and limits").
 
 The two questions as they were put, with the spec's own recommendations:
 
@@ -252,11 +253,14 @@ refused, by name.
   follow-up of the same day: it switches that feature on and gives no species a flux file,
   which does nothing (`docs/perf/2026-11-19-csharp-benguela.md`). Bioenergetics, genetics and
   economics run on the Python engine only.
-- **A Python-engine defect was reproduced, not fixed.** When a background school is eaten, the
-  Python engine books it in the diet column of the resource with the same index
-  (`mortality.py`, `diet_matrix[p, species_id[q]]`). It is inert on Baltic as shipped, because
-  nothing eats a seal or a cormorant. The C# engine copies it for parity, and a test forces the
-  case. Whether to fix it in the Python engine is the owner's call.
+- **A Python-engine defect was reproduced here, and fixed afterwards (#322).** When a
+  background school was eaten, the Python engine booked it in the diet column of the resource
+  with the same index (`mortality.py`, `diet_matrix[p, species_id[q]]`), because the prey axis
+  had no background columns. It was inert on Baltic as shipped, because nothing eats a seal or
+  a cormorant, and the C# engine copied it for parity. Since the fix the prey axis of both
+  engines is Java's: focal species, background species, resources. The diet and
+  predator-pressure outputs gained the background prey (empty on Baltic), and the numbers in
+  this note are unchanged: no predator's diet moved, only the columns it is written in.
 - **The UI gives a C# run no step progress and no live view.** The engine does not expose its
   schools. Progress could come from its control block later.
 - **`scripts/calibrate_baltic.py --engine csharp` works since the G2 follow-up**, with

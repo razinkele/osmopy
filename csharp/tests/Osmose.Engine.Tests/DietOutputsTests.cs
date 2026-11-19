@@ -10,8 +10,8 @@ namespace Osmose.Engine.Tests;
 /// rule and the bundle contract on cases small enough to read.</summary>
 public sealed class DietOutputsTests : IDisposable
 {
-    // Two focal species and one background species; prey columns: the two focal species and two
-    // resources.
+    // Two focal species and one background species; prey columns: the two focal species, the
+    // background species and one resource (the reference's layout: species, then resources).
     private const int NFocal = 2;
     private const int NTotal = 3;
     private const int Cols = 4;
@@ -185,7 +185,7 @@ public sealed class DietOutputsTests : IDisposable
         }
 
         var r = new BundleReader(c, 1);
-        return (ModelReader.Output(r, NTotal, NFocal, feature: true), r.Problems);
+        return (ModelReader.Output(r, NTotal, NFocal, feature: true, nResources: Cols - NTotal), r.Problems);
     }
 
     [Fact]
@@ -201,8 +201,14 @@ public sealed class DietOutputsTests : IDisposable
         Assert.Contains(missing, m => m.Contains("output.diet_columns: missing", StringComparison.Ordinal));
         Assert.Equal(OutputFamilies.Stage, dropped.Families); // a layout that can still be built
 
-        (_, IReadOnlyList<string> few) = Read((long)Families, NFocal - 1);
-        Assert.Contains(few, m => m.Contains("output.diet_columns: 1, but the prey columns start with the 2 focal species", StringComparison.Ordinal));
+        // Any count but species + resources is refused: with fewer columns the kernel would book
+        // a resource under a species' label, with more it would leave the labels short.
+        foreach (int wrong in new[] { NTotal - 1, Cols - 1, Cols + 1 })
+        {
+            (OutputParameters refused, IReadOnlyList<string> why) = Read((long)Families, wrong);
+            Assert.Contains(why, m => m.Contains($"output.diet_columns: {wrong}, but the prey columns are the 3 species (focal, then background) and the 1 resources", StringComparison.Ordinal));
+            Assert.Equal(OutputFamilies.Stage, refused.Families);
+        }
 
         (_, IReadOnlyList<string> extra) = Read((long)OutputFamilies.Stage, Cols);
         Assert.Contains(extra, m => m.Contains("output.diet_columns: present, but output.families has no diet family", StringComparison.Ordinal));

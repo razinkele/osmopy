@@ -95,8 +95,10 @@ def reduce_records(records: list, config, spinup_years: int) -> dict[str, dict[s
         diet = mean(
             [r.diet_by_species for r in kept]
         )  # [predator (focal, background), prey column]
-        put("eaten_fish", diet[:, :nf].sum(axis=1), names)
-        put("eaten_resources", diet[:, nf:].sum(axis=1), names)
+        # Prey columns: focal species, background species, resources (#322).
+        n_schools_prey = nf + n_bkg
+        put("eaten_fish", diet[:, :n_schools_prey].sum(axis=1), names)
+        put("eaten_resources", diet[:, n_schools_prey:].sum(axis=1), names)
     for metric in INTENSIVE:
         if getattr(kept[0], metric) is None:
             continue

@@ -2093,11 +2093,16 @@ def simulate(
         if config.diet_output_enabled:
             from osmose.engine.processes.predation import enable_diet_tracking
 
-            # Prey axis is schools THEN resources — mortality.py writes resources at
-            # column (n_species + r_idx). Sizing this with n_background instead silently
-            # dropped every resource past the second and mislabelled the first two as the
-            # background species (#146).
-            enable_diet_tracking(len(state), config.n_species + len(config.resource_names), ctx=ctx)
+            # Prey axis, as Java's DietOutput lays it out: focal species, background species,
+            # resources (output.diet_prey_names). A school prey is booked at its species id,
+            # which for a background school is n_species + k; the resources come after ALL the
+            # species. With no background columns (#146's first fix) an eaten background school
+            # landed in the column of the resource with the same index (#322).
+            enable_diet_tracking(
+                len(state),
+                config.n_species + config.n_background + len(config.resource_names),
+                ctx=ctx,
+            )
 
         state = _mortality(
             state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx

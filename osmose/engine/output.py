@@ -514,17 +514,22 @@ def _write_mortality_csvs(
 
 
 def diet_prey_names(config) -> list[str]:
-    """PREY axis for diet / predator-pressure outputs: schools first, then resources.
+    """PREY axis for diet / predator-pressure outputs: focal species, background species,
+    resources. This is Java's ``DietOutput`` (``nPrey = nSpecies + nBkg + nRsc``, a resource at
+    ``j + nSpec``).
 
-    This must mirror how the predation kernel fills the matrix: focal schools are written at
-    their species index, and resources at ``n_species + r_idx``
-    (``osmose/engine/processes/mortality.py``). Background species are NOT prey — the kernel
-    types prey as school (0) or resource (1) only — so using ``all_species_names`` here put
-    GreySeal/Cormorant in the slots the kernel fills with the first two resources, and pushed
-    the remaining resources past the end of the array where a bounds check silently dropped
-    them (#146).
+    It must mirror how the predation kernel fills the matrix: a school prey is written at its
+    species id (a background school's is ``n_species + k``) and a resource in the LAST columns
+    (``osmose/engine/processes/mortality.py``). A background school is a school, and a predator
+    large enough eats it. Two earlier layouts each lost something:
+
+    - species names without the resources put GreySeal and Cormorant over the first two
+      resources and dropped the rest (#146);
+    - focal species and resources, with no background columns, booked an eaten background
+      school in the column of the resource with the same index (#322).
     """
-    return [*config.species_names, *config.resource_names]
+    n = config.n_species + config.n_background
+    return [*config.all_species_names[:n], *config.resource_names]
 
 
 def pressure_predator_names(config) -> list[str]:

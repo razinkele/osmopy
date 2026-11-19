@@ -516,12 +516,12 @@ def _predation_on_resources(
             eaten_from_rsc = eaten_total * share
             resources.biomass[r, cell_id] = max(0.0, resources.biomass[r, cell_id] - eaten_from_rsc)
 
-            # Diet tracking: resource species index = n_species + r
+            # Diet tracking: the resources are the last columns, after every species.
             _diet_en = ctx.diet_tracking_enabled if ctx else False
             _diet_mat = ctx.diet_matrix if ctx else None
             if _diet_en and _diet_mat is not None:
-                rsc_col = config.n_species + r
-                if p_idx < _diet_mat.shape[0] and rsc_col < _diet_mat.shape[1]:
+                rsc_col = _diet_mat.shape[1] - resources.biomass.shape[0] + r
+                if p_idx < _diet_mat.shape[0] and 0 <= rsc_col < _diet_mat.shape[1]:
                     _diet_mat[p_idx, rsc_col] += eaten_from_rsc
 
         # Update predator success rate
