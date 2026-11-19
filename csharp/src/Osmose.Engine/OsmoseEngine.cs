@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace Osmose.Engine;
 
 /// <summary>
@@ -17,6 +19,28 @@ public static class OsmoseEngine
     /// <c>core</c>, so every valid bundle is refused here, by name (fail closed, spec D11).
     /// </exception>
     public static RunSummary RunSimulation(SimulationConfig config)
+    {
+        try
+        {
+            return RunOnce(config);
+        }
+        finally
+        {
+            // The run's own arrays (the school store, the scratch, the tables) are dead here.
+            // Left to the collector's schedule they stay for two or three more runs: measured on
+            // Baltic (2026-11-19), about 30 MB a run, and a process that runs many simulations
+            // sat at 270 to 320 MB resident against 204 MB with this collection, which took
+            // 4 ms. Without it the engine can exceed the Python engine's peak (spec 10.4).
+            GC.Collect();
+        }
+    }
+
+    /// <summary>
+    /// One run, in its own frame: the run object must be unreachable when
+    /// <see cref="RunSimulation"/> collects, so this method is never inlined into it.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static RunSummary RunOnce(SimulationConfig config)
     {
         EngineParameters parameters = EngineParameters.From(config);
         return new Step.SimulationRun(parameters, config).Run();

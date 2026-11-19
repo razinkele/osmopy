@@ -95,6 +95,23 @@ def thread_digests(out: Path) -> None:
     out.write_text(json.dumps(result))
 
 
+def heap_after_runs(out: Path) -> None:
+    """The managed heap and the generation-2 collection count after each of several runs in
+    this one process (read without forcing a collection)."""
+    from osmose.engine_cs import CSharpEngine
+
+    engine, rows = CSharpEngine(threads=2), []
+    for seed in range(int(sys.argv[5])):
+        engine._execute(_raw(), seed, None)
+        import System  # the CLR is hosted once the first run has loaded the engine
+
+        rows.append({
+            "heap_mb": float(System.GC.GetTotalMemory(False)) / 2**20,
+            "gen2": int(System.GC.CollectionCount(2)),
+        })  # fmt: skip
+    out.write_text(json.dumps(rows))
+
+
 def cancel_at(out: Path) -> None:
     """Cancel through slot 0 once slot 1 (steps completed) reaches k; result rows past the
     records written are prefilled with NaN so they are provably untouched."""
@@ -269,6 +286,7 @@ if __name__ == "__main__":
         "frames": frames,
         "files": files,
         "thread_digests": thread_digests,
+        "heap_after_runs": heap_after_runs,
         "cancel_at": cancel_at,
         "cancel_thread": cancel_from_thread,
         "error": expect_error,
