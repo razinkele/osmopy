@@ -59,11 +59,13 @@ def test_every_catalogue_feature_has_exactly_one_detector():
 def test_the_implemented_features_are_exactly_these():
     # Flip a feature's flag only in the PR that makes it run: core ran end to end in task 1.8,
     # oxygen_benthos in task 2.5, the recruitment three in task 2.3, salinity_gate in task 2.4,
-    # background_species in task 2.1, full_outputs in task 2.6c (with its last family, the diet).
+    # background_species in task 2.1, full_outputs in task 2.6c (with its last family, the diet),
+    # lmax_cap and movement_none in the follow-up to task 2.2 (the code was in the Phase 1 core;
+    # what they waited for was a test of a whole step and of a whole run).
     implemented = {f.name for f in cap.load_catalog().values() if f.implemented}
     assert implemented == {
         "core", "oxygen_benthos", "stock_recruitment", "rv_gate", "seeding_linear",
-        "salinity_gate", "background_species", "full_outputs",
+        "salinity_gate", "background_species", "full_outputs", "lmax_cap", "movement_none",
     }  # fmt: skip
 
 

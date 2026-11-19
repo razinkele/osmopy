@@ -203,9 +203,10 @@ bioenergetics is worth porting (Q5). **Decided by the owner on 2026-11-19**
 - **Phase 3 is done only as its features are needed**, not as a programme.
 
 **Phase 2 as delivered.** Tasks 2.1 and 2.3 to 2.8 are merged. Of task 2.2, out-of-domain
-mortality was already part of the Phase 1 core; the length cap (`species.lmax`) and immobile
-focal species are not implemented, because no shipped config uses them, and a config that does
-is refused by name.
+mortality was already part of the Phase 1 core. The length cap (`species.lmax`) and immobile
+focal species were refused at first, because no shipped config uses them. They run since
+2026-11-19: the code was in the core, and they were switched on once a whole step and a whole
+run had been tested with each.
 
 ---
 

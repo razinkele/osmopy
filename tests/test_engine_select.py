@@ -62,20 +62,27 @@ def test_a_csharp_calibration_of_an_unrunnable_config_is_refused_up_front(tmp_pa
     The refusal has two causes, and each is asserted by its own message, so that this test
     cannot pass on an unavailable engine while the config check goes untested (it did: the
     stock config it used became runnable in task 2.6c, and only a run WITH the engine noticed).
-    A growth cap (species.lmax) is a feature the engine does not implement."""
+    Logistic fishing selectivity is a feature the engine does not implement. A growth cap
+    (species.lmax) was the example here until the engine ran it: such a config is accepted."""
     from osmose.engine_cs import csharp_engine_available
 
     stock = Path(osmose_demo("eec_full", tmp_path / "stock")["config_file"])
     capped = Path(osmose_demo("eec_full", tmp_path / "capped")["config_file"])
     capped.write_text(capped.read_text() + "\nspecies.lmax.sp0;25\n")
+    logistic = Path(osmose_demo("eec_full", tmp_path / "logistic")["config_file"])
+    fishing = logistic.parent / "eec_param-fishing.csv"  # the key is set there: change it there
+    was = "fisheries.selectivity.type.fsh0;0"
+    assert was in fishing.read_text()
+    fishing.write_text(fishing.read_text().replace(was, "fisheries.selectivity.type.fsh0;1"))
     available, _ = csharp_engine_available()
     if not available:
         with pytest.raises(ValueError, match="engine='csharp': the C# engine is unavailable"):
-            _problem(tmp_path, base=capped, engine="csharp")
+            _problem(tmp_path, base=logistic, engine="csharp")
         return
-    with pytest.raises(ValueError, match=r"cannot run this config: .*lmax_cap"):
-        _problem(tmp_path, base=capped, engine="csharp")
+    with pytest.raises(ValueError, match=r"cannot run this config: .*selectivity_logistic"):
+        _problem(tmp_path, base=logistic, engine="csharp")
     assert _problem(tmp_path, base=stock, engine="csharp").engine == "csharp"  # as shipped: runs
+    assert _problem(tmp_path, base=capped, engine="csharp").engine == "csharp"
 
 
 def test_the_engine_reaches_the_workers_and_the_cache_key(tmp_path):

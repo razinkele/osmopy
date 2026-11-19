@@ -212,14 +212,41 @@ def _worst(a, b) -> float:
     return float(rel.max()) if rel.size else 0.0
 
 
+def _cap_at_the_median(state, config) -> None:
+    """Set each focal species' ``lmax`` to the median length of its schools, so that the cap
+    binds on half of them in this step's growth (no shipped config sets ``species.lmax``)."""
+    lmax = np.array(config.lmax, dtype=np.float64)
+    for sp in range(config.n_species):
+        mine = state.species_id == sp
+        if mine.any():
+            lmax[sp] = float(np.median(state.length[mine]))
+    config.lmax = lmax
+
+
+IMMOBILE = 3  # the EEC species given movement method "none" in the "immobile" variant
+VARIANTS = {
+    None: ({}, None),
+    "lmax": ({}, _cap_at_the_median),
+    "immobile": ({f"movement.distribution.method.sp{IMMOBILE}": "none"}, None),
+}
+
+
 @pytest.mark.parametrize(
-    ("demo", "edge_ages"), [("bay_of_biscay", False), ("eec_full", False), ("eec_full", True)]
+    ("demo", "edge_ages", "variant"),
+    [
+        ("bay_of_biscay", False, None),
+        ("eec_full", False, None),
+        ("eec_full", True, None),
+        ("eec_full", False, "lmax"),
+        ("eec_full", False, "immobile"),
+    ],
 )
 def test_one_step_from_mortality_entry_equals_production(
-    engine_ok, demo, edge_ages, tmp_path, record_property
+    engine_ok, demo, edge_ages, variant, tmp_path, record_property
 ):
     step = STEP_CASES[demo]
-    got = _capture_step(_raw(demo, tmp_path, step // 24 + 1), step, edge_ages)
+    extra, edit = VARIANTS[variant]
+    got = _capture_step(_raw(demo, tmp_path, step // 24 + 1, extra), step, edge_ages, edit=edit)
     build_bundle(got["config"], got["raw"], got["grid"], seed=11).save(tmp_path / "model.bin")
     _write_states([got["entry"]], tmp_path / "entry.bin")
     _write_draws(got["record"], tmp_path / "draws.bin")
@@ -252,6 +279,17 @@ def test_one_step_from_mortality_entry_equals_production(
         aged = final.n_dead[: len(got["entry"]), 7] > 0
         assert aged.any() and not aged[np.flatnonzero(~got["entry"].is_egg)[0::3]].any()
     assert out.mortality_by_cause.sum() > 0 and out.biomass.sum() > 0
+    entry, config = got["entry"], got["config"]
+    if variant == "lmax":  # the cap binds, and nothing is longer than it
+        old = final.species_id[: len(entry)]
+        assert np.isfinite(config.lmax[: config.n_species]).all()
+        assert (final.length[: len(entry)] == config.lmax[old]).sum() > 100
+        assert (final.length[: len(entry)] <= config.lmax[old]).all()
+    if variant == "immobile":  # the species is there, never placed, and not flagged out
+        assert list(config.movement_method)[IMMOBILE] == "none"
+        mine = entry.species_id == IMMOBILE
+        assert mine.sum() > 10 and (entry.cell_x[mine] < 0).all() and not entry.is_out[mine].any()
+        assert (entry.cell_x[~mine] >= 0).any()
 
 
 # ---------------------------------------------------------------------- B. windows

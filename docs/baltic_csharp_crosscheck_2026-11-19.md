@@ -239,14 +239,16 @@ Python engine does. It is five generations of one parameter, not a calibration.
 | 2.7 UI: three engines | #320 |
 | 2.8 Baltic validation (this note, the performance report, the harness changes, the collection at the end of a run) | this PR |
 
-**Task 2.2 was not needed and is not done.** Out-of-domain mortality was already in the Phase 1
+**Task 2.2 was not needed for Baltic.** Out-of-domain mortality was already in the Phase 1
 core. Its other two features, the growth cap (`species.lmax`) and immobile focal species
-(`movement_none`), are used by none of the three shipped demos. A config that sets either is
-refused, by name.
+(`movement_none`), are used by none of the shipped demos, and a config that set either was
+refused by name when this note was written. Both run since the follow-up of the same day.
+Their code had been in the core all along; what they waited for was a test of a whole step
+and of a whole run (`tests/test_csharp_pipeline.py`, `tests/test_csharp_engine_e2e.py`).
 
 ## Scope and limits (what Phase 2 does not do)
 
-- **Features still refused, by name:** the growth cap and immobile species (above), and Phase
+- **Features still refused, by name:** Phase
   3's optional features (depletable resources, incoming flux, marine protected areas,
   time-varying rates, the other recruitment gates, spatial and carbon outputs, and others).
   Benguela was refused for `incoming_flux` when this note was written. It runs since the

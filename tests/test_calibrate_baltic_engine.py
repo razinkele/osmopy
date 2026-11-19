@@ -205,8 +205,11 @@ def test_a_csharp_calibration_that_cannot_work_is_refused_with_its_reason(monkey
         cb._require_csharp(_stock())
     monkeypatch.setattr(engine_cs, "csharp_engine_available", lambda: (True, ""))
     cb._require_csharp(_stock())  # the Baltic config as shipped runs on the C# engine
-    with pytest.raises(SystemExit, match=r"cannot run this calibration's config: .*lmax_cap"):
-        cb._require_csharp(_stock() | {"species.lmax.sp0": "25"})
+    with pytest.raises(
+        SystemExit, match=r"cannot run this calibration's config: .*selectivity_logistic"
+    ):
+        cb._require_csharp(_stock() | {"fisheries.selectivity.type.fsh0": "1"})
+    cb._require_csharp(_stock() | {"species.lmax.sp0": "25"})  # a growth cap runs
     for optimizer in ("cmaes", "surrogate-de"):
         with pytest.raises(SystemExit, match="--optimizer de only"):
             cb._require_csharp(_stock(), optimizer)
