@@ -218,7 +218,9 @@ def test_make_diet_heatmap_keeps_a_species_name_with_an_underscore_whole():
     )
     data = {"Time": [0.9, 1.9]} | {f"{p}_{q}": [0.0, 0.0] for p in predators for q in prey}
     data |= {"cod_west_herring": [2.0, 4.0], "cod_west_Zoo": [1.0, 1.0], "cod_east_Zoo": [5.0, 5.0]}
-    fig = make_diet_heatmap(pd.DataFrame(data | {"species": ["all", "all"]}))
+    # A text column whose name has an underscore is no pair and must not disturb the split.
+    data |= {"species": ["all", "all"], "run_note": ["first", "second"]}
+    fig = make_diet_heatmap(pd.DataFrame(data))
     trace = fig.data[0]
     assert list(trace.y) == predators
     assert list(trace.x) == prey

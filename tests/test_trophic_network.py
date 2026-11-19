@@ -416,3 +416,44 @@ def test_the_reader_splits_back_what_the_writer_wrote():
     assert len(pairs) == len(predators) * len(prey)
     assert [(p, q) for _, p, q in pairs] == [(p, q) for p in predators for q in prey]
     assert all(c in df.columns for c, _, _ in pairs)
+
+
+@pytest.fixture(scope="module")
+def baltic_output(tmp_path_factory):
+    """One year of the Baltic demo as shipped, written to disk. It writes its diet matrix."""
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.demo import osmose_demo
+    from osmose.engine import PythonEngine
+    from osmose.engine.config import EngineConfig
+
+    tmp = tmp_path_factory.mktemp("baltic_diet")
+    cfg = dict(OsmoseConfigReader().read(str(osmose_demo("baltic", tmp)["config_file"])))
+    cfg["simulation.time.nyear"] = "1"
+    out = tmp / "out"
+    out.mkdir()
+    PythonEngine().run(cfg, out, seed=42)
+    return out, EngineConfig.from_dict(cfg)
+
+
+def test_a_real_baltic_run_is_read_with_its_own_species(baltic_output):
+    """The defect and the fix on what the engine really writes, through the two entry points
+    the results page uses. The split is inferred from the whole frame, so one stray column
+    would send every name back to the first underscore with the synthetic tests still green:
+    only the real file can show that the real file is read."""
+    from osmose.results import OsmoseResults
+    from ui.pages.results import make_diet_heatmap
+
+    out, config = baltic_output
+    fish = list(config.species_names)
+    predators = list(config.all_species_names)[: config.n_species + config.n_background]
+    assert {"cod_west", "cod_east"} <= set(fish)
+
+    nodes = set(network_node_universe(out))
+    assert set(predators) <= nodes
+    assert "cod" not in nodes and not any(n.startswith(("west_", "east_")) for n in nodes)
+    net = diet_network_at(out, time=available_times(out)[-1], threshold=0.0)
+    assert set(net["predator"]) <= set(predators) and "cod_west" in set(net["predator"])
+
+    fig = make_diet_heatmap(OsmoseResults(out, strict=False).diet_matrix())
+    assert list(fig.data[0].y) == predators
+    assert list(fig.data[0].x)[: len(fish)] == fish

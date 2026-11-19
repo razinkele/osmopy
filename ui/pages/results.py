@@ -204,9 +204,9 @@ def make_diet_heatmap(df: pd.DataFrame, template: str = "osmose") -> go.Figure:
     prey_names = []
     cells: dict[tuple[str, str], float] = {}
     mean_of = {str(col): float(val) for col, val in means.items()}
-    for col, pred, prey in diet_column_pairs(pair_cols):
-        if col not in mean_of:  # a column with no numeric mean
-            continue
+    # The numeric columns only: a text column with an underscore in its name is no pair, and
+    # counted in it would stop the columns being a grid (every name split at the first "_").
+    for col, pred, prey in diet_column_pairs(list(mean_of)):
         if pred not in predators:
             predators.append(pred)
         if prey not in prey_names:
