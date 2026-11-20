@@ -32,7 +32,7 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 | `simulation.nschool.multiplier` | done (2026-11-20) | `(int) (multiplier * nschool)` per focal species, a truncation (`Configuration.java`, lines 583-591). A count that falls to 0 is refused. **Not changed:** without `simulation.nschool` the Python default is 20 schools, Java's is 10 (`nSchoolDef`); every shipped config sets the key |
 | `simulation.kill.if.no.school.enabled` (4.4.1 debug switch) | done (2026-11-19) | After the seeding period (`population.seeding.year.max`, or the longest lifespan), a step that ends with a focal species holding no fish stops the run: `osmose.engine.SpeciesCollapsed`, where Java exits with status 1 (`SimulationStep.step`). The C# engine has no such check and refuses a config that switches it on |
 | `population.genotype.transmission.year.start` (genetics) | done (2026-11-20) | Java's name for the first year in which offspring inherit (`ReproductionProcess.init`). The Python engine read only its own `evolution.seeding.year`; it now reads Java's key first and its own as the fallback. **Not ported:** Java refuses a run in which a coding trait (`m0`, `m1`, `imax`, `r`) evolves and this year precedes `population.seeding.year.max`. The shipped `baltic_ev` has 10 against 60 and would not load under that rule |
-| `species.is.enabled.spX` (4.4.1 debug switch) | TODO, not small | Java drops the species from its list of focal species and counts on (`Configuration.java`, v4.4.1 lines 525-545), so every later `sp` index keeps its file number while the engine's own numbering closes up. The Python engine numbers focal species `0..n-1` straight from the file. Doing this means a pass that renumbers a config (species keys, maps, fisheries and accessibility matrices), as the cod split needed; it is not a key to read |
+| `species.is.enabled.spX` (4.4.1 debug switch) | done (2026-11-20) | `drop_disabled_species` in `osmose/engine/config.py`, applied in `EngineConfig.from_dict` right after key canonicalisation. Java drops the species and numbers the rest in order while keys keep their file index; this engine numbers focal species 0..n-1 from the keys, so it renumbers: the disabled species' `.sp<i>` keys go, later focal species move down, background and resource keys (`i >= n`) stay, and the species' movement maps go (fishery maps sharing the map numbering stay). Name-keyed matrices (accessibility, catchability) just no longer use its row. A run with the switch equals the config written without the species, bit for bit. The C# engine receives the renumbered config |
 
 ## Processes
 
@@ -71,8 +71,8 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 
 - **Phase 1** (config alignment, low risk): this document; the resource-forcing and background
   multiplier key alignment (done 2026-11-06); `simulation.fixed.seed.enabled` and the
-  `kill.if.no.school` switch (done 2026-11-19). Still open: `species.is.enabled`, which is a
-  renumbering pass over a config and not a key to read (see its row above).
+  `kill.if.no.school` switch (done 2026-11-19); `species.is.enabled`, a renumbering pass over
+  the config (done 2026-11-20, see its row above). Phase 1 is complete.
 - **Phase 2** (process parity): region-aware mortality, stochastic maturity, post-reproduction
   mortality. Each changes engine outputs and needs its own parity run.
 - **Phase 3** (extensions): simplified bioenergetics, gradient movement, log `computePercent`,

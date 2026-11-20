@@ -183,6 +183,9 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"simulation\.kill\.if\.no\.school\.enabled", "kill_if_no_school"),
     (r"simulation\.resources\.computepercent\.legacy", "resource_percent_log"),
     (r"species\.maturity\.(mode|l50|l75)\..+", "maturity_stochastic"),
+    # Resolved in Python before the bundle is built (drop_disabled_species): the engine gets the
+    # renumbered config.
+    (r"species\.is\.enabled\..+", "phase1"),
     (r"engine\.rng\.java_compat", "java_compat_rng"),
     (
         r"module\.genetics\.enabled|evolution\..+|population\.genotype\.transmission\.year\.start",

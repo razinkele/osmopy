@@ -6,6 +6,7 @@ into typed NumPy arrays indexed by species, ready for vectorized computation.
 
 from __future__ import annotations
 
+import re
 import warnings
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -204,6 +205,54 @@ def _parse_stochastic_maturity(
         np.concatenate([l50, pad_f]),
         np.concatenate([sd, pad_f]),
     )
+
+
+def drop_disabled_species(cfg: dict[str, str]) -> dict[str, str]:
+    """``species.is.enabled.sp# = false`` (OSMOSE 4.4.1, ``Configuration.java`` v4.4.1 lines
+    523-552): the config without that focal species.
+
+    Java drops the species from its list and numbers the rest in order, while every key keeps
+    its file index. This engine numbers focal species 0..n-1 from the keys, so it renumbers:
+    keys ending in ``.sp<i>`` for a focal ``i`` go when the species is disabled and move down to
+    the species' new number otherwise; keys of background and resource species (``i >= n``) are
+    left as they are. A disabled species' movement maps go too (``movement.*.map<k>`` with
+    ``movement.species.map<k>`` naming it); the fishery maps that share the map numbering stay.
+    Matrices that name species (accessibility, catchability) are matched by name and simply no
+    longer use its row. Without the switch the config is returned unchanged.
+    """
+    n = int(cfg.get("simulation.nspecies", "0") or 0)
+    enabled = _species_str_optional(cfg, "species.is.enabled.sp{i}", n, default="true")
+    disabled = {i for i, flag in enumerate(enabled) if flag == "false"}
+    if not disabled:
+        return cfg
+    if len(disabled) == n:
+        raise ValueError(
+            "species.is.enabled.sp# = false for every focal species: nothing to simulate"
+        )
+    new_index = {}
+    for i in range(n):
+        if i not in disabled:
+            new_index[i] = len(new_index)
+    gone_names = {cfg.get(f"species.name.sp{i}") for i in disabled}
+    gone_maps = {
+        key[len("movement.species.map") :]
+        for key, value in cfg.items()
+        if key.startswith("movement.species.map") and value in gone_names
+    }
+    out: dict[str, str] = {}
+    for key, value in cfg.items():
+        m = re.fullmatch(r"(.+)\.sp(\d+)", key)
+        if m and int(m.group(2)) < n:
+            i = int(m.group(2))
+            if i in disabled:
+                continue
+            key = f"{m.group(1)}.sp{new_index[i]}"
+        mm = re.fullmatch(r"movement\..+\.map(\d+)", key)
+        if mm and mm.group(1) in gone_maps:
+            continue
+        out[key] = value
+    out["simulation.nspecies"] = str(n - len(disabled))
+    return out
 
 
 def _enabled(cfg: dict[str, str], key: str) -> bool:
@@ -2254,6 +2303,9 @@ class EngineConfig:
         from osmose.config.aliases import canonicalize_config
 
         cfg, _deprecated = canonicalize_config(cfg)
+        # species.is.enabled (4.4.1): renumber before anything reads a species key, so the
+        # stored raw config and everything built from it agree.
+        cfg = drop_disabled_species(cfg)
 
         # #120: warn on requested-but-unsupported restart (post-canonicalize catches the old
         # output.restart.enabled spelling too). Two distinct requests, two distinct messages.
