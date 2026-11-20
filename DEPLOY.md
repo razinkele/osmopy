@@ -44,10 +44,12 @@ Old root-git deploys could leave root-owned files in the prod clone, and git as 
 ```bash
 sudo systemctl stop osmose-shiny.service
 sudo mv /srv/shiny-server/osmose-src /srv/shiny-server/osmose-src.old
-sudo bash deploy.sh                    # clones afresh as shiny, provisions the JARs, restarts
+sudo bash deploy.sh                    # clones afresh as shiny (public repo, no credentials), provisions the JARs, restarts
 ```
 
-The clone's only untracked state is `data/history/` (run history); the feedback store is configured outside it (`/etc/osmose-shiny.env`). To keep the history, copy it **as `shiny`**, never as root: `sudo runuser -u shiny -- cp -a /srv/shiny-server/osmose-src.old/data/history /srv/shiny-server/osmose-src/data/`. Delete `osmose-src.old` once the new clone is verified.
+**If that deploy fails before the new clone is complete**, the service is stopped and `/srv/shiny-server/osmose` points at nothing. Put the old clone back and start the service: `sudo rm -rf /srv/shiny-server/osmose-src` (only if the failed clone left a directory), `sudo mv /srv/shiny-server/osmose-src.old /srv/shiny-server/osmose-src`, `sudo systemctl start osmose-shiny.service`.
+
+Before deleting `osmose-src.old`, list what it held that git does not track, **as `shiny`**: `sudo runuser -u shiny -- git -C /srv/shiny-server/osmose-src.old status --short --ignored --untracked-files=all`. On 2026-11-21 that was the UI run history (`data/history/*.json`), the two JARs (provisioned again by the deploy) and `__pycache__`; there was no `data/feedback/` (the feedback store is configured elsewhere). Copy anything worth keeping **as `shiny`**, never as root, e.g. `sudo runuser -u shiny -- cp -a /srv/shiny-server/osmose-src.old/data/history /srv/shiny-server/osmose-src/data/`.
 
 ### If a deploy stops
 - **Before the checkout** (Step 0, or the clone checks): the previous ref is still checked out and the service is as it was. If you stopped it by hand (above), start it again: `sudo systemctl start osmose-shiny.service`, then `systemctl status osmose-shiny.service`.
