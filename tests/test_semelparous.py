@@ -226,6 +226,12 @@ def test_a_bioenergetic_run_has_no_spawning_death(monkeypatch):
     assert sum(o.mortality_by_cause[0, MortalityCause.SPAWNING] for o in out) > 0  # ... and kills
 
 
+def test_spawning_deaths_are_carcasses():
+    from osmose.engine.simulate import _CARCASS_CAUSES
+
+    assert int(MortalityCause.SPAWNING) in _CARCASS_CAUSES
+
+
 def test_the_csharp_engine_refuses_it_and_only_it():
     from osmose.engine_cs.capabilities import csharp_engine_block_reason
 
