@@ -285,3 +285,48 @@ def test_the_sp1b_guard_refuses_a_larval_multiplier_on_the_stock():
     with pytest.raises(ValueError, match="larva.rate.multiplier.sp0 is set"):
         resolved_d0(cfg | {f"{LARVA}.multiplier.sp0": "2"}, "Fish0")
     assert resolved_d0(cfg | {f"{LARVA}.multiplier.sp1": "2"}, "Fish0") == 1.0
+
+
+class TestTheReview:
+    """#352 review: edge cases of the scenario selection and the values."""
+
+    def test_a_null_larval_rate_next_to_a_neonate_one_is_unset(self):
+        cfg = _config(**{f"{LARVA}.sp1": "null", f"{NEO}.sp1": "0.75"})
+        assert EngineConfig.from_dict(cfg).larva_mortality_rate[1] == 0.75
+
+    def test_a_by_step_species_does_not_read_its_unused_factor_keys(self, tmp_path):
+        path = tmp_path / "add.csv"
+        path.write_text("\n".join(["0.25"] * NDT) + "\n")
+        missing = str(tmp_path / "nowhere.csv")
+        c = _load(**{f"{ADD}.bytdt.file.sp0": str(path), f"{ADD}.seasonality.file.sp0": missing})
+        assert c.additional_mortality_factor is None
+
+    def test_a_by_step_larval_species_does_not_read_them_either(self, tmp_path):
+        path = tmp_path / "larva.csv"
+        path.write_text("step;value\n" + "".join(f"{k};0.25\n" for k in range(NDT)))
+        c = _load(**{f"{LARVA}.bytdt.file.sp0": str(path), f"{LARVA}.multiplier.sp0": "8"})
+        assert c.larva_mortality_factor is None
+
+    @pytest.mark.parametrize("value", ["nan", "inf"])
+    def test_a_non_finite_multiplier_is_refused(self, value):
+        with pytest.raises(ValueError, match="multiplier.sp0 must be finite"):
+            _load(**{f"{ADD}.multiplier.sp0": value})
+
+    def test_a_non_finite_season_is_refused(self):
+        with pytest.raises(ValueError, match="seasonality.sp0 must hold finite values"):
+            _load(**{f"{ADD}.seasonality.sp0": "1;nan;1;1"})
+
+    def test_a_neonate_species_zero_reference_is_ignored_not_refused(self):
+        cfg = _config(
+            **{f"{NEO}.sp1": "0.75", "mortality.additional.larva.referencedensity.sp1": "0"}
+        )
+        del cfg[f"{LARVA}.sp1"]
+        assert EngineConfig.from_dict(cfg).larva_reference_density is None
+
+    def test_the_sp1b_guard_refuses_a_neonate_stock(self):
+        from osmose.calibration.larva_recal import resolved_d0
+
+        cfg = _config(**{f"{NEO}.sp0": "0.75"})
+        del cfg[f"{LARVA}.sp0"]
+        with pytest.raises(ValueError, match="neonate.rate.sp0 is set"):
+            resolved_d0(cfg, "Fish0")

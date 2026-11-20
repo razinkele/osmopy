@@ -646,14 +646,22 @@ def _parse_reproduction_params(
     # Gated on the (default-off) canonical flag, so parity is preserved when warm-start is off.
     if cfg.get("module.population.initialisation.enabled", "false").lower() == "true":
         seeding_max_step = np.zeros(n_sp, dtype=np.int32)
-    larva_mortality_rate = _species_float_optional(
-        cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
-    )
     # Java 4.4.x's VCONSTANT scenario (AdditionalMortality.findScenarioLarva): the same
     # AnnualLarvaMortality, read from mortality.additional.neonate.* keys. Java refuses a species
-    # with more than one larval scenario.
+    # with more than one larval scenario. The scenario is chosen before any rate is converted, so
+    # an unset ("null") larval rate next to a neonate one is not parsed.
+    neonate = [_is_set(cfg, f"mortality.additional.neonate.rate.sp{i}") for i in range(n_sp)]
+    larva_cfg = cfg
+    if any(neonate):
+        larva_cfg = dict(cfg)
+        for i in range(n_sp):
+            if neonate[i] and not _is_set(cfg, f"mortality.additional.larva.rate.sp{i}"):
+                larva_cfg[f"mortality.additional.larva.rate.sp{i}"] = "0"
+    larva_mortality_rate = _species_float_optional(
+        larva_cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
+    )
     for i in range(n_sp):
-        if _is_set(cfg, f"mortality.additional.neonate.rate.sp{i}"):
+        if neonate[i]:
             if _is_set(cfg, f"mortality.additional.larva.rate.sp{i}"):
                 raise ValueError(
                     f"species {i} sets both mortality.additional.larva.rate.sp{i} and "
@@ -1800,6 +1808,16 @@ def mortality_rate_factor(
     factor = np.ones((n_species, n_step), dtype=np.float64)
     found = False
     for i in range(n_species):
+        # A species on a by-step scenario never reads these keys in Java: do not parse them.
+        if larval:
+            by_step = _detect_larva_by_dt_key(cfg, i) is not None
+        else:
+            by_step = any(
+                _either_spelling(cfg, f"mortality.additional.rate.{v}.file.sp{i}") is not None
+                for v in ("bytDt", "byDt.byAge", "byDt.bySize")
+            )
+        if by_step:
+            continue
         if not larval:
             prefix = "mortality.additional.rate"
         elif _is_set(cfg, f"mortality.additional.neonate.rate.sp{i}"):
@@ -1808,7 +1826,10 @@ def mortality_rate_factor(
             prefix = "mortality.additional.larva.rate"
         mult_key = f"{prefix}.multiplier.sp{i}"
         if _is_set(cfg, mult_key):
-            factor[i] *= float(cfg[mult_key])
+            multiplier = float(cfg[mult_key])
+            if not np.isfinite(multiplier):
+                raise ValueError(f"{mult_key} must be finite, got {cfg[mult_key]!r}")
+            factor[i] *= multiplier
             found = True
         file_key = f"{prefix}.seasonality.file.sp{i}"
         val_key = f"{prefix}.seasonality.sp{i}"
@@ -1830,6 +1851,10 @@ def mortality_rate_factor(
                 )
         else:
             continue
+        if not np.isfinite(season).all():
+            raise ValueError(
+                f"{file_key if _is_set(cfg, file_key) else val_key} must hold finite values only"
+            )
         factor[i] *= season
         found = True
     return factor if found else None
@@ -2739,14 +2764,14 @@ class EngineConfig:
         _larva_ref = _species_float_optional(
             cfg, "mortality.additional.larva.referencedensity.sp{i}", n_sp, default=-999.0
         )
+        for _i in range(n_sp):
+            if _is_set(cfg, f"mortality.additional.neonate.rate.sp{_i}"):
+                _larva_ref[_i] = -999.0  # AnnualLarvaMortality reads it only for stage "larva"
         for _i in np.flatnonzero(_larva_ref == 0.0):
             raise ValueError(
                 f"mortality.additional.larva.referencedensity.sp{_i} = 0: the larval rate is "
                 "scaled by SSB / reference, so the reference must be above 0 (or below 0 for off)"
             )
-        for _i in range(n_sp):
-            if _is_set(cfg, f"mortality.additional.neonate.rate.sp{_i}"):
-                _larva_ref[_i] = -999.0  # AnnualLarvaMortality reads it only for stage "larva"
         larva_reference_density = _larva_ref if (_larva_ref > 0).any() else None
         if (
             larva_reference_density is not None
