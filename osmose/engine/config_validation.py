@@ -61,6 +61,8 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         # forcing (resources.py) and a background multiplier given as a logarithm (background.py).
         "species.biomass.varname.sp{idx}",
         "species.multiplier.log.sp{idx}",
+        # read by processes/resource_percent.py (log_form_requested), as Java reads it
+        "simulation.resources.computepercent.legacy",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",

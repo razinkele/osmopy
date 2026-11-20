@@ -2543,9 +2543,9 @@ class EngineConfig:
         kill_if_no_school = (
             cfg.get("simulation.kill.if.no.school.enabled", "false").lower() == "true"
         )
-        resource_percent_log = (
-            cfg.get("simulation.resources.computepercent.legacy", "true").strip().lower() == "false"
-        )
+        from osmose.engine.processes.resource_percent import log_form_requested
+
+        resource_percent_log = log_form_requested(cfg)
         java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 

@@ -133,8 +133,9 @@ class ResourceState:
         """The log form of a predator's share (simulation.resources.computePercent.legacy =
         false) takes log(size_min). With size_min <= 0 the share is 0 for every predator, and
         Java never feeds on the resource, silently. Refused here instead."""
-        legacy = self.config.get("simulation.resources.computepercent.legacy", "true")
-        if legacy.strip().lower() != "false":
+        from osmose.engine.processes.resource_percent import log_form_requested
+
+        if not log_form_requested(self.config):
             return
         bad = [rs.name for rs in self.species if not rs.size_min > 0]
         if bad:
