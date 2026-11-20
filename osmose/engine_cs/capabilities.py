@@ -103,6 +103,7 @@ DETECTORS: dict[str, Any] = {
     "salinity_gate": lambda c, raw: bool(c.salinity_gate_enabled),
     "oxygen_benthos": _detect_raw("osmose.engine.resources.oxygen_benthos_enabled"),
     "movement_none": lambda c, raw: "none" in _focal(c, c.movement_method).tolist(),
+    "movement_gradient": lambda c, raw: bool(_focal(c, c.movement_is_gradient).any()),
     "depletable_ltl": _detect_raw("osmose.engine.resources.depletable_enabled"),
     # In use, not merely switched on: the switch without a flux file does nothing (the Benguela
     # demo ships so), and a config must not be refused for a feature it does not use.
@@ -236,6 +237,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"\{idx\}\.(multiplier|seasonality(\.file)?)\.sp\{idx\}", "mortality_rate_factor"),
     # The neonate scenario is folded into the larval rate, which the bundle carries.
     (r"mortality\.additional\.neonate\.rate\.sp\{idx\}", "phase1"),
+    (r"movement\.(base\.search\.radius|random\.walk\.coef)\..+", "movement_gradient"),
     # The same two families as config files spell them once the reader has lowercased them
     # (issue #297: until then the engine never matched these, so they never reached a detector).
     (r"mortality\.additional\.rate\.bydt\.(byage|bysize)\.file\..+", "rate_by_class"),

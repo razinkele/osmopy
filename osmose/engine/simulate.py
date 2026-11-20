@@ -2006,7 +2006,7 @@ def simulate(
 
     map_sets: dict[int, MovementMapSet] = {}
     for sp in range(config.n_species):
-        if config.movement_method[sp] == "maps":
+        if config.movement_is_maps[sp] or config.movement_is_gradient[sp]:
             sp_name = config.species_names[sp]
             map_sets[sp] = MovementMapSet(
                 config=config.raw_config,
@@ -2025,8 +2025,13 @@ def simulate(
     from osmose.engine.processes.precompute import _flatten_all_map_sets
 
     flat_map_data = (
-        _flatten_all_map_sets(map_sets, config.n_species, grid.ny, grid.nx)
-        if map_sets and _MV_HAS_NUMBA
+        _flatten_all_map_sets(
+            {sp: ms for sp, ms in map_sets.items() if config.movement_is_maps[sp]},
+            config.n_species,
+            grid.ny,
+            grid.nx,
+        )
+        if any(config.movement_is_maps[sp] for sp in map_sets) and _MV_HAS_NUMBA
         else None
     )
     # Pre-compute walk_range as int32 once (avoids per-step allocation)
