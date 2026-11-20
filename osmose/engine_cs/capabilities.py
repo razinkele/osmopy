@@ -178,6 +178,9 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
         "inert",
     ),
     (r"simulation\.kill\.if\.no\.school\.enabled", "kill_if_no_school"),
+    # Resolved in Python before the bundle is built (drop_disabled_species): the engine gets the
+    # renumbered config.
+    (r"species\.is\.enabled\..+", "phase1"),
     (r"engine\.rng\.java_compat", "java_compat_rng"),
     (
         r"module\.genetics\.enabled|evolution\..+|population\.genotype\.transmission\.year\.start",
