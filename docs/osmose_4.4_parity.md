@@ -39,10 +39,10 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 |---|---|---|
 | Region-aware mortality (`nDead[region][cause]`) | TODO | Python books deaths per school and cause, with no output regions |
 | Fishing and discards tracked in numbers | N/A | An internal Java refactor. Python already removes fish as numbers (`n_dead`) and writes both `yield` and `yieldN` |
-| Stochastic maturity ogive (`species.maturity.mode`, `l50`/`l75`) | TODO | Python maturity is deterministic (length and age thresholds) |
+| Stochastic maturity ogive (`species.maturity.mode`, `l50`/`l75`) | done (2026-11-20, Python engine) | `osmose/engine/processes/maturity.py`. As `Species.isSexuallyMature`: a school not yet mature matures this step with probability (F(L) - F(L0)) / (1 - F(L0)), F the normal CDF with mean l50 and sd (l75 - l50) / 0.6745; once mature, always mature; drawn in reproduction, only for species that reproduce; ignored under bioenergetics, as in Java. Reproduction, the life-stage output and SSB share one maturity test. A stochastic species without l50 and l75, or with l75 <= l50, is refused. The C# engine refuses the mode (feature `maturity_stochastic`) |
 | Post-reproduction mortality (`species.reproduction.strategy`, `postspawning.survivaltime`) | TODO | |
 | Simplified bioenergetics (`species.bioenergetics.model = simple`, `species.temperature.tmin/topt/tmax`) | TODO | Python implements the full model only |
-| Spherical egg size (`species.egg.density`) | TODO | |
+| Spherical egg size (`species.egg.density`) | N/A (Java defect) | Read only under bioenergetics, where Java takes the egg length from `computeEggLength` (`Species.java`, v4.4.1 line 388): `Math.pow(6 * weight / (Math.PI * eggDensity), (1 / 3))`. `1 / 3` is integer division in Java, so the power is 0 and **every Java 4.4.1 bioenergetic egg is 1 cm long**, whatever the species and the density. Without bioenergetics the egg size is `species.egg.size` and the key is unused. Nothing to port; a bioenergetic comparison against the 4.4.1 jar differs at the egg for this reason |
 | Gradient-based movement (`movement.random.walk.coef`, `movement.base.search.radius`) | TODO | |
 | Background movement from NetCDF maps (`movement.netcdf.enabled`) | TODO | `movement.randomwalk.range` is read |
 | Log-form LTL `computePercent` (`simulation.resources.computePercent.legacy`) | TODO | Python uses the legacy linear form |
