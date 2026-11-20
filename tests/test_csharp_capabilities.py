@@ -377,6 +377,7 @@ def _recipes(c: EngineConfig) -> dict:
         "resource_percent_log": (R(c, resource_percent_log=True), {}),
         "maturity_stochastic": (R(c, maturity_stochastic=np.ones(n, dtype=bool)), {}),
         "larva_density_dependence": (R(c, larva_reference_density=np.full(n, 100.0)), {}),
+        "mortality_rate_factor": (R(c, larva_mortality_factor=np.ones((n, 4))), {}),
         "movement_gradient": (
             R(
                 c,

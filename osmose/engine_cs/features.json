@@ -44,6 +44,7 @@
     {"id": 39, "name": "resource_percent_log", "phase": 3, "status": "planned", "implemented": false, "description": "simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a resource taken in log size"},
     {"id": 40, "name": "maturity_stochastic", "phase": 3, "status": "planned", "implemented": false, "description": "species.maturity.mode = stochastic (OSMOSE 4.4.0): maturity drawn from a normal ogive (l50, l75)"},
     {"id": 41, "name": "larva_density_dependence", "phase": 3, "status": "planned", "implemented": false, "description": "mortality.additional.larva.referencedensity (OSMOSE 4.4.x): the larval rate scaled by the spawning stock"},
-    {"id": 42, "name": "movement_gradient", "phase": 3, "status": "planned", "implemented": false, "description": "movement.distribution.method = gradient (OSMOSE 4.4.x): moves drawn from a probability map near the school"}
+    {"id": 42, "name": "mortality_rate_factor", "phase": 3, "status": "planned", "implemented": false, "description": "multiplier and seasonality of the constant additional and larval mortality rates (OSMOSE 4.4.x)"},
+    {"id": 43, "name": "movement_gradient", "phase": 3, "status": "planned", "implemented": false, "description": "movement.distribution.method = gradient (OSMOSE 4.4.x): moves drawn from a probability map near the school"}
   ]
 }
