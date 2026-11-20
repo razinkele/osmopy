@@ -192,3 +192,18 @@ def test_the_csharp_bundle_reads_the_named_variable(tmp_path):
     after = forcing_of(raw)
     assert before.shape == after.shape and (np.nan_to_num(before) != 0).any()
     assert np.array_equal(before, after, equal_nan=True)  # NaN over land
+
+
+def test_the_4_4_writer_does_not_add_a_plain_multiplier_next_to_a_log_one():
+    """Review of #347. The 4.4.x writer fills species.multiplier.spN for background species;
+    with species.multiplier.log.spN present, a second key would make Java refuse the config.
+    Java reads the log key itself, so exactly one multiplier key is written, the log one."""
+    from osmose.config.aliases import _emit_background_species_keys
+
+    with_log = _emit_background_species_keys(
+        _background_cfg(**{"species.multiplier.log.sp2": "0.5"})
+    )
+    assert "species.multiplier.sp2" not in with_log
+    assert with_log["species.multiplier.log.sp2"] == "0.5"
+    plain = _emit_background_species_keys(_background_cfg())
+    assert plain["species.multiplier.sp2"] == "1"
