@@ -206,6 +206,14 @@ def _parse_bioen_lite(
         missing = [
             k for k, v in (("tmin", tmin[i]), ("tmax", tmax[i]), ("topt", topt[i])) if np.isnan(v)
         ]
+        infinite = [
+            k for k, v in (("tmin", tmin[i]), ("tmax", tmax[i]), ("topt", topt[i])) if np.isinf(v)
+        ]
+        if infinite:
+            raise ValueError(
+                "the lite bioenergetic model needs finite temperatures: "
+                + ", ".join(f"species.temperature.{k}.sp{i}" for k in infinite)
+            )
         if missing:
             raise ValueError(
                 f"species {i} is on the lite bioenergetic model "
@@ -216,6 +224,12 @@ def _parse_bioen_lite(
             raise ValueError(
                 f"species.temperature.tmax.sp{i} must be above species.temperature.tmin.sp{i} "
                 "for the lite bioenergetic model"
+            )
+        if topt[i] in (tmin[i], tmax[i]):
+            raise ValueError(
+                f"species.temperature.topt.sp{i} equals a thermal limit: the lite temperature "
+                "response is 1 at the optimum and the critical efficiency at the limits, so it "
+                "is 0/0 there"
             )
         if not 0.0 < xi_crit[i] < 1.0:
             raise ValueError(

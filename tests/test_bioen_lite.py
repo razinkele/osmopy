@@ -98,6 +98,16 @@ class TestTheKey:
         with pytest.raises(ValueError, match="efficiency.critical.sp0 must be in"):
             EngineConfig.from_dict(_bioen(**(LITE | {"predation.efficiency.critical.sp0": xi})))
 
+    @pytest.mark.parametrize("key", ["tmin", "tmax", "topt"])
+    def test_an_infinite_temperature_is_refused(self, key):
+        with pytest.raises(ValueError, match="finite temperatures"):
+            EngineConfig.from_dict(_bioen(**(LITE | {f"species.temperature.{key}.sp0": "inf"})))
+
+    @pytest.mark.parametrize("limit", ["2.0", "26.0"])
+    def test_an_optimum_on_a_limit_is_refused(self, limit):
+        with pytest.raises(ValueError, match="equals a thermal limit"):
+            EngineConfig.from_dict(_bioen(**(LITE | {"species.temperature.topt.sp0": limit})))
+
     def test_the_roots_are_carried(self):
         c = EngineConfig.from_dict(_bioen(**LITE))
         t1, t2 = lite_temperature_bounds(2.0, 26.0, 16.0, 0.57)
