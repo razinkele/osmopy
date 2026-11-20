@@ -761,7 +761,7 @@ def _bioen_reproduction(
     grid_ny: int = 10,
     grid_nx: int = 10,
     trait_overrides: dict[str, NDArray[np.float64]] | None = None,
-    seeded_out: dict[str, NDArray[np.bool_]] | None = None,
+    seeded_out: dict[str, NDArray] | None = None,
 ) -> SchoolState:
     """Java `BioenReproductionProcess.run()` (4.3.3, source-verified) + shared regulation.
 
@@ -791,7 +791,9 @@ def _bioen_reproduction(
     is non-decreasing (`_bioen_step` adds `dw >= 0` and this function touches neither
     weight nor length), so a school that has once passed the threshold cannot fall back.
 
-    `seeded_out`, if given a dict, is populated with `{"seeded_this_step": <bool[n_sp]>}`
+    `seeded_out`, if given a dict, is populated with `{"seeded_this_step": <bool[n_sp]>,
+    "parent_weight": <float[n_schools]>}`, the second being the eggs each school released (its
+    weight as a parent, as Java weighs it),
     before return — per-species whether THIS step's eggs came from the SSB==0 population
     bootstrap (`config.seeding_biomass`) rather than a real spawning school. That window
     (`population.seeding.year.max`, default the longest lifespan of any species) is independent of and
@@ -2190,7 +2192,7 @@ def simulate(
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
         stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)
         n_before_repro = len(state)
-        bioen_seeded: dict[str, NDArray[np.bool_]] = {}
+        bioen_seeded: dict[str, NDArray] = {}
         standard_spawn: dict[str, NDArray] = {}
         if config.bioen_enabled:
             state = _bioen_reproduction(
