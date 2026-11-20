@@ -471,9 +471,9 @@ def _resources(b: Bundle, config: Any, grid: Any) -> None:
     frame_by_step = np.zeros((n_steps, n_rsc), dtype=np.int32)
     access_by_step = np.zeros((n_steps, n_rsc), dtype=np.float64)
     for i, rsc in enumerate(rs.species):
-        if forcing is not None and rsc.name in forcing:
+        if forcing is not None and rsc.forcing_var in forcing:
             # The whole series at once, time first: one decode instead of one isel per frame.
-            series = forcing[rsc.name].transpose("time", ...).values
+            series = forcing[rsc.forcing_var].transpose("time", ...).values
             for f in range(n_frames):
                 data = series[f]
                 flat = rs._regrid_to_model(data).flatten() * rsc.multiplier

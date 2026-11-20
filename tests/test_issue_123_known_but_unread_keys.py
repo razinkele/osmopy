@@ -185,6 +185,7 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "simulation.restart.enabled",
         "simulation.restart.file",
         "simulation.restart.recordfrequency.ndt",
+        "simulation.resources.computepercent.legacy",  # 4.4.0, read outside config.py (#137)
         "simulation.restart.spinup.nyear",
         "species.age.sp{idx}",
         "species.biomass.constant.sp{idx}",  # 4.4.1 forcing keys, Java-only (#137)
@@ -198,6 +199,7 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "species.length.sp{idx}",
         "species.lw.allpower.sp{idx}",
         "species.lw.condition.factor.sp{idx}",
+        "species.multiplier.log.sp{idx}",  # 4.4.x, read by background.py (#137)
         "species.nclass.sp{idx}",
         "species.regrowth.rate.sp{idx}",
         "species.size.proportion.sp{idx}",

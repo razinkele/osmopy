@@ -57,6 +57,12 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "ltl.depletable.floor",
         "ltl.regrowth.rate.default",
         "ltl.regrowth.rate.rsc{idx}",
+        # OSMOSE 4.4.x keys read outside config.py (#137): the NetCDF variable of a resource's
+        # forcing (resources.py) and a background multiplier given as a logarithm (background.py).
+        "species.biomass.varname.sp{idx}",
+        "species.multiplier.log.sp{idx}",
+        # read by processes/resource_percent.py (log_form_requested), as Java reads it
+        "simulation.resources.computepercent.legacy",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",
@@ -226,13 +232,12 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "simulation.restart.file",
         "simulation.restart.recordfrequency.ndt",
         "simulation.restart.spinup.nyear",
-        # 4.4.1 resource/background forcing keys the Python engine does not read (#137): a
-        # NetCDF variable name other than species.name, the forcing mode, a constant uniform
-        # biomass, and the inline background series Java needs instead of a NetCDF file.
+        # 4.4.1 resource/background forcing keys the Python engine does not read (#137): the
+        # forcing mode, a constant uniform biomass, and the inline background series Java needs
+        # instead of a NetCDF file.
         "species.biomass.constant.sp{idx}",
         "species.biomass.mode.sp{idx}",
         "species.biomass.sp{idx}",
-        "species.biomass.varname.sp{idx}",
         "species.conversion2tons.sp{idx}",
         "species.first.feeding.age.sp{idx}",
     ]
