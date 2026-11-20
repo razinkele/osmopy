@@ -125,12 +125,13 @@ def build_snapshot(
     cx = cx_full[mask]
     cy = cy_full[mask]
     bm = state.biomass[mask]
-    # Life stage: egg/larva if is_egg; adult if mature (length>=maturity_size AND
-    # age>=maturity_age, per reproduction.py); else juvenile. Computed on the mask.
+    # Life stage: egg/larva if is_egg; adult if mature (the engine's own test, which
+    # reproduction and the outputs use: thresholds, or the drawn flag of a species on the
+    # stochastic ogive); else juvenile. Computed on the mask.
+    from osmose.engine.processes.maturity import mature_mask
+
     is_egg_m = state.is_egg[mask]
-    mature_m = (state.length[mask] >= config.maturity_size[sp_id]) & (
-        state.age_dt[mask] >= config.maturity_age_dt[sp_id]
-    )
+    mature_m = mature_mask(state, config, where=mask)
     stage = np.where(is_egg_m, 0, np.where(mature_m, 2, 1)).astype(np.int8)
     n_total = int(sp_id.size)
     truncated = n_total > dot_cap

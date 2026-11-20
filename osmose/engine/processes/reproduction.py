@@ -9,7 +9,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
-from osmose.engine.state import SchoolState
+from osmose.engine.processes.maturity import mature_mask, mature_stochastically
+from osmose.engine.state import _FILL_FALSE, SchoolState
 
 
 def apply_stock_recruitment(
@@ -268,6 +269,14 @@ def merge_new_schools(state: SchoolState, new_schools_list: list[SchoolState]) -
             merged_fields[f.name] = None
         elif len(non_none) == len(parts):
             merged_fields[f.name] = np.concatenate(parts)
+        elif f.name in _FILL_FALSE:  # schools without a drawn maturity are not mature yet
+            sources = [state, *new_schools_list]
+            merged_fields[f.name] = np.concatenate(
+                [
+                    p if p is not None else np.zeros(len(src), dtype=bool)
+                    for p, src in zip(parts, sources)
+                ]
+            )
         else:
             # Partial population: one side has arrays, the other doesn't.
             # Currently unreachable (no code path assigns imax_trait), so
@@ -302,12 +311,10 @@ def reproduction(
     n_sp = config.n_species
 
     # --- Egg production ---
-    # Maturity: length >= maturity_size AND age_dt >= maturity_age_dt (and abundance > 0)
-    mature = (
-        (state.length >= config.maturity_size[state.species_id])
-        & (state.age_dt >= config.maturity_age_dt[state.species_id])
-        & (state.abundance > 0)
-    )
+    # Maturity: length >= maturity_size AND age_dt >= maturity_age_dt (and abundance > 0), or
+    # the drawn flag for a species on the stochastic ogive, drawn here as Java does.
+    state = mature_stochastically(state, config, rng)
+    mature = mature_mask(state, config) & (state.abundance > 0)
 
     # Spawning stock biomass per species
     ssb = np.zeros(n_sp, dtype=np.float64)
