@@ -197,9 +197,13 @@ def _emit_background_species_keys(cfg: dict[str, str]) -> dict[str, str]:
         if not key.startswith("species.type.sp") or str(val).strip().lower() != "background":
             continue
         idx = key[len("species.type.sp") :]
-        result.setdefault(
-            f"species.multiplier.sp{idx}", cfg.get(f"species.biomass.multiplier.sp{idx}", "1")
-        )
+        # A species with species.multiplier.log.spN carries its multiplier already: Java
+        # reads the log key (exp of it) and refuses a config with both keys
+        # (BackgroundSpecies.java, v4.4.1 lines 226-230), so the plain key is not added.
+        if f"species.multiplier.log.sp{idx}" not in cfg:
+            result.setdefault(
+                f"species.multiplier.sp{idx}", cfg.get(f"species.biomass.multiplier.sp{idx}", "1")
+            )
         result.setdefault(f"species.beta.sp{idx}", "1")
     return result
 
