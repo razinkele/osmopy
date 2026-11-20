@@ -52,15 +52,35 @@ public sealed class ResourceDepletableTests : IDisposable
         Assert.Equal(0.0, StepPreparation.Regrow(3.0, double.NaN, 1.0, Floor));
     }
 
-    [Fact]
-    public void AboveTheCapacityTheStepGoesDownAndIsNotBoundedBelow()
+    [Theory]
+    [InlineData(0.3)]
+    [InlineData(1.0)]
+    [InlineData(2.5)]
+    [InlineData(5.0)]
+    [InlineData(50.0)]
+    public void AboveTheCapacityTheResultIsTheCapacity(double rate)
     {
-        // The Python function's arithmetic, sign included (issue #337): the result is capped
-        // at the capacity and not bounded below. If that function changes, this must too.
-        Assert.Equal(170.0 + (1.0 * 170.0 * (1.0 - (170.0 / 100.0))), StepPreparation.Regrow(170.0, 100.0, 1.0, Floor));
-        double steep = StepPreparation.Regrow(170.0, 100.0, 2.5, Floor);
-        Assert.Equal(170.0 + (2.5 * 170.0 * (1.0 - (170.0 / 100.0))), steep);
-        Assert.True(steep < 0.0);
+        // Issue #337. A resource is carried above its capacity whenever the capacity fell since
+        // the last step. The logistic step from above has no lower bound (it went negative with
+        // a steep rate), so the step starts from the capacity at most, and the result is the
+        // capacity exactly. The Python function does the same.
+        Assert.Equal(100.0, StepPreparation.Regrow(170.0, 100.0, rate, Floor));
+        Assert.Equal(100.0, StepPreparation.Regrow(101.0, 100.0, rate, Floor));
+        Assert.Equal(100.0, StepPreparation.Regrow(1e6, 100.0, rate, Floor));
+        Assert.Equal(37.5, StepPreparation.Regrow(37.6, 37.5, rate, Floor));
+    }
+
+    [Fact]
+    public void TheResultIsWithinZeroAndTheCapacityWhateverIsCarriedIn()
+    {
+        foreach (double rate in new[] { 0.1, 1.0, 2.0, 3.0, 5.0, 20.0 })
+        {
+            for (double carried = 0.0; carried <= 300.0; carried += 0.5)
+            {
+                double grown = StepPreparation.Regrow(carried, 100.0, rate, Floor);
+                Assert.InRange(grown, 0.0, 100.0);
+            }
+        }
     }
 
     [Fact]

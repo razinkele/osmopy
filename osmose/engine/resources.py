@@ -27,12 +27,19 @@ def logistic_regrow(
 ) -> NDArray[np.float64]:
     """Per-cell logistic regrowth of a depletable resource toward carrying capacity K.
 
-    B = max(B_carried, floor*K);  B_new = min(K, B + rate*B*(1 - B/K));  K<=0 -> 0.
+    B = min(K, max(B_carried, floor*K));  B_new = min(K, B + rate*B*(1 - B/K));  K<=0 -> 0.
     The floor seeds recovery so a fully-grazed cell (B_carried=0) is not a permanent dead
     zone; the min(.,K) caps at carrying capacity; K<=0 cells (land / off-season) stay empty.
+
+    The step starts from K at most (#337). A resource is carried ABOVE its capacity whenever
+    the capacity fell since the last step, and the logistic step from above K has no lower
+    bound: once rate*(B/K - 1) exceeded 1 the result was negative, which the predation kernels
+    read as "no resource in this cell". Starting from K gives exactly K, so the result is
+    always within [0, K]; at or below K nothing changes, bit for bit.
+    ``StepPreparation.Regrow`` in the C# engine is this function and must change with it.
     """
     k = np.asarray(k, dtype=np.float64)
-    b = np.maximum(np.asarray(biomass, dtype=np.float64), floor * k)
+    b = np.minimum(np.maximum(np.asarray(biomass, dtype=np.float64), floor * k), k)
     with np.errstate(divide="ignore", invalid="ignore"):
         grown = b + rate * b * (1.0 - b / k)
     grown = np.minimum(grown, k)
