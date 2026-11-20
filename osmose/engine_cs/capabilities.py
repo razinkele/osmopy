@@ -112,6 +112,9 @@ DETECTORS: dict[str, Any] = {
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),
     "larva_rate_by_step": lambda c, raw: _any_set(c.larva_mortality_by_dt),
     "larva_density_dependence": lambda c, raw: c.larva_reference_density is not None,
+    "mortality_rate_factor": lambda c, raw: (
+        c.additional_mortality_factor is not None or c.larva_mortality_factor is not None
+    ),
     "additional_maps": lambda c, raw: _any_set(c.additional_mortality_spatial),
     "selectivity_logistic": lambda c, raw: (
         c.fishing_enabled and bool(np.any(_selectivity(c)[0] == 1))
@@ -225,6 +228,14 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"mortality\.additional\.rate\.\{idx\}\.file\..+", "additional_rate_by_step,rate_by_class"),
     (r"mortality\.additional\.larva\.rate\.\{idx\}\.file\..+", "larva_rate_by_step"),
     (r"mortality\.additional\.larva\.referencedensity\..+", "larva_density_dependence"),
+    (
+        r"mortality\.additional\.((larva|neonate)\.)?rate\.(multiplier|seasonality(\.file)?)\..+",
+        "mortality_rate_factor",
+    ),
+    # config.mortality_rate_factor builds the same keys from a prefix (seen as {idx} here).
+    (r"\{idx\}\.(multiplier|seasonality(\.file)?)\.sp\{idx\}", "mortality_rate_factor"),
+    # The neonate scenario is folded into the larval rate, which the bundle carries.
+    (r"mortality\.additional\.neonate\.rate\.sp\{idx\}", "phase1"),
     # The same two families as config files spell them once the reader has lowercased them
     # (issue #297: until then the engine never matched these, so they never reached a detector).
     (r"mortality\.additional\.rate\.bydt\.(byage|bysize)\.file\..+", "rate_by_class"),
