@@ -49,9 +49,9 @@ def create_offspring_genotypes(
     """Create genotypes for n_offspring new schools of one species.
 
     ``gonad_weight`` is each school's weight as a parent, and a school is a parent only where
-    it is positive. Under bioenergetics that is the gonad weight. On the standard
-    reproduction path it is the school's egg production (its spawning biomass, for a mature
-    school), as in Java's ``ReproductionProcess.run_genet`` (#338).
+    it is positive. It is the school's egg production, as Java weighs parents: the eggs it
+    released under bioenergetics (``BioenReproductionProcess.run``), its spawning biomass on
+    the standard path (``ReproductionProcess.run_genet``; #338).
     """
     sp_mask = (species_id == offspring_species) & (gonad_weight > 0)
     sp_indices = np.where(sp_mask)[0]
@@ -120,8 +120,9 @@ def create_offspring_genotypes(
                 f"create_offspring_genotypes(seeding=False) requested "
                 f"n_offspring={n_offspring} for species {offspring_species} "
                 f"trait {name!r} but found no eligible parents "
-                f"(no school of the species has a positive parent weight: gonad weight "
-                f"under bioenergetics, spawning biomass of a mature school otherwise). "
+                f"(no school of the species has a positive parent weight: the eggs it "
+                f"released under bioenergetics, the spawning biomass of a mature school "
+                f"otherwise). "
                 f"This indicates reproduction was triggered without a viable "
                 f"parent pool — fix the upstream caller rather than papering "
                 f"over here."

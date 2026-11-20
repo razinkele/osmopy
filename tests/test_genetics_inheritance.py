@@ -130,7 +130,7 @@ class TestCreateOffspringGenotypes:
             offspring(np.zeros(2))
         message = str(err.value)
         assert "no eligible parents" in message
-        assert "gonad weight under bioenergetics" in message
+        assert "released under bioenergetics" in message
         assert "spawning biomass of a mature school" in message
         # The control: the same schools are parents once one of them carries a weight.
         assert offspring(np.array([1.0, 0.0])).alleles["imax"].shape == (5, 3, 2)

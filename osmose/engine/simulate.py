@@ -818,6 +818,10 @@ def _bioen_reproduction(
     # every maturity decision by one time step.
     age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
     gonad = state.gonad_weight.copy()
+    # Each school's weight as a parent: the eggs it releases, as Java weighs it
+    # (BioenReproductionProcess.run, `weight_rand.add(nEgg, school)`). Not the gonad left
+    # after release, which is 0 for every school when the season factor is 1.
+    released_eggs = np.zeros(len(state), dtype=np.float64)
 
     ssb = np.zeros(n_sp, dtype=np.float64)
     n_eggs_linear = np.zeros(n_sp, dtype=np.float64)
@@ -893,6 +897,7 @@ def _bioen_reproduction(
                 ew,
             )
             n_eggs_linear[sp] = float(sch_eggs.sum())
+            released_eggs[idx] = sch_eggs
             gonad[idx] -= w_egg
 
     n_eggs = regulate_recruitment(n_eggs_linear, ssb, seeded_this_step, config, step)
@@ -911,6 +916,7 @@ def _bioen_reproduction(
 
     if seeded_out is not None:
         seeded_out["seeded_this_step"] = seeded_this_step
+        seeded_out["parent_weight"] = released_eggs
 
     return merge_new_schools(state, new_egg_schools)
 
@@ -2227,7 +2233,7 @@ def simulate(
             # before this step's reproduction.
             if config.bioen_enabled:
                 seeded_this_step = bioen_seeded.get("seeded_this_step")
-                parent_weight = state.gonad_weight[: len(state) - n_new]
+                parent_weight = bioen_seeded["parent_weight"]
             else:
                 seeded_this_step = standard_spawn["seeded_this_step"]
                 parent_weight = standard_spawn["parent_weight"]
