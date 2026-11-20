@@ -121,6 +121,7 @@ class CSharpEngine:
 def _step_outputs(buffers: Any, records: int) -> list:
     """One ``StepOutput`` per written record, as views of the result rows (spec 8.4)."""
     from osmose.engine.simulate import StepOutput
+    from osmose.engine.state import MortalityCause
 
     families = buffers.families
     offsets = buffers.age_bin_offsets
@@ -154,17 +155,28 @@ def _step_outputs(buffers: Any, records: int) -> list:
         r = families[name][i]
         return {sp: float(v) for sp, v in enumerate(r) if not np.isnan(v)}
 
+    def causes(a: np.ndarray, axis: int) -> np.ndarray:
+        """The C# engine books the 4.3 causes; the later ones (SPAWNING) are zero there, as it
+        refuses the processes behind them. Pad to this engine's cause axis."""
+        width = [(0, 0)] * a.ndim
+        width[axis] = (0, len(MortalityCause) - a.shape[axis])
+        return np.pad(a, width)
+
+    def staged(name: str, i: int) -> np.ndarray | None:
+        r = row(name, i)
+        return None if r is None else causes(r, 1)
+
     return [
         StepOutput(
             step=int(buffers.record_step[i]),
             biomass=buffers.biomass[i],
             abundance=buffers.abundance[i],
-            mortality_by_cause=buffers.mortality[i],
+            mortality_by_cause=causes(buffers.mortality[i], 1),
             yield_by_species=buffers.yield_[i],
             window_steps=int(buffers.window_steps[i]),
             abundance_by_stage=row("abundance_by_stage", i),
-            mortality_by_cause_stage=row("mortality_by_cause_stage", i),
-            mortality_rate_by_cause_stage=row("mortality_rate_by_cause_stage", i),
+            mortality_by_cause_stage=staged("mortality_by_cause_stage", i),
+            mortality_rate_by_cause_stage=staged("mortality_rate_by_cause_stage", i),
             biomass_by_age=by_age("biomass_by_age", i),
             abundance_by_age=by_age("abundance_by_age", i),
             biomass_by_size=by_size("biomass_by_size", i),

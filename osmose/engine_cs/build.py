@@ -854,7 +854,8 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
 
 # --------------------------------------------------------------------------- result buffers
 
-#: Columns of ``result.mortality``, in ``MortalityCause`` order.
+#: Columns of ``result.mortality``, in ``MortalityCause`` order: the eight causes the C# engine
+#: books. ``engine.collect`` pads the later ones (SPAWNING), which it never produces.
 N_MORTALITY_CAUSES = 8
 CONTROL_SLOTS = 8
 

@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from osmose.engine.simulate import StepOutput
+from osmose.engine.state import MortalityCause
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -43,13 +44,13 @@ def _record(
     """A record whose every value is ``scale`` times a fixed pattern."""
     zeros = np.zeros(3)
     if not full:
-        return StepOutput(step=step, biomass=zeros, abundance=zeros, mortality_by_cause=np.zeros((2, 8)))  # fmt: skip
+        return StepOutput(step=step, biomass=zeros, abundance=zeros, mortality_by_cause=np.zeros((2, len(MortalityCause))))  # fmt: skip
     return StepOutput(
         step=step,
         window_steps=window,
         biomass=zeros,
         abundance=zeros,
-        mortality_by_cause=np.zeros((2, 8)),
+        mortality_by_cause=np.zeros((2, len(MortalityCause))),
         ssb=scale * np.array([10.0, 20.0]),
         yield_n=scale * np.array([1.0, 2.0]),
         abundance_by_stage=scale * np.array([[100.0, 10.0, 1.0], [200.0, 20.0, 2.0]]),
