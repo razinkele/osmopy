@@ -82,6 +82,10 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "movement.netcdf.enabled",
         "movement.variable.map{idx}",
         "movement.nsteps.year.map{idx}",
+        # Post-spawning survival: the un-indexed key Java reads, and the indexed one it never
+        # reads (refused by config._parse_semelparity, so it is known, not unknown)
+        "species.reproduction.postspawning.survivaltime.sp",
+        "species.reproduction.postspawning.survivaltime.sp{idx}",
         # OSMOSE 4.4.x output regions, read by output_regions.py
         "output.region.enabled.rg{idx}",
         "output.regions.name.rg{idx}",

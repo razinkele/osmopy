@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.maturity import mature_mask, mature_stochastically
-from osmose.engine.state import _FILL_FALSE, SchoolState
+from osmose.engine.state import _FILL, SchoolState, _fill
 
 
 def apply_stock_recruitment(
@@ -269,13 +269,10 @@ def merge_new_schools(state: SchoolState, new_schools_list: list[SchoolState]) -
             merged_fields[f.name] = None
         elif len(non_none) == len(parts):
             merged_fields[f.name] = np.concatenate(parts)
-        elif f.name in _FILL_FALSE:  # schools without a drawn maturity are not mature yet
+        elif f.name in _FILL:  # e.g. schools without a drawn maturity are not mature yet
             sources = [state, *new_schools_list]
             merged_fields[f.name] = np.concatenate(
-                [
-                    p if p is not None else np.zeros(len(src), dtype=bool)
-                    for p, src in zip(parts, sources)
-                ]
+                [p if p is not None else _fill(f.name, len(src)) for p, src in zip(parts, sources)]
             )
         else:
             # Partial population: one side has arrays, the other doesn't.
@@ -283,6 +280,35 @@ def merge_new_schools(state: SchoolState, new_schools_list: list[SchoolState]) -
             # fail loudly rather than silently mis-align lengths.
             raise ValueError(f"SchoolState.{f.name}: cannot concatenate; some inputs are None")
     return SchoolState(**merged_fields)
+
+
+def record_spawning(
+    state: SchoolState,
+    config: EngineConfig,
+    mature: NDArray[np.bool_],
+    season_factor: NDArray[np.float64],
+    step: int,
+) -> SchoolState:
+    """Java ``ReproductionProcess``: ``if (school_nEgg > 0) school.setHasSpawned(true, step)``.
+
+    A school's egg count is sex ratio x fecundity x season x its spawners, so it spawns this step
+    when it is mature with fish of some weight in it and its species' season, sex ratio and
+    fecundity are above 0. The step is latched at the first spawning (``setHasSpawned`` keeps the
+    first ``timeAtSpawning``). Java sets the flag for every species; only a semelparous one dies
+    of it, so only those are marked. Java's bioenergetic reproduction never sets it.
+    """
+    assert config.reproduction_semelparous is not None
+    n_sp = config.n_species
+    sp = state.species_id
+    focal = sp < n_sp
+    spf = np.where(focal, sp, 0)
+    lays = config.sex_ratio[:n_sp] * config.relative_fecundity[:n_sp] * season_factor[:n_sp] > 0
+    now = focal & mature & (state.weight > 0) & lays[spf] & config.reproduction_semelparous[spf]
+    has = state.has_spawned if state.has_spawned is not None else np.zeros(len(state), dtype=bool)
+    at = state.spawn_step if state.spawn_step is not None else np.full(len(state), -1, np.int32)
+    return state.replace(
+        has_spawned=has | now, spawn_step=np.where(now & (at < 0), step, at).astype(np.int32)
+    )
 
 
 def reproduction(
@@ -336,6 +362,9 @@ def reproduction(
         if ssb[sp] == 0.0 and step < config.seeding_max_step[sp]:
             ssb[sp] = config.seeding_biomass[sp]
             seeded_this_step[sp] = True
+    if config.reproduction_semelparous is not None:
+        state = record_spawning(state, config, mature, season_factor, step)
+
     if spawn_out is not None:
         spawn_out["parent_weight"] = np.where(mature, state.abundance * state.weight, 0.0)
         spawn_out["seeded_this_step"] = seeded_this_step.copy()

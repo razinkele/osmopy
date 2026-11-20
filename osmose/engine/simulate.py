@@ -1297,12 +1297,14 @@ def _collect_ssb(state: SchoolState, config: EngineConfig) -> NDArray[np.float64
 
 
 # Carcass pathway = the source's EwE "other mortality" M0: deaths that are neither eaten nor
-# landed. OUT left the domain (not a death here); DISCARDS are a fishing component.
+# landed. OUT left the domain (not a death here); DISCARDS are a fishing component. A
+# post-spawning death (SPAWNING, OSMOSE 4.4.x semelparous species) is neither, so it is one.
 _CARCASS_CAUSES = (
     int(MortalityCause.STARVATION),
     int(MortalityCause.ADDITIONAL),
     int(MortalityCause.FORAGING),
     int(MortalityCause.AGING),
+    int(MortalityCause.SPAWNING),
 )
 
 
@@ -2250,6 +2252,10 @@ def simulate(
         else:
             state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
+        if config.reproduction_semelparous is not None:
+            from osmose.engine.processes.natural import spawning_mortality
+
+            state = spawning_mortality(state, config, step)
         # Snapshot the life-stage split BEFORE reproduction: it increments ages and clears is_egg,
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
         stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)
