@@ -112,6 +112,7 @@ DETECTORS: dict[str, Any] = {
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),
     "larva_rate_by_step": lambda c, raw: _any_set(c.larva_mortality_by_dt),
     "larva_density_dependence": lambda c, raw: c.larva_reference_density is not None,
+    "semelparous": lambda c, raw: c.reproduction_semelparous is not None,
     "additional_maps": lambda c, raw: _any_set(c.additional_mortality_spatial),
     "selectivity_logistic": lambda c, raw: (
         c.fishing_enabled and bool(np.any(_selectivity(c)[0] == 1))
@@ -224,6 +225,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"mortality\.additional\.rate\.\{idx\}\.file\..+", "additional_rate_by_step,rate_by_class"),
     (r"mortality\.additional\.larva\.rate\.\{idx\}\.file\..+", "larva_rate_by_step"),
     (r"mortality\.additional\.larva\.referencedensity\..+", "larva_density_dependence"),
+    (r"species\.reproduction\.(strategy|postspawning\.survivaltime)\..+", "semelparous"),
     # The same two families as config files spell them once the reader has lowercased them
     # (issue #297: until then the engine never matched these, so they never reached a detector).
     (r"mortality\.additional\.rate\.bydt\.(byage|bysize)\.file\..+", "rate_by_class"),

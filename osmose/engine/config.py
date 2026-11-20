@@ -173,6 +173,46 @@ def _require_file(file_key: str, config_dir: str, context: str) -> Path:
     return path
 
 
+#: The key Java 4.4.1 actually reads for the post-spawning survival time: Species.java builds it
+#: with String.format("species.reproduction.postspawning.survivaltime.sp", fileIndex), whose
+#: format has no %d, so it has no species index and serves every semelparous species.
+POSTSPAWNING_SURVIVAL_KEY = "species.reproduction.postspawning.survivaltime.sp"
+
+
+def _parse_semelparity(
+    cfg: dict[str, str], n_sp: int, n_dt: int
+) -> tuple[NDArray[np.bool_] | None, int]:
+    """``species.reproduction.strategy.sp#`` (OSMOSE 4.4.x ``Species``): iteroparous (default) or
+    semelparous, any case; anything else is refused, as Java's ``valueOf`` fails on it. The survival
+    time after spawning is ``round(value * ndtperyear)`` from Java's un-indexed key, 0 when unset.
+    A per-species ``...survivaltime.sp<i>`` is refused: Java never reads it."""
+    strategy = _species_str_optional(
+        cfg, "species.reproduction.strategy.sp{i}", n_sp, default="iteroparous"
+    )
+    semel = np.zeros(n_sp, dtype=bool)
+    for i, value in enumerate(strategy):
+        if value in ("", "null", "iteroparous"):
+            continue
+        if value != "semelparous":
+            raise ValueError(
+                f"species.reproduction.strategy.sp{i} = {value!r}: iteroparous or semelparous"
+            )
+        semel[i] = True
+    for i in range(n_sp):
+        key = f"{POSTSPAWNING_SURVIVAL_KEY}{i}"
+        if _is_set(cfg, key):
+            raise ValueError(
+                f"{key} is never read by Java 4.4.1: its Species.java looks up the un-indexed "
+                f"{POSTSPAWNING_SURVIVAL_KEY!r} (a format string without %d), one value for every "
+                "semelparous species. Set that key instead"
+            )
+    survival = 0
+    if _is_set(cfg, POSTSPAWNING_SURVIVAL_KEY):
+        # Java's (int) Math.round: halves round up, not to even
+        survival = int(np.floor(float(cfg[POSTSPAWNING_SURVIVAL_KEY]) * n_dt + 0.5))
+    return (semel if semel.any() else None), survival
+
+
 def _parse_stochastic_maturity(
     cfg: dict[str, str], n_sp: int, n_bkg: int, bioen: bool
 ) -> tuple[NDArray[np.bool_] | None, NDArray[np.float64] | None, NDArray[np.float64] | None]:
@@ -1760,6 +1800,12 @@ def _detect_larva_by_dt_key(cfg: dict[str, str], species_idx: int) -> str | None
     return None
 
 
+def _is_set(cfg: dict[str, str], key: str) -> bool:
+    """Java's ``!isNull(key)``: present, not empty, not ``null``."""
+    value = cfg.get(key, "").strip()
+    return bool(value) and value.lower() != "null"
+
+
 def _load_larva_mortality_by_dt(
     cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_dt_simu: int
 ) -> list | None:
@@ -2032,6 +2078,12 @@ class EngineConfig:
     # (osmose.engine.processes.natural.larva_mortality). One entry per focal species, negative
     # where unset; None when no species sets it.
     larva_reference_density: NDArray[np.float64] | None = None
+
+    # species.reproduction.strategy.sp# = semelparous (OSMOSE 4.4.x): True for a focal species
+    # that dies after spawning; None when none does. The survival time after spawning, in steps,
+    # is Java's: one value for every species (see _parse_semelparity).
+    reproduction_semelparous: NDArray[np.bool_] | None = None
+    postspawning_survival_dt: int = 0
 
     # simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a
     # resource is taken in log size, not in size (osmose.engine.processes.resource_percent).
@@ -2663,6 +2715,7 @@ class EngineConfig:
                 "scaled by SSB / reference, so the reference must be above 0 (or below 0 for off)"
             )
         larva_reference_density = _larva_ref if (_larva_ref > 0).any() else None
+        _semelparous, _survival_dt = _parse_semelparity(cfg, n_sp, n_dt)
         if (
             larva_reference_density is not None
             and cfg.get("module.bioenergetics.enabled", "false").strip().lower() == "true"
@@ -2989,6 +3042,8 @@ class EngineConfig:
             movement_strict_coverage=movement_strict,
             kill_if_no_school=kill_if_no_school,
             larva_reference_density=larva_reference_density,
+            reproduction_semelparous=_semelparous,
+            postspawning_survival_dt=_survival_dt,
             resource_percent_log=resource_percent_log,
             maturity_stochastic=maturity_stochastic,
             maturity_l50=maturity_l50,

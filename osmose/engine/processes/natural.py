@@ -255,6 +255,35 @@ def out_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
 
 
+def spawning_mortality(state: SchoolState, config: EngineConfig, step: int) -> SchoolState:
+    """OSMOSE 4.4.x post-reproduction mortality (Java ``SchoolSet.updateSpawningMortality``).
+
+    Runs after growth and aging, before reproduction. A school of a semelparous species that has
+    spawned dies, cause SPAWNING, once ``step - spawn_step`` reaches the post-spawning survival
+    time (``config.postspawning_survival_dt``): with the default 0, at the step after it spawned.
+    """
+    semel = config.reproduction_semelparous
+    if semel is None or state.has_spawned is None or state.spawn_step is None or not len(state):
+        return state
+    sp = state.species_id
+    focal = sp < config.n_species
+    die = (
+        focal
+        & semel[np.where(focal, sp, 0)]
+        & state.has_spawned
+        & (step - state.spawn_step >= config.postspawning_survival_dt)
+        & (state.abundance > 0)
+    )
+    if not die.any():
+        return state
+    new_n_dead = state.n_dead.copy()
+    new_n_dead[die, MortalityCause.SPAWNING] += state.abundance[die]
+    new_abundance = np.where(die, 0.0, state.abundance)
+    return state.replace(
+        abundance=new_abundance, biomass=new_abundance * state.weight, n_dead=new_n_dead
+    )
+
+
 def aging_mortality(state: SchoolState, config: EngineConfig) -> SchoolState:
     """Kill schools that have reached their species' lifespan.
 

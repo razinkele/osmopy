@@ -63,6 +63,10 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "species.multiplier.log.sp{idx}",
         # read by processes/resource_percent.py (log_form_requested), as Java reads it
         "simulation.resources.computepercent.legacy",
+        # Post-spawning survival: the un-indexed key Java reads, and the indexed one it never
+        # reads (refused by config._parse_semelparity, so it is known, not unknown)
+        "species.reproduction.postspawning.survivaltime.sp",
+        "species.reproduction.postspawning.survivaltime.sp{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",

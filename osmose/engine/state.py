@@ -32,7 +32,17 @@ class MortalityCause(IntEnum):
 
 
 #: Optional boolean fields that read False for schools that lack them when states are merged.
-_FILL_FALSE = frozenset({"is_mature"})
+_FILL_FALSE = frozenset({"is_mature", "has_spawned"})
+#: Optional integer fields that read -1 for schools that lack them when states are merged.
+_FILL_MINUS_ONE = frozenset({"spawn_step"})
+_FILL = _FILL_FALSE | _FILL_MINUS_ONE
+
+
+def _fill(name: str, n: int) -> NDArray:
+    """The value a part without the optional field ``name`` takes when states are merged."""
+    if name in _FILL_MINUS_ONE:
+        return np.full(n, -1, dtype=np.int32)
+    return np.zeros(n, dtype=bool)
 
 
 @dataclass(frozen=True)
@@ -125,6 +135,12 @@ class SchoolState:
     # mature yet" (see _FILL_FALSE), so egg and background schools need nothing special.
     is_mature: NDArray[np.bool_] | None = None
 
+    # Post-reproduction mortality (OSMOSE 4.4.x, species.reproduction.strategy = semelparous): set
+    # at a school's first spawning (Java School.setHasSpawned) and the step of it. None unless a
+    # species is semelparous; a part that lacks them has not spawned (see _FILL).
+    has_spawned: NDArray[np.bool_] | None = None
+    spawn_step: NDArray[np.int32] | None = None
+
     def __post_init__(self) -> None:
         n = len(self.species_id)
         for f in fields(self):
@@ -207,11 +223,11 @@ class SchoolState:
             b = getattr(other, f.name)
             if a is None and b is None:
                 merged[f.name] = None
-            elif f.name in _FILL_FALSE and (a is None or b is None):
+            elif f.name in _FILL and (a is None or b is None):
                 merged[f.name] = np.concatenate(
                     [
-                        a if a is not None else np.zeros(len(self), dtype=bool),
-                        b if b is not None else np.zeros(len(other), dtype=bool),
+                        a if a is not None else _fill(f.name, len(self)),
+                        b if b is not None else _fill(f.name, len(other)),
                     ]
                 )
             elif a is None:

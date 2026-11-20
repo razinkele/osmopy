@@ -2186,6 +2186,10 @@ def simulate(
         else:
             state = _growth(state, config, rng)
         state = _aging_mortality(state, config)
+        if config.reproduction_semelparous is not None:
+            from osmose.engine.processes.natural import spawning_mortality
+
+            state = spawning_mortality(state, config, step)
         # Snapshot the life-stage split BEFORE reproduction: it increments ages and clears is_egg,
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
         stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)

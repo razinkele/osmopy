@@ -186,6 +186,8 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "simulation.restart.file",
         "simulation.restart.recordfrequency.ndt",
         "simulation.resources.computepercent.legacy",  # 4.4.0, read outside config.py (#137)
+        "species.reproduction.postspawning.survivaltime.sp",  # Java's un-indexed key (#137)
+        "species.reproduction.postspawning.survivaltime.sp{idx}",
         "simulation.restart.spinup.nyear",
         "species.age.sp{idx}",
         "species.biomass.constant.sp{idx}",  # 4.4.1 forcing keys, Java-only (#137)
