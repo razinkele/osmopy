@@ -26,7 +26,9 @@ from osmose.engine_cs.bundle import Bundle
 from osmose.engine_cs.capabilities import load_catalog, required_features
 from osmose.engine_cs.philox import SCHEME as RNG_SCHEME
 
-CONTRACT_VERSION = 1
+# 2: nine mortality causes in every result buffer (OSMOSE 4.4.x SPAWNING); a binary built for
+# 1 must refuse these bundles rather than fail on a buffer shape.
+CONTRACT_VERSION = 2
 
 #: ``predation.stage.metric`` codes.
 STAGE_METRICS = {"size": 0, "age": 1, "weight": 2, "tl": 3}
