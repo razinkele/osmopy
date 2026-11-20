@@ -103,6 +103,31 @@ The largest change is smelt, about +11% in both arms. cod_east collapses either 
 `on-benthoslit` arm cod_west does too (its two final-decade means, 2,574 t and 1,065 t, are both
 collapses).
 
+**The refit arm too.** The August closure also rested on the bounded refit
+(`data/baltic/calibration_results/a2r_fitted_params.json`, the `fitted` arm of
+`docs/baltic_depletable_recal_ab_2026-08-09.md`). Re-run on both trees, same seeds and horizon:
+it fails before and after on the same four species (cod_west, cod_east, herring, sprat).
+
+| Species | Before the fix | After the fix |
+|---|---|---|
+| cod_west | 1,772 (collapses) | 2,003 (collapses) |
+| cod_east | 0 (collapses) | 0 (collapses) |
+| herring | 134,245 | 151,909 |
+| sprat | 772,767 | 778,393 |
+| flounder | 21,228 | 21,751 |
+| perch | 13,023 | 13,667 |
+| pikeperch | 185,417 | 193,692 |
+| smelt | 1,029,271 | 1,091,621 |
+| stickleback | 106,920 | 114,151 |
+
+Whether a refit on the fixed arithmetic would pass is not known: nothing was refitted.
+
+**The shipped `baltic_a2` demo** (its own master file, one seed, 30 years; last-decade mean
+biomass, tonnes) barely moves: herring 939,012 before and 1,058,590 after (+13%); every other
+species within 5%; cod_east collapsed on both trees (8 t and 5 t), as it runs uncalibrated in
+this variant. The gate's production config with the demo's two overlay files is not the demo:
+that reconstruction collapses most species identically on both trees, so it was not used.
+
 ## Evidence
 
 Three things must hold, and each is tested on its own (`tests/test_csharp_depletable.py`).
