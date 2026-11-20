@@ -385,9 +385,15 @@ class MovementMapSet:
                 chunks.append(values)
             stack = np.concatenate(chunks, axis=0)
             base = len(self.maps)
-            for grid in stack:
+            for frame in stack:
+                grid = frame.copy()
+                if ocean_mask is not None:
+                    # Java's GridMap(double[][]) stores Cell.LAND_VALUE (NaN) on land, whatever
+                    # the file holds there; placement never takes a NaN cell, and max_proba
+                    # (nanmax) must not see a land value.
+                    grid[~ocean_mask] = np.nan
                 total = float(grid[ocean_mask].sum()) if ocean_mask is not None else grid.sum()
-                self.maps.append(None if total == 0.0 else grid.copy())
+                self.maps.append(None if total == 0.0 else grid)
 
             init_age_dt = round(
                 float(config.get(f"movement.initialage.map{n}", "0")) * n_dt_per_year

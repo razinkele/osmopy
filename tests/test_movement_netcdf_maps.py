@@ -213,6 +213,29 @@ class TestTheMapSet:
         )
         assert s.index_maps[0, 0] == s.index_maps[0, 2]
 
+    def test_a_land_value_is_dropped_as_java_stores_nan_on_land(self, tmp_path):
+        # A probability map (ocean max 0.5) with 5.0 on a land cell: Java keeps NaN on land, so
+        # the map stays a probability map (max_proba 0.5), not a presence map (max >= 1 -> 0).
+        frame = np.zeros((NY, NX))
+        frame[1:3, 1:3] = 0.5
+        frame[0, 0] = 5.0
+        _nc(tmp_path / "land5.nc", [frame])
+        ocean = np.ones((NY, NX), dtype=bool)
+        ocean[0, 0] = False
+        s = MovementMapSet(
+            config=_nc_config(tmp_path, **{"movement.file.map0": "land5.nc"}),
+            species_name="Fish0",
+            n_dt_per_year=NDT,
+            n_years=NYEAR,
+            lifespan_dt=LIFESPAN_DT,
+            ny=NY,
+            nx=NX,
+            config_dir=str(tmp_path),
+            ocean_mask=ocean,
+        )
+        assert np.isnan(s.maps[0][0, 0])  # type: ignore[index]
+        assert s.max_proba[0] == 0.5
+
     def test_a_path_with_dot_dot_is_refused(self, tmp_path):
         with pytest.raises(ValueError, match="'..' is refused"):
             _set(_nc_config(tmp_path, **{"movement.file.map0": "../maps.nc"}))
