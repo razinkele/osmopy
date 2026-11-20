@@ -3,12 +3,10 @@
 Java 4.4.1 (``MortalityCause``) has nine causes, the last ``SPAWNING(8)``, and every mortality
 output loops over all of them, so its files carry a ninth stage triple (its header names only
 eight; GitHub #141). The engine carries the cause too. No process books it yet, so the column is
-0; the C# engine, which books eight causes, gets a zero ninth column from the bridge.
+0; the C# engine carries it as well (nine-wide buffers), always zero.
 """
 
 from __future__ import annotations
-
-from types import SimpleNamespace
 
 import numpy as np
 
@@ -27,36 +25,17 @@ def test_a_new_state_carries_nine_causes():
     )
 
 
-def test_the_csharp_bridge_pads_a_zero_spawning_column():
-    from osmose.engine_cs.engine import _step_outputs
+def test_the_csharp_result_buffers_carry_the_ninth_cause():
+    """The C# engine books eight causes and refuses semelparous species; its buffers (and its
+    RunResults.MortalityCauses) are nine wide, so the ninth column stays zero."""
+    from osmose.engine_cs.build import N_MORTALITY_CAUSES
 
-    n, nf = 2, 3
-    mortality = np.arange(n * nf * 8, dtype=np.float64).reshape(n, nf, 8) + 1.0
-    staged = np.arange(n * nf * 8 * 3, dtype=np.float64).reshape(n, nf, 8, 3) + 1.0
-    buffers = SimpleNamespace(
-        record_step=np.array([0, 1], dtype=np.int32),
-        window_steps=np.ones(n, dtype=np.int32),
-        biomass=np.zeros((n, nf)),
-        abundance=np.zeros((n, nf)),
-        mortality=mortality,
-        yield_=np.zeros((n, nf)),
-        families={
-            "mortality_by_cause_stage": staged,
-            "mortality_rate_by_cause_stage": staged * 2,
-        },
-        age_bin_offsets=None,
-    )
-    out = _step_outputs(buffers, n)
-    for i, o in enumerate(out):
-        assert o.mortality_by_cause.shape == (nf, 9)
-        assert np.array_equal(o.mortality_by_cause[:, :8], mortality[i])
-        assert (o.mortality_by_cause[:, 8] == 0).all()
-        for got, src in (
-            (o.mortality_by_cause_stage, staged[i]),
-            (o.mortality_rate_by_cause_stage, staged[i] * 2),
-        ):
-            assert got.shape == (nf, 9, 3)
-            assert np.array_equal(got[:, :8], src) and (got[:, 8] == 0).all()
+    assert N_MORTALITY_CAUSES == len(MortalityCause)
+    src = (
+        __import__("pathlib").Path(__file__).resolve().parents[1]
+        / "csharp/src/Osmose.Engine/Step/Outputs.cs"
+    ).read_text()
+    assert f"public const int MortalityCauses = {len(MortalityCause)};" in src
 
 
 def test_a_run_writes_a_zero_spawning_column(tmp_path):

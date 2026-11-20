@@ -854,9 +854,9 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
 
 # --------------------------------------------------------------------------- result buffers
 
-#: Columns of ``result.mortality``, in ``MortalityCause`` order: the eight causes the C# engine
-#: books. ``engine.collect`` pads the later ones (SPAWNING), which it never produces.
-N_MORTALITY_CAUSES = 8
+#: Columns of ``result.mortality``, in ``MortalityCause`` order (C# ``RunResults.MortalityCauses``).
+#: The ninth, SPAWNING, stays zero there: the C# engine refuses semelparous species.
+N_MORTALITY_CAUSES = 9
 CONTROL_SLOTS = 8
 
 
@@ -869,7 +869,7 @@ class RunBuffers:
     window_steps: np.ndarray  # i4 (n_records): steps folded into each record
     biomass: np.ndarray  # f8 (n_records, n_total): window mean, tonnes
     abundance: np.ndarray  # f8 (n_records, n_total): window mean
-    mortality: np.ndarray  # f8 (n_records, n_focal, 8): window sum of deaths by cause
+    mortality: np.ndarray  # f8 (n_records, n_focal, 9): window sum of deaths by cause
     yield_: np.ndarray  # f8 (n_records, n_focal): window sum, tonnes
     control: np.ndarray  # i8 (8): [0] cancel (Python), [1] steps done, [2] records, [3] schools
     #: The families beyond the minimal set, by name (``family_shapes``): f8, one row per record.

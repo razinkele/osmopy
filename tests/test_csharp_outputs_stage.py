@@ -112,8 +112,8 @@ def test_the_stage_family_is_declared_exactly_for_a_config_that_is_not_minimal(t
         if on:
             got = buffers.families
             assert got["abundance_by_stage"].shape == (n, nf, 3)
-            assert got["mortality_by_cause_stage"].shape == (n, nf, 8, 3)
-            assert got["mortality_rate_by_cause_stage"].shape == (n, nf, 8, 3)
+            assert got["mortality_by_cause_stage"].shape == (n, nf, 9, 3)
+            assert got["mortality_rate_by_cause_stage"].shape == (n, nf, 9, 3)
             assert all(b.get(f"result.{name}") is got[name] for name in STAGE_BUFFERS)
         else:
             assert buffers.families == {}
@@ -133,7 +133,7 @@ def test_step_outputs_carry_the_stage_rows_and_none_for_a_minimal_run(tmp_path):
     assert out[0].mortality_by_cause_stage is not None
     assert out[0].mortality_rate_by_cause_stage is not None
     assert np.array_equal(out[0].abundance_by_stage, abundance[0])
-    assert out[0].mortality_by_cause_stage.shape == (config.n_species, 8, 3)
+    assert out[0].mortality_by_cause_stage.shape == (config.n_species, 9, 3)  # SPAWNING stays 0
     assert out[0].mortality_rate_by_cause_stage[1, 3, 1] == np.inf
     assert not out[0].mortality_by_cause_stage.any()  # each field reads its own buffer
 

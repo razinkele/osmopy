@@ -10,7 +10,7 @@ EXAMPLE_CONFIG = Path(__file__).parent.parent / "data" / "examples" / "osm_all-p
 
 # Example config has 8 focal species and 8 MortalityCause members.
 _N_SPECIES = 8
-_N_CAUSES = 8
+_N_CAUSES = 9  # OSMOSE 4.4.x added SPAWNING
 
 
 def _bare_config_dict() -> dict[str, str]:

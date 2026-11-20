@@ -130,7 +130,7 @@ def test_fishing_yield_not_double_scaled(minimal_config):
     state = state.replace(
         weight=np.array([0.001]),
         abundance=np.array([100.0]),
-        n_dead=np.array([[0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0]]),
+        n_dead=np.array([[0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, 0.0]]),
     )
 
     output = _collect_outputs(state, cfg, step=0)

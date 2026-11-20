@@ -170,8 +170,10 @@ public sealed class RunResults
         }
     }
 
-    /// <summary>Columns of <see cref="Mortality"/>, in <c>MortalityCause</c> order.</summary>
-    public const int MortalityCauses = 8;
+    /// <summary>Columns of <see cref="Mortality"/>, in <c>MortalityCause</c> order. The ninth,
+    /// SPAWNING (OSMOSE 4.4.x post-reproduction mortality), is never booked: this engine refuses
+    /// semelparous species, so it stays zero, as the Python engine's does without them.</summary>
+    public const int MortalityCauses = 9;
 
     public int NRecords { get; }
 
