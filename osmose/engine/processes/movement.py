@@ -181,6 +181,60 @@ def random_walk(
     return state.replace(cell_x=new_x, cell_y=new_y)
 
 
+# Java GradientDistribution.radiusExpansions (v4.4.1).
+_GRADIENT_EXPANSIONS = (0, 1, 2, 3, 5, 10)
+
+
+def gradient_candidates(
+    cx: int, cy: int, current_map: NDArray[np.float64], ocean_mask: NDArray[np.bool_], radius: int
+) -> list[tuple[int, int]]:
+    """The cells a gradient-moving school may go to, as Java ``getAccessibleCells`` lists them.
+
+    A cell is accessible when it is ocean and its map value is above 0 (and not NaN). An unlocated
+    school (``cx < 0``: a new egg, or back from out of the domain) may go to any accessible cell.
+    A located one searches square neighbourhoods of ``radius + e`` cells for ``e`` in
+    ``(0, 1, 2, 3, 5, 10)``, and Java's loop leaves it on the first EMPTY neighbourhood although
+    its comment says the opposite. So, as in the jar: if the ``radius`` neighbourhood holds an
+    accessible cell, every accessible cell within ``radius + 10`` is a candidate; if it holds
+    none, every accessible cell of the grid is. Order: x outer, y inner, as Java lists them.
+    """
+    ny, nx = current_map.shape
+
+    def ok(y: int, x: int) -> bool:
+        v = current_map[y, x]
+        return bool(ocean_mask[y, x]) and v > 0 and not np.isnan(v)
+
+    def everywhere() -> list[tuple[int, int]]:
+        return [(y, x) for y in range(ny) for x in range(nx) if ok(y, x)]
+
+    if cx < 0 or cy < 0:
+        return everywhere()
+    cells: list[tuple[int, int]] = []
+    for e in _GRADIENT_EXPANSIONS:
+        r = radius + e
+        cells = [
+            (y, x)
+            for x in range(max(cx - r, 0), min(cx + r, nx - 1) + 1)
+            for y in range(max(cy - r, 0), min(cy + r, ny - 1) + 1)
+            if ok(y, x)
+        ]
+        if not cells:
+            break
+    return cells if cells else everywhere()
+
+
+def gradient_weights(values: NDArray[np.float64], coef: float) -> NDArray[np.float64]:
+    """Java's combined probability: ``coef / N + (1 - coef) * value / sum(values)``."""
+    p = values / values.sum()
+    return coef / len(values) + (1.0 - coef) * p
+
+
+def gradient_draw(weights: NDArray[np.float64], u: float) -> int:
+    """Java ``WeightedRandomDraft.next``: the first cumulative weight at or above ``u * total``."""
+    cum = np.cumsum(weights)
+    return int(np.searchsorted(cum, u * cum[-1], side="left"))
+
+
 def movement(
     state: SchoolState,
     grid: Grid,
@@ -351,6 +405,39 @@ def movement(
                     )
                     new_cx[i], new_cy[i], new_out[i] = x, y, out
             state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
+
+    # Gradient movement (OSMOSE 4.4.x GradientDistribution): a school with no map this step goes
+    # out of the domain; otherwise it moves to a cell drawn with weight coef / N + (1 - coef) * p.
+    uses_gradient = config.movement_is_gradient[sp]
+    if uses_gradient.any() and map_sets is not None:
+        assert config.movement_gradient_radius is not None
+        assert config.movement_gradient_coef is not None
+        new_cx = state.cell_x.copy()
+        new_cy = state.cell_y.copy()
+        new_out = state.is_out.copy()
+        for i in np.flatnonzero(uses_gradient):
+            sp_id = int(sp[i])
+            current_map = map_sets[sp_id].get_map(int(state.age_dt[i]), step)
+            if current_map is None:
+                new_cx[i], new_cy[i], new_out[i] = -1, -1, True
+                continue
+            cells = gradient_candidates(
+                int(new_cx[i]),
+                int(new_cy[i]),
+                current_map,
+                grid.ocean_mask,
+                int(config.movement_gradient_radius[sp_id]),
+            )
+            if not cells:
+                raise RuntimeError(
+                    f"gradient movement: the map of {config.species_names[sp_id]} at step {step} "
+                    "has no ocean cell above 0 (Java fails on the same map)"
+                )
+            values = np.array([current_map[y, x] for y, x in cells], dtype=np.float64)
+            w = gradient_weights(values, float(config.movement_gradient_coef[sp_id]))
+            y, x = cells[gradient_draw(w, float(_rng_for(sp_id).random()))]
+            new_cx[i], new_cy[i], new_out[i] = x, y, False
+        state = state.replace(cell_x=new_cx, cell_y=new_cy, is_out=new_out)
 
     return state
 

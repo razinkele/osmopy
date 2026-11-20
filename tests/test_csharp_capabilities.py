@@ -377,6 +377,16 @@ def _recipes(c: EngineConfig) -> dict:
         "resource_percent_log": (R(c, resource_percent_log=True), {}),
         "maturity_stochastic": (R(c, maturity_stochastic=np.ones(n, dtype=bool)), {}),
         "larva_density_dependence": (R(c, larva_reference_density=np.full(n, 100.0)), {}),
+        "movement_gradient": (
+            R(
+                c,
+                movement_method=["gradient"] + list(c.movement_method)[1:],
+                movement_is_gradient=np.array(
+                    [True] + [False] * (len(c.movement_method) - 1), dtype=bool
+                ),
+            ),
+            {},
+        ),
         "fishing_catches": (R(c, fishing_catches=np.full(n, 10.0)), {}),
         "rate_by_class": (R(c, fishing_rate_by_dt_by_class=[object()] + nones[1:]), {}),
         "selectivity_type_2_3": (R(c, fishing_selectivity_type=_flip(sel, 2, sel.dtype)), {}),

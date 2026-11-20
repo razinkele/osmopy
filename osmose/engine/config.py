@@ -173,6 +173,32 @@ def _require_file(file_key: str, config_dir: str, context: str) -> Path:
     return path
 
 
+def _parse_movement_gradient(
+    cfg: dict[str, str], n_sp: int, methods: list[str]
+) -> tuple[NDArray[np.int32] | None, NDArray[np.float64] | None]:
+    """Java ``GradientDistribution.init`` (OSMOSE 4.4.x): a gradient species needs
+    ``movement.base.search.radius.sp#`` and ``movement.random.walk.coef.sp#`` in [0, 1]."""
+    gradient = [m.strip().lower() == "gradient" for m in methods]
+    if not any(gradient):
+        return None, None
+    radius = _species_int_optional(cfg, "movement.base.search.radius.sp{i}", n_sp, -1)
+    coef = _species_float_optional(cfg, "movement.random.walk.coef.sp{i}", n_sp, np.nan)
+    for i in range(n_sp):
+        if not gradient[i]:
+            continue
+        if radius[i] < 0:
+            raise ValueError(
+                f"movement.distribution.method.sp{i} = gradient needs "
+                f"movement.base.search.radius.sp{i} (a number of cells, 0 or more)"
+            )
+        if not 0.0 <= coef[i] <= 1.0:
+            raise ValueError(
+                f"movement.distribution.method.sp{i} = gradient needs "
+                f"movement.random.walk.coef.sp{i} in [0, 1], as Java requires"
+            )
+    return radius.astype(np.int32), coef
+
+
 def _parse_stochastic_maturity(
     cfg: dict[str, str], n_sp: int, n_bkg: int, bioen: bool
 ) -> tuple[NDArray[np.bool_] | None, NDArray[np.float64] | None, NDArray[np.float64] | None]:
@@ -1976,6 +2002,10 @@ class EngineConfig:
 
     # Movement
     movement_method: list[str]
+    # Gradient movement (OSMOSE 4.4.x): per focal species, movement.base.search.radius.sp# and
+    # movement.random.walk.coef.sp#; None when no species moves by gradient.
+    movement_gradient_radius: NDArray[np.int32] | None = field(default=None, kw_only=True)
+    movement_gradient_coef: NDArray[np.float64] | None = field(default=None, kw_only=True)
     random_walk_range: NDArray[np.int32]
     out_mortality_rate: NDArray[np.float64]
 
@@ -2180,6 +2210,14 @@ class EngineConfig:
         """Per-species mask: True where the movement method is ``"maps"``. See
         :attr:`movement_is_random`."""
         return np.array([m == "maps" for m in self.movement_method], dtype=np.bool_)
+
+    @cached_property
+    def movement_is_gradient(self) -> NDArray[np.bool_]:
+        """Per-species mask: True where the movement method is ``"gradient"`` (OSMOSE 4.4.x;
+        Java compares ignoring case). See :attr:`movement_is_random`."""
+        return np.array(
+            [m.strip().lower() == "gradient" for m in self.movement_method], dtype=np.bool_
+        )
 
     def __post_init__(self) -> None:
         """Validate invariants after construction.
@@ -2663,6 +2701,9 @@ class EngineConfig:
                 "scaled by SSB / reference, so the reference must be above 0 (or below 0 for off)"
             )
         larva_reference_density = _larva_ref if (_larva_ref > 0).any() else None
+        _gradient_radius, _gradient_coef = _parse_movement_gradient(
+            cfg, n_sp, focal_movement_method
+        )
         if (
             larva_reference_density is not None
             and cfg.get("module.bioenergetics.enabled", "false").strip().lower() == "true"
@@ -2975,6 +3016,8 @@ class EngineConfig:
             mpa_zones=mpa_zones,
             fishing_discard_rate=fishing_discard_rate,
             movement_method=movement_method,
+            movement_gradient_radius=_gradient_radius,
+            movement_gradient_coef=_gradient_coef,
             random_walk_range=random_walk_range,
             out_mortality_rate=out_mortality_rate,
             egg_weight_override=egg_weight_override,
