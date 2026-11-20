@@ -12,6 +12,7 @@ versions, so a guard that stops being a floor test fails here.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -50,6 +51,17 @@ def test_the_floors_are_installed_without_upgrade():
     assert "--upgrade" not in floors[0]
     for spec in ('"shinyswatch>=0.11"', '"shinywidgets>=0.7"', '"pyarrow>=14"', '"packaging"'):
         assert spec in floors[0]
+
+
+def test_pip_never_falls_back_to_a_user_install():
+    # Without --no-user, pip installs into shiny's home when site-packages is not writable, and
+    # the floor check then passes on that copy instead of the deploy stopping.
+    code = _code(DEPLOY.read_text().splitlines())
+    definition = [ln for ln in code if ln.startswith("PIP_INSTALL=(")]
+    assert len(definition) == 1 and "--no-user" in definition[0], definition
+    pip_install = re.compile(r"(\bpip3?|SHINY_PIP)[\"']?\s+install\b")
+    raw = [ln for ln in code if pip_install.search(ln) and "PIP_INSTALL" not in ln]
+    assert not raw, f"pip install outside PIP_INSTALL: {raw}"
 
 
 def _guard(marker: str) -> str:

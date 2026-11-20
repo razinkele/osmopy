@@ -19,8 +19,10 @@ SHINY_PYTHON="/opt/micromamba/envs/shiny/bin/python3"
 SHINY_PIP="/opt/micromamba/envs/shiny/bin/pip"
 # pip runs AS SHINY (see as_shiny below): the env is shiny-owned. --root-user-action=ignore is
 # inert for a non-root user and kept so a root invocation would not warn. Use
-# 'as_shiny "${PIP_INSTALL[@]}" <pkgs>' for installs.
-PIP_INSTALL=("$SHINY_PIP" install --root-user-action=ignore)
+# 'as_shiny "${PIP_INSTALL[@]}" <pkgs>' for installs. --no-user: pip falls back to a user-site
+# install when site-packages is not writable, and the floor check would then pass on a copy in
+# shiny's home; with it, an install pip cannot write into the env fails the deploy instead.
+PIP_INSTALL=("$SHINY_PIP" install --root-user-action=ignore --no-user)
 LINK_PATH="${SHINY_ROOT}/${APP_NAME}"
 SERVICE_NAME="osmose-shiny"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"

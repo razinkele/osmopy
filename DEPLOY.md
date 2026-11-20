@@ -29,33 +29,29 @@ Deploys before this change let root operate on the clone through a `safe.directo
 
 Root does not re-own anything in the clone either: a hard link `shiny` planted there would carry the change to a file outside it. Instead, a read-only check stops the deploy, before the fetch, if anything in the clone is root-owned (see "Root-owned files in the clone" below). On 2026-11-18 and 2026-11-21 nothing was.
 
-The Python dependencies (Step 0) are installed **before** the checkout. If pip fails, the deploy stops with the previous ref still checked out. Step 0 changes a package only when it is missing or below its floor, so installs that completed before a failure only raised packages to floors the running code already satisfies.
+The Python dependencies (Step 0) are installed **before** the checkout. If pip fails, the deploy stops with the previous ref still checked out. Step 0 installs only what is missing or below a floor (pip may also raise a dependency that a newly installed package requires at a newer version), so installs that completed before a failure only raised packages to floors the running code already satisfies.
 
 ### The shared environment
 `/opt/micromamba/envs/shiny` is shared with the server's other apps and managed with micromamba, not by this deploy. Measured 2026-11-21: 740 of the 869 entries in its `site-packages` are root-owned, from micromamba runs as root (2026-11-18 22:05; `shiny_deckgl` 1.16.1 on 2026-11-20, which AQUABC and CENOP require at ≥1.16).
 
-So Step 0 changes a package only when it is missing or below its floor (`tests/test_deploy_floors.py`). On that env it installs nothing. **Do not `chown` packages to `shiny` for osmose's sake.** An earlier version of this section did, so that pip could *upgrade* them; with the Step 0 of that time (`--upgrade` to the newest release, and `shiny_deckgl` held at exactly 1.9.2) it would have downgraded `shiny_deckgl` under the other apps. If a floor is ever unmet on a root-owned package, Step 0 stops the deploy before the checkout with a pip permission error, the service keeps running the previous ref, and the fix belongs to whoever manages the env: raise the package with micromamba, then deploy again.
+So Step 0 installs only what is missing or below a floor (`tests/test_deploy_floors.py`); pip may also raise a dependency that such an install requires at a newer version, but never replaces a package that already meets its floor just to reach a newer release. On that env it installs nothing. Every pip call passes `--no-user`, so an unmet floor that pip cannot write into the env fails the deploy instead of landing in `shiny`'s home. **Do not `chown` packages to `shiny` for osmose's sake.** An earlier version of this section did, so that pip could *upgrade* them; with the Step 0 of that time (`--upgrade` to the newest release, and `shiny_deckgl` held at exactly 1.9.2) it would have downgraded `shiny_deckgl` under the other apps. If a floor is ever unmet on a root-owned package, Step 0 stops the deploy before the checkout with a pip permission error, the service keeps running the previous ref, and the fix belongs to whoever manages the env: raise the package with micromamba, then deploy again.
 
 Any `~`-prefixed leftover in `site-packages` is the debris of an interrupted pip install; the deploy reports one it cannot remove, and it can be deleted.
 
 ### Root-owned files in the clone
-Old root-git deploys could leave root-owned files in the prod clone, and git as `shiny` would then fail half-way, so the deploy refuses first. To check (nothing on 2026-11-18 and 2026-11-21), and to hand any such files to `shiny`, **with the service stopped**, from the deploy host's checkout:
+Old root-git deploys could leave root-owned files in the prod clone, and git as `shiny` would then fail half-way, so the deploy refuses first (nothing was root-owned on 2026-11-18 or 2026-11-21). **Do not repair it with a root `chown` inside the clone**: `shiny` controls every directory there, and can swap one for a symlink between a `find` and the `chown`, which would then re-own a file outside the clone (`--no-dereference` protects only the last path component). Set the clone aside instead and let the deploy make a fresh one. The rename happens in root's own `/srv/shiny-server` and reads nothing inside the clone:
 
 ```bash
-sudo find /srv/shiny-server/osmose-src -user root
 sudo systemctl stop osmose-shiny.service
-sudo chown -R --no-dereference shiny <each path the find listed>
-sudo bash deploy.sh                                     # restarts the service
+sudo mv /srv/shiny-server/osmose-src /srv/shiny-server/osmose-src.old
+sudo bash deploy.sh                    # clones afresh as shiny, provisions the JARs, restarts
 ```
 
-This grants `shiny` nothing new: it owns the clone. It is manual on purpose: an automatic root `chown` on every deploy would itself be root acting on a path that runs through `shiny`-owned directories.
+The clone's only untracked state is `data/history/` (run history); the feedback store is configured outside it (`/etc/osmose-shiny.env`). To keep the history, copy it **as `shiny`**, never as root: `sudo runuser -u shiny -- cp -a /srv/shiny-server/osmose-src.old/data/history /srv/shiny-server/osmose-src/data/`. Delete `osmose-src.old` once the new clone is verified.
 
-**If a deploy stops before the restart** (for example at Step 0), the previous ref is still checked out and the service is as it was, unless you stopped it by hand as above. Then bring it back, and check it:
-
-```bash
-sudo systemctl start osmose-shiny.service
-systemctl status osmose-shiny.service
-```
+### If a deploy stops
+- **Before the checkout** (Step 0, or the clone checks): the previous ref is still checked out and the service is as it was. If you stopped it by hand (above), start it again: `sudo systemctl start osmose-shiny.service`, then `systemctl status osmose-shiny.service`.
+- **After the checkout, before the restart** (for example the unit write in Step 3): the new ref is on disk under the old process. `systemctl start` does nothing to a running service. Fix the cause and run the deploy again, or load what is on disk with `sudo systemctl restart osmose-shiny.service`, then verify as usual.
 
 ## The C# engine (optional, opt-in)
 
