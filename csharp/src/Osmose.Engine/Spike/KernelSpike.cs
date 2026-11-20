@@ -3,6 +3,7 @@ using System.Text;
 using Osmose.Engine.Mortality;
 using Osmose.Engine.Rng;
 using Osmose.Engine.Schools;
+using Osmose.Engine.Step;
 
 namespace Osmose.Engine.Spike;
 
@@ -374,11 +375,11 @@ public sealed class KernelSpike : IDisposable
         Row("pred_success_rate", "expected.pred_success_rate", i => S(i).PredSuccess);
         Row("preyed_biomass", "expected.preyed_biomass", i => S(i).PreyedBiomass);
         Row("tl_weighted_sum", "expected.tl_weighted_sum", i => S(i).TlWeightedSum);
-        Row("dead_predation", "expected.n_dead", i => C(i).DeadPredation, 8, 0);
-        Row("dead_starvation", "expected.n_dead", i => L(i).DeadStarvation, 8, 1);
-        Row("dead_additional", "expected.n_dead", i => L(i).DeadAdditional, 8, 2);
-        Row("dead_fishing", "expected.n_dead", i => L(i).DeadFishing, 8, 3);
-        Row("dead_discards", "expected.n_dead", i => L(i).DeadDiscards, 8, 6);
+        Row("dead_predation", "expected.n_dead", i => C(i).DeadPredation, RunResults.MortalityCauses, 0);
+        Row("dead_starvation", "expected.n_dead", i => L(i).DeadStarvation, RunResults.MortalityCauses, 1);
+        Row("dead_additional", "expected.n_dead", i => L(i).DeadAdditional, RunResults.MortalityCauses, 2);
+        Row("dead_fishing", "expected.n_dead", i => L(i).DeadFishing, RunResults.MortalityCauses, 3);
+        Row("dead_discards", "expected.n_dead", i => L(i).DeadDiscards, RunResults.MortalityCauses, 6);
 
         _fixture.TryGet("expected.resources_biomass", out BundleEntry re);
         ReadOnlySpan<double> rexp = re.AsSpan<double>();

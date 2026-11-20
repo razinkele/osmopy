@@ -658,4 +658,4 @@ def test_result_buffers_are_registered_by_address(runs):
     # The bundle holds the SAME memory the engine will write into (no copy).
     assert b.get("result.biomass").ctypes.data == buf.biomass.ctypes.data
     assert b.get("control.block").ctypes.data == buf.control.ctypes.data
-    assert buf.mortality.shape[1:] == (config.n_species, 8)
+    assert buf.mortality.shape[1:] == (config.n_species, 9)  # the ninth, SPAWNING, stays 0
