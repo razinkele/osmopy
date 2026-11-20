@@ -51,7 +51,9 @@ def test_catalogue_ids_are_dense_and_core_is_first():
     assert feats[0].name == "core" and feats[0].phase == 1
     assert {f.status for f in feats} <= {"planned", "refused", "not_planned"}
     assert all((f.phase in (1, 2, 3, 4)) == (f.status == "planned") for f in feats)
-    assert 1 in cap.catalog_contract_versions()
+    from osmose.engine_cs.build import CONTRACT_VERSION
+
+    assert CONTRACT_VERSION in cap.catalog_contract_versions()
 
 
 def test_every_catalogue_feature_has_exactly_one_detector():

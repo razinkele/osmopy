@@ -58,7 +58,8 @@ class TestSchoolState:
     def test_mortality_cause_enum(self):
         assert MortalityCause.PREDATION.value == 0
         assert MortalityCause.AGING.value == 7
-        assert len(MortalityCause) == 8
+        assert MortalityCause.SPAWNING.value == 8  # OSMOSE 4.4.x
+        assert len(MortalityCause) == 9
 
 
 class TestSchoolStateValidate:

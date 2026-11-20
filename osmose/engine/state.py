@@ -25,6 +25,10 @@ class MortalityCause(IntEnum):
     FORAGING = 5
     DISCARDS = 6
     AGING = 7
+    # OSMOSE 4.4.x (MortalityCause.SPAWNING): post-spawning death of a semelparous species. Every
+    # mortality output carries the column, as Java's does; it is 0 unless a species dies after
+    # spawning.
+    SPAWNING = 8
 
 
 #: Optional boolean fields that read False for schools that lack them when states are merged.

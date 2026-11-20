@@ -221,7 +221,9 @@ def _make_step_with_age(step: int, n_sp: int, bins_by_sp: dict | None = None) ->
         step=step,
         biomass=np.full(n_sp, 100.0 * (step + 1)),
         abundance=np.full(n_sp, 1000.0 * (step + 1)),
-        mortality_by_cause=np.arange(n_sp * 8, dtype=np.float64).reshape(n_sp, 8),
+        mortality_by_cause=np.arange(n_sp * len(MortalityCause), dtype=np.float64).reshape(
+            n_sp, len(MortalityCause)
+        ),
         biomass_by_age=biomass_by_age,
         abundance_by_age=abundance_by_age,
     )
@@ -257,6 +259,7 @@ def test_netcdf_contains_mortality_by_cause(tmp_path):
         "Foraging",
         "Discards",
         "Aging",
+        "Spawning",
     ]  # capitalize() to match existing CSV writer at output.py:161
 
 
@@ -300,7 +303,7 @@ def test_netcdf_pads_ragged_size_bins_with_nan(tmp_path):
         step=23,
         biomass=np.array([100.0, 200.0]),
         abundance=np.array([1000.0, 2000.0]),
-        mortality_by_cause=np.zeros((2, 8)),
+        mortality_by_cause=np.zeros((2, len(MortalityCause))),
         biomass_by_size={
             0: np.array([1.0, 2.0, 3.0, 4.0]),
             1: np.array([10.0, 20.0]),

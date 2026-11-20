@@ -267,7 +267,7 @@ def test_write_outputs_skips_diet_csv_when_disabled(tmp_path):
         step=23,
         biomass=np.zeros(n_pred + cfg.n_background),
         abundance=np.zeros(n_pred + cfg.n_background),
-        mortality_by_cause=np.zeros((n_pred, 8)),
+        mortality_by_cause=np.zeros((n_pred, len(MortalityCause))),
         diet_by_species=np.ones((n_pred, n_prey), dtype=np.float64),
     )
     # write_outputs signature: (outputs, output_dir, config, prefix="osm")
