@@ -2,7 +2,6 @@
 """Integration test: full simulation with Ev-OSMOSE genetics enabled."""
 
 import numpy as np
-import pytest
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.grid import Grid
@@ -86,21 +85,18 @@ def _run(raw: dict[str, str]):
 
 
 class TestInheritanceWithoutBioenergetics:
-    """#338. Parents are chosen by gonad weight, and only the bioenergetic module sets it. So
-    without bioenergetics a run with genetics stops at its first reproduction outside the
-    genetics seeding window. That behaviour is not changed here; these pin that the message
-    names the cause."""
+    """#338. A run with genetics and no bioenergetics used to stop at its first reproduction
+    outside the genetics seeding window: parents were chosen by gonad weight, which only the
+    bioenergetic module sets. The standard path now gives every mature school its egg
+    production as a parent weight, as Java does (tests/test_genetics_standard_path.py)."""
 
-    def test_the_run_stops_with_a_message_that_names_bioenergetics(self):
-        with pytest.raises(ValueError) as err:
-            _run(_spawning_config())
-        message = str(err.value)
-        assert "no eligible parents" in message
-        assert "module.bioenergetics.enabled" in message
+    def test_a_spawning_run_completes_outside_the_seeding_window(self):
+        spawning = _run(_spawning_config())  # evolution.seeding.year unset: no window at all
+        barren = _run(_genetics_config())
+        assert len(spawning) == 12
+        assert spawning[-1].abundance.sum() > barren[-1].abundance.sum()  # it did spawn
 
     def test_inside_the_genetics_seeding_window_the_same_config_completes(self):
-        # The control: the config spawns and runs to the end while offspring genotypes are
-        # seeded. So the stop above is the inheritance and not the config.
         window = {"evolution.seeding.year": "2"}
         spawning = _run(_spawning_config(**window))
         barren = _run(_genetics_config() | window)

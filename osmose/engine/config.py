@@ -1958,6 +1958,10 @@ class EngineConfig:
     # has no fish left after the seeding period (osmose.engine.SpeciesCollapsed).
     kill_if_no_school: bool = False
 
+    # simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a
+    # resource is taken in log size, not in size (osmose.engine.processes.resource_percent).
+    # Absent or true keeps the linear form, as Java does.
+    resource_percent_log: bool = False
     # species.maturity.mode.sp# = stochastic (OSMOSE 4.4.0): maturity drawn from a normal ogive
     # (osmose.engine.processes.maturity). One entry per focal and background species; None
     # when no species uses it, which is the cheap test the engine makes.
@@ -2568,6 +2572,9 @@ class EngineConfig:
         kill_if_no_school = (
             cfg.get("simulation.kill.if.no.school.enabled", "false").lower() == "true"
         )
+        resource_percent_log = (
+            cfg.get("simulation.resources.computepercent.legacy", "true").strip().lower() == "false"
+        )
         java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 
@@ -2699,7 +2706,16 @@ class EngineConfig:
 
         # Ev-OSMOSE genetics
         genetics_enabled = _enabled(cfg, "module.genetics.enabled")
-        genetics_transmission_year = int(cfg.get("evolution.seeding.year", "0"))
+        # Java 4.4.1 names it population.genotype.transmission.year.start
+        # (ReproductionProcess.init); evolution.seeding.year is this engine's older name.
+        genetics_transmission_year = int(
+            float(
+                cfg.get(
+                    "population.genotype.transmission.year.start",
+                    cfg.get("evolution.seeding.year", "0"),
+                )
+            )
+        )
         genetics_n_neutral = int(cfg.get("evolution.neutral.nlocus", "0"))
         genetics_n_neutral_val = int(cfg.get("evolution.neutral.nval", "50"))
 
@@ -2871,6 +2887,7 @@ class EngineConfig:
             java_compat_rng=java_compat_rng,
             movement_strict_coverage=movement_strict,
             kill_if_no_school=kill_if_no_school,
+            resource_percent_log=resource_percent_log,
             maturity_stochastic=maturity_stochastic,
             maturity_l50=maturity_l50,
             maturity_sd=maturity_sd,

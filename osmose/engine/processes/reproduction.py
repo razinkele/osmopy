@@ -292,12 +292,21 @@ def reproduction(
     rng: np.random.Generator,
     grid_ny: int = 10,
     grid_nx: int = 10,
+    spawn_out: dict[str, NDArray] | None = None,
 ) -> SchoolState:
     """Produce eggs from mature schools and increment age for all schools.
 
     Maturity condition: age_dt >= maturity_age AND length >= maturity_size.
 
     N_eggs = sex_ratio * relative_fecundity * SSB * season_factor
+
+    ``spawn_out``, when given, is filled for the genetics step (it draws nothing and changes
+    nothing else): ``parent_weight``, one value per school handed in, and
+    ``seeded_this_step``, one flag per focal species. A school's weight as a parent is its
+    egg production, as in Java's ``ReproductionProcess.run_genet``; within a species that is
+    proportional to its spawning biomass, so the weight is abundance x weight for a mature
+    school and 0 for any other. A species flagged as seeded has no spawner this step: its
+    offspring come from the seeding biomass and have no parents.
     """
     n_sp = config.n_species
 
@@ -327,6 +336,9 @@ def reproduction(
         if ssb[sp] == 0.0 and step < config.seeding_max_step[sp]:
             ssb[sp] = config.seeding_biomass[sp]
             seeded_this_step[sp] = True
+    if spawn_out is not None:
+        spawn_out["parent_weight"] = np.where(mature, state.abundance * state.weight, 0.0)
+        spawn_out["seeded_this_step"] = seeded_this_step.copy()
 
     # Egg count per species
     # Java: nEgg = sexRatio * beta * season * SSB * 1_000_000
