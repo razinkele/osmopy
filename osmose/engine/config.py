@@ -173,6 +173,75 @@ def _require_file(file_key: str, config_dir: str, context: str) -> Path:
     return path
 
 
+def _parse_bioen_lite(
+    cfg: dict[str, str], n_sp: int, xi_crit: NDArray[np.float64]
+) -> tuple[
+    NDArray[np.bool_] | None,
+    NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
+]:
+    """``species.bioenergetics.model.sp#`` (OSMOSE 4.4.x ``EnergyBudget.init``).
+
+    Java takes the full model where the key is unset or exactly ``full`` (``equals``, so
+    case-sensitive) and the lite model for any other value. A lite species needs
+    ``species.temperature.tmin/tmax/topt``; Java derives the roots T1, T2 of its temperature
+    response from them and ``predation.efficiency.critical``. Where that arithmetic degenerates
+    (``tmax <= tmin``, or a critical efficiency outside (0, 1)) the species is refused.
+    """
+    from osmose.engine.processes.energy_budget import lite_temperature_bounds
+
+    lite = np.zeros(n_sp, dtype=bool)
+    for i in range(n_sp):
+        value = cfg.get(f"species.bioenergetics.model.sp{i}", "").strip()
+        lite[i] = bool(value) and value.lower() != "null" and value != "full"
+    if not lite.any():
+        return None, None, None, None
+    tmin = _species_float_optional(cfg, "species.temperature.tmin.sp{i}", n_sp, np.nan)
+    tmax = _species_float_optional(cfg, "species.temperature.tmax.sp{i}", n_sp, np.nan)
+    topt = _species_float_optional(cfg, "species.temperature.topt.sp{i}", n_sp, np.nan)
+    t1 = np.full(n_sp, np.nan)
+    t2 = np.full(n_sp, np.nan)
+    for i in np.flatnonzero(lite):
+        missing = [
+            k for k, v in (("tmin", tmin[i]), ("tmax", tmax[i]), ("topt", topt[i])) if np.isnan(v)
+        ]
+        infinite = [
+            k for k, v in (("tmin", tmin[i]), ("tmax", tmax[i]), ("topt", topt[i])) if np.isinf(v)
+        ]
+        if infinite:
+            raise ValueError(
+                "the lite bioenergetic model needs finite temperatures: "
+                + ", ".join(f"species.temperature.{k}.sp{i}" for k in infinite)
+            )
+        if missing:
+            raise ValueError(
+                f"species {i} is on the lite bioenergetic model "
+                f"(species.bioenergetics.model.sp{i}) but sets no "
+                + ", ".join(f"species.temperature.{k}.sp{i}" for k in missing)
+            )
+        if not tmax[i] > tmin[i]:
+            raise ValueError(
+                f"species.temperature.tmax.sp{i} must be above species.temperature.tmin.sp{i} "
+                "for the lite bioenergetic model"
+            )
+        if topt[i] in (tmin[i], tmax[i]):
+            raise ValueError(
+                f"species.temperature.topt.sp{i} equals a thermal limit: the lite temperature "
+                "response is 1 at the optimum and the critical efficiency at the limits, so it "
+                "is 0/0 there"
+            )
+        if not 0.0 < xi_crit[i] < 1.0:
+            raise ValueError(
+                f"predation.efficiency.critical.sp{i} must be in (0, 1) for the lite "
+                "bioenergetic model: its temperature response divides by 1 - critical"
+            )
+        t1[i], t2[i] = lite_temperature_bounds(
+            float(tmin[i]), float(tmax[i]), float(topt[i]), float(xi_crit[i])
+        )
+    return lite, t1, t2, topt
+
+
 def _parse_stochastic_maturity(
     cfg: dict[str, str], n_sp: int, n_bkg: int, bioen: bool
 ) -> tuple[NDArray[np.bool_] | None, NDArray[np.float64] | None, NDArray[np.float64] | None]:
@@ -2194,6 +2263,13 @@ class EngineConfig:
     bioen_k_for: NDArray[np.float64] | None = None  # foraging mortality
     bioen_larvae_thres_dt: NDArray[np.int32] | None = None  # Java larvaeThresDt (default 1)
     bioen_i_max_all: NDArray[np.float64] | None = None  # Imax for focal + background predators
+    # species.bioenergetics.model.sp# (OSMOSE 4.4.x): True for a focal species on the lite model
+    # (any value but "full", as Java tests it); None when every species is on the full model.
+    # Its temperature response is set by the roots T1, T2 and species.temperature.topt.
+    bioen_lite: NDArray[np.bool_] | None = None
+    bioen_lite_t1: NDArray[np.float64] | None = None
+    bioen_lite_t2: NDArray[np.float64] | None = None
+    bioen_lite_topt: NDArray[np.float64] | None = None
 
     # Foraging mortality (bioen only)
     foraging_k1_for: NDArray[np.float64] | None = None  # genetic mode base
@@ -2851,7 +2927,11 @@ class EngineConfig:
         bioen_e_mobi = bioen_e_d = bioen_tp = bioen_e_maint = None
         bioen_o2_c1 = bioen_o2_c2 = bioen_i_max = bioen_theta = bioen_c_rate = bioen_k_for = None
         bioen_larvae_thres_dt = bioen_i_max_all = None
+        bioen_lite = bioen_lite_t1 = bioen_lite_t2 = bioen_lite_topt = None
         if _bioen_enabled:
+            bioen_lite, bioen_lite_t1, bioen_lite_t2, bioen_lite_topt = _parse_bioen_lite(
+                cfg, n_sp, focal_critical_success_rate
+            )
             bioen_beta = _species_float_optional(cfg, "species.beta.sp{i}", n_sp, 0.8)
             bioen_zlayer = _species_int_optional(cfg, "species.zlayer.sp{i}", n_sp, 0)
             bioen_assimilation = _species_float_optional(
@@ -3136,6 +3216,10 @@ class EngineConfig:
             bioen_o2_c1=bioen_o2_c1,
             bioen_o2_c2=bioen_o2_c2,
             bioen_i_max=bioen_i_max,
+            bioen_lite=bioen_lite,
+            bioen_lite_t1=bioen_lite_t1,
+            bioen_lite_t2=bioen_lite_t2,
+            bioen_lite_topt=bioen_lite_topt,
             bioen_theta=bioen_theta,
             bioen_c_rate=bioen_c_rate,
             bioen_k_for=bioen_k_for,

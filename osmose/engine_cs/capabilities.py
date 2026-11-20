@@ -201,6 +201,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
             r"|predation\.c\.bioen\..+|species\.beta\..+|species\.zlayer\..+|species\.oxygen\.c[12]\..+"
             r"|species\.maturity\.(eta|m0|m1|r)\..+|species\.larvae\.growth\.threshold\.age\..+"
             r"|predation\.larval\.ingestion\.rate\.increase\.ratio\..+|temperature\..+|output\.bioen\..+"
+            r"|species\.bioenergetics\.model\..+|species\.temperature\.(tmin|tmax|topt)\..+"
         ),
         "bioenergetics",
     ),
