@@ -59,6 +59,11 @@ class TestTheCandidates:
         cells = gradient_candidates(0, 0, m, np.ones((12, 12), dtype=bool), 0)
         assert sorted(cells) == [(0, 0), (10, 10)]
 
+    def test_the_global_list_follows_javas_ocean_cell_order(self):
+        # AbstractGrid: j from ny-1 down (outer), i from nx-1 down (inner).
+        m = _map({(0, 1): 1.0, (1, 0): 1.0, (1, 1): 1.0, (0, 0): 1.0})
+        assert gradient_candidates(-1, -1, m, OCEAN, 1) == [(1, 1), (1, 0), (0, 1), (0, 0)]
+
     def test_javas_order_x_outer_y_inner(self):
         m = _map({(0, 1): 1.0, (1, 0): 1.0, (1, 1): 1.0})
         assert gradient_candidates(0, 0, m, OCEAN, 1) == [(1, 0), (0, 1), (1, 1)]

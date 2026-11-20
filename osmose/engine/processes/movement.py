@@ -196,7 +196,9 @@ def gradient_candidates(
     ``(0, 1, 2, 3, 5, 10)``, and Java's loop leaves it on the first EMPTY neighbourhood although
     its comment says the opposite. So, as in the jar: if the ``radius`` neighbourhood holds an
     accessible cell, every accessible cell within ``radius + 10`` is a candidate; if it holds
-    none, every accessible cell of the grid is. Order: x outer, y inner, as Java lists them.
+    none, every accessible cell of the grid is. Order as Java lists them: a neighbourhood x outer,
+    y inner, both ascending (getNeighbourCells); the whole grid y outer, x inner, both descending
+    (AbstractGrid.oceanCells).
     """
     ny, nx = current_map.shape
 
@@ -205,7 +207,9 @@ def gradient_candidates(
         return bool(ocean_mask[y, x]) and v > 0 and not np.isnan(v)
 
     def everywhere() -> list[tuple[int, int]]:
-        return [(y, x) for y in range(ny) for x in range(nx) if ok(y, x)]
+        # Java AbstractGrid builds its ocean-cell list with j from ny-1 down to 0 (outer) and
+        # i from nx-1 down to 0 (inner).
+        return [(y, x) for y in range(ny - 1, -1, -1) for x in range(nx - 1, -1, -1) if ok(y, x)]
 
     if cx < 0 or cy < 0:
         return everywhere()
