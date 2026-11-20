@@ -186,6 +186,15 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "simulation.restart.file",
         "simulation.restart.recordfrequency.ndt",
         "simulation.resources.computepercent.legacy",  # 4.4.0, read outside config.py (#137)
+        "output.region.enabled.rg{idx}",  # 4.4.x output regions (#137)
+        "output.regions.name.rg{idx}",
+        "output.regions.enabled.rg{idx}",
+        "output.regions.movement.region.map{idx}",
+        "output.regions.movement.file.map{idx}",
+        "output.regions.movement.steps.map{idx}",
+        "output.regions.movement.years.map{idx}",
+        "output.regions.movement.initialyear.map{idx}",
+        "output.regions.movement.lastyear.map{idx}",
         "simulation.restart.spinup.nyear",
         "species.age.sp{idx}",
         "species.biomass.constant.sp{idx}",  # 4.4.1 forcing keys, Java-only (#137)

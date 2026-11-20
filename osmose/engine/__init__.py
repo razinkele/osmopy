@@ -120,8 +120,13 @@ class PythonEngine:
             output_dir=output_dir,
             cancel_token=cancel_token,
             step_observer=step_observer,
+            region_outputs=(region_outputs := {}),
         )
         write_outputs(outputs, output_dir, engine_config, grid=grid)
+        if region_outputs:
+            from osmose.engine.output_regions import write_region_outputs
+
+            write_region_outputs(region_outputs, output_dir, engine_config)
 
         return RunResult(
             returncode=0,

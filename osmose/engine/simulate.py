@@ -1885,6 +1885,7 @@ def simulate(
     output_dir: Path | None = None,
     cancel_token: threading.Event | None = None,
     step_observer: Callable[[int, object, object, object, object], None] | None = None,
+    region_outputs: dict[str, list[StepOutput]] | None = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
 
@@ -2014,6 +2015,22 @@ def simulate(
     record_freq = config.output_record_frequency
     accumulated: list[StepOutput] = []
 
+    # OSMOSE 4.4.x output regions (osmose.engine.output_regions): the same outputs over the
+    # schools in each region, filled into ``region_outputs`` when the caller passes it.
+    from osmose.engine.output_regions import background_by_region, parse_output_regions, subset
+
+    regions = (
+        parse_output_regions(
+            config.raw_config, config.n_dt_per_year, config.n_steps, grid.ny, grid.nx
+        )
+        if region_outputs is not None
+        else []
+    )
+    region_acc: dict[str, list[StepOutput]] = {r.name: [] for r in regions}
+    for r in regions:
+        assert region_outputs is not None
+        region_outputs[r.name] = []
+
     # Phase 5: Initial state output (step -1)
     if config.output_step0_include:
         outputs.append(_collect_outputs(state, config, step=-1, grid=grid))
@@ -2072,6 +2089,14 @@ def simulate(
             flat_map_data=flat_map_data,
             walk_range_i32=walk_range_i32,
         )
+        if step == 0 and config.output_step0_include:
+            # Java records the initial state after the first movement (SimulationStep.step):
+            # before it every school is unlocated, so no region would hold any.
+            for r in regions:
+                assert region_outputs is not None
+                region_outputs[r.name].append(
+                    _collect_outputs(subset(state, r.mask(state, 0)), config, step=-1, grid=grid)
+                )
 
         # Inject background schools before mortality
         bkg_schools = background.get_schools(step)
@@ -2159,6 +2184,12 @@ def simulate(
 
         # Collect background output BEFORE stripping
         bkg_output = _collect_background_outputs(state, config, n_focal)
+        bkg_region = {
+            r.name: background_by_region(
+                state, n_focal, config.n_species + config.n_background, r.mask(state, step)
+            )
+            for r in regions
+        }
 
         # Strip background schools
         state = _strip_background(state, n_focal)
@@ -2189,6 +2220,11 @@ def simulate(
         # Snapshot the life-stage split BEFORE reproduction: it increments ages and clears is_egg,
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
         stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)
+        split_region = {
+            r.name: _collect_by_life_stage(subset(state, r.mask(state, step)), config)
+            for r in regions
+            if not config.output_minimal
+        }
         n_before_repro = len(state)
         bioen_seeded: dict[str, NDArray] = {}
         standard_spawn: dict[str, NDArray] = {}
@@ -2295,6 +2331,17 @@ def simulate(
             stage_split=stage_split,
         )
         accumulated.append(step_out)
+        for r in regions:
+            region_acc[r.name].append(
+                _collect_outputs(
+                    subset(state, r.mask(state, step)),
+                    config,
+                    step,
+                    bkg_region[r.name],
+                    grid=grid,
+                    stage_split=split_region.get(r.name),
+                )
+            )
 
         if step_observer is not None:
             step_observer(step, state, grid, config, map_sets)
@@ -2303,6 +2350,12 @@ def simulate(
         if (step + 1) % record_freq == 0:
             outputs.append(_average_step_outputs(accumulated, record_freq, step))
             accumulated = []
+            for r in regions:
+                assert region_outputs is not None
+                region_outputs[r.name].append(
+                    _average_step_outputs(region_acc[r.name], record_freq, step)
+                )
+                region_acc[r.name] = []
 
         # Compact dead schools -- sync genetic state with same mask
         if ctx.genetic_state is not None:
@@ -2315,6 +2368,10 @@ def simulate(
     # Flush any remaining accumulated steps (if n_steps not divisible by freq)
     if accumulated:
         outputs.append(_average_step_outputs(accumulated, len(accumulated), config.n_steps - 1))
+        for r in regions:
+            assert region_outputs is not None
+            acc = region_acc[r.name]
+            region_outputs[r.name].append(_average_step_outputs(acc, len(acc), config.n_steps - 1))
 
     # End-of-run economic CSVs — only when caller supplied output_dir AND
     # economics is enabled (fleet_state populated). Lazy import breaks the
