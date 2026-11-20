@@ -138,17 +138,22 @@ def test_the_update_regrows_what_a_real_run_carried_into_the_step(carried, demo)
     # The case is not empty: predation left less than the update gives back, somewhere, and
     # what the update gives is not the plain reset to K either.
     assert (case["carried"] < case["live"]).any()
-    # On Baltic, negative biomass is in the comparison too: the run itself holds some at this
-    # step (issue #337), so the two engines are compared on it, sign included. The EEC step
-    # happens to hold none; the made-up case below has it for both.
-    if demo == "baltic":
-        assert (case["carried"] < 0).any() or (case["live"] < 0).any()
     rs = simulation_resources(case["config"], case["grid"])
     assert (oxygen_coupled(case["config"], rs) is not None) == (demo == "baltic")
     rs.depletable = False
     rs.update(case["step"])
-    assert rs.biomass.tobytes() != case["live"].tobytes()
+    k = rs.biomass.copy()
+    assert k.tobytes() != case["live"].tobytes()
     rs.close()
+    # Nothing is below zero, in what the run carried or in what the update made of it (#337).
+    assert (case["carried"] >= 0).all() and (case["live"] >= 0).all()
+    # On Baltic the capacity fell under some cells since the last step, so the run carried
+    # more than K into them. That is where the old arithmetic went negative; they now come out
+    # at K exactly, and the two engines are compared on them too. (The EEC step holds none;
+    # the made-up case below has them for both.)
+    if demo == "baltic":
+        above = case["carried"] > k
+        assert above.any() and (case["live"][above] == k[above]).all()
 
 
 @pytest.mark.parametrize("demo", sorted(STEPS))
@@ -157,11 +162,9 @@ def test_the_update_at_the_edges(carried, demo):
     the floor), under the floor, in between, exactly K, and above K. Cells with K = 0 stay
     empty whatever they are handed.
 
-    Above K the logistic step goes DOWN, and with a rate over about 1.4 it lands below zero
-    from 1.7 K: the function caps its result at K and does not bound it below. That is the
-    Python engine's arithmetic (issue #337, which shows it happening on the shipped baltic_a2
-    demo every year), and the C# engine must reproduce it, sign included, until it changes
-    for both."""
+    Above K the result is K (issue #337): the logistic step from above the capacity goes
+    down without a lower bound, and from 1.7 K it landed below zero with a rate over about
+    1.4, so both engines start the step from K at most."""
     case = carried[demo]
     rs = simulation_resources(case["config"], case["grid"])
     rs.depletable = False
@@ -176,7 +179,9 @@ def test_the_update_at_the_edges(carried, demo):
     assert got.tobytes() == want.tobytes()
     assert (k <= 0).any() and (want[k <= 0] == 0).all()
     assert (want[k > 0] <= k[k > 0]).all()
-    assert (want < 0).any() and (want > 0).any()  # both signs are in the case (issue #337)
+    assert (want >= 0).all() and (want > 0).any()
+    above = (handed > k) & (k > 0)
+    assert above.any() and (want[above] == k[above]).all()  # carried above K: exactly K (#337)
 
 
 def test_the_first_step_starts_from_the_floor_not_from_k(carried):
