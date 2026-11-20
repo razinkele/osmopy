@@ -63,6 +63,8 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "species.multiplier.log.sp{idx}",
         # read by processes/resource_percent.py (log_form_requested), as Java reads it
         "simulation.resources.computepercent.legacy",
+        # OSMOSE 4.4.x bioenergetic model per species, read raw (case-sensitive, as Java)
+        "species.bioenergetics.model.sp{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",
