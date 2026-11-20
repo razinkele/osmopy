@@ -95,7 +95,7 @@ public static class MortalityProbe
 
         double[] outAbundance = new double[n], outStarv = new double[n], outTl = new double[n];
         double[] outPsr = new double[n], outPreyed = new double[n], outEgg = new double[n];
-        double[] outDead = new double[n * 8];
+        double[] outDead = new double[n * RunResults.MortalityCauses];
         for (int i = 0; i < store.Count; i++)
         {
             long id = (long)store.Life[i].Id;
@@ -108,7 +108,7 @@ public static class MortalityProbe
             outPreyed[id] = store.Step[i].PreyedBiomass;
             outEgg[id] = c.EggRetained;
             double[] row = [c.DeadPredation, l.DeadStarvation, l.DeadAdditional, l.DeadFishing, l.DeadOut, l.DeadForaging, l.DeadDiscards, l.DeadAging];
-            row.CopyTo(outDead, id * 8);
+            row.CopyTo(outDead, id * RunResults.MortalityCauses);
         }
 
         int nRsc = p.Resources.N;
@@ -133,7 +133,7 @@ public static class MortalityProbe
 
             var output = new SimulationConfig(1);
             output.SetArray("mort.abundance", DType.F8, Pin(outAbundance), n);
-            output.SetArray("mort.n_dead", DType.F8, Pin(outDead), n, 8);
+            output.SetArray("mort.n_dead", DType.F8, Pin(outDead), n, RunResults.MortalityCauses);
             output.SetArray("mort.starvation_rate", DType.F8, Pin(outStarv), n);
             output.SetArray("mort.trophic_level", DType.F8, Pin(outTl), n);
             output.SetArray("mort.pred_success_rate", DType.F8, Pin(outPsr), n);
