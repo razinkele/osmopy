@@ -269,7 +269,8 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (
         (
             r"movement\.(distribution\.(method|ncell)|file|initialage|lastage|initialyear|lastyear"
-            r"|steps|years|species|randomwalk\.range|map\.strict\.coverage)(\..+)?"
+            r"|steps|years|species|randomwalk\.range|map\.strict\.coverage"
+            r"|netcdf\.enabled|variable|nsteps\.year)(\..+)?"
         ),
         "phase1",
     ),

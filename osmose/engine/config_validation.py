@@ -63,6 +63,10 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "species.multiplier.log.sp{idx}",
         # read by processes/resource_percent.py (log_form_requested), as Java reads it
         "simulation.resources.computepercent.legacy",
+        # NetCDF movement maps, read by movement_maps.py (MovementMapSet._load_netcdf)
+        "movement.netcdf.enabled",
+        "movement.variable.map{idx}",
+        "movement.nsteps.year.map{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",

@@ -261,7 +261,7 @@ movement.lastage.map6 ; 2
 movement.lastage.map7 ; 2
 movement.lastage.map8 ; 6
 movement.lastage.map9 ; 6
-movement.netcdf.enabled ; TRUE
+movement.netcdf.enabled ; FALSE
 movement.randomseed.fixed ; FALSE
 movement.randomwalk.range.sp0 ; 1
 movement.randomwalk.range.sp1 ; 1

@@ -164,37 +164,20 @@ Everything above is about config *keys*. The thing that actually breaks a real R
 *inputs* — and this is the most important trap in this guide, because it is the only one where
 **the science silently changes**, rather than an output silently going missing.
 
-`osmose/engine/movement_maps.py` has no NetCDF support at all — `grep -icE
-"netcdf|xarray|\.nc\b|Dataset" osmose/engine/movement_maps.py` returns **0**. `_load_csv_grid`
-(`:38`) opens every movement map with a plain text-mode `open()`. The handler around the call
-site (`:220`) catches `(FileNotFoundError, OSError, ValueError)` — and `UnicodeDecodeError` is a
-subclass of `ValueError`, so handing it a binary `.nc` file doesn't crash: it logs
-`logger.error("Failed to load movement map file %s: %s", ...)` (`:221`), sets that grid to
-`None` (`:222`), and **the run completes and reports success**.
+**NetCDF movement maps are read since 2026-11-20 (#137).** With `movement.netcdf.enabled = true`
+(Java reads any spelling of `true`), map k reads `movement.variable.mapk` from the files matching
+`movement.file.mapk`, one map per time step, `movement.nsteps.year.mapk` of them per year, exactly
+as Java's `MapSet.loadMapsNcMaps` does (`MovementMapSet._load_netcdf`; rows as stored, no flip).
+The real `osmose-ben.R` sets `movement.netcdf.enabled = TRUE` and `movement.distribution.method.sp0
+= maps` (`:386`, `:388`) and defines **27** `movement.file.map{idx}` keys (`map0` through `map26`),
+every one of them a `.nc` path with its `movement.variable.map{idx}`: that shape now loads as it is.
 
-This isn't a hypothetical mismatch. The real `osmose-ben.R` sets `movement.netcdf.enabled = TRUE`
-and `movement.distribution.method.sp0 = maps` (`:386`, `:388`), and defines **27**
-`movement.file.map{idx}` keys (`map0` through `map26`), every one of them a `.nc` path.
-
-Both prescribed tools are blind to this. `check_config.py` only reports the duplicate-key and
-missing-subconfig issues shown above — it never opens a movement map. `validate()` *does* flag
-some of `osmose-ben.R`'s 185 `movement.*` lines as unknown (56 of them — legacy Java-side keys
-like `movement.netcdf.enabled` and `movement.variable.map{idx}` that osmopy has genuinely never
-heard of) — but none of those warnings are about the `.nc` files themselves, and the
-`movement.file.map{idx}` keys that actually carry the `.nc` paths are recognized, known keys.
-Their *values* are never inspected. So the reader's fish silently stop following whatever
-spatial distribution the R config specified, and every tool this guide has recommended so far
-says the config is fine.
-
-**The concrete check:** run with `logger.error` visible and grep stderr for `Failed to load
-movement map file`. If that string appears, some of your species have no spatial distribution
-at all for the run you just trusted.
-
-**Workarounds:** convert each `.nc` map to a semicolon-delimited CSV, or run that part of the
-model on the Java engine, which reads NetCDF maps natively. If you convert: the loader flips
-rows on load (row 0 in the CSV = the grid's northernmost row), so a converted grid must already
-be flipped to match — the in-tree Benguela port hit exactly this and needed every converted map
-run through `np.flipud` (`scripts/convert_benguela_maps.py`), or its fish end up on land.
+**What is left of the trap:** a `.nc` path under `movement.file.map{idx}` *without* the switch goes to
+the CSV loader, which fails on the binary file and stops the run with `Failed to load movement map
+file ...` (it no longer drops the grid and carries on). The reverse also fails loudly: the switch on
+with CSV maps (no `movement.variable.map{idx}`) is refused, as Java fails on it too. The in-tree
+Benguela port converted every map to CSV (`scripts/convert_benguela_maps.py`, through `np.flipud`,
+since CSV maps are written north first) and carried the R flag over by mistake; it is now `FALSE`.
 
 ### Eight ways a gap can hide
 
@@ -206,7 +189,7 @@ spatial-inputs trap above.
 
 | Bucket | Signal | Example | Reader's move |
 |---|---|---|---|
-| **Unreadable input file** | **silent — invisible to both tools** | `.nc` movement maps; the loader is CSV-only | Convert to CSV, or use the Java engine |
+| **Unreadable input file** | loud since #137 | `.nc` movement maps without `movement.netcdf.enabled` | Set the switch with `movement.variable.map#` and `movement.nsteps.year.map#` |
 | Capability absent | loud — engine warns on load (**fixed in [#120](https://github.com/razinkele/osmopy/issues/120)**) | `simulation.restart.file` (resume) / `simulation.restart.enabled` (checkpoint write) — neither is implemented, but requesting either now warns instead of loading clean and doing nothing | Java engine |
 | Key renamed | silent | `output.tl.enabled` → engine invented `output.meantl.enabled` instead (**fixed in #121** — engine now reads the real key first) | Use the right key |
 | Shim → dead key | silent (engine); changes one UI label | `economy.enabled` → `module.bioeconomics.enabled` (**fixed in #121** — engine now reads the migrated key) | Set the engine's real key directly |

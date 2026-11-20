@@ -1991,6 +1991,7 @@ def simulate(
                 nx=grid.nx,
                 config_dir=config.raw_config.get("_osmose.config.dir", ""),
                 strict=config.movement_strict_coverage,
+                ocean_mask=grid.ocean_mask,
             )
 
     # Pre-flatten map data for Numba movement path (skip if Numba unavailable)

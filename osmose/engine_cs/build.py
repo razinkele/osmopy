@@ -569,6 +569,7 @@ def _movement(b: Bundle, config: Any, grid: Any, n_total: int, seed: int) -> Non
                 nx=grid.nx,
                 config_dir=config.raw_config.get("_osmose.config.dir", ""),
                 strict=config.movement_strict_coverage,
+                ocean_mask=grid.ocean_mask,
             )
     b.set_int("movement.maps.n_species", len(map_sets))
     if map_sets:
