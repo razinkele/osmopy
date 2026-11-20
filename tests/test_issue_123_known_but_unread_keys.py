@@ -197,6 +197,9 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "mortality.additional.neonate.rate.seasonality.sp{idx}",
         "mortality.additional.neonate.rate.seasonality.file.sp{idx}",
         "species.bioenergetics.model.sp{idx}",  # 4.4.x, read raw in config.py (#137)
+        "movement.netcdf.enabled",  # read by movement_maps.py (#137)
+        "movement.variable.map{idx}",
+        "movement.nsteps.year.map{idx}",
         "output.region.enabled.rg{idx}",  # 4.4.x output regions (#137)
         "output.regions.name.rg{idx}",
         "output.regions.enabled.rg{idx}",

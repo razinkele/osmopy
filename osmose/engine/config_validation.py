@@ -78,6 +78,10 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "mortality.additional.neonate.rate.seasonality.file.sp{idx}",
         # OSMOSE 4.4.x bioenergetic model per species, read raw (case-sensitive, as Java)
         "species.bioenergetics.model.sp{idx}",
+        # NetCDF movement maps, read by movement_maps.py (MovementMapSet._load_netcdf)
+        "movement.netcdf.enabled",
+        "movement.variable.map{idx}",
+        "movement.nsteps.year.map{idx}",
         # OSMOSE 4.4.x output regions, read by output_regions.py
         "output.region.enabled.rg{idx}",
         "output.regions.name.rg{idx}",
