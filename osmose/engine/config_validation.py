@@ -77,6 +77,10 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "mortality.additional.neonate.rate.seasonality.file.sp{idx}",
         # OSMOSE 4.4.x bioenergetic model per species, read raw (case-sensitive, as Java)
         "species.bioenergetics.model.sp{idx}",
+        # NetCDF movement maps, read by movement_maps.py (MovementMapSet._load_netcdf)
+        "movement.netcdf.enabled",
+        "movement.variable.map{idx}",
+        "movement.nsteps.year.map{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",

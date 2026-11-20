@@ -8,6 +8,7 @@ infrastructure for map-based (B1) movement — no movement logic is implemented 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +30,36 @@ def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
     if result is not None:
         return result
     raise FileNotFoundError(f"Movement map file could not be resolved: {filepath_str!r}")
+
+
+def _resolve_pattern(value: str, config_dir: str, key: str) -> Path:
+    """The directory and file-name pattern of a NetCDF map file.
+
+    The name is a regular expression over a directory's files (Java ``getFile`` then a match on
+    the names). The directory is searched like every other data file
+    (:func:`osmose.engine.path_resolution._build_search_dirs`: the config directory first, then
+    the standard data directories), and the first one holding a match is used. A path with
+    ``..`` is refused, as there.
+    """
+    import re
+
+    from osmose.engine.path_resolution import _build_search_dirs
+
+    value = value.strip()
+    if not value or value.lower() == "null":
+        raise ValueError(f"movement.netcdf.enabled needs {key}")
+    path = Path(value)
+    if os.pardir in path.parts:
+        raise ValueError(f"{key}: a path with '..' is refused")
+    if path.is_absolute():
+        bases = [path.parent]
+    else:
+        bases = [base / path.parent for base in _build_search_dirs(config_dir)]
+    regex = re.compile(path.name)
+    for directory in bases:
+        if directory.is_dir() and any(regex.fullmatch(p.name) for p in directory.iterdir()):
+            return directory / path.name
+    raise FileNotFoundError(f"{key}: no file matches its name pattern in the data directories")
 
 
 def _parse_semicolon_ints(value: str, limit: int) -> list[int]:
@@ -108,8 +139,12 @@ class MovementMapSet:
         nx: int,
         config_dir: str = "",
         strict: bool = False,
+        ocean_mask: NDArray[np.bool_] | None = None,
     ) -> None:
         """Build index_maps and load CSV grids for one species.
+
+        With ``movement.netcdf.enabled = true`` the maps come from NetCDF files instead
+        (:meth:`_load_netcdf`); ``ocean_mask`` then decides which time steps are empty.
 
         Parameters
         ----------
@@ -139,6 +174,22 @@ class MovementMapSet:
                     matched_map_numbers.append(int(suffix))
 
         matched_map_numbers.sort()
+
+        if str(config.get("movement.netcdf.enabled", "")).strip().lower() == "true":
+            self._load_netcdf(
+                config,
+                species_name,
+                matched_map_numbers,
+                n_dt_per_year,
+                n_total_steps,
+                lifespan_dt,
+                ny,
+                nx,
+                config_dir,
+                strict,
+                ocean_mask,
+            )
+            return
 
         # Per-map metadata: (map_idx, file_path_or_none)
         map_file_paths: list[Path | None] = []
@@ -282,6 +333,138 @@ class MovementMapSet:
             if strict:
                 raise ValueError(msg)
             logger.warning("%s", msg)
+
+    def _load_netcdf(
+        self,
+        config: dict[str, str],
+        species_name: str,
+        map_numbers: list[int],
+        n_dt_per_year: int,
+        n_total_steps: int,
+        lifespan_dt: int,
+        ny: int,
+        nx: int,
+        config_dir: str,
+        strict: bool,
+        ocean_mask: NDArray[np.bool_] | None,
+    ) -> None:
+        """Java ``MapSet.loadMapsNcMaps`` (v4.4.1): every time step of map k's variable is a map.
+
+        Map k reads ``movement.variable.mapk`` from the files matching ``movement.file.mapk``
+        (a regular expression on the file name, the matches sorted and concatenated in time;
+        a plain name matches itself), with ``movement.nsteps.year.mapk`` steps per year. A step
+        whose ocean cells sum to 0 is an empty map (the school goes out of the domain). For ages
+        ``movement.initialAge`` to ``movement.lastAge`` (capped at the lifespan), simulation step
+        t uses file step ``(t // (n_dt_per_year // nsteps)) % n_file_steps`` (ForcingFile
+        .getNcStep); a later map number overrides an earlier one. Rows are taken as stored, with
+        no flip (only CSV maps are written north first). ``movement.steps`` / ``years`` are not
+        read, as in Java.
+        """
+        import re
+
+        from osmose.engine._netcdf import open_dataset_safe
+
+        self.maps = []
+        for n in map_numbers:
+            file_key = f"movement.file.map{n}"
+            pattern_path = _resolve_pattern(config.get(file_key, ""), config_dir, file_key)
+            regex = re.compile(pattern_path.name)
+            files = sorted(p for p in pattern_path.parent.iterdir() if regex.fullmatch(p.name))
+            if not files:
+                raise FileNotFoundError(f"{file_key}: no file matches its name pattern")
+            var = config.get(f"movement.variable.map{n}", "").strip()
+            if not var:
+                raise ValueError(f"movement.netcdf.enabled needs movement.variable.map{n}")
+            nc_per_year = int(config.get(f"movement.nsteps.year.map{n}", "0") or 0)
+            if nc_per_year <= 0 or n_dt_per_year // nc_per_year == 0:
+                raise ValueError(
+                    f"movement.nsteps.year.map{n} = {nc_per_year}: Java maps a step to "
+                    f"step // (ndtperyear // nsteps.year), which divides by zero unless it is "
+                    f"between 1 and simulation.time.ndtperyear ({n_dt_per_year})"
+                )
+            chunks = []
+            for f in files:
+                values = np.asarray(open_dataset_safe(f)[var].values, dtype=np.float64)
+                if values.ndim == 4:  # (time, z, y, x): Java takes the first level
+                    values = values[:, 0]
+                if values.ndim == 2:
+                    values = values[np.newaxis]
+                if values.shape[1:] != (ny, nx):
+                    raise ValueError(
+                        f"{f}:{var} has a {values.shape[1:]} grid; the model grid is {(ny, nx)}"
+                    )
+                chunks.append(values)
+            stack = np.concatenate(chunks, axis=0)
+            base = len(self.maps)
+            for frame in stack:
+                grid = frame.copy()
+                if ocean_mask is not None:
+                    # Java's GridMap(double[][]) stores Cell.LAND_VALUE (NaN) on land, whatever
+                    # the file holds there; placement never takes a NaN cell, and max_proba
+                    # (nanmax) must not see a land value.
+                    grid[~ocean_mask] = np.nan
+                total = float(grid[ocean_mask].sum()) if ocean_mask is not None else grid.sum()
+                self.maps.append(None if total == 0.0 else grid)
+
+            init_age_dt = round(
+                float(config.get(f"movement.initialage.map{n}", "0")) * n_dt_per_year
+            )
+            last_age_raw = float(
+                config.get(f"movement.lastage.map{n}", str(lifespan_dt / n_dt_per_year))
+            )
+            last_age_dt = min(round(last_age_raw * n_dt_per_year), lifespan_dt - 1)
+            ages = np.arange(init_age_dt, last_age_dt + 1)
+            ages = ages[(ages >= 0) & (ages < lifespan_dt)]
+            steps = np.arange(n_total_steps)
+            file_step = (steps // (n_dt_per_year // nc_per_year)) % len(stack)
+            if ages.size:
+                self.index_maps[ages[:, None], steps[None, :]] = base + file_step[None, :]
+
+        self._eliminate_twin_maps(ocean_mask)
+        self.n_maps = len(self.maps)
+        self.max_proba = np.zeros(self.n_maps, dtype=np.float64)
+        for i, grid in enumerate(self.maps):
+            if grid is not None:
+                max_val = float(np.nanmax(grid))
+                self.max_proba[i] = 0.0 if max_val >= 1.0 else max_val
+
+        uncovered = int((self.index_maps == -1).sum())
+        if uncovered > 0:
+            msg = (
+                f"Species {species_name!r}: {uncovered} of {self.index_maps.size} "
+                f"(age_dt, step) slots have no movement map assigned"
+            )
+            if strict:
+                raise ValueError(msg)
+            logger.warning("%s", msg)
+
+    def _eliminate_twin_maps(self, ocean_mask: NDArray[np.bool_] | None) -> None:
+        """Java ``MapSet.eliminateTwinMapNC``: a map equal to an earlier one takes its index.
+
+        Equality is Java ``GridMap.equals`` on what it stores: ocean cells as float32 (land is a
+        fixed value there), NaN equal to NaN. Empty (None) maps keep their own index. Sharing the
+        index matters to movement: a school walks while its map index stays the same and is
+        placed afresh when it changes, so two identical frames in a row must not re-place it.
+        """
+
+        def stored(g: NDArray[np.float64]) -> NDArray[np.float32]:
+            return (g[ocean_mask] if ocean_mask is not None else g).astype(np.float32)
+
+        twin = list(range(len(self.maps)))
+        for k, grid_k in enumerate(self.maps):
+            if grid_k is None:
+                continue
+            for j in range(k - 1, -1, -1):
+                grid_j = self.maps[j]
+                if grid_j is not None and np.array_equal(
+                    stored(grid_k), stored(grid_j), equal_nan=True
+                ):
+                    twin[k] = twin[j]
+                    self.maps[k] = None
+                    break
+        lookup = np.asarray(twin, dtype=np.int32)
+        valid = self.index_maps >= 0
+        self.index_maps[valid] = lookup[self.index_maps[valid]]
 
     # ------------------------------------------------------------------
     # Lookup methods
