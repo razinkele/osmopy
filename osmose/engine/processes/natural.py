@@ -7,6 +7,7 @@ Aging mortality kills schools that have reached their species' lifespan.
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.state import MortalityCause, SchoolState
@@ -100,6 +101,43 @@ def additional_mortality(
     return state.replace(abundance=new_abundance, biomass=new_biomass, n_dead=new_n_dead)
 
 
+def _density_dependent_larva_rate(
+    m_rate: NDArray[np.float64], state: SchoolState, config: EngineConfig
+) -> NDArray[np.float64]:
+    """The larval rate of each egg school, scaled by its species' spawning stock.
+
+    Java (``AnnualLarvaMortality.getRate``, ``ByDtLarvaMortality.getRate``, v4.4.1):
+    ``M * (1 + a * SSB / reference)`` with ``a = ln 2 / M``, so larval survival halves when
+    the stock equals the reference. Java applies larval mortality to eggs before the sub-step
+    loop, so SSB is the total taken at the start of the step after movement
+    (``SimulationStep.step``): the biomass of every mature focal school, out-of-domain schools
+    included, which is the state handed to this pre-pass. Where M is 0, Java's formula is
+    0 x infinity (not a number); the limit, ``ln 2 * SSB / reference``, is used instead.
+    """
+    ref = config.larva_reference_density
+    assert ref is not None
+    n_sp = config.n_species
+    sp = state.species_id
+    mature = (
+        (sp < n_sp)
+        & (state.abundance > 0)
+        & (state.length >= config.maturity_size[sp])
+        & (state.age_dt >= config.maturity_age_dt[sp])
+    )
+    ssb = np.zeros(n_sp, dtype=np.float64)
+    np.add.at(ssb, sp[mature], state.abundance[mature] * state.weight[mature])
+    out = m_rate.copy()
+    ln2 = np.log(2.0)
+    for i in np.flatnonzero(state.is_egg & (sp < n_sp)):
+        r = ref[sp[i]]
+        if not r > 0:
+            continue
+        x = ssb[sp[i]] / r
+        m = out[i]
+        out[i] = m * (1.0 + (ln2 / m) * x) if m > 0 else ln2 * x
+    return out
+
+
 def larva_mortality(state: SchoolState, config: EngineConfig, step: int = 0) -> SchoolState:
     """Apply additional mortality to eggs/larvae before the main mortality loop.
 
@@ -134,6 +172,10 @@ def larva_mortality(state: SchoolState, config: EngineConfig, step: int = 0) -> 
             ):
                 ts = config.larva_mortality_by_dt[sp_i]
                 m_rate[i] = ts.get(step)
+
+    # Density dependence (OSMOSE 4.4.x, mortality.additional.larva.referencedensity).
+    if config.larva_reference_density is not None:
+        m_rate = _density_dependent_larva_rate(m_rate, state, config)
 
     # Full rate applied once per cohort (matching Java AnnualLarvaMortality)
     d = m_rate

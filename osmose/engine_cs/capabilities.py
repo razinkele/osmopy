@@ -111,6 +111,7 @@ DETECTORS: dict[str, Any] = {
     "fishing_rate_by_year": lambda c, raw: _any_set(c.fishing_rate_by_year),
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),
     "larva_rate_by_step": lambda c, raw: _any_set(c.larva_mortality_by_dt),
+    "larva_density_dependence": lambda c, raw: c.larva_reference_density is not None,
     "additional_maps": lambda c, raw: _any_set(c.additional_mortality_spatial),
     "selectivity_logistic": lambda c, raw: (
         c.fishing_enabled and bool(np.any(_selectivity(c)[0] == 1))
@@ -217,6 +218,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"mortality\.fishing\.rate\.(bydt\.by(age|size)|\{idx\})\.file\..+", "rate_by_class"),
     (r"mortality\.additional\.rate\.\{idx\}\.file\..+", "additional_rate_by_step,rate_by_class"),
     (r"mortality\.additional\.larva\.rate\.\{idx\}\.file\..+", "larva_rate_by_step"),
+    (r"mortality\.additional\.larva\.referencedensity\..+", "larva_density_dependence"),
     # The same two families as config files spell them once the reader has lowercased them
     # (issue #297: until then the engine never matched these, so they never reached a detector).
     (r"mortality\.additional\.rate\.bydt\.(byage|bysize)\.file\..+", "rate_by_class"),
