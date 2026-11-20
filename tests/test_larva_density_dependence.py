@@ -130,6 +130,32 @@ class TestTheRate:
             < _egg_deaths(_config(**{KEY: "400"}))[0]
         )
 
+    def test_a_stochastic_species_counts_only_its_drawn_mature_schools(self):
+        # Species 0 on the stochastic ogive: its two big schools are past the 12 cm threshold,
+        # but only the first has been drawn mature, so only its biomass counts.
+        cfg = _config(**{
+            KEY: str(100.0 * 0.5),
+            "species.maturity.mode.sp0": "stochastic",
+            "species.maturity.l50.sp0": "14.0",
+            "species.maturity.l75.sp0": "16.0",
+        })  # fmt: skip
+        drawn = _state().replace(is_mature=np.array([False, True, False, False, False, False]))
+        base = _egg_deaths(
+            _config(
+                **{
+                    "species.maturity.mode.sp0": "stochastic",
+                    "species.maturity.l50.sp0": "14.0",
+                    "species.maturity.l75.sp0": "16.0",
+                }
+            ),
+            drawn,
+        )
+        dd = _egg_deaths(cfg, drawn)
+        n = 1e6
+        assert (n - dd[0]) / n == pytest.approx(
+            (n - base[0]) / n / 2, rel=1e-12
+        )  # SSB = 50 = reference
+
     def test_a_zero_base_rate_uses_the_limit_not_a_nan(self):
         cfg = _config(**{KEY: "400", "mortality.additional.larva.rate.sp0": "0"})
         dd = _egg_deaths(cfg)

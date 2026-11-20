@@ -375,6 +375,7 @@ def _recipes(c: EngineConfig) -> dict:
         "java_compat_rng": (R(c, java_compat_rng=True), {}),
         "kill_if_no_school": (R(c, kill_if_no_school=True), {}),
         "resource_percent_log": (R(c, resource_percent_log=True), {}),
+        "maturity_stochastic": (R(c, maturity_stochastic=np.ones(n, dtype=bool)), {}),
         "larva_density_dependence": (R(c, larva_reference_density=np.full(n, 100.0)), {}),
         "fishing_catches": (R(c, fishing_catches=np.full(n, 10.0)), {}),
         "rate_by_class": (R(c, fishing_rate_by_dt_by_class=[object()] + nones[1:]), {}),

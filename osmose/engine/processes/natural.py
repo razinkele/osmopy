@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
+from osmose.engine.processes.maturity import mature_mask
 from osmose.engine.state import MortalityCause, SchoolState
 
 
@@ -118,12 +119,9 @@ def _density_dependent_larva_rate(
     assert ref is not None
     n_sp = config.n_species
     sp = state.species_id
-    mature = (
-        (sp < n_sp)
-        & (state.abundance > 0)
-        & (state.length >= config.maturity_size[sp])
-        & (state.age_dt >= config.maturity_age_dt[sp])
-    )
+    # The engine's one maturity test (thresholds, or the drawn flag of a stochastic species),
+    # the same reproduction and the SSB output use; Java reads school.isMature() here.
+    mature = (sp < n_sp) & (state.abundance > 0) & mature_mask(state, config)
     ssb = np.zeros(n_sp, dtype=np.float64)
     np.add.at(ssb, sp[mature], state.abundance[mature] * state.weight[mature])
     out = m_rate.copy()
