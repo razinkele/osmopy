@@ -30,6 +30,12 @@ def additional_mortality(
 
     sp = state.species_id
     m_rate = config.additional_mortality_rate[sp].copy()
+    # OSMOSE 4.4.x multiplier and seasonality of the constant rate; a by-step rate below
+    # replaces it, as Java's scenarios are exclusive.
+    factor = getattr(config, "additional_mortality_factor", None)
+    if factor is not None:
+        focal = sp < factor.shape[0]
+        m_rate[focal] *= factor[sp[focal], min(step, factor.shape[1] - 1)]
 
     # Override with time-varying BY_DT rates where available
     if config.additional_mortality_by_dt is not None:
@@ -164,6 +170,12 @@ def larva_mortality(state: SchoolState, config: EngineConfig, step: int = 0) -> 
 
     sp = state.species_id
     m_rate = config.larva_mortality_rate[sp].copy()
+    # OSMOSE 4.4.x multiplier and seasonality of the constant larval rate; a by-step rate below
+    # replaces it.
+    factor = getattr(config, "larva_mortality_factor", None)
+    if factor is not None:
+        focal = sp < factor.shape[0]
+        m_rate[focal] *= factor[sp[focal], min(step, factor.shape[1] - 1)]
 
     # Override with time-varying BY_DT larval rates
     if config.larva_mortality_by_dt is not None:

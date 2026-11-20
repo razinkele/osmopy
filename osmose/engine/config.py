@@ -646,9 +646,29 @@ def _parse_reproduction_params(
     # Gated on the (default-off) canonical flag, so parity is preserved when warm-start is off.
     if cfg.get("module.population.initialisation.enabled", "false").lower() == "true":
         seeding_max_step = np.zeros(n_sp, dtype=np.int32)
+    # Java 4.4.x's VCONSTANT scenario (AdditionalMortality.findScenarioLarva): the same
+    # AnnualLarvaMortality, read from mortality.additional.neonate.* keys. Java refuses a species
+    # with more than one larval scenario. The scenario is chosen before any rate is converted, so
+    # an unset ("null") larval rate next to a neonate one is not parsed.
+    neonate = [_is_set(cfg, f"mortality.additional.neonate.rate.sp{i}") for i in range(n_sp)]
+    larva_cfg = cfg
+    if any(neonate):
+        larva_cfg = dict(cfg)
+        for i in range(n_sp):
+            if neonate[i] and not _is_set(cfg, f"mortality.additional.larva.rate.sp{i}"):
+                larva_cfg[f"mortality.additional.larva.rate.sp{i}"] = "0"
     larva_mortality_rate = _species_float_optional(
-        cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
+        larva_cfg, "mortality.additional.larva.rate.sp{i}", n_sp, default=0.0
     )
+    for i in range(n_sp):
+        if neonate[i]:
+            if _is_set(cfg, f"mortality.additional.larva.rate.sp{i}"):
+                raise ValueError(
+                    f"species {i} sets both mortality.additional.larva.rate.sp{i} and "
+                    f"mortality.additional.neonate.rate.sp{i}: choose one larval scenario, as Java "
+                    "requires"
+                )
+            larva_mortality_rate[i] = float(cfg[f"mortality.additional.neonate.rate.sp{i}"])
     maturity_age_years = _species_float_optional(
         cfg, "species.maturity.age.sp{i}", n_sp, default=0.0
     )
@@ -1760,6 +1780,86 @@ def _detect_larva_by_dt_key(cfg: dict[str, str], species_idx: int) -> str | None
     return None
 
 
+def _is_set(cfg: dict[str, str], key: str) -> bool:
+    """Java's ``!isNull(key)``: present, not empty, not ``null``."""
+    value = cfg.get(key, "").strip()
+    return bool(value) and value.lower() != "null"
+
+
+def mortality_rate_factor(
+    cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_step: int, *, larval: bool
+) -> NDArray[np.float64] | None:
+    """Java 4.4.x's multiplier and seasonality of a constant mortality rate, per species and step.
+
+    ``AnnualAdditionalMortality`` and ``AnnualLarvaMortality`` (v4.4.1) take the rate of step t as
+    ``multiplier * rate * season[t] / nStepYear``. The multiplier defaults to 1. The season
+    (``SeasonTimeSeries``) defaults to 1 at every step; it is read from
+    ``<prefix>.seasonality.file.sp#`` (a time series) or ``<prefix>.seasonality.sp#`` (one value
+    per step of a year, repeated, or one per step of the run). It is not normalised.
+
+    The prefix is ``mortality.additional.rate`` for the additional rate, and
+    ``mortality.additional.larva.rate`` (or ``.neonate.rate`` for a species on that scenario) for
+    the larval one. Returns ``(n_species, n_step)``, or None when no species sets either key.
+    Java reads these only in the constant scenarios; the engine applies the factor only to
+    species without a by-step rate (``osmose.engine.processes``).
+    """
+    from osmose.engine.timeseries import SingleTimeSeries
+
+    factor = np.ones((n_species, n_step), dtype=np.float64)
+    found = False
+    for i in range(n_species):
+        # A species on a by-step scenario never reads these keys in Java: do not parse them.
+        if larval:
+            by_step = _detect_larva_by_dt_key(cfg, i) is not None
+        else:
+            by_step = any(
+                _either_spelling(cfg, f"mortality.additional.rate.{v}.file.sp{i}") is not None
+                for v in ("bytDt", "byDt.byAge", "byDt.bySize")
+            )
+        if by_step:
+            continue
+        if not larval:
+            prefix = "mortality.additional.rate"
+        elif _is_set(cfg, f"mortality.additional.neonate.rate.sp{i}"):
+            prefix = "mortality.additional.neonate.rate"
+        else:
+            prefix = "mortality.additional.larva.rate"
+        mult_key = f"{prefix}.multiplier.sp{i}"
+        if _is_set(cfg, mult_key):
+            multiplier = float(cfg[mult_key])
+            if not np.isfinite(multiplier):
+                raise ValueError(f"{mult_key} must be finite, got {cfg[mult_key]!r}")
+            factor[i] *= multiplier
+            found = True
+        file_key = f"{prefix}.seasonality.file.sp{i}"
+        val_key = f"{prefix}.seasonality.sp{i}"
+        if _is_set(cfg, file_key):
+            path = _require_file(cfg[file_key], _cfg_dir(cfg), file_key)
+            season = SingleTimeSeries.from_csv(path, n_dt_per_year, n_step).values[:n_step]
+        elif _is_set(cfg, val_key):
+            vals = np.array(
+                [float(v) for v in re.split(r"[;,]", cfg[val_key]) if v.strip()], dtype=np.float64
+            )
+            if len(vals) == n_dt_per_year:
+                season = np.resize(vals, n_step)
+            elif len(vals) >= n_step:
+                season = vals[:n_step]
+            else:
+                raise ValueError(
+                    f"{val_key} has {len(vals)} values: give one per step of a year "
+                    f"({n_dt_per_year}) or one per step of the run ({n_step}), as Java requires"
+                )
+        else:
+            continue
+        if not np.isfinite(season).all():
+            raise ValueError(
+                f"{file_key if _is_set(cfg, file_key) else val_key} must hold finite values only"
+            )
+        factor[i] *= season
+        found = True
+    return factor if found else None
+
+
 def _load_larva_mortality_by_dt(
     cfg: dict[str, str], n_species: int, n_dt_per_year: int, n_dt_simu: int
 ) -> list | None:
@@ -2032,6 +2132,13 @@ class EngineConfig:
     # (osmose.engine.processes.natural.larva_mortality). One entry per focal species, negative
     # where unset; None when no species sets it.
     larva_reference_density: NDArray[np.float64] | None = None
+
+    # OSMOSE 4.4.x multiplier and seasonality of the constant additional and larval rates
+    # (mortality.additional[.larva|.neonate].rate.multiplier / .seasonality[.file]): a factor per
+    # focal species and simulation step, applied where a species has no by-step rate. None when
+    # no species sets the keys (config.mortality_rate_factor).
+    additional_mortality_factor: NDArray[np.float64] | None = None
+    larva_mortality_factor: NDArray[np.float64] | None = None
 
     # simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a
     # resource is taken in log size, not in size (osmose.engine.processes.resource_percent).
@@ -2657,6 +2764,9 @@ class EngineConfig:
         _larva_ref = _species_float_optional(
             cfg, "mortality.additional.larva.referencedensity.sp{i}", n_sp, default=-999.0
         )
+        for _i in range(n_sp):
+            if _is_set(cfg, f"mortality.additional.neonate.rate.sp{_i}"):
+                _larva_ref[_i] = -999.0  # AnnualLarvaMortality reads it only for stage "larva"
         for _i in np.flatnonzero(_larva_ref == 0.0):
             raise ValueError(
                 f"mortality.additional.larva.referencedensity.sp{_i} = 0: the larval rate is "
@@ -2989,6 +3099,10 @@ class EngineConfig:
             movement_strict_coverage=movement_strict,
             kill_if_no_school=kill_if_no_school,
             larva_reference_density=larva_reference_density,
+            additional_mortality_factor=mortality_rate_factor(
+                cfg, n_sp, n_dt, n_dt * n_yr, larval=False
+            ),
+            larva_mortality_factor=mortality_rate_factor(cfg, n_sp, n_dt, n_dt * n_yr, larval=True),
             resource_percent_log=resource_percent_log,
             maturity_stochastic=maturity_stochastic,
             maturity_l50=maturity_l50,
