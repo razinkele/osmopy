@@ -2902,6 +2902,20 @@ class EngineConfig:
             salinity_gate_s_high,
             salinity_field,
         ) = _load_salinity_gate(cfg, n_sp)
+        if (
+            _gradient_radius is not None
+            and salinity_gate_enabled
+            and salinity_gate_species is not None
+        ):
+            for _i in range(n_sp):
+                if (
+                    salinity_gate_species[_i]
+                    and focal_movement_method[_i].strip().lower() == "gradient"
+                ):
+                    raise ValueError(
+                        f"species {_i} moves by gradient and is under the salinity gate: the gate "
+                        "weights the map movement only, so it would be ignored; use one or the other"
+                    )
         _spawning_season = _load_spawning_seasons(cfg, n_sp, n_dt)
         recruitment_ceiling_by_season, recruitment_ceiling_enabled = _load_recruitment_ceiling(
             cfg, n_sp, n_dt, _spawning_season

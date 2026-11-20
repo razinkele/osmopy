@@ -194,6 +194,69 @@ def test_a_species_without_a_map_this_step_goes_out(tmp_path):
     assert any(out.any() for _, _, out in seen)
 
 
+def test_a_school_comes_back_from_out_of_the_domain(tmp_path):
+    # Map 0 covers steps 0, 1 and 3 of each year; map 1 is null at step 2: out, then back.
+    cfg = _config(tmp_path) | {
+        "movement.steps.map0": "0;1;3",
+        "movement.species.map1": "Fish0",
+        "movement.initialage.map1": "0",
+        "movement.lastage.map1": "5",
+        "movement.steps.map1": "2",
+        "movement.file.map1": "null",
+    }
+    _, seen = _run(cfg)
+    accessible = {(5 - y, x) for y, x in [(1, 1), (1, 2), (2, 1), (2, 2), (4, 4)]}
+    out_at_2 = seen[2][2]
+    assert out_at_2.any()
+    cx, cy, out = seen[3]
+    back = out_at_2[: len(out)] & ~out[: len(out_at_2)]
+    assert back.any()
+    for i in np.flatnonzero(back):
+        assert (int(cy[i]), int(cx[i])) in accessible
+
+
+def test_with_fixed_seeds_it_draws_from_the_species_stream_only(tmp_path):
+    from osmose.engine import PythonEngine
+    from osmose.engine.movement_maps import MovementMapSet
+    from osmose.engine.processes.movement import movement
+    from osmose.engine.state import SchoolState
+
+    cfg = _config(tmp_path) | {"simulation.fixed.seed.enabled": "true"}
+    config, grid, *_ = PythonEngine()._prepare_run(cfg, 1)
+    assert config.movement_seed_fixed
+    maps = {
+        0: MovementMapSet(
+            config=cfg,
+            species_name="Fish0",
+            n_dt_per_year=4,
+            n_years=2,
+            lifespan_dt=int(config.lifespan_dt[0]),
+            ny=grid.ny,
+            nx=grid.nx,
+            config_dir=str(tmp_path),
+        )
+    }
+    state = SchoolState.create(n_schools=3, species_id=np.zeros(3, dtype=np.int32)).replace(
+        abundance=np.full(3, 10.0), age_dt=np.full(3, 4, dtype=np.int32)
+    )
+    global_rng, species_rng = np.random.default_rng(1), np.random.default_rng(2)
+    before_global = global_rng.bit_generator.state
+    before_species = species_rng.bit_generator.state
+    movement(state, grid, config, 1, global_rng, map_sets=maps, species_rngs=[species_rng])
+    assert global_rng.bit_generator.state == before_global
+    assert species_rng.bit_generator.state != before_species
+
+
+def test_the_salinity_gate_is_refused_with_gradient(tmp_path):
+    cfg = _config(tmp_path) | {
+        "movement.salinity.gate.enabled": "true",
+        "movement.salinity.gate.species.enabled.sp0": "true",
+        "movement.salinity.field.constant": "7.0",
+    }
+    with pytest.raises(ValueError, match="salinity gate"):
+        EngineConfig.from_dict(cfg)
+
+
 def test_the_csharp_engine_refuses_it_and_only_it(tmp_path):
     from osmose.engine_cs.capabilities import csharp_engine_block_reason
 
