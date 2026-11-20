@@ -7,7 +7,7 @@ The production web app is a **systemd service** running Uvicorn directly:
 - **Runs as:** user `shiny`, from this source tree (osmose is imported from the working
   copy — it is **not** pip-installed in the env), using `/opt/micromamba/envs/shiny`.
 - **Public URL:** behind nginx at `/osmose/`.
-- **Supported runtime:** shiny **1.6.x** (`shiny>=1.6.3,<1.7`), shinyswatch ≥0.11, shinywidgets ≥0.7, cma ≥4.0, shiny_deckgl `v1.9.2`. To upgrade the shared env in place: `pip install --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7"` and reinstall `shiny_deckgl @v1.9.2`, then restart the service.
+- **Supported runtime:** CI tests shiny **1.6.x** (`shiny>=1.6.3,<1.7`, `pyproject.toml`) with shiny_deckgl `v1.9.2`. The deploy enforces floors only: shinyswatch ≥0.11, shinywidgets ≥0.7, cma ≥4.0, pyarrow ≥14, shiny_deckgl ≥1.9.2, pyvis ≥4.2. The shared env carries newer releases that other apps installed (measured 2026-11-21: shiny 1.9.0, shiny_deckgl 1.16.1); v1.11.0 was checked on them by hand (Baltic load, Grid, Map Viewer, a Python run, Spatial Results), not in CI. Do not upgrade or downgrade the shared env for osmose: see "The shared environment" below.
 - **Writable state (calibration):** calibration checkpoints must NOT use the package default (`<repo>/data/baltic/calibration_results`). The unit sets `StateDirectory=osmose/calibration_results` + `Environment=OSMOSE_RESULTS_DIR=/var/lib/osmose/calibration_results` (systemd creates the dir, owned by `shiny`, on every start). Without this you'll see `RESULTS_DIR probe failed: [Errno 13] Permission denied` at startup and calibration checkpoint writes will fail.
   - **The unit's own comment says the source tree "lives under another user's home and is read-only to `shiny`". That is STALE — do not reason from it.** Measured 2026-09-14: `/srv/shiny-server/osmose` is a symlink to `/srv/shiny-server/osmose-src`, owned `shiny:shiny`; `.../osmose/data` is `drwxr-xr-x shiny shiny`; and the unit sets neither `ProtectSystem=` nor `ReadOnlyPaths=`. The service user CAN write inside the tree. The `OSMOSE_RESULTS_DIR` setting above is still correct and should stay — but a prediction built on the read-only premise was made from this comment and turned out to be wrong, so verify before relying on it.
 - **Feedback system — set `OSMOSE_FEEDBACK_TOKEN` or the feature is write-only.** Measured 2026-09-14: `systemctl show osmose-shiny.service -p Environment` returns only `PYTHONUNBUFFERED=1` and `OSMOSE_RESULTS_DIR=...`. With the token unset, `check_feedback_token` returns `False` for every caller, so **both `/feedback/review` and `/api/feedback` answer `403`** — the form accepts and stores feedback that nobody can read back through the app. **Do NOT add it as `Environment=` in the unit** — `deploy.sh` rewrites the unit wholesale (`cat > "$SERVICE_FILE"`) on every deploy, and `systemctl show -p Environment` prints such values to any local user (demonstrated 2026-09-15 from an unprivileged account). Put it in a root-owned `0600` `EnvironmentFile` referenced from a `.d/` drop-in, which `deploy.sh` never touches: see [`docs/feedback-v2-deploy.md`](docs/feedback-v2-deploy.md) steps 1-2.
@@ -27,34 +27,35 @@ Any of those would let a compromised service account get root at the next deploy
 
 Deploys before this change let root operate on the clone through a `safe.directory` grant in root's git config. The deploy now withdraws it.
 
-Root does not re-own anything in the clone either: a hard link `shiny` planted there would carry the change to a file outside it. Instead, a read-only check stops the deploy, before the fetch, if anything in the clone is root-owned (the one-time step below covers it). On 2026-11-18 nothing was.
+Root does not re-own anything in the clone either: a hard link `shiny` planted there would carry the change to a file outside it. Instead, a read-only check stops the deploy, before the fetch, if anything in the clone is root-owned (see "Root-owned files in the clone" below). On 2026-11-18 and 2026-11-21 nothing was.
 
-The Python dependencies (Step 0) are installed **before** the checkout. If pip fails, the deploy stops with the previous ref still checked out. Installs that completed before the failure stay in the shared env. They are version floors, which the running code already satisfies.
+The Python dependencies (Step 0) are installed **before** the checkout. If pip fails, the deploy stops with the previous ref still checked out. Step 0 changes a package only when it is missing or below its floor, so installs that completed before a failure only raised packages to floors the running code already satisfies.
 
-### One-time step before the first deploy with this change
-Earlier deploys ran pip as root, so a few packages in the shared env are root-owned, and pip running as `shiny` cannot upgrade them. Measured 2026-11-18: `cma`, `pyarrow` and `shiny_deckgl`, with their `dist-info` directories (`pyodbc` too, but that is installed by conda for another app and not managed here). Nothing fails until one of them needs an upgrade. Then Step 0 stops the deploy, before the checkout, with a pip permission error. To hand them to the env's owner once, do it **with the service stopped**, from the deploy host's checkout:
+### The shared environment
+`/opt/micromamba/envs/shiny` is shared with the server's other apps and managed with micromamba, not by this deploy. Measured 2026-11-21: 740 of the 869 entries in its `site-packages` are root-owned, from micromamba runs as root (2026-11-18 22:05; `shiny_deckgl` 1.16.1 on 2026-11-20, which AQUABC and CENOP require at ≥1.16).
+
+So Step 0 changes a package only when it is missing or below its floor (`tests/test_deploy_floors.py`). On that env it installs nothing. **Do not `chown` packages to `shiny` for osmose's sake.** An earlier version of this section did, so that pip could *upgrade* them; with the Step 0 of that time (`--upgrade` to the newest release, and `shiny_deckgl` held at exactly 1.9.2) it would have downgraded `shiny_deckgl` under the other apps. If a floor is ever unmet on a root-owned package, Step 0 stops the deploy before the checkout with a pip permission error, the service keeps running the previous ref, and the fix belongs to whoever manages the env: raise the package with micromamba, then deploy again.
+
+Any `~`-prefixed leftover in `site-packages` is the debris of an interrupted pip install; the deploy reports one it cannot remove, and it can be deleted.
+
+### Root-owned files in the clone
+Old root-git deploys could leave root-owned files in the prod clone, and git as `shiny` would then fail half-way, so the deploy refuses first. To check (nothing on 2026-11-18 and 2026-11-21), and to hand any such files to `shiny`, **with the service stopped**, from the deploy host's checkout:
 
 ```bash
-SP=/opt/micromamba/envs/shiny/lib/python3.13/site-packages
-sudo find "$SP" -maxdepth 1 -user root                 # what is root-owned in the env
-sudo find /srv/shiny-server/osmose-src -user root      # and in the clone (empty on 2026-11-18)
+sudo find /srv/shiny-server/osmose-src -user root
 sudo systemctl stop osmose-shiny.service
-sudo chown -R --no-dereference shiny "$SP"/cma "$SP"/cma-*.dist-info "$SP"/pyarrow "$SP"/pyarrow-*.dist-info "$SP"/shiny_deckgl "$SP"/shiny_deckgl-*.dist-info
+sudo chown -R --no-dereference shiny <each path the find listed>
 sudo bash deploy.sh                                     # restarts the service
 ```
 
-If the clone listing showed anything, add those paths to the `chown`. Any `~`-prefixed leftover in `$SP` is the debris of an interrupted pip install; the deploy reports one it cannot remove, and it can be deleted.
+This grants `shiny` nothing new: it owns the clone. It is manual on purpose: an automatic root `chown` on every deploy would itself be root acting on a path that runs through `shiny`-owned directories.
 
-**If that deploy stops before the restart** (for example at Step 0), the service is still stopped. The previous ref is still checked out, so bring it back as it was, and check it:
+**If a deploy stops before the restart** (for example at Step 0), the previous ref is still checked out and the service is as it was, unless you stopped it by hand as above. Then bring it back, and check it:
 
 ```bash
 sudo systemctl start osmose-shiny.service
 systemctl status osmose-shiny.service
 ```
-
-Step 0 installs only version floors, which the old code already satisfies. If the env is nevertheless broken, repair it with pip, run as `shiny`, before starting the service.
-
-This grants `shiny` nothing new. It owns `site-packages`, so it could already rename those directories away. It is a manual step on purpose: an automatic root `chown` on every deploy would itself be root acting on a path that runs through `shiny`-owned directories.
 
 ## The C# engine (optional, opt-in)
 
