@@ -39,24 +39,7 @@ def write_outputs(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    species_dfs = _build_species_dataframes(outputs, config)
-    headers = {
-        "biomass": "Mean biomass (tons), excluding first ages specified in input",
-        "abundance": "Mean abundance (number of fish), excluding first ages specified in input",
-    }
-    for key in ("biomass", "abundance"):
-        df = species_dfs[key]
-        times = df["Time"].to_numpy()
-        species = [c for c in df.columns if c != "Time"]
-        data = df[species].to_numpy()
-        _write_species_csv(
-            output_dir / f"{prefix}_{key}_Simu0.csv",
-            headers[key],
-            times,
-            species,
-            data,
-        )
-
+    _write_biomass_abundance(output_dir, prefix, outputs, config)
     _write_mortality_csvs(output_dir, prefix, outputs, config)
     _write_yield_csv(output_dir, prefix, outputs, config)
     _write_distribution_csvs(output_dir, prefix, outputs, config)
@@ -116,6 +99,29 @@ def write_outputs(
     # (write_outputs_netcdf early-returns when no want is true), so default/parity
     # configs write nothing.
     write_outputs_netcdf(outputs, output_dir / f"{prefix}_Simu0.nc", config)
+
+
+def _write_biomass_abundance(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    """The biomass and abundance CSVs (also written per output region)."""
+    species_dfs = _build_species_dataframes(outputs, config)
+    headers = {
+        "biomass": "Mean biomass (tons), excluding first ages specified in input",
+        "abundance": "Mean abundance (number of fish), excluding first ages specified in input",
+    }
+    for key in ("biomass", "abundance"):
+        df = species_dfs[key]
+        times = df["Time"].to_numpy()
+        species = [c for c in df.columns if c != "Time"]
+        data = df[species].to_numpy()
+        _write_species_csv(
+            output_dir / f"{prefix}_{key}_Simu0.csv",
+            headers[key],
+            times,
+            species,
+            data,
+        )
 
 
 def _build_species_dataframes(

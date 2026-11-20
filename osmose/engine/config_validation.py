@@ -31,6 +31,7 @@ _INDEX_SUFFIXES = (
     ("sz", re.compile(r"^sz\d+$")),
     ("sp", re.compile(r"^sp\d+$")),
     ("rsc", re.compile(r"^rsc\d+$")),
+    ("rg", re.compile(r"^rg\d+$")),
 )
 
 _VALID_MODES = ("off", "warn", "error")
@@ -85,6 +86,16 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         # reads (refused by config._parse_semelparity, so it is known, not unknown)
         "species.reproduction.postspawning.survivaltime.sp",
         "species.reproduction.postspawning.survivaltime.sp{idx}",
+        # OSMOSE 4.4.x output regions, read by output_regions.py
+        "output.region.enabled.rg{idx}",
+        "output.regions.name.rg{idx}",
+        "output.regions.enabled.rg{idx}",
+        "output.regions.movement.region.map{idx}",
+        "output.regions.movement.file.map{idx}",
+        "output.regions.movement.steps.map{idx}",
+        "output.regions.movement.years.map{idx}",
+        "output.regions.movement.initialyear.map{idx}",
+        "output.regions.movement.lastyear.map{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",

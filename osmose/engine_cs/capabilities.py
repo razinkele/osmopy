@@ -70,6 +70,12 @@ def _any_true(arr: Any) -> bool:
     return arr is not None and bool(np.any(np.asarray(arr)))
 
 
+def _region_indices(raw: Any) -> list[int]:
+    from osmose.engine.output_regions import region_indices
+
+    return region_indices(dict(raw))
+
+
 def _focal(c: Any, values: Any) -> np.ndarray:
     """The focal species' entries of a per-species array. Several arrays are padded with
     background-species entries (lmax 0.0, movement "none"), which must not trip a detector:
@@ -117,6 +123,7 @@ DETECTORS: dict[str, Any] = {
         c.additional_mortality_factor is not None or c.larva_mortality_factor is not None
     ),
     "semelparous": lambda c, raw: c.reproduction_semelparous is not None,
+    "output_regions": lambda c, raw: bool(_region_indices(raw)),
     "additional_maps": lambda c, raw: _any_set(c.additional_mortality_spatial),
     "selectivity_logistic": lambda c, raw: (
         c.fishing_enabled and bool(np.any(_selectivity(c)[0] == 1))
@@ -240,6 +247,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"mortality\.additional\.neonate\.rate\.sp\{idx\}", "phase1"),
     (r"movement\.(base\.search\.radius|random\.walk\.coef)\..+", "movement_gradient"),
     (r"species\.reproduction\.(strategy|postspawning\.survivaltime)\..+", "semelparous"),
+    (r"output\.regions?\..+", "output_regions"),
     # The same two families as config files spell them once the reader has lowercased them
     # (issue #297: until then the engine never matched these, so they never reached a detector).
     (r"mortality\.additional\.rate\.bydt\.(byage|bysize)\.file\..+", "rate_by_class"),
