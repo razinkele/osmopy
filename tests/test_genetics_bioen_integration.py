@@ -432,3 +432,88 @@ class TestSeedingConspecificFilter:
             "offspring must fall back to the empty trait.allele_pool (all zeros), "
             "never draw a sp0 donor from the whole-population pool (ruling R25)."
         )
+
+
+class TestBioenParentWeight:
+    """Review of #343. Java weighs a parent by the eggs it releases
+    (`BioenReproductionProcess.run`: `weight_rand.add(nEgg, school)`). The engine used the gonad
+    left AFTER release, which ranks parents by what they kept, and is 0 for every school when
+    the season factor is 1: then no parent had a weight and inheritance stopped the run."""
+
+    def _mature_schools(self, config):
+        from osmose.engine.state import SchoolState
+
+        state = SchoolState.create(n_schools=3, species_id=np.zeros(3, dtype=np.int32))
+        return state.replace(
+            abundance=np.array([100.0, 400.0, 50.0]),
+            length=np.full(3, 100.0),  # far above the maturity line
+            weight=np.full(3, 0.01),
+            age_dt=np.full(3, 30, dtype=np.int32),
+            gonad_weight=np.array([2e-6, 1e-6, 0.0]),  # the third has nothing to release
+        )
+
+    def test_the_parent_weight_is_the_eggs_released(self):
+        from dataclasses import replace
+
+        from osmose.engine.simulate import _bioen_reproduction
+
+        config = EngineConfig.from_dict(_bioen_genetics_config())
+        n_sp, n_dt = config.n_species, config.n_dt_per_year
+        for season in (0.25, 1.0):
+            cfg = replace(config, spawning_season=np.full((n_sp, n_dt), season))
+            state = self._mature_schools(cfg)
+            seeded_out: dict = {}
+            out = _bioen_reproduction(
+                state, cfg, step=20, rng=np.random.default_rng(0), seeded_out=seeded_out
+            )
+            w = seeded_out["parent_weight"]
+            assert len(w) == len(state)
+            # Proportional to released gonad x abundance: 2e-6 x 100 against 1e-6 x 400.
+            assert w[2] == 0.0 and w[0] > 0 and w[1] > 0
+            assert w[1] / w[0] == pytest.approx(2.0)
+            if season == 1.0:
+                # Everything was released: no gonad left, and still two parents.
+                assert (out.gonad_weight[:3] == 0.0).all()
+
+    def test_a_full_release_does_not_stop_inheritance(self, monkeypatch):
+        """End to end: genetics past its seeding window, the season factor 1 every step."""
+        import osmose.engine.config as config_mod
+        from osmose.engine import genetics
+
+        cfg_dict = _bioen_genetics_config()
+        cfg_dict["evolution.seeding.year"] = "0"
+        cfg_dict["simulation.time.nyear"] = "2"
+        cfg_dict["population.seeding.biomass.sp0"] = "1000.0"  # the fixture has no fish without it
+        # A maturity line every school crosses early (the fixture's 10 cm + 0.5 cm/yr is not
+        # reached in two years), so that real parents exist and inheritance is exercised.
+        for key in ("species.bioen.m0.sp0", "evolution.trait.m0.mean.sp0"):
+            cfg_dict[key] = "0.11"  # just above the 0.1 cm egg: the first cohorts mature
+        for key in ("species.bioen.m1.sp0", "evolution.trait.m1.mean.sp0"):
+            cfg_dict[key] = "0.0"
+        # No genetic variance, so the trajectory does not depend on the allele pools (seeded
+        # from hash(name), which Python randomises per process).
+        for key in [k for k in cfg_dict if k.startswith("evolution.trait.") and ".var." in k]:
+            cfg_dict[key] = "0.0"
+        real_seasons = config_mod._load_spawning_seasons
+
+        def every_step_full(cfg, n_sp, n_dt):
+            real_seasons(cfg, n_sp, n_dt)
+            return np.ones((n_sp, n_dt))
+
+        monkeypatch.setattr(config_mod, "_load_spawning_seasons", every_step_full)
+        inherited: list = []
+        real = genetics.create_offspring_genotypes
+
+        def spy(**kw):
+            if not kw["seeding"]:
+                inherited.append(
+                    kw["gonad_weight"][kw["species_id"] == kw["offspring_species"]].copy()
+                )
+            return real(**kw)
+
+        monkeypatch.setattr(genetics, "create_offspring_genotypes", spy)
+        config = EngineConfig.from_dict(cfg_dict)
+        assert (config.spawning_season == 1.0).all()
+        outputs = simulate(config, Grid.from_dimensions(ny=3, nx=3), np.random.default_rng(7))
+        assert len(outputs) == 24
+        assert inherited and all((w > 0).any() for w in inherited)
