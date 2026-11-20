@@ -38,7 +38,7 @@ import warnings
 # NOT divided by ndt). 4.4.0 Java reinterprets the config value as rate/YEAR and pre-divides by
 # nStepYear at load. So multiply by ndtperyear on write (cancels the jar's ÷ndt); divide when
 # READING a native-4.4.0 config. Matches ONLY `...rate.spN` (NOT `.bydt.file.spN` nor `.seasonality.file.spN`).
-_LARVA_RATE_RE = re.compile(r"^mortality\.additional\.larva\.rate\.sp\d+$")
+_LARVA_RATE_RE = re.compile(r"^mortality\.additional\.(larva|neonate)\.rate\.sp\d+$")
 _NDT_KEY = "simulation.time.ndtperyear"
 
 
