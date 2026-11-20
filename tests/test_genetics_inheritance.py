@@ -106,10 +106,10 @@ class TestCreateOffspringGenotypes:
         for val in offspring_gs.alleles["imax"].flatten():
             assert val in parent_vals
 
-    def test_no_parent_with_gonad_weight_says_what_sets_gonad_weight(self):
-        """#338. Outside the seeding window parents are chosen by gonad weight. With none the
-        routine stops, as it should. Its message must say what sets gonad weight: someone who
-        only switched genetics on has no "upstream caller" to fix."""
+    def test_no_parent_weight_is_an_error_that_says_what_a_parent_weight_is(self):
+        """Outside the seeding window parents are chosen by their weight as parents. With none
+        the routine stops, as it should, and its message says what that weight is on each
+        reproduction path. (The engine itself no longer gets here on the standard path: #338.)"""
         registry = self._make_registry()
 
         def offspring(gonad_weight):
@@ -130,6 +130,7 @@ class TestCreateOffspringGenotypes:
             offspring(np.zeros(2))
         message = str(err.value)
         assert "no eligible parents" in message
-        assert "module.bioenergetics.enabled" in message
-        # The control: the same schools are parents once one of them carries gonad weight.
+        assert "released under bioenergetics" in message
+        assert "spawning biomass of a mature school" in message
+        # The control: the same schools are parents once one of them carries a weight.
         assert offspring(np.array([1.0, 0.0])).alleles["imax"].shape == (5, 3, 2)

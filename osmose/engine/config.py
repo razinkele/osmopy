@@ -2666,7 +2666,16 @@ class EngineConfig:
 
         # Ev-OSMOSE genetics
         genetics_enabled = _enabled(cfg, "module.genetics.enabled")
-        genetics_transmission_year = int(cfg.get("evolution.seeding.year", "0"))
+        # Java 4.4.1 names it population.genotype.transmission.year.start
+        # (ReproductionProcess.init); evolution.seeding.year is this engine's older name.
+        genetics_transmission_year = int(
+            float(
+                cfg.get(
+                    "population.genotype.transmission.year.start",
+                    cfg.get("evolution.seeding.year", "0"),
+                )
+            )
+        )
         genetics_n_neutral = int(cfg.get("evolution.neutral.nlocus", "0"))
         genetics_n_neutral_val = int(cfg.get("evolution.neutral.nval", "50"))
 

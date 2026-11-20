@@ -723,11 +723,14 @@ def _reproduction(
     rng: np.random.Generator,
     grid_ny: int = 10,
     grid_nx: int = 10,
+    spawn_out: dict[str, NDArray] | None = None,
 ) -> SchoolState:
-    """Egg production + age increment."""
+    """Egg production + age increment. ``spawn_out`` is handed on (see ``reproduction``)."""
     from osmose.engine.processes.reproduction import reproduction
 
-    return reproduction(state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx)
+    return reproduction(
+        state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx, spawn_out=spawn_out
+    )
 
 
 def _resolve_trait(
@@ -758,7 +761,7 @@ def _bioen_reproduction(
     grid_ny: int = 10,
     grid_nx: int = 10,
     trait_overrides: dict[str, NDArray[np.float64]] | None = None,
-    seeded_out: dict[str, NDArray[np.bool_]] | None = None,
+    seeded_out: dict[str, NDArray] | None = None,
 ) -> SchoolState:
     """Java `BioenReproductionProcess.run()` (4.3.3, source-verified) + shared regulation.
 
@@ -788,7 +791,9 @@ def _bioen_reproduction(
     is non-decreasing (`_bioen_step` adds `dw >= 0` and this function touches neither
     weight nor length), so a school that has once passed the threshold cannot fall back.
 
-    `seeded_out`, if given a dict, is populated with `{"seeded_this_step": <bool[n_sp]>}`
+    `seeded_out`, if given a dict, is populated with `{"seeded_this_step": <bool[n_sp]>,
+    "parent_weight": <float[n_schools]>}`, the second being the eggs each school released (its
+    weight as a parent, as Java weighs it),
     before return — per-species whether THIS step's eggs came from the SSB==0 population
     bootstrap (`config.seeding_biomass`) rather than a real spawning school. That window
     (`population.seeding.year.max`, default the longest lifespan of any species) is independent of and
@@ -815,6 +820,10 @@ def _bioen_reproduction(
     # every maturity decision by one time step.
     age_years = state.age_dt.astype(np.float64) / config.n_dt_per_year
     gonad = state.gonad_weight.copy()
+    # Each school's weight as a parent: the eggs it releases, as Java weighs it
+    # (BioenReproductionProcess.run, `weight_rand.add(nEgg, school)`). Not the gonad left
+    # after release, which is 0 for every school when the season factor is 1.
+    released_eggs = np.zeros(len(state), dtype=np.float64)
 
     ssb = np.zeros(n_sp, dtype=np.float64)
     n_eggs_linear = np.zeros(n_sp, dtype=np.float64)
@@ -890,6 +899,7 @@ def _bioen_reproduction(
                 ew,
             )
             n_eggs_linear[sp] = float(sch_eggs.sum())
+            released_eggs[idx] = sch_eggs
             gonad[idx] -= w_egg
 
     n_eggs = regulate_recruitment(n_eggs_linear, ssb, seeded_this_step, config, step)
@@ -908,6 +918,7 @@ def _bioen_reproduction(
 
     if seeded_out is not None:
         seeded_out["seeded_this_step"] = seeded_this_step
+        seeded_out["parent_weight"] = released_eggs
 
     return merge_new_schools(state, new_egg_schools)
 
@@ -2181,7 +2192,8 @@ def simulate(
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
         stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)
         n_before_repro = len(state)
-        bioen_seeded: dict[str, NDArray[np.bool_]] = {}
+        bioen_seeded: dict[str, NDArray] = {}
+        standard_spawn: dict[str, NDArray] = {}
         if config.bioen_enabled:
             state = _bioen_reproduction(
                 state,
@@ -2194,7 +2206,12 @@ def simulate(
                 seeded_out=bioen_seeded if ctx.genetic_state is not None else None,
             )
         else:
-            state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
+            # The report is asked for only when genetics needs it, so the call without
+            # genetics is the one it always was.
+            spawn_kw = {"spawn_out": standard_spawn} if ctx.genetic_state is not None else {}
+            state = _reproduction(
+                state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx, **spawn_kw
+            )
 
         # -- Genetics inheritance (after reproduction) --
         if ctx.genetic_state is not None:
@@ -2205,15 +2222,24 @@ def simulate(
                 config.genetics_transmission_year > 0
                 and current_year < config.genetics_transmission_year
             )
-            # Per-species bioen population-seeding flag (see _bioen_reproduction's
-            # `seeded_out` docstring): its window is independent of and can outlast
+            # Per-species population-seeding flag (see _bioen_reproduction's `seeded_out`
+            # and reproduction's `spawn_out`): its window is independent of and can outlast
             # `seeding` above, so a species whose SSB is bootstrapped this step has no
             # real parents either — treat those offspring as seeded too, or
             # create_offspring_genotypes raises on an empty parent pool that was never
             # going to exist.
-            bioen_seeded_this_step = bioen_seeded.get("seeded_this_step")
-
             n_new = len(state) - n_before_repro
+            # What makes a school a parent, and how much: its gonad weight under
+            # bioenergetics, its egg production on the standard path (Java's
+            # ReproductionProcess.run_genet; #338). One value per school that existed
+            # before this step's reproduction.
+            if config.bioen_enabled:
+                seeded_this_step = bioen_seeded.get("seeded_this_step")
+                parent_weight = bioen_seeded["parent_weight"]
+            else:
+                seeded_this_step = standard_spawn["seeded_this_step"]
+                parent_weight = standard_spawn["parent_weight"]
+
             if n_new > 0:
                 new_ids = state.species_id[-n_new:]
                 offspring_parts: list = []
@@ -2221,14 +2247,14 @@ def simulate(
                     sp_mask = new_ids == sp
                     n_off = int(sp_mask.sum())
                     sp_seeding = seeding or (
-                        bioen_seeded_this_step is not None
-                        and int(sp) < len(bioen_seeded_this_step)
-                        and bool(bioen_seeded_this_step[sp])
+                        seeded_this_step is not None
+                        and int(sp) < len(seeded_this_step)
+                        and bool(seeded_this_step[sp])
                     )
                     offspring_parts.append(
                         create_offspring_genotypes(
                             parent_gs=ctx.genetic_state,
-                            gonad_weight=state.gonad_weight[: len(state) - n_new],
+                            gonad_weight=parent_weight,
                             species_id=state.species_id[: len(state) - n_new],
                             offspring_species=int(sp),
                             n_offspring=n_off,

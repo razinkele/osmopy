@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import zlib
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -77,7 +78,8 @@ class TraitRegistry:
                 dtype=np.int32,
             )
 
-            rng = np.random.default_rng(hash(name) & 0xFFFFFFFF)
+            # A stable hash of the name (#344): hash() of a str changes with every process.
+            rng = np.random.default_rng(zlib.crc32(name.encode()))
             allele_pool: list[list[NDArray[np.float64]]] = []
             for sp in range(n_species):
                 sp_pools: list[NDArray[np.float64]] = []
