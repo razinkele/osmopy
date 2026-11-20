@@ -10,7 +10,7 @@ every step, so grazing has no memory. With `ltl.depletable.enabled` the biomass 
 leaves is carried to the next step and regrown toward K
 (`osmose.engine.resources.logistic_regrow`):
 
-    B = max(B_carried, floor * K)
+    B = min(K, max(B_carried, floor * K))      (from K at most: issue #337, 2026-11-20)
     B_new = min(K, B + rate * B * (1 - B / K))        (0 where K <= 0)
 
 `ltl.depletable.floor` (5% by default) keeps an emptied cell from staying empty. The rate is
@@ -38,20 +38,95 @@ Those calibrations run on the production Baltic base, where bottom oxygen scales
 The demo leaves that coupling out, so the benthos there is depletable and not oxygen-scaled.
 The combination is checked in "With the oxygen coupling too", below.
 
-## A caveat that is not about the port: negative biomass (issue #337)
+## Negative biomass (issue #337), fixed on 2026-11-20
 
-The function caps its result at K and does not bound it below. When a resource is carried
-**above** K, which happens every time K falls from one step to the next, the logistic term is
-negative, and with a steep rate the result is below zero. On the shipped `baltic_a2` demo, on
-the Python engine, diatoms and dinoflagellates (rate 5 per step) are negative in up to 312 of
-2000 cells in 60 of 72 steps. Both engines' predation kernels skip a resource that is not
-positive, so those cells hold none of it for the step.
+Until 2026-11-20 the function started the logistic step from the carried biomass even when it
+was **above** K, which happens every time K falls from one step to the next. From above K the
+logistic term is negative and has no lower bound: with a steep rate the result was below zero.
+On the shipped `baltic_a2` demo, diatoms and dinoflagellates (rate 5 per step) were negative in up
+to 312 of 2000 cells in 60 of 72 steps, and both engines' kernels skip a resource that is not
+positive, so those cells held none of it for the step.
 
-This is the model both engines share. **The C# engine reproduces it bit for bit, sign
-included, and everything below is measured on the current arithmetic.** Whether to change the
-function, and whether the depletable-plankton experiment needs another look, is the owner's
-decision (issue #337). If the function changes, `StepPreparation.Regrow` must change with it,
-and the tests that compare the two will say so.
+Both engines now start the step from K at most. A resource carried above K comes out at K
+exactly; at or below K nothing changed, bit for bit. The cross-engine tests compare the two
+engines on cells carried above K, from a real Baltic run and from made-up cases, and the two
+still agree bit for bit.
+
+**Measured on the old arithmetic:** the two ensembles below (the demo, and the demo with the
+oxygen coupling) ran before the fix. The deterministic checks were re-run on the new one. No
+new ensemble was run: the fix changes the same cells the same way in both engines (bit for bit),
+and nothing else.
+
+### The depletion experiment, re-run on the fixed arithmetic
+
+The depletion gate (`scripts/baltic_depletable_ab.py`: the production Baltic config with the
+depletion keys, the five certification seeds, 50 years) was run on the trees before and after
+the fix, the same day. **The verdict does not change: both depletable arms fail, on the same
+species.** The negative cells were not what made the depletable-plankton experiment fail.
+Nothing was refitted, and `data/baltic` is unchanged.
+
+**Arm `on`** (5 seeds, 50 years; final-decade mean biomass, tonnes)
+
+| Species | Depletion off | Before the fix | After the fix | After / before |
+|---|---|---|---|---|
+| cod_west | 19,173 | 9,676 | 10,575 | 1.09 |
+| cod_east | 73,340 | 3 (collapses) | 92 (collapses) | 31.70 |
+| herring | 1,534,022 | 275,137 | 277,779 | 1.01 |
+| sprat | 1,002,780 | 723,504 | 734,914 | 1.02 |
+| flounder | 47,643 | 24,277 | 24,243 | 1.00 |
+| perch | 34,947 | 23,669 | 23,034 | 0.97 |
+| pikeperch | 523,500 | 236,536 | 250,347 | 1.06 |
+| smelt | 658,438 | 1,058,990 | 1,175,343 | 1.11 |
+| stickleback | 90,539 | 90,374 | 90,887 | 1.01 |
+
+Gate before: FAIL (cod_east, herring, sprat). After: FAIL (cod_east, herring, sprat).
+
+**Arm `on-benthoslit`** (5 seeds, 50 years; final-decade mean biomass, tonnes)
+
+| Species | Depletion off | Before the fix | After the fix | After / before |
+|---|---|---|---|---|
+| cod_west | 19,173 | 2,574 (collapses) | 1,065 (collapses) | 0.41 |
+| cod_east | 73,340 | 0 (collapses) | 0 (collapses) | n/a |
+| herring | 1,534,022 | 68,778 (collapses) | 68,940 (collapses) | 1.00 |
+| sprat | 1,002,780 | 757,436 | 768,290 | 1.01 |
+| flounder | 47,643 | 22,718 | 23,599 | 1.04 |
+| perch | 34,947 | 12,841 | 13,001 | 1.01 |
+| pikeperch | 523,500 | 201,736 | 204,448 | 1.01 |
+| smelt | 658,438 | 990,472 | 1,099,007 | 1.11 |
+| stickleback | 90,539 | 121,957 | 130,680 | 1.07 |
+
+Gate before: FAIL (cod_west, cod_east, herring, sprat). After: FAIL (cod_west, cod_east, herring, sprat).
+
+Arm `off` (no depletion): gate PASS.
+
+The largest change is smelt, about +11% in both arms. cod_east collapses either way, and in the
+`on-benthoslit` arm cod_west does too (its two final-decade means, 2,574 t and 1,065 t, are both
+collapses).
+
+**The refit arm too.** The August closure also rested on the bounded refit
+(`data/baltic/calibration_results/a2r_fitted_params.json`, the `fitted` arm of
+`docs/baltic_depletable_recal_ab_2026-08-09.md`). Re-run on both trees, same seeds and horizon:
+it fails before and after on the same four species (cod_west, cod_east, herring, sprat).
+
+| Species | Before the fix | After the fix |
+|---|---|---|
+| cod_west | 1,772 (collapses) | 2,003 (collapses) |
+| cod_east | 0 (collapses) | 0 (collapses) |
+| herring | 134,245 | 151,909 |
+| sprat | 772,767 | 778,393 |
+| flounder | 21,228 | 21,751 |
+| perch | 13,023 | 13,667 |
+| pikeperch | 185,417 | 193,692 |
+| smelt | 1,029,271 | 1,091,621 |
+| stickleback | 106,920 | 114,151 |
+
+Whether a refit on the fixed arithmetic would pass is not known: nothing was refitted.
+
+**The shipped `baltic_a2` demo** (its own master file, one seed, 30 years; last-decade mean
+biomass, tonnes) barely moves: herring 939,012 before and 1,058,590 after (+13%); every other
+species within 5%; cod_east collapsed on both trees (8 t and 5 t), as it runs uncalibrated in
+this variant. The gate's production config with the demo's two overlay files is not the demo:
+that reconstruction collapses most species identically on both trees, so it was not used.
 
 ## Evidence
 
@@ -59,7 +134,7 @@ Three things must hold, and each is tested on its own (`tests/test_csharp_deplet
 
 | What | Check | Result |
 |---|---|---|
-| The update regrows what it is handed as the Python engine does | the biomass a real run carried into a step, EEC and Baltic (Baltic's includes negative cells and the oxygen-scaled benthos) | bit for bit |
+| The update regrows what it is handed as the Python engine does | the biomass a real run carried into a step, EEC and Baltic (Baltic's includes cells carried above K, which come out at K, and the oxygen-scaled benthos) | bit for bit |
 | | made-up biomass: none, under the floor, in between, at K, above K, and in cells with K = 0 | bit for bit |
 | | the first step, from an empty buffer | bit for bit; below K, as it should be |
 | The kernel's eating is written to the buffer the next update reads | one whole step, from the carried biomass to the state it leaves: schools and outputs, and the resources **after** predation (predation took from more than 100 resource cells) | tier L (1e-12) |
@@ -152,8 +227,8 @@ pikeperch against the C# engine only (-0.0175, half-width 0.0137, which is 4%).
 **What to take from it.**
 
 - On cod_east no engine difference is detected, and one larger than about 1.15x is excluded.
-  cod_west, flounder and sprat agree within 0.005 in log10. **One cell is open: pikeperch**
-  (below).
+  cod_west, flounder and sprat agree within 0.005 in log10. A pikeperch cell looked open and
+  was not reproduced (below).
 - **16 replicates are too few on the depletable configs.** At 16, the 90% half-width of the
   engine difference on cod_east abundance is 0.09 to 0.16 in log10 there, against 0.002 on the
   depensation demo. The demo's pass at 16 was as weak as this fail. Use 32.
@@ -161,7 +236,7 @@ pikeperch against the C# engine only (-0.0175, half-width 0.0137, which is 4%).
   and the C# arm's outcome follows its seed across a small change of config. A second ensemble
   that agrees with the first needs other seeds before it counts as a replication.
 
-**One open cell: pikeperch (issue #342).** At 32 per arm, pikeperch mean weight was the one
+**A pikeperch cell, not reproduced (issue #342, closed).** At 32 per arm, pikeperch mean weight was the one
 cell whose interval excluded zero while the control's did not. So it was named, and then every
 species and metric was read on the new seeds alone, which share nothing with the failed
 ensemble. Python minus C#, in log10, with the 90% half-width:
@@ -181,6 +256,11 @@ standard errors are pikeperch's four and stickleback yield, which is gone when p
   coupling and +0.032 (0.030) on the depensation demo. None of them can see 0.017.
 - On two of those ensembles the two Python arms differ from each other on this cell by about 2
   standard errors, so the nominal errors may understate its spread.
+
+**Two further seed sets settled it (2026-11-20, same tree).** Seeds 50000/60000 (Python 32, C#
+48): +0.0020 (z = +0.26). Seeds 70000/80000 (64 each): +0.0035 (z = +0.59). The two replications
+pool to +0.003 ± 0.005; all four sets pool to −0.005 ± 0.004, which excludes a difference larger
+than about 2.6% in mean weight. The z = −3 set was not reproduced. Issue #342 has the table.
 
 **Not done:** the demo itself, without the coupling, was not re-run on new seeds. Its verdict
 stands on 16 replicates.

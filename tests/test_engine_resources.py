@@ -283,6 +283,39 @@ def test_logistic_regrow_caps_at_k_and_handles_zero_k():
     assert not np.isnan(out).any()
 
 
+def test_logistic_regrow_above_capacity_is_the_capacity():
+    """#337. A resource is carried ABOVE its capacity whenever the capacity fell since the last
+    step. The logistic step from above K goes down without a lower bound: with a steep rate it
+    went below zero, and the predation kernels then skipped the cell for the step. A resource
+    above its capacity is at its capacity after the update, whatever the rate."""
+    k = np.array([100.0, 100.0, 100.0, 40.0])
+    carried = np.array([170.0, 101.0, 1e6, 400.0])
+    for rate in (0.3, 1.0, 2.5, 5.0, 50.0):
+        assert np.array_equal(logistic_regrow(carried, k, rate=rate, floor=0.05), k), rate
+
+
+def test_logistic_regrow_stays_between_zero_and_capacity():
+    """#337, the invariant: whatever is carried in and whatever the rate, the result is within
+    [0, K]. The old function failed it as soon as rate * (B/K - 1) exceeded 1."""
+    carried = np.linspace(0.0, 300.0, 601)
+    k = np.full_like(carried, 100.0)
+    for rate in (0.1, 1.0, 2.0, 3.0, 5.0, 20.0):
+        out = logistic_regrow(carried, k, rate=rate, floor=0.05)
+        assert (out >= 0.0).all() and (out <= 100.0).all(), rate
+
+
+def test_logistic_regrow_at_or_below_capacity_is_unchanged_by_the_clamp():
+    """The fix must not move a resource that is at or below its capacity: the same numbers as
+    the logistic step written out, bit for bit."""
+    k = np.array([100.0, 100.0, 100.0, 37.5, 0.0])
+    carried = np.array([0.0, 2.0, 63.0, 37.5, 9.0])
+    for rate in (0.3, 1.0, 2.5):
+        b = np.maximum(carried, 0.05 * k)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            want = np.where(k > 0.0, np.minimum(b + rate * b * (1.0 - b / k), k), 0.0)
+        assert np.array_equal(logistic_regrow(carried, k, rate=rate, floor=0.05), want), rate
+
+
 def test_regrowth_rate_parsed_per_resource():
     grid = Grid.from_dimensions(ny=3, nx=3)
     config = {

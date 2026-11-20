@@ -68,8 +68,10 @@ public static class StepPreparation
 
     /// <summary>
     /// <c>logistic_regrow</c> for one cell: from the larger of the carried biomass and
-    /// <c>floor * k</c>, one logistic step toward <paramref name="k"/>, capped at it; 0 where
-    /// there is no capacity. The arithmetic is the Python function's, in its order.
+    /// <c>floor * k</c>, and from <paramref name="k"/> at most, one logistic step toward
+    /// <paramref name="k"/>, capped at it; 0 where there is no capacity. The arithmetic is the
+    /// Python function's, in its order. Starting from the capacity at most (issue #337) keeps
+    /// the result within [0, k]: the step from above the capacity has no lower bound.
     /// </summary>
     public static double Regrow(double carried, double k, double rate, double floor)
     {
@@ -78,7 +80,7 @@ public static class StepPreparation
             return 0.0;
         }
 
-        double b = Math.Max(carried, floor * k);
+        double b = Math.Min(Math.Max(carried, floor * k), k);
         double grown = b + (rate * b * (1.0 - (b / k)));
         return Math.Min(grown, k);
     }
