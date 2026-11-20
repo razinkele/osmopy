@@ -33,6 +33,8 @@ def _make_config(**overrides) -> MagicMock:
     config.additional_mortality_by_dt_by_class = None
     config.additional_mortality_spatial = None
     config.larva_reference_density = None  # density-dependent larval mortality off (#137)
+    config.additional_mortality_factor = None  # no multiplier or seasonality (#137)
+    config.larva_mortality_factor = None
     for k, v in overrides.items():
         setattr(config, k, v)
     return config

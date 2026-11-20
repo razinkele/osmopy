@@ -331,6 +331,15 @@ def resolved_d0(cfg: Mapping[str, str], name: str) -> float:
     i = species_index(cfg, name)
     if i is None:
         raise KeyError(f"{name!r} is not a declared species")
+    for stage in ("larva", "neonate"):
+        for part in ("multiplier", "seasonality", "seasonality.file"):
+            key = f"mortality.additional.{stage}.rate.{part}.sp{i}"
+            value = str(cfg.get(key, "")).strip()
+            if value and value.lower() != "null":
+                raise ValueError(
+                    f"{key} is set: the live larval rate of {name} is no longer the scalar "
+                    f"{RATE_KEY.format(i=i)}, so an SP1b offset solved against it does not apply"
+                )
     return float(cfg[RATE_KEY.format(i=i)])
 
 
