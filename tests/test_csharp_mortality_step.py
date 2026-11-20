@@ -55,6 +55,7 @@ CAUSES = (
     "foraging",
     "discards",
     "aging",
+    "spawning",  # OSMOSE 4.4.x; never booked by the C# engine
 )
 FIELDS = ("abundance", "n_dead", "starvation_rate", "trophic_level", "pred_success_rate", "preyed_biomass", "egg_retained")  # fmt: skip
 TIER_L = 1e-9

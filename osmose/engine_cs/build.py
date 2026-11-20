@@ -26,7 +26,9 @@ from osmose.engine_cs.bundle import Bundle
 from osmose.engine_cs.capabilities import load_catalog, required_features
 from osmose.engine_cs.philox import SCHEME as RNG_SCHEME
 
-CONTRACT_VERSION = 1
+# 2: nine mortality causes in every result buffer (OSMOSE 4.4.x SPAWNING); a binary built for
+# 1 must refuse these bundles rather than fail on a buffer shape.
+CONTRACT_VERSION = 2
 
 #: ``predation.stage.metric`` codes.
 STAGE_METRICS = {"size": 0, "age": 1, "weight": 2, "tl": 3}
@@ -854,8 +856,9 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
 
 # --------------------------------------------------------------------------- result buffers
 
-#: Columns of ``result.mortality``, in ``MortalityCause`` order.
-N_MORTALITY_CAUSES = 8
+#: Columns of ``result.mortality``, in ``MortalityCause`` order (C# ``RunResults.MortalityCauses``).
+#: The ninth, SPAWNING, stays zero there: the C# engine refuses semelparous species.
+N_MORTALITY_CAUSES = 9
 CONTROL_SLOTS = 8
 
 
@@ -868,7 +871,7 @@ class RunBuffers:
     window_steps: np.ndarray  # i4 (n_records): steps folded into each record
     biomass: np.ndarray  # f8 (n_records, n_total): window mean, tonnes
     abundance: np.ndarray  # f8 (n_records, n_total): window mean
-    mortality: np.ndarray  # f8 (n_records, n_focal, 8): window sum of deaths by cause
+    mortality: np.ndarray  # f8 (n_records, n_focal, 9): window sum of deaths by cause
     yield_: np.ndarray  # f8 (n_records, n_focal): window sum, tonnes
     control: np.ndarray  # i8 (8): [0] cancel (Python), [1] steps done, [2] records, [3] schools
     #: The families beyond the minimal set, by name (``family_shapes``): f8, one row per record.

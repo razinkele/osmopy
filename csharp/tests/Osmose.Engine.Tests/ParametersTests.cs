@@ -23,7 +23,7 @@ public sealed class ParametersTests : IDisposable
         return h.AddrOfPinnedObject();
     }
 
-    private SimulationConfig Header(int[]? features = null, Action<SimulationConfig>? tweak = null, int version = 1)
+    private SimulationConfig Header(int[]? features = null, Action<SimulationConfig>? tweak = null, int version = 2)
     {
         var c = new SimulationConfig(version);
         int[] f = features ?? [0];
@@ -53,7 +53,7 @@ public sealed class ParametersTests : IDisposable
             Assert.Equal(i, FeatureCatalog.All[i].Id);
         }
 
-        Assert.Contains(1, FeatureCatalog.ContractVersions);
+        Assert.Contains(2, FeatureCatalog.ContractVersions);
         Assert.All(FeatureCatalog.All, f => Assert.Contains(f.Status, new[] { "planned", "refused", "not_planned" }));
     }
 
@@ -122,7 +122,7 @@ public sealed class ParametersTests : IDisposable
     private SimulationConfig Transposed()
     {
         // Same mask, grid declared transposed.
-        var c = new SimulationConfig(1);
+        var c = new SimulationConfig(FeatureCatalog.ContractVersions[^1]);
         c.SetArray("contract.features", DType.I4, Pin(new[] { 0 }), 1);
         c.SetInt("contract.rng.scheme", Philox.Scheme);
         c.SetInt("run.seed", 1);

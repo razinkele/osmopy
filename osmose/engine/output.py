@@ -1136,7 +1136,8 @@ def write_outputs_netcdf(
             "Out: advected out of domain; "
             "Foraging: bioenergetic cost-of-foraging (Ev-OSMOSE only); "
             "Discards: discarded catch; "
-            "Aging: senescence at lifespan."
+            "Aging: senescence at lifespan; "
+            "Spawning: post-spawning death of a semelparous species."
         )
     ds = xr.Dataset(data_vars, coords=coords, attrs=dataset_attrs)
     for name in ds.data_vars:

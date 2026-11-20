@@ -359,7 +359,7 @@ public sealed class FamilyOutputsTests : IDisposable
         c.SetArray("result.window_steps", DType.I4, Pin(new int[n]), n);
         c.SetArray("result.biomass", DType.F8, Pin(new double[n * NTotal]), n, NTotal);
         c.SetArray("result.abundance", DType.F8, Pin(new double[n * NTotal]), n, NTotal);
-        c.SetArray("result.mortality", DType.F8, Pin(new double[n * NFocal * 8]), n, NFocal, 8);
+        c.SetArray("result.mortality", DType.F8, Pin(new double[n * NFocal * RunResults.MortalityCauses]), n, NFocal, RunResults.MortalityCauses);
         c.SetArray("result.yield", DType.F8, Pin(new double[n * NFocal]), n, NFocal);
         var buffers = new Dictionary<string, double[]>();
         var r = new RunResults(n, layout);

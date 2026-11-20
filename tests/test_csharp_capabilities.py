@@ -51,7 +51,9 @@ def test_catalogue_ids_are_dense_and_core_is_first():
     assert feats[0].name == "core" and feats[0].phase == 1
     assert {f.status for f in feats} <= {"planned", "refused", "not_planned"}
     assert all((f.phase in (1, 2, 3, 4)) == (f.status == "planned") for f in feats)
-    assert 1 in cap.catalog_contract_versions()
+    from osmose.engine_cs.build import CONTRACT_VERSION
+
+    assert CONTRACT_VERSION in cap.catalog_contract_versions()
 
 
 def test_every_catalogue_feature_has_exactly_one_detector():
@@ -378,6 +380,16 @@ def _recipes(c: EngineConfig) -> dict:
         "maturity_stochastic": (R(c, maturity_stochastic=np.ones(n, dtype=bool)), {}),
         "larva_density_dependence": (R(c, larva_reference_density=np.full(n, 100.0)), {}),
         "mortality_rate_factor": (R(c, larva_mortality_factor=np.ones((n, 4))), {}),
+        "movement_gradient": (
+            R(
+                c,
+                movement_method=["gradient"] + list(c.movement_method)[1:],
+                movement_is_gradient=np.array(
+                    [True] + [False] * (len(c.movement_method) - 1), dtype=bool
+                ),
+            ),
+            {},
+        ),
         "output_regions": (c, {"output.regions.name.rg1": "West"}),
         "fishing_catches": (R(c, fishing_catches=np.full(n, 10.0)), {}),
         "rate_by_class": (R(c, fishing_rate_by_dt_by_class=[object()] + nones[1:]), {}),
