@@ -205,21 +205,25 @@ def _matches_output_type(stem: str, output_type: str, prefix: str) -> bool:
     if not base.startswith(expected):
         return False
     remainder = base[len(expected) :]
-    if remainder.startswith("-") and _is_region_suffix(remainder, output_type):
+    if remainder[:1] in ("-", "_") and _is_region_suffix(remainder, output_type):
         return False  # an output-region file, not this output (osmose.engine.output_regions)
     # Exact match (all-species) or separator before species name
     return remainder == "" or remainder[0] in ("_", "-")
 
 
 def _is_region_suffix(remainder: str, output_type: str) -> bool:
-    """True when ``-...`` after ``{prefix}_{type}`` names an output region (OSMOSE 4.4.x).
+    """True when the part after ``{prefix}_{type}`` names an output region (OSMOSE 4.4.x).
 
-    Java names region files ``{prefix}_{type}-{region}_Simu0`` and, for outputs written per
-    species with a dash (the mortality family), ``{prefix}_{type}-{species}-{region}_Simu0``.
-    Region names cannot contain a dash (Java removes them), so: a dash after a non-dash type is a
-    region; for a dash type, a second dash is.
+    Region files are ``{prefix}_{type}-{region}``; per-species files add the region after the
+    species: ``{prefix}_{type}_{species}-{region}`` (this engine's by-age and by-size files) and
+    ``{prefix}_{type}-{region}-{species}`` (Java's mortality files, region first). Region names
+    hold no dash (Java removes them), and species names are taken not to, so: after an underscore
+    any dash is a region; after a dash, a second dash is for the mortality family and any dash
+    for the other types.
     """
     rest = remainder[1:]
+    if remainder.startswith("_"):
+        return "-" in rest
     if output_type.startswith("mortality"):
         return "-" in rest
     return True

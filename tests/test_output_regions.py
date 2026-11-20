@@ -32,7 +32,7 @@ def _regions(tmp_path) -> dict[str, str]:
     return {
         "output.regions.name.rg1": "West_side",
         "output.regions.name.rg2": "East",
-        "output.regions.movement.region.map0": "West_side",
+        "output.regions.movement.region.map0": "Westside",  # Java matches the cleaned name
         "output.regions.movement.file.map0": _map(tmp_path / "west.csv", [0, 1]),
         "output.regions.movement.region.map1": "East",
         "output.regions.movement.file.map1": _map(tmp_path / "east.csv", [2, 3]),
@@ -91,6 +91,16 @@ class TestTheKeys:
     def test_names_lose_underscores_and_dashes(self, tmp_path):
         names = [r.name for r in parse_output_regions(_regions(tmp_path), NDT, 8, NY, NX)]
         assert names == ["Westside", "East"]
+
+    def test_maps_match_the_cleaned_name_not_the_raw_one(self, tmp_path):
+        cfg = _regions(tmp_path) | {"output.regions.movement.region.map0": "West_side"}
+        west = parse_output_regions(cfg, NDT, 8, NY, NX)[0]
+        assert west.name == "Westside" and (west.index_maps == -1).all()
+
+    def test_region_netcdf_maps_are_refused(self, tmp_path):
+        cfg = _regions(tmp_path) | {"output.regions.movement.netcdf.enabled": "true"}
+        with pytest.raises(ValueError, match="not supported"):
+            parse_output_regions(cfg, NDT, 8, NY, NX)
 
     def test_a_name_that_is_not_alphanumeric_is_refused(self, tmp_path):
         cfg = _regions(tmp_path) | {"output.regions.name.rg1": "West side"}
@@ -175,21 +185,64 @@ class TestAWholeRun:
         assert extra and all("-Westside" in p.name or "-East" in p.name for p in extra)
 
 
+_OPTIONAL = {
+    k: "true"
+    for k in (
+        "output.biomass.byage.enabled",
+        "output.abundance.byage.enabled",
+        "output.biomass.bysize.enabled",
+        "output.abundance.bysize.enabled",
+        "output.size.enabled",
+        "output.meantl.enabled",
+        "output.tl.enabled",
+        "output.yield.abundance.enabled",
+    )
+}
+_READERS = (
+    "biomass", "abundance", "yield_biomass", "mortality", "mortality_rate", "mean_size",
+    "mean_trophic_level", "yield_abundance", "biomass_by_age", "abundance_by_age",
+    "biomass_by_size", "abundance_by_size", "yield_by_age", "yield_by_size", "yield_n_by_age",
+    "yield_n_by_size", "mean_size_by_age", "mean_tl_by_size", "mean_tl_by_age", "ssb",
+)  # fmt: skip
+
+
+def _call(results, name):
+    try:
+        return getattr(results, name)()
+    except Exception as exc:  # compared below: both runs must fail the same way
+        return type(exc)
+
+
 def test_the_results_readers_ignore_region_files(tmp_path):
     from osmose.results import OsmoseResults
 
-    with_r = OsmoseResults(_run(_config(tmp_path), tmp_path / "with"), strict=False)
-    without = OsmoseResults(
-        _run(_config(tmp_path, regions=False), tmp_path / "without"), strict=False
-    )
-    for reader in ("biomass", "abundance", "yield_biomass", "mortality_rate", "biomass_by_age"):
-        try:
-            b = getattr(without, reader)()
-        except FileNotFoundError:
+    with_dir = _run(_config(tmp_path, **_OPTIONAL), tmp_path / "with")
+    without_dir = _run(_config(tmp_path, regions=False, **_OPTIONAL), tmp_path / "without")
+    # the optional families were written per region
+    for name in ("biomassByAge_Fish0", "abundanceBySize_Fish0", "meanSize", "meanTL", "yieldN"):
+        assert (with_dir / f"osm_{name}-Westside_Simu0.csv").exists(), name
+    with_r, without = (OsmoseResults(d, strict=False) for d in (with_dir, without_dir))
+    compared = 0
+    for reader in _READERS:
+        a, b = _call(with_r, reader), _call(without, reader)
+        if isinstance(a, type) or isinstance(b, type):
+            assert a is b, (reader, a, b)
             continue
-        a = getattr(with_r, reader)()
         pd.testing.assert_frame_equal(a.reset_index(drop=True), b.reset_index(drop=True))
-        assert not any("Westside" in str(v) or "East" in str(v) for v in a.get("species", []))
+        if len(b):
+            compared += 1
+    assert compared >= 8
+
+
+def test_age_classes_add_up_over_two_regions(tmp_path):
+    out = _run(_config(tmp_path, **_OPTIONAL), tmp_path / "out")
+    whole, west, east = (
+        _read(out / f"osm_biomassByAge_Fish0{s}_Simu0.csv").to_numpy()[:, 2:]
+        for s in ("", "-Westside", "-East")
+    )
+    # Age class 0 holds the new eggs, unlocated until they move; from age 1 every school is
+    # in one of the two regions.
+    assert whole.sum() > 0 and np.allclose(west + east, whole, rtol=1e-9)
 
 
 def test_a_region_without_a_map_in_some_steps(tmp_path):

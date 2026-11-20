@@ -23,6 +23,7 @@ predators, not per school.
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import tempfile
@@ -35,6 +36,8 @@ from numpy.typing import NDArray
 
 from osmose.engine.movement_maps import _load_csv_grid, _resolve_path
 from osmose.engine.state import SchoolState
+
+logger = logging.getLogger(__name__)
 
 _RG = re.compile(r"^output\.regions\.[a-z0-9_.]+\.rg(\d+)$")
 PREFIX = "output.regions.movement"
@@ -96,6 +99,13 @@ def parse_output_regions(
         )
     if len([k for k in cfg if re.match(r"^output\.region\.[a-z0-9_.]+\.rg0$", k)]) > 1:
         raise ValueError("Output region 0 is the whole grid and cannot be redefined (as in Java)")
+    if (
+        _set(cfg, f"{PREFIX}.netcdf.enabled")
+        and str(cfg[f"{PREFIX}.netcdf.enabled"]).strip().lower() == "true"
+    ):
+        raise ValueError(
+            f"{PREFIX}.netcdf.enabled: output-region maps from NetCDF are not supported; use CSV maps"
+        )
     config_dir = cfg.get("_osmose.config.dir", "")
     n_year = -(-n_steps // n_dt_per_year)
     regions = []
@@ -112,7 +122,9 @@ def parse_output_regions(
         numbers = sorted(
             int(key.rsplit("map", 1)[1])
             for key, value in cfg.items()
-            if key.startswith(f"{PREFIX}.region.map") and str(value).strip() == raw_name
+            # Java builds the map set with the CLEANED name (FisheryMapSet(getName(), ...)) and
+            # matches it with equals, so a map naming the raw "West_side" matches nothing.
+            if key.startswith(f"{PREFIX}.region.map") and str(value).strip() == name
         )
         for m in numbers:
             steps_key, years_key = f"{PREFIX}.steps.map{m}", f"{PREFIX}.years.map{m}"
@@ -138,6 +150,15 @@ def parse_output_regions(
                     t = y * n_dt_per_year + s
                     if t < len(index_maps):
                         index_maps[t] = len(maps) - 1
+        uncovered = int((index_maps[:n_steps] < 0).sum())
+        if uncovered:
+            # Java's FisheryMapSet.checkMapIndexation only warns: the region is empty there.
+            logger.warning(
+                "output region %s has no map at %d of %d steps; it is empty at those steps",
+                name,
+                uncovered,
+                n_steps,
+            )
         regions.append(OutputRegion(k, name, index_maps, maps))
     return regions
 
