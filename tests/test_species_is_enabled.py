@@ -87,6 +87,20 @@ class TestTheRenumbering:
         with pytest.raises(ValueError, match="species.is.enabled"):
             drop_disabled_species(cfg)
 
+    @pytest.mark.parametrize("value", ["0", "no", "False", "FALSE", "off", "yes"])
+    def test_anything_but_true_disables_as_javas_boolean_valueof(self, value):
+        out = drop_disabled_species(_three(**{"species.is.enabled.sp1": value}))
+        assert out["simulation.nspecies"] == "2"
+
+    @pytest.mark.parametrize("value", ["true", "True", " TRUE "])
+    def test_true_in_any_case_enables(self, value):
+        cfg = _three(**{"species.is.enabled.sp1": value})
+        assert drop_disabled_species(cfg) == cfg
+
+    def test_an_empty_value_is_refused_not_silently_disabled(self):
+        with pytest.raises(ValueError, match="species.is.enabled.sp1 is empty"):
+            drop_disabled_species(_three(**{"species.is.enabled.sp1": ""}))
+
 
 class TestTheEngine:
     def test_the_config_has_the_remaining_species(self):

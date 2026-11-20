@@ -42,6 +42,7 @@
     {"id": 37, "name": "selectivity_type_2_3", "phase": 0, "status": "refused", "implemented": false, "description": "fishing selectivity types other than -1, 0 and 1 (spec Q4: refused)"},
     {"id": 38, "name": "kill_if_no_school", "phase": 0, "status": "not_planned", "implemented": false, "description": "simulation.kill.if.no.school.enabled (stop the run when a species has no fish left); runs on the Python engine"},
     {"id": 39, "name": "resource_percent_log", "phase": 3, "status": "planned", "implemented": false, "description": "simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a resource taken in log size"},
-    {"id": 40, "name": "maturity_stochastic", "phase": 3, "status": "planned", "implemented": false, "description": "species.maturity.mode = stochastic (OSMOSE 4.4.0): maturity drawn from a normal ogive (l50, l75)"}
+    {"id": 40, "name": "maturity_stochastic", "phase": 3, "status": "planned", "implemented": false, "description": "species.maturity.mode = stochastic (OSMOSE 4.4.0): maturity drawn from a normal ogive (l50, l75)"},
+    {"id": 41, "name": "larva_density_dependence", "phase": 3, "status": "planned", "implemented": false, "description": "mortality.additional.larva.referencedensity (OSMOSE 4.4.x): the larval rate scaled by the spawning stock"}
   ]
 }

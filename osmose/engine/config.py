@@ -222,7 +222,16 @@ def drop_disabled_species(cfg: dict[str, str]) -> dict[str, str]:
     """
     n = int(cfg.get("simulation.nspecies", "0") or 0)
     enabled = _species_str_optional(cfg, "species.is.enabled.sp{i}", n, default="true")
-    disabled = {i for i, flag in enumerate(enabled) if flag == "false"}
+    # Java reads a present key with Boolean.valueOf: only "true" (any case) enables, so "0",
+    # "no" or a typo disable the species. An empty value would disable it there too (canFind is
+    # true for any present key); that is refused rather than silently dropping a species.
+    for i, flag in enumerate(enabled):
+        if flag == "":
+            raise ValueError(
+                f"species.is.enabled.sp{i} is empty: Java reads that as false and drops the "
+                "species; write true or false"
+            )
+    disabled = {i for i, flag in enumerate(enabled) if flag != "true"}
     if not disabled:
         return cfg
     if len(disabled) == n:
@@ -2018,6 +2027,12 @@ class EngineConfig:
     # has no fish left after the seeding period (osmose.engine.SpeciesCollapsed).
     kill_if_no_school: bool = False
 
+    # mortality.additional.larva.referencedensity.sp# (OSMOSE 4.4.x): the larval rate grows
+    # with the spawning stock, M * (1 + (ln 2 / M) * SSB / reference)
+    # (osmose.engine.processes.natural.larva_mortality). One entry per focal species, negative
+    # where unset; None when no species sets it.
+    larva_reference_density: NDArray[np.float64] | None = None
+
     # simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a
     # resource is taken in log size, not in size (osmose.engine.processes.resource_percent).
     # Absent or true keeps the linear form, as Java does.
@@ -2638,6 +2653,29 @@ class EngineConfig:
         from osmose.engine.processes.resource_percent import log_form_requested
 
         resource_percent_log = log_form_requested(cfg)
+        # Java: a reference below 0 (or absent) turns the correction off; 0 would divide by 0.
+        _larva_ref = _species_float_optional(
+            cfg, "mortality.additional.larva.referencedensity.sp{i}", n_sp, default=-999.0
+        )
+        for _i in np.flatnonzero(_larva_ref == 0.0):
+            raise ValueError(
+                f"mortality.additional.larva.referencedensity.sp{_i} = 0: the larval rate is "
+                "scaled by SSB / reference, so the reference must be above 0 (or below 0 for off)"
+            )
+        larva_reference_density = _larva_ref if (_larva_ref > 0).any() else None
+        if (
+            larva_reference_density is not None
+            and cfg.get("module.bioenergetics.enabled", "false").strip().lower() == "true"
+        ):
+            # Java's SSB counts the maturity flag, which under bioenergetics follows the
+            # m0 + m1 * age line (School.updateBioenMaturation, latched once crossed). This
+            # engine recomputes bioenergetic maturity at reproduction and keeps no flag, so it
+            # would total a different stock.
+            raise ValueError(
+                "mortality.additional.larva.referencedensity is not supported with "
+                "module.bioenergetics.enabled = true: Java's spawning stock there follows the "
+                "bioenergetic maturity flag, which this engine does not keep"
+            )
         java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 
@@ -2950,6 +2988,7 @@ class EngineConfig:
             java_compat_rng=java_compat_rng,
             movement_strict_coverage=movement_strict,
             kill_if_no_school=kill_if_no_school,
+            larva_reference_density=larva_reference_density,
             resource_percent_log=resource_percent_log,
             maturity_stochastic=maturity_stochastic,
             maturity_l50=maturity_l50,
