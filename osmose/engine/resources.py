@@ -127,6 +127,21 @@ class ResourceState:
 
         if self.n_resources > 0:
             self._load_config()
+            self._check_log_share()
+
+    def _check_log_share(self) -> None:
+        """The log form of a predator's share (simulation.resources.computePercent.legacy =
+        false) takes log(size_min). With size_min <= 0 the share is 0 for every predator, and
+        Java never feeds on the resource, silently. Refused here instead."""
+        legacy = self.config.get("simulation.resources.computepercent.legacy", "true")
+        if legacy.strip().lower() != "false":
+            return
+        bad = [rs.name for rs in self.species if not rs.size_min > 0]
+        if bad:
+            raise ValueError(
+                "simulation.resources.computepercent.legacy = false takes the share of a resource "
+                f"in log size, which needs a smallest size above 0; not so for: {', '.join(bad)}"
+            )
 
     def _load_config(self) -> None:
         """Parse resource species metadata and load forcing data."""
