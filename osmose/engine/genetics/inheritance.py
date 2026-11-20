@@ -46,7 +46,13 @@ def create_offspring_genotypes(
     rng: np.random.Generator,
     seeding: bool = False,
 ) -> GeneticState:
-    """Create genotypes for n_offspring new schools of one species."""
+    """Create genotypes for n_offspring new schools of one species.
+
+    ``gonad_weight`` is each school's weight as a parent, and a school is a parent only where
+    it is positive. Under bioenergetics that is the gonad weight. On the standard
+    reproduction path it is the school's egg production (its spawning biomass, for a mature
+    school), as in Java's ``ReproductionProcess.run_genet`` (#338).
+    """
     sp_mask = (species_id == offspring_species) & (gonad_weight > 0)
     sp_indices = np.where(sp_mask)[0]
     # Conspecific mask for the seeding branch below: species_id only, deliberately
@@ -107,21 +113,18 @@ def create_offspring_genotypes(
             # the trait allele pool); the non-seeding branch must not invent
             # genetics out of thin air. Surface the upstream bug loudly.
             #
-            # The commonest way here needs no bug at all (#338): gonad weight is set by
-            # the bioenergetic module only, so with genetics on and bioenergetics off no
-            # school is ever a parent. The message says so first, because the person
-            # who meets it then has changed two config keys and has no caller to fix.
+            # The engine does not get here on either reproduction path: a species with
+            # offspring and no spawner is one bootstrapped from its seeding biomass, and
+            # both paths report that, so its offspring are seeded (#338).
             raise ValueError(
                 f"create_offspring_genotypes(seeding=False) requested "
                 f"n_offspring={n_offspring} for species {offspring_species} "
                 f"trait {name!r} but found no eligible parents "
-                f"(species_id mask matched 0 schools with gonad_weight > 0). "
-                f"Gonad weight is set only by the bioenergetic module: with "
-                f"module.bioenergetics.enabled off, no school can be a parent and "
-                f"genetics cannot pass genes on outside its seeding window "
-                f"(evolution.seeding.year). With bioenergetics on, this indicates "
-                f"reproduction was triggered without a viable parent pool — fix "
-                f"the upstream caller rather than papering over here."
+                f"(no school of the species has a positive parent weight: gonad weight "
+                f"under bioenergetics, spawning biomass of a mature school otherwise). "
+                f"This indicates reproduction was triggered without a viable "
+                f"parent pool — fix the upstream caller rather than papering "
+                f"over here."
             )
 
         ev = float(trait.env_var[offspring_species])

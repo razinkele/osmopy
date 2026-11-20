@@ -723,11 +723,14 @@ def _reproduction(
     rng: np.random.Generator,
     grid_ny: int = 10,
     grid_nx: int = 10,
+    spawn_out: dict[str, NDArray] | None = None,
 ) -> SchoolState:
-    """Egg production + age increment."""
+    """Egg production + age increment. ``spawn_out`` is handed on (see ``reproduction``)."""
     from osmose.engine.processes.reproduction import reproduction
 
-    return reproduction(state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx)
+    return reproduction(
+        state, config, step, rng, grid_ny=grid_ny, grid_nx=grid_nx, spawn_out=spawn_out
+    )
 
 
 def _resolve_trait(
@@ -2182,6 +2185,7 @@ def simulate(
         stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)
         n_before_repro = len(state)
         bioen_seeded: dict[str, NDArray[np.bool_]] = {}
+        standard_spawn: dict[str, NDArray] = {}
         if config.bioen_enabled:
             state = _bioen_reproduction(
                 state,
@@ -2194,7 +2198,12 @@ def simulate(
                 seeded_out=bioen_seeded if ctx.genetic_state is not None else None,
             )
         else:
-            state = _reproduction(state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx)
+            # The report is asked for only when genetics needs it, so the call without
+            # genetics is the one it always was.
+            spawn_kw = {"spawn_out": standard_spawn} if ctx.genetic_state is not None else {}
+            state = _reproduction(
+                state, config, step, rng, grid_ny=grid.ny, grid_nx=grid.nx, **spawn_kw
+            )
 
         # -- Genetics inheritance (after reproduction) --
         if ctx.genetic_state is not None:
@@ -2205,15 +2214,24 @@ def simulate(
                 config.genetics_transmission_year > 0
                 and current_year < config.genetics_transmission_year
             )
-            # Per-species bioen population-seeding flag (see _bioen_reproduction's
-            # `seeded_out` docstring): its window is independent of and can outlast
+            # Per-species population-seeding flag (see _bioen_reproduction's `seeded_out`
+            # and reproduction's `spawn_out`): its window is independent of and can outlast
             # `seeding` above, so a species whose SSB is bootstrapped this step has no
             # real parents either — treat those offspring as seeded too, or
             # create_offspring_genotypes raises on an empty parent pool that was never
             # going to exist.
-            bioen_seeded_this_step = bioen_seeded.get("seeded_this_step")
-
             n_new = len(state) - n_before_repro
+            # What makes a school a parent, and how much: its gonad weight under
+            # bioenergetics, its egg production on the standard path (Java's
+            # ReproductionProcess.run_genet; #338). One value per school that existed
+            # before this step's reproduction.
+            if config.bioen_enabled:
+                seeded_this_step = bioen_seeded.get("seeded_this_step")
+                parent_weight = state.gonad_weight[: len(state) - n_new]
+            else:
+                seeded_this_step = standard_spawn["seeded_this_step"]
+                parent_weight = standard_spawn["parent_weight"]
+
             if n_new > 0:
                 new_ids = state.species_id[-n_new:]
                 offspring_parts: list = []
@@ -2221,14 +2239,14 @@ def simulate(
                     sp_mask = new_ids == sp
                     n_off = int(sp_mask.sum())
                     sp_seeding = seeding or (
-                        bioen_seeded_this_step is not None
-                        and int(sp) < len(bioen_seeded_this_step)
-                        and bool(bioen_seeded_this_step[sp])
+                        seeded_this_step is not None
+                        and int(sp) < len(seeded_this_step)
+                        and bool(seeded_this_step[sp])
                     )
                     offspring_parts.append(
                         create_offspring_genotypes(
                             parent_gs=ctx.genetic_state,
-                            gonad_weight=state.gonad_weight[: len(state) - n_new],
+                            gonad_weight=parent_weight,
                             species_id=state.species_id[: len(state) - n_new],
                             offspring_species=int(sp),
                             n_offspring=n_off,
