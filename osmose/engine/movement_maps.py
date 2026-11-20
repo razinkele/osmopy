@@ -33,22 +33,33 @@ def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
 
 
 def _resolve_pattern(value: str, config_dir: str, key: str) -> Path:
-    """The directory and file-name pattern of a NetCDF map file (Java ``getFile`` resolves the
-    path; the name is then a regular expression over that directory's files).
+    """The directory and file-name pattern of a NetCDF map file.
 
-    The directory is resolved like every other data file (:func:`resolve_data_path`: the config
-    directory, then the standard data directories); a path with ``..`` is refused, as there.
+    The name is a regular expression over a directory's files (Java ``getFile`` then a match on
+    the names). The directory is searched like every other data file
+    (:func:`osmose.engine.path_resolution._build_search_dirs`: the config directory first, then
+    the standard data directories), and the first one holding a match is used. A path with
+    ``..`` is refused, as there.
     """
+    import re
+
+    from osmose.engine.path_resolution import _build_search_dirs
+
     value = value.strip()
     if not value or value.lower() == "null":
         raise ValueError(f"movement.netcdf.enabled needs {key}")
     path = Path(value)
     if os.pardir in path.parts:
         raise ValueError(f"{key}: a path with '..' is refused")
-    parent = resolve_data_path(str(path.parent), config_dir)
-    if parent is None or not parent.is_dir():
-        raise FileNotFoundError(f"{key}: the directory of its map files was not found")
-    return parent / path.name
+    if path.is_absolute():
+        bases = [path.parent]
+    else:
+        bases = [base / path.parent for base in _build_search_dirs(config_dir)]
+    regex = re.compile(path.name)
+    for directory in bases:
+        if directory.is_dir() and any(regex.fullmatch(p.name) for p in directory.iterdir()):
+            return directory / path.name
+    raise FileNotFoundError(f"{key}: no file matches its name pattern in the data directories")
 
 
 def _parse_semicolon_ints(value: str, limit: int) -> list[int]:

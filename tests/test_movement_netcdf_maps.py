@@ -241,8 +241,32 @@ class TestTheMapSet:
             _set(_nc_config(tmp_path, **{"movement.file.map0": "../maps.nc"}))
 
     def test_a_missing_directory_is_refused(self, tmp_path):
-        with pytest.raises(FileNotFoundError, match="directory of its map files"):
+        with pytest.raises(FileNotFoundError, match="no file matches"):
             _set(_nc_config(tmp_path, **{"movement.file.map0": "nowhere/maps.nc"}))
+
+    def test_a_bare_name_is_searched_in_the_data_directories(self, tmp_path, monkeypatch):
+        # Not in the config directory, but in the working directory (a standard search base).
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        a, b = _maps()
+        _nc(cwd / "elsewhere.nc", [a, b])
+        monkeypatch.chdir(cwd)
+        cfg_dir = tmp_path / "cfg"
+        cfg_dir.mkdir()
+        cfg = _nc_config(cfg_dir, **{"movement.file.map0": "elsewhere.nc"})
+        assert np.array_equal(_set(cfg).maps[0], a)  # type: ignore[arg-type]
+
+    def test_the_config_directory_comes_first(self, tmp_path, monkeypatch):
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        a, b = _maps()
+        _nc(cwd / "both.nc", [b, a])
+        monkeypatch.chdir(cwd)
+        cfg_dir = tmp_path / "cfg"
+        cfg_dir.mkdir()
+        _nc(cfg_dir / "both.nc", [a, b])
+        cfg = _nc_config(cfg_dir, **{"movement.file.map0": "both.nc"})
+        assert np.array_equal(_set(cfg).maps[0], a)  # type: ignore[arg-type]
 
     def test_without_the_switch_the_csv_path_is_untouched(self, tmp_path):
         cfg = _csv_config(tmp_path) | {"movement.netcdf.enabled": "false"}

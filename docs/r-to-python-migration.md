@@ -166,8 +166,10 @@ Everything above is about config *keys*. The thing that actually breaks a real R
 
 **NetCDF movement maps are read since 2026-11-20 (#137).** With `movement.netcdf.enabled = true`
 (Java reads any spelling of `true`), map k reads `movement.variable.mapk` from the files matching
-`movement.file.mapk`, one map per time step, `movement.nsteps.year.mapk` of them per year, exactly
-as Java's `MapSet.loadMapsNcMaps` does (`MovementMapSet._load_netcdf`; rows as stored, no flip).
+`movement.file.mapk`, one map per time step of the file; model step t uses file step
+`(t // (ndtperyear // nsteps.year)) % n_file_steps` (integer division, so a `nsteps.year` that does
+not divide `ndtperyear` changes frame more often than it says), exactly as Java's
+`MapSet.loadMapsNcMaps` does (`MovementMapSet._load_netcdf`; rows as stored, no flip).
 The real `osmose-ben.R` sets `movement.netcdf.enabled = TRUE` and `movement.distribution.method.sp0
 = maps` (`:386`, `:388`) and defines **27** `movement.file.map{idx}` keys (`map0` through `map26`),
 every one of them a `.nc` path with its `movement.variable.map{idx}`: that shape now loads as it is.
