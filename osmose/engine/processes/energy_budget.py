@@ -178,6 +178,72 @@ def update_enet_faced(
     return np.where(alive, out, enet_faced_prev)
 
 
+def lite_temperature_bounds(
+    tmin: float, tmax: float, topt: float, xi_crit: float
+) -> tuple[float, float]:
+    """Java ``EnergyBudget.init`` for the lite model: the roots T1 < tmin and T2 > tmax.
+
+    They are chosen so that :func:`lite_temperature_factor` is 1 at ``topt`` and ``xi_crit`` at
+    both ``tmin`` and ``tmax``: a fish eating at its maximum then has zero net energy at either
+    thermal limit.
+    """
+    r = tmax - tmin
+    hmin = (xi_crit / (1.0 - xi_crit)) * (tmin - topt) ** 2
+    hmax = (xi_crit / (1.0 - xi_crit)) * (tmax - topt) ** 2
+    h = (hmax - hmin) / r
+    k1 = (-(r + h) + np.sqrt((r + h) ** 2 + 4.0 * hmin)) / 2.0
+    k2 = k1 + h
+    return float(tmin - k1), float(tmax + k2)
+
+
+def lite_temperature_factor(
+    temp_c: NDArray[np.float64] | float, t1: float, t2: float, topt: float
+) -> NDArray[np.float64]:
+    """Java ``EnergyBudget.computeLiteTempFunction``."""
+    temp = np.asarray(temp_c, dtype=np.float64)
+    numerator = (temp - t1) * (temp - t2)
+    return numerator / (numerator - (temp - topt) ** 2)
+
+
+def energy_terms_lite(
+    ingestion: NDArray[np.float64],
+    weight: NDArray[np.float64],
+    abundance: NDArray[np.float64],
+    age_dt: NDArray[np.int32],
+    temp_c: NDArray[np.float64] | float,
+    assimilation: float,
+    beta: float,
+    i_max_year: float,
+    larval_ratio: float,
+    larvae_thres_dt: int,
+    xi_crit: float,
+    t1: float,
+    t2: float,
+    topt: float,
+    f_o2: NDArray[np.float64] | float,
+    n_dt_per_year: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Java ``EnergyBudget.computeEnetLite`` (v4.4.1), tonnes per school.
+
+    ``E_net = assimilation * (ingestion * f_T * f_O2
+                              - Imax / nStepYear * theta * xi_crit * w[g]^beta * N * 1e-6)``,
+    with ``theta`` the larval ingestion ratio below the larval threshold age and 1 above it.
+    Java never sets E_gross or E_maint for a lite school, so they stay 0, as here.
+    """
+    theta = np.where(age_dt < larvae_thres_dt, larval_ratio, 1.0)
+    e_net = assimilation * (
+        ingestion * lite_temperature_factor(temp_c, t1, t2, topt) * f_o2
+        - (i_max_year / n_dt_per_year)
+        * theta
+        * xi_crit
+        * np.power(weight * 1e6, beta)
+        * abundance
+        * 1e-6
+    )
+    zeros = np.zeros_like(e_net)
+    return zeros, zeros.copy(), e_net
+
+
 def compute_energy_budget(
     ingestion: NDArray[np.float64],
     weight: NDArray[np.float64],
@@ -198,6 +264,7 @@ def compute_energy_budget(
     f_o2: NDArray[np.float64] | float,
     n_dt_per_year: int,
     enet_faced: NDArray[np.float64],
+    terms: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]] | None = None,
 ) -> tuple[
     NDArray[np.float64],
     NDArray[np.float64],
@@ -288,20 +355,25 @@ def compute_energy_budget(
     Java latches it (``School.setIsMature(true)`` is never cleared). With
     ``m1 > 0`` a matured school can therefore revert here. Out of scope for this
     change; it needs a ``SchoolState.is_mature`` field.
+
+    ``terms`` takes ``(e_gross, e_maint, e_net)`` computed by the caller (the lite model's come
+    from :func:`energy_terms_lite`); without it the full model's are computed here.
     """
-    e_gross, e_maint, e_net = energy_terms(
-        ingestion,
-        weight,
-        abundance,
-        temp_c,
-        assimilation,
-        c_m,
-        beta,
-        e_maint_energy,
-        phi_t,
-        f_o2,
-        n_dt_per_year,
-    )
+    if terms is None:
+        terms = energy_terms(
+            ingestion,
+            weight,
+            abundance,
+            temp_c,
+            assimilation,
+            c_m,
+            beta,
+            e_maint_energy,
+            phi_t,
+            f_o2,
+            n_dt_per_year,
+        )
+    e_gross, e_maint, e_net = terms
 
     w_grams = weight * 1e6
     age_years = age_dt.astype(np.float64) / n_dt_per_year

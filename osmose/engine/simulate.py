@@ -445,6 +445,7 @@ def _bioen_step(
     from osmose.engine.processes.energy_budget import (
         compute_energy_budget,
         energy_terms,
+        energy_terms_lite,
         update_enet_faced,
     )
     from osmose.engine.processes.temp_function import phi_t as phi_t_fn
@@ -623,19 +624,44 @@ def _bioen_step(
         # this step's E_net. energy_terms is therefore evaluated here for the
         # enet_faced update and re-evaluated inside compute_energy_budget; keeping the
         # Java formulas in one place is worth the one redundant vectorised expression.
-        _, _, e_net_sp = energy_terms(
-            ingestion[mask],
-            state.weight[mask],
-            state.abundance[mask],
-            temp_c_arr[mask],
-            float(config.bioen_assimilation[sp]),
-            float(config.bioen_c_m[sp]),
-            float(config.bioen_beta[sp]),
-            float(config.bioen_e_maint[sp]),
-            phi_t_arr[mask],
-            f_o2_arr[mask],
-            config.n_dt_per_year,
-        )
+        # species.bioenergetics.model (OSMOSE 4.4.x): a species not on the full model takes
+        # Java's computeEnetLite, with no phi_T and no maintenance term.
+        if config.bioen_lite is not None and config.bioen_lite[sp]:
+            assert config.bioen_lite_t1 is not None and config.bioen_lite_t2 is not None
+            assert config.bioen_lite_topt is not None
+            terms = energy_terms_lite(
+                ingestion[mask],
+                state.weight[mask],
+                state.abundance[mask],
+                state.age_dt[mask],
+                temp_c_arr[mask],
+                float(config.bioen_assimilation[sp]),
+                float(config.bioen_beta[sp]),
+                float(config.bioen_i_max[sp]),
+                float(config.bioen_theta[sp]),
+                int(config.bioen_larvae_thres_dt[sp]),
+                float(config.critical_success_rate[sp]),
+                float(config.bioen_lite_t1[sp]),
+                float(config.bioen_lite_t2[sp]),
+                float(config.bioen_lite_topt[sp]),
+                f_o2_arr[mask],
+                config.n_dt_per_year,
+            )
+        else:
+            terms = energy_terms(
+                ingestion[mask],
+                state.weight[mask],
+                state.abundance[mask],
+                temp_c_arr[mask],
+                float(config.bioen_assimilation[sp]),
+                float(config.bioen_c_m[sp]),
+                float(config.bioen_beta[sp]),
+                float(config.bioen_e_maint[sp]),
+                phi_t_arr[mask],
+                f_o2_arr[mask],
+                config.n_dt_per_year,
+            )
+        e_net_sp = terms[2]
         faced_sp = update_enet_faced(
             enet_faced_prev=state.e_net_avg[mask],
             e_net=e_net_sp,
@@ -668,6 +694,7 @@ def _bioen_step(
             f_o2=f_o2_arr[mask],
             n_dt_per_year=config.n_dt_per_year,
             enet_faced=faced_sp,
+            terms=terms,
         )
         new_e_net_avg[mask] = faced_sp
         dw_tonnes[mask] = dw_sp
@@ -1981,7 +2008,7 @@ def simulate(
 
     map_sets: dict[int, MovementMapSet] = {}
     for sp in range(config.n_species):
-        if config.movement_method[sp] == "maps":
+        if config.movement_is_maps[sp] or config.movement_is_gradient[sp]:
             sp_name = config.species_names[sp]
             map_sets[sp] = MovementMapSet(
                 config=config.raw_config,
@@ -2000,8 +2027,13 @@ def simulate(
     from osmose.engine.processes.precompute import _flatten_all_map_sets
 
     flat_map_data = (
-        _flatten_all_map_sets(map_sets, config.n_species, grid.ny, grid.nx)
-        if map_sets and _MV_HAS_NUMBA
+        _flatten_all_map_sets(
+            {sp: ms for sp, ms in map_sets.items() if config.movement_is_maps[sp]},
+            config.n_species,
+            grid.ny,
+            grid.nx,
+        )
+        if any(config.movement_is_maps[sp] for sp in map_sets) and _MV_HAS_NUMBA
         else None
     )
     # Pre-compute walk_range as int32 once (avoids per-step allocation)

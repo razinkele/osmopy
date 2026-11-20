@@ -186,6 +186,17 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "simulation.restart.file",
         "simulation.restart.recordfrequency.ndt",
         "simulation.resources.computepercent.legacy",  # 4.4.0, read outside config.py (#137)
+        "mortality.additional.rate.multiplier.sp{idx}",  # 4.4.x, built from a prefix in config.py (#137)
+        "mortality.additional.rate.seasonality.sp{idx}",
+        "mortality.additional.rate.seasonality.file.sp{idx}",
+        "mortality.additional.larva.rate.multiplier.sp{idx}",
+        "mortality.additional.larva.rate.seasonality.sp{idx}",
+        "mortality.additional.larva.rate.seasonality.file.sp{idx}",
+        "mortality.additional.neonate.rate.sp{idx}",
+        "mortality.additional.neonate.rate.multiplier.sp{idx}",
+        "mortality.additional.neonate.rate.seasonality.sp{idx}",
+        "mortality.additional.neonate.rate.seasonality.file.sp{idx}",
+        "species.bioenergetics.model.sp{idx}",  # 4.4.x, read raw in config.py (#137)
         "species.reproduction.postspawning.survivaltime.sp",  # Java's un-indexed key (#137)
         "species.reproduction.postspawning.survivaltime.sp{idx}",
         "simulation.restart.spinup.nyear",

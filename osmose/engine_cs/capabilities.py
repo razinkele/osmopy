@@ -103,6 +103,7 @@ DETECTORS: dict[str, Any] = {
     "salinity_gate": lambda c, raw: bool(c.salinity_gate_enabled),
     "oxygen_benthos": _detect_raw("osmose.engine.resources.oxygen_benthos_enabled"),
     "movement_none": lambda c, raw: "none" in _focal(c, c.movement_method).tolist(),
+    "movement_gradient": lambda c, raw: bool(_focal(c, c.movement_is_gradient).any()),
     "depletable_ltl": _detect_raw("osmose.engine.resources.depletable_enabled"),
     # In use, not merely switched on: the switch without a flux file does nothing (the Benguela
     # demo ships so), and a config must not be refused for a feature it does not use.
@@ -112,6 +113,9 @@ DETECTORS: dict[str, Any] = {
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),
     "larva_rate_by_step": lambda c, raw: _any_set(c.larva_mortality_by_dt),
     "larva_density_dependence": lambda c, raw: c.larva_reference_density is not None,
+    "mortality_rate_factor": lambda c, raw: (
+        c.additional_mortality_factor is not None or c.larva_mortality_factor is not None
+    ),
     "semelparous": lambda c, raw: c.reproduction_semelparous is not None,
     "additional_maps": lambda c, raw: _any_set(c.additional_mortality_spatial),
     "selectivity_logistic": lambda c, raw: (
@@ -199,6 +203,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
             r"|predation\.c\.bioen\..+|species\.beta\..+|species\.zlayer\..+|species\.oxygen\.c[12]\..+"
             r"|species\.maturity\.(eta|m0|m1|r)\..+|species\.larvae\.growth\.threshold\.age\..+"
             r"|predation\.larval\.ingestion\.rate\.increase\.ratio\..+|temperature\..+|output\.bioen\..+"
+            r"|species\.bioenergetics\.model\..+|species\.temperature\.(tmin|tmax|topt)\..+"
         ),
         "bioenergetics",
     ),
@@ -225,6 +230,15 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"mortality\.additional\.rate\.\{idx\}\.file\..+", "additional_rate_by_step,rate_by_class"),
     (r"mortality\.additional\.larva\.rate\.\{idx\}\.file\..+", "larva_rate_by_step"),
     (r"mortality\.additional\.larva\.referencedensity\..+", "larva_density_dependence"),
+    (
+        r"mortality\.additional\.((larva|neonate)\.)?rate\.(multiplier|seasonality(\.file)?)\..+",
+        "mortality_rate_factor",
+    ),
+    # config.mortality_rate_factor builds the same keys from a prefix (seen as {idx} here).
+    (r"\{idx\}\.(multiplier|seasonality(\.file)?)\.sp\{idx\}", "mortality_rate_factor"),
+    # The neonate scenario is folded into the larval rate, which the bundle carries.
+    (r"mortality\.additional\.neonate\.rate\.sp\{idx\}", "phase1"),
+    (r"movement\.(base\.search\.radius|random\.walk\.coef)\..+", "movement_gradient"),
     (r"species\.reproduction\.(strategy|postspawning\.survivaltime)\..+", "semelparous"),
     # The same two families as config files spell them once the reader has lowercased them
     # (issue #297: until then the engine never matched these, so they never reached a detector).
