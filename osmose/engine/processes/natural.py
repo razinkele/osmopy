@@ -114,6 +114,13 @@ def _density_dependent_larva_rate(
     (``SimulationStep.step``): the biomass of every mature focal school, out-of-domain schools
     included, which is the state handed to this pre-pass. Where M is 0, Java's formula is
     0 x infinity (not a number); the limit, ``ln 2 * SSB / reference``, is used instead.
+
+    Java totals ``school.isMature()``, a flag set during the previous step's reproduction,
+    before ages were incremented; this tests maturity on the current state. With a maturity
+    age, a school crossing it counts one step later in Java. A species that does not reproduce
+    (sex ratio or fecundity 0) never gets the flag in Java, so its stock is 0 there. Under
+    bioenergetics the flag follows the m0/m1 line, which this engine does not latch, so the
+    key is refused there (``EngineConfig.from_dict``).
     """
     ref = config.larva_reference_density
     assert ref is not None

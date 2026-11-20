@@ -90,6 +90,16 @@ class TestTheKey:
         with pytest.raises(ValueError, match="referencedensity.sp0"):
             EngineConfig.from_dict(_config(**{KEY: "0"}))
 
+    def test_bioenergetics_is_refused(self):
+        # Java's SSB follows the bioenergetic maturity flag there, which this engine lacks.
+        # The refusal comes before any bioenergetic key is read, so none is needed here.
+        with pytest.raises(ValueError, match="module.bioenergetics.enabled"):
+            EngineConfig.from_dict(_config(**{KEY: "400", "module.bioenergetics.enabled": "true"}))
+
+    def test_bioenergetics_alone_still_loads(self):
+        c = EngineConfig.from_dict(_config(**{"module.bioenergetics.enabled": "true"}))
+        assert c.bioen_enabled and c.larva_reference_density is None
+
 
 def _egg_deaths(cfg: dict[str, str], state: SchoolState | None = None) -> np.ndarray:
     config = EngineConfig.from_dict(cfg)
@@ -155,6 +165,20 @@ class TestTheRate:
         assert (n - dd[0]) / n == pytest.approx(
             (n - base[0]) / n / 2, rel=1e-12
         )  # SSB = 50 = reference
+
+    def test_a_by_step_rate_gets_the_same_correction(self):
+        # ByDtLarvaMortality computes a = ln 2 / M from its own per-step rate, so the added
+        # term is ln 2 * SSB / reference whatever the series holds that step.
+        from dataclasses import replace
+
+        from osmose.engine.timeseries import SingleTimeSeries
+
+        ref = 400.0
+        series = SingleTimeSeries(np.array([0.7, 0.7, 0.7, 5.0] + [0.7] * 8))
+        config = EngineConfig.from_dict(_config(**{KEY: str(ref)}))
+        config = replace(config, larva_mortality_by_dt=[series, None])
+        dd = larva_mortality(_state(), config, step=3).n_dead[:, 2]
+        assert dd[0] == pytest.approx(1e6 * (1 - math.exp(-(5.0 + math.log(2) * SSB0 / ref))))
 
     def test_a_zero_base_rate_uses_the_limit_not_a_nan(self):
         cfg = _config(**{KEY: "400", "mortality.additional.larva.rate.sp0": "0"})

@@ -222,7 +222,16 @@ def drop_disabled_species(cfg: dict[str, str]) -> dict[str, str]:
     """
     n = int(cfg.get("simulation.nspecies", "0") or 0)
     enabled = _species_str_optional(cfg, "species.is.enabled.sp{i}", n, default="true")
-    disabled = {i for i, flag in enumerate(enabled) if flag == "false"}
+    # Java reads a present key with Boolean.valueOf: only "true" (any case) enables, so "0",
+    # "no" or a typo disable the species. An empty value would disable it there too (canFind is
+    # true for any present key); that is refused rather than silently dropping a species.
+    for i, flag in enumerate(enabled):
+        if flag == "":
+            raise ValueError(
+                f"species.is.enabled.sp{i} is empty: Java reads that as false and drops the "
+                "species; write true or false"
+            )
+    disabled = {i for i, flag in enumerate(enabled) if flag != "true"}
     if not disabled:
         return cfg
     if len(disabled) == n:
@@ -2654,6 +2663,19 @@ class EngineConfig:
                 "scaled by SSB / reference, so the reference must be above 0 (or below 0 for off)"
             )
         larva_reference_density = _larva_ref if (_larva_ref > 0).any() else None
+        if (
+            larva_reference_density is not None
+            and cfg.get("module.bioenergetics.enabled", "false").strip().lower() == "true"
+        ):
+            # Java's SSB counts the maturity flag, which under bioenergetics follows the
+            # m0 + m1 * age line (School.updateBioenMaturation, latched once crossed). This
+            # engine recomputes bioenergetic maturity at reproduction and keeps no flag, so it
+            # would total a different stock.
+            raise ValueError(
+                "mortality.additional.larva.referencedensity is not supported with "
+                "module.bioenergetics.enabled = true: Java's spawning stock there follows the "
+                "bioenergetic maturity flag, which this engine does not keep"
+            )
         java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 
