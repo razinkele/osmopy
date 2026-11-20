@@ -162,8 +162,8 @@ def _step(cfg: dict[str, str]):
 
 
 def test_the_step_uses_the_lite_budget_for_lite_species_only():
-    full_cfg, full = _step(_bioen())
-    lite_cfg, lite = _step(_bioen(**LITE))
+    _, full = _step(_bioen())
+    _, lite = _step(_bioen(**LITE))
     t1, t2 = lite_temperature_bounds(2.0, 26.0, 16.0, 0.57)
     _, _, want = energy_terms_lite(
         np.array([2e-3, 3e-4]), np.array([2e-5, 1e-6]), np.array([1000.0, 4000.0]),
