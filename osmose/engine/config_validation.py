@@ -81,6 +81,10 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "movement.netcdf.enabled",
         "movement.variable.map{idx}",
         "movement.nsteps.year.map{idx}",
+        # Post-spawning survival: the un-indexed key Java reads, and the indexed one it never
+        # reads (refused by config._parse_semelparity, so it is known, not unknown)
+        "species.reproduction.postspawning.survivaltime.sp",
+        "species.reproduction.postspawning.survivaltime.sp{idx}",
         "module.bioeconomics.enabled",
         "module.population.initialisation.enabled",
         "mortality.fishing.catches.bydt.byage.file.sp{idx}",

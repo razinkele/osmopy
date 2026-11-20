@@ -390,6 +390,7 @@ def _recipes(c: EngineConfig) -> dict:
             ),
             {},
         ),
+        "semelparous": (R(c, reproduction_semelparous=np.ones(n, dtype=bool)), {}),
         "fishing_catches": (R(c, fishing_catches=np.full(n, 10.0)), {}),
         "rate_by_class": (R(c, fishing_rate_by_dt_by_class=[object()] + nones[1:]), {}),
         "selectivity_type_2_3": (R(c, fishing_selectivity_type=_flip(sel, 2, sel.dtype)), {}),

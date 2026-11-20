@@ -200,6 +200,8 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "movement.netcdf.enabled",  # read by movement_maps.py (#137)
         "movement.variable.map{idx}",
         "movement.nsteps.year.map{idx}",
+        "species.reproduction.postspawning.survivaltime.sp",  # Java's un-indexed key (#137)
+        "species.reproduction.postspawning.survivaltime.sp{idx}",
         "simulation.restart.spinup.nyear",
         "species.age.sp{idx}",
         "species.biomass.constant.sp{idx}",  # 4.4.1 forcing keys, Java-only (#137)

@@ -116,6 +116,7 @@ DETECTORS: dict[str, Any] = {
     "mortality_rate_factor": lambda c, raw: (
         c.additional_mortality_factor is not None or c.larva_mortality_factor is not None
     ),
+    "semelparous": lambda c, raw: c.reproduction_semelparous is not None,
     "additional_maps": lambda c, raw: _any_set(c.additional_mortality_spatial),
     "selectivity_logistic": lambda c, raw: (
         c.fishing_enabled and bool(np.any(_selectivity(c)[0] == 1))
@@ -238,6 +239,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     # The neonate scenario is folded into the larval rate, which the bundle carries.
     (r"mortality\.additional\.neonate\.rate\.sp\{idx\}", "phase1"),
     (r"movement\.(base\.search\.radius|random\.walk\.coef)\..+", "movement_gradient"),
+    (r"species\.reproduction\.(strategy|postspawning\.survivaltime)\..+", "semelparous"),
     # The same two families as config files spell them once the reader has lowercased them
     # (issue #297: until then the engine never matched these, so they never reached a detector).
     (r"mortality\.additional\.rate\.bydt\.(byage|bysize)\.file\..+", "rate_by_class"),
