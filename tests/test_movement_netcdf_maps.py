@@ -213,6 +213,14 @@ class TestTheMapSet:
         )
         assert s.index_maps[0, 0] == s.index_maps[0, 2]
 
+    def test_a_path_with_dot_dot_is_refused(self, tmp_path):
+        with pytest.raises(ValueError, match="'..' is refused"):
+            _set(_nc_config(tmp_path, **{"movement.file.map0": "../maps.nc"}))
+
+    def test_a_missing_directory_is_refused(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="directory of its map files"):
+            _set(_nc_config(tmp_path, **{"movement.file.map0": "nowhere/maps.nc"}))
+
     def test_without_the_switch_the_csv_path_is_untouched(self, tmp_path):
         cfg = _csv_config(tmp_path) | {"movement.netcdf.enabled": "false"}
         assert np.array_equal(_set(cfg).index_maps, _set(_csv_config(tmp_path)).index_maps)

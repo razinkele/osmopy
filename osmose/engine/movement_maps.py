@@ -33,14 +33,21 @@ def _resolve_path(filepath_str: str, config_dir: str = "") -> Path:
 
 def _resolve_pattern(value: str, config_dir: str, key: str) -> Path:
     """The directory and file-name pattern of a NetCDF map file (Java ``getFile`` resolves the
-    path; the name is then a regular expression over that directory's files)."""
+    path; the name is then a regular expression over that directory's files).
+
+    The directory is resolved like every other data file (:func:`resolve_data_path`: the config
+    directory, then the standard data directories); a path with ``..`` is refused, as there.
+    """
     value = value.strip()
     if not value or value.lower() == "null":
         raise ValueError(f"movement.netcdf.enabled needs {key}")
     path = Path(value)
-    if not path.is_absolute() and config_dir:
-        path = Path(config_dir) / path
-    return path
+    if ".." in path.parts:
+        raise ValueError(f"{key}: a path with '..' is refused")
+    parent = resolve_data_path(str(path.parent), config_dir)
+    if parent is None or not parent.is_dir():
+        raise FileNotFoundError(f"{key}: the directory of its map files was not found")
+    return parent / path.name
 
 
 def _parse_semicolon_ints(value: str, limit: int) -> list[int]:
@@ -352,9 +359,7 @@ class MovementMapSet:
             regex = re.compile(pattern_path.name)
             files = sorted(p for p in pattern_path.parent.iterdir() if regex.fullmatch(p.name))
             if not files:
-                raise FileNotFoundError(
-                    f"{file_key}: no file in {pattern_path.parent} matches {pattern_path.name!r}"
-                )
+                raise FileNotFoundError(f"{file_key}: no file matches its name pattern")
             var = config.get(f"movement.variable.map{n}", "").strip()
             if not var:
                 raise ValueError(f"movement.netcdf.enabled needs movement.variable.map{n}")
