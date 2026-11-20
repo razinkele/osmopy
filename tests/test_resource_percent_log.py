@@ -37,6 +37,22 @@ class TestTheKey:
         assert EngineConfig.from_dict(base | {KEY: "TRUE"}).resource_percent_log is False
         assert EngineConfig.from_dict(base | {KEY: "false"}).resource_percent_log is True
 
+    @pytest.mark.parametrize(
+        ("value", "log"),
+        [
+            ("False", True),
+            ("0", True),
+            ("no", True),
+            (" true ", False),
+            ("", False),
+            ("null", False),
+        ],
+    )
+    def test_any_value_but_true_is_the_log_form_as_in_java(self, tmp_path, value, log):
+        # Java reads the key with Boolean.valueOf: only "true" (any case) is true.
+        base = _tutorial(tmp_path, {})
+        assert EngineConfig.from_dict(base | {KEY: value}).resource_percent_log is log
+
     def test_the_log_form_refuses_a_resource_whose_smallest_size_is_not_positive(self, tmp_path):
         # log(0) makes the denominator infinite and the share 0: Java then never feeds on the
         # resource, silently. Refused here, naming the resource.

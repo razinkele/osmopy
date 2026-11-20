@@ -8,6 +8,7 @@ don't grow or reproduce.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -233,11 +234,20 @@ def parse_background_species(
             fr_halfsat = _FR_HALFSAT_SENTINEL
 
         # Java 4.4.1's BackgroundSpecies reads species.multiplier.spN; accept it when the legacy
-        # Python key is absent.
-        multiplier = float(
-            cfg.get(f"species.biomass.multiplier.sp{i}")
-            or cfg.get(f"species.multiplier.sp{i}", "1.0")
-        )
+        # Python key is absent. species.multiplier.log.spN gives it as a logarithm, and Java
+        # refuses the two together (BackgroundSpecies.java, v4.4.1 lines 223-238).
+        log_key = f"species.multiplier.log.sp{i}"
+        if cfg.get(log_key) is not None:
+            if cfg.get(f"species.multiplier.sp{i}") is not None:
+                raise ValueError(
+                    f"Both {log_key} and species.multiplier.sp{i} are defined. Choose only one."
+                )
+            multiplier = math.exp(float(cfg[log_key]))
+        else:
+            multiplier = float(
+                cfg.get(f"species.biomass.multiplier.sp{i}")
+                or cfg.get(f"species.multiplier.sp{i}", "1.0")
+            )
         offset = float(cfg.get(f"species.biomass.offset.sp{i}", "0.0"))
 
         # Per-species override, then global fallback, then n_dt_per_year

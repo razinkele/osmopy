@@ -27,3 +27,20 @@ def resource_percent(
             math.log(size_max) - math.log(size_min)
         )
     return (overlap_max - overlap_min) / (size_max - size_min)
+
+
+LEGACY_KEY = "simulation.resources.computepercent.legacy"  # the reader lowercases keys
+
+
+def log_form_requested(cfg) -> bool:
+    """Whether a config asks for the log form, read as Java reads the key.
+
+    Absent (or empty, or ``null``) keeps the linear form, as Java does when the key is not
+    defined (``ResourceSpecies``, v4.4.1 lines 144-149). Otherwise Java takes
+    ``Boolean.valueOf``: ``true`` in any case is the linear form, and ANY other value is
+    ``false``, so the log form. A value like ``0`` or ``no`` is the log form.
+    """
+    value = cfg.get(LEGACY_KEY)
+    if value is None or value.strip() == "" or value.strip().lower() == "null":
+        return False
+    return value.strip().lower() != "true"

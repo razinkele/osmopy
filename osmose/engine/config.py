@@ -802,6 +802,17 @@ def _parse_predation_params(
         n_sp,
         default=int(cfg.get("simulation.nschool", "20")),
     )
+    # OSMOSE 4.4.x: (int) (multiplier * nschool), a truncation (Configuration.java, v4.4.1).
+    nschool_mul = float(cfg.get("simulation.nschool.multiplier", "1.0"))
+    if nschool_mul != 1.0:
+        focal_n_schools = np.trunc(nschool_mul * focal_n_schools.astype(np.float64)).astype(
+            np.int32
+        )
+        if (focal_n_schools < 1).any():
+            raise ValueError(
+                f"simulation.nschool.multiplier = {nschool_mul} leaves a species with no school "
+                f"(counts {focal_n_schools.tolist()})"
+            )
 
     return {
         "focal_ingestion_rate": focal_ingestion_rate,
@@ -2578,9 +2589,9 @@ class EngineConfig:
         kill_if_no_school = (
             cfg.get("simulation.kill.if.no.school.enabled", "false").lower() == "true"
         )
-        resource_percent_log = (
-            cfg.get("simulation.resources.computepercent.legacy", "true").strip().lower() == "false"
-        )
+        from osmose.engine.processes.resource_percent import log_form_requested
+
+        resource_percent_log = log_form_requested(cfg)
         # Java: a reference below 0 (or absent) turns the correction off; 0 would divide by 0.
         _larva_ref = _species_float_optional(
             cfg, "mortality.additional.larva.referencedensity.sp{i}", n_sp, default=-999.0
