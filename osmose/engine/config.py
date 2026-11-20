@@ -768,6 +768,17 @@ def _parse_predation_params(
         n_sp,
         default=int(cfg.get("simulation.nschool", "20")),
     )
+    # OSMOSE 4.4.x: (int) (multiplier * nschool), a truncation (Configuration.java, v4.4.1).
+    nschool_mul = float(cfg.get("simulation.nschool.multiplier", "1.0"))
+    if nschool_mul != 1.0:
+        focal_n_schools = np.trunc(nschool_mul * focal_n_schools.astype(np.float64)).astype(
+            np.int32
+        )
+        if (focal_n_schools < 1).any():
+            raise ValueError(
+                f"simulation.nschool.multiplier = {nschool_mul} leaves a species with no school "
+                f"(counts {focal_n_schools.tolist()})"
+            )
 
     return {
         "focal_ingestion_rate": focal_ingestion_rate,

@@ -52,6 +52,13 @@ class ResourceSpeciesInfo:
     offset: float = 0.0  # biomass offset (for uniform distribution)
     accessibility_ts: NDArray[np.float64] | None = None  # time-varying accessibility
     regrowth_rate: float = 1.0  # per-step logistic regrowth rate (used only when depletable)
+    # The NetCDF variable holding the forcing (species.biomass.varname.sp#, OSMOSE 4.4.1's
+    # ResourceForcing); empty means the variable is named after the resource.
+    var_name: str = ""
+
+    @property
+    def forcing_var(self) -> str:
+        return self.var_name or self.name
 
     def __post_init__(self) -> None:
         if self.size_min >= self.size_max:
@@ -101,6 +108,7 @@ class ResourceState:
         self._forcing_data: xr.Dataset | None = None
         self._n_forcing_steps: int = 0
         self._forcing_var_names: list[str] = []
+        self._varname_keys: list[str] = []
         self._uniform_biomass: NDArray[np.float64] = np.zeros(
             max(1, self.n_resources), dtype=np.float64
         )
@@ -218,9 +226,11 @@ class ResourceState:
                     regrowth_rate=float(
                         cfg.get(f"species.regrowth.rate.sp{fi}", str(self._regrowth_default))
                     ),
+                    var_name=cfg.get(f"species.biomass.varname.sp{fi}", ""),
                 )
             )
-            self._forcing_var_names.append(name)
+            self._forcing_var_names.append(self.species[-1].forcing_var)
+            self._varname_keys.append(f"species.biomass.varname.sp{fi}")
 
             # Per-species NetCDF file (EEC: all point to the same file)
             # 4.4.1 renamed the key to species.biomass.file.spN (ResourceForcing.java); accept both.
@@ -236,6 +246,15 @@ class ResourceState:
 
         # Load NetCDF forcing
         self._load_netcdf(nc_file)
+        # A variable named by species.biomass.varname must be in the file: Java fails on it
+        # too, and silently falling back to a uniform biomass would hide the typo.
+        if self._forcing_data is not None:
+            for rs, key in zip(self.species, self._varname_keys, strict=True):
+                if rs.var_name and rs.var_name not in self._forcing_data:
+                    raise ValueError(
+                        f"{key} = {rs.var_name!r} is not a variable of the forcing file "
+                        f"(variables: {', '.join(map(str, self._forcing_data.data_vars))})"
+                    )
 
     def _resolve_data_file(self, file_key: str) -> Path | None:
         """Resolve a data file path against multiple search directories."""
@@ -285,7 +304,7 @@ class ResourceState:
 
             # Carrying capacity K for this resource (the value the reset would assign)
             k_row = np.zeros(grid.ny * grid.nx, dtype=np.float64)
-            if self._forcing_data is not None and rsc.name in self._forcing_data:
+            if self._forcing_data is not None and rsc.forcing_var in self._forcing_data:
                 # Map simulation timestep to forcing timestep
                 # Forcing has _n_forcing_steps per year, simulation has n_dt_per_year
                 step_in_year = step % n_dt_per_year
@@ -293,7 +312,7 @@ class ResourceState:
                 forcing_idx = min(forcing_idx, self._n_forcing_steps - 1)
 
                 # Get spatial data for this timestep
-                data = self._forcing_data[rsc.name].isel(time=forcing_idx).values
+                data = self._forcing_data[rsc.forcing_var].isel(time=forcing_idx).values
                 # data shape might be (lat_forcing, lon_forcing) which may differ from grid
 
                 # Regrid to model grid using nearest-neighbor
