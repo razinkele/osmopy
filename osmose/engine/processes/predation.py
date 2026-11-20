@@ -29,6 +29,7 @@ from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
 from osmose.engine.processes.feeding_stage import compute_feeding_stages
+from osmose.engine.processes.resource_percent import resource_percent
 from osmose.engine.resources import ResourceState
 from osmose.engine.simulate import SimulationContext
 from osmose.engine.state import SchoolState
@@ -458,7 +459,13 @@ def _predation_on_resources(
             rsc_range = rsc.size_max - rsc.size_min
             if rsc_range <= 0:
                 continue
-            percent_resource = (overlap_max - overlap_min) / rsc_range
+            percent_resource = resource_percent(
+                float(overlap_min),
+                float(overlap_max),
+                rsc.size_min,
+                rsc.size_max,
+                config.resource_percent_log,
+            )
 
             # Accessibility from matrix
             access_coeff = 1.0

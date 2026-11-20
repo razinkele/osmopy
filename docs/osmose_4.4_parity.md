@@ -47,7 +47,7 @@ Status: **done** · **partial** · **TODO** · **N/A** (no Python counterpart is
 | Spherical egg size (`species.egg.density`) | TODO | |
 | Gradient-based movement (`movement.random.walk.coef`, `movement.base.search.radius`) | TODO | |
 | Background movement from NetCDF maps (`movement.netcdf.enabled`) | TODO | `movement.randomwalk.range` is read |
-| Log-form LTL `computePercent` (`simulation.resources.computePercent.legacy`) | TODO | Python uses the legacy linear form |
+| Log-form LTL `computePercent` (`simulation.resources.computePercent.legacy`) | done (2026-11-20, Python engine) | `osmose/engine/processes/resource_percent.py`, used by both mortality paths. Absent or `true` keeps the linear form, as Java does. A resource whose smallest size is not above 0 is refused in log form (Java would silently never feed on it). The C# engine refuses the key (feature `resource_percent_log`) |
 | Bioeconomics (elasticities, costs, demand) | partial | Python has its own economics module (`module.bioeconomics.enabled`); the 4.4.0 parameters are not read |
 
 ## Outputs

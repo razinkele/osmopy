@@ -1924,6 +1924,11 @@ class EngineConfig:
     # has no fish left after the seeding period (osmose.engine.SpeciesCollapsed).
     kill_if_no_school: bool = False
 
+    # simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a
+    # resource is taken in log size, not in size (osmose.engine.processes.resource_percent).
+    # Absent or true keeps the linear form, as Java does.
+    resource_percent_log: bool = False
+
     # Gompertz growth parameters (None when no GOMPERTZ species)
     gompertz_ke: NDArray[np.float64] | None = None
     gompertz_lstart: NDArray[np.float64] | None = None
@@ -2527,6 +2532,9 @@ class EngineConfig:
         kill_if_no_school = (
             cfg.get("simulation.kill.if.no.school.enabled", "false").lower() == "true"
         )
+        resource_percent_log = (
+            cfg.get("simulation.resources.computepercent.legacy", "true").strip().lower() == "false"
+        )
         java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 
@@ -2836,6 +2844,7 @@ class EngineConfig:
             java_compat_rng=java_compat_rng,
             movement_strict_coverage=movement_strict,
             kill_if_no_school=kill_if_no_school,
+            resource_percent_log=resource_percent_log,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
             vb_species_ids=frozenset(i for i, gc in enumerate(growth_class) if gc == "VB"),
