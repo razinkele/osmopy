@@ -225,6 +225,9 @@ def _apply_additional_for_school(
 
     # Base rate: constant or time-varying (BY_DT)
     rate = config.additional_mortality_rate[sp]
+    factor = getattr(config, "additional_mortality_factor", None)  # stand-in configs lack it
+    if factor is not None:
+        rate = rate * factor[sp, min(step, factor.shape[1] - 1)]
     if (
         config.additional_mortality_by_dt is not None
         and config.additional_mortality_by_dt[sp] is not None
@@ -820,6 +823,10 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
     # Additional mortality (vectorized over species)
     sp = work_state.species_id
     rates = config.additional_mortality_rate[sp].copy()
+    factor = getattr(config, "additional_mortality_factor", None)  # stand-in configs lack it
+    if factor is not None:
+        focal = sp < factor.shape[0]
+        rates[focal] *= factor[sp[focal], min(step, factor.shape[1] - 1)]
 
     if config.additional_mortality_by_dt is not None:
         for sp_id in range(config.n_species):

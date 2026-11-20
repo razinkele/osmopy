@@ -8,6 +8,7 @@ infrastructure for map-based (B1) movement — no movement logic is implemented 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -42,7 +43,7 @@ def _resolve_pattern(value: str, config_dir: str, key: str) -> Path:
     if not value or value.lower() == "null":
         raise ValueError(f"movement.netcdf.enabled needs {key}")
     path = Path(value)
-    if ".." in path.parts:
+    if os.pardir in path.parts:
         raise ValueError(f"{key}: a path with '..' is refused")
     parent = resolve_data_path(str(path.parent), config_dir)
     if parent is None or not parent.is_dir():
