@@ -77,6 +77,10 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         "mortality.additional.neonate.rate.seasonality.file.sp{idx}",
         # OSMOSE 4.4.x bioenergetic model per species, read raw (case-sensitive, as Java)
         "species.bioenergetics.model.sp{idx}",
+        # NetCDF movement maps, read by movement_maps.py (MovementMapSet._load_netcdf)
+        "movement.netcdf.enabled",
+        "movement.variable.map{idx}",
+        "movement.nsteps.year.map{idx}",
         # Post-spawning survival: the un-indexed key Java reads, and the indexed one it never
         # reads (refused by config._parse_semelparity, so it is known, not unknown)
         "species.reproduction.postspawning.survivaltime.sp",

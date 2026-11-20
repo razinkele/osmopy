@@ -197,6 +197,9 @@ FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
         "mortality.additional.neonate.rate.seasonality.sp{idx}",
         "mortality.additional.neonate.rate.seasonality.file.sp{idx}",
         "species.bioenergetics.model.sp{idx}",  # 4.4.x, read raw in config.py (#137)
+        "movement.netcdf.enabled",  # read by movement_maps.py (#137)
+        "movement.variable.map{idx}",
+        "movement.nsteps.year.map{idx}",
         "species.reproduction.postspawning.survivaltime.sp",  # Java's un-indexed key (#137)
         "species.reproduction.postspawning.survivaltime.sp{idx}",
         "simulation.restart.spinup.nyear",
