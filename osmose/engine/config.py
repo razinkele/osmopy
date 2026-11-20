@@ -173,6 +173,40 @@ def _require_file(file_key: str, config_dir: str, context: str) -> Path:
     return path
 
 
+def _parse_stochastic_maturity(
+    cfg: dict[str, str], n_sp: int, n_bkg: int, bioen: bool
+) -> tuple[NDArray[np.bool_] | None, NDArray[np.float64] | None, NDArray[np.float64] | None]:
+    """species.maturity.mode / l50 / l75 (OSMOSE 4.4.0, Java's Species constructor).
+
+    Returns (stochastic, l50, sd), padded with False and NaN for background species, or three
+    None when no focal species is stochastic. Java reads the mode only without bioenergetics;
+    so does this. A mode other than ``stochastic`` is the threshold rule, as in Java.
+    """
+    if bioen:
+        return None, None, None
+    modes = _species_str_optional(cfg, "species.maturity.mode.sp{i}", n_sp, default="legacy")
+    stochastic = np.array([m == "stochastic" for m in modes], dtype=bool)
+    if not stochastic.any():
+        return None, None, None
+    l50 = _species_float_optional(cfg, "species.maturity.l50.sp{i}", n_sp, default=np.nan)
+    l75 = _species_float_optional(cfg, "species.maturity.l75.sp{i}", n_sp, default=np.nan)
+    for i in np.flatnonzero(stochastic):
+        if not (np.isfinite(l50[i]) and np.isfinite(l75[i]) and l75[i] > l50[i]):
+            raise ValueError(
+                f"species.maturity.mode.sp{i} = stochastic needs species.maturity.l50.sp{i} and "
+                f"species.maturity.l75.sp{i}, with l75 > l50; got {l50[i]} and {l75[i]}"
+            )
+    from osmose.engine.processes.maturity import Z75
+
+    sd = (l75 - l50) / Z75
+    pad_f = np.full(n_bkg, np.nan)
+    return (
+        np.concatenate([stochastic, np.zeros(n_bkg, dtype=bool)]),
+        np.concatenate([l50, pad_f]),
+        np.concatenate([sd, pad_f]),
+    )
+
+
 def drop_disabled_species(cfg: dict[str, str]) -> dict[str, str]:
     """``species.is.enabled.sp# = false`` (OSMOSE 4.4.1, ``Configuration.java`` v4.4.1 lines
     523-552): the config without that focal species.
@@ -1973,6 +2007,17 @@ class EngineConfig:
     # has no fish left after the seeding period (osmose.engine.SpeciesCollapsed).
     kill_if_no_school: bool = False
 
+    # simulation.resources.computePercent.legacy = false (OSMOSE 4.4.0): a predator's share of a
+    # resource is taken in log size, not in size (osmose.engine.processes.resource_percent).
+    # Absent or true keeps the linear form, as Java does.
+    resource_percent_log: bool = False
+    # species.maturity.mode.sp# = stochastic (OSMOSE 4.4.0): maturity drawn from a normal ogive
+    # (osmose.engine.processes.maturity). One entry per focal and background species; None
+    # when no species uses it, which is the cheap test the engine makes.
+    maturity_stochastic: NDArray[np.bool_] | None = None
+    maturity_l50: NDArray[np.float64] | None = None
+    maturity_sd: NDArray[np.float64] | None = None
+
     # Gompertz growth parameters (None when no GOMPERTZ species)
     gompertz_ke: NDArray[np.float64] | None = None
     gompertz_lstart: NDArray[np.float64] | None = None
@@ -2579,6 +2624,9 @@ class EngineConfig:
         kill_if_no_school = (
             cfg.get("simulation.kill.if.no.school.enabled", "false").lower() == "true"
         )
+        resource_percent_log = (
+            cfg.get("simulation.resources.computepercent.legacy", "true").strip().lower() == "false"
+        )
         java_compat_rng = cfg.get("engine.rng.java_compat", "false").lower() == "true"
         movement_strict = cfg.get("movement.map.strict.coverage", "false").lower() == "true"
 
@@ -2626,6 +2674,9 @@ class EngineConfig:
 
         # Bioenergetic parameters: only parsed when module.bioenergetics.enabled=true
         _bioen_enabled = cfg.get("module.bioenergetics.enabled", "false").lower() == "true"
+        maturity_stochastic, maturity_l50, maturity_sd = _parse_stochastic_maturity(
+            cfg, n_sp, n_bkg, _bioen_enabled
+        )
         if _bioen_enabled and (_output["output_carbon"] or _output["output_carbon_netcdf"]):
             warnings.warn(
                 "output.carbon.enabled with bioenergetics on: the faecal-pellet flux is "
@@ -2888,6 +2939,10 @@ class EngineConfig:
             java_compat_rng=java_compat_rng,
             movement_strict_coverage=movement_strict,
             kill_if_no_school=kill_if_no_school,
+            resource_percent_log=resource_percent_log,
+            maturity_stochastic=maturity_stochastic,
+            maturity_l50=maturity_l50,
+            maturity_sd=maturity_sd,
             random_distribution_ncell=random_distribution_ncell,
             growth_class=growth_class,
             vb_species_ids=frozenset(i for i, gc in enumerate(growth_class) if gc == "VB"),

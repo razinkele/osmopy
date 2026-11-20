@@ -27,6 +27,7 @@ from osmose.engine.grid import Grid
 from osmose.engine.incoming_flux import IncomingFluxState
 from osmose.engine.path_resolution import resolve_data_path
 from osmose.engine.physical_data import PhysicalData
+from osmose.engine.processes.maturity import mature_mask
 from osmose.engine.resources import ResourceState
 from osmose.engine.state import MortalityCause, SchoolState
 
@@ -1191,9 +1192,7 @@ def _collect_by_life_stage(
         return abundance, deaths
 
     focal = state.species_id < config.n_species
-    mature = (state.length >= config.maturity_size[state.species_id]) & (
-        state.age_dt >= config.maturity_age_dt[state.species_id]
-    )
+    mature = mature_mask(state, config)
     stage = np.where(state.is_egg, 0, np.where(mature, 2, 1))
     sp, st = state.species_id[focal], stage[focal]
     np.add.at(abundance, (sp, st), state.abundance[focal])
@@ -1262,8 +1261,7 @@ def _collect_ssb(state: SchoolState, config: EngineConfig) -> NDArray[np.float64
     ssb = np.zeros(config.n_species, dtype=np.float64)
     if len(state) > 0:
         mature = (
-            (state.length >= config.maturity_size[state.species_id])
-            & (state.age_dt >= config.maturity_age_dt[state.species_id])
+            mature_mask(state, config)
             & (state.abundance > 0)
             & (state.species_id < config.n_species)
         )

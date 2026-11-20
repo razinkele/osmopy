@@ -141,6 +141,8 @@ DETECTORS: dict[str, Any] = {
     "economics": lambda c, raw: bool(c.economics_enabled),
     "java_compat_rng": lambda c, raw: bool(c.java_compat_rng),
     "kill_if_no_school": lambda c, raw: bool(c.kill_if_no_school),
+    "resource_percent_log": lambda c, raw: bool(c.resource_percent_log),
+    "maturity_stochastic": lambda c, raw: c.maturity_stochastic is not None,
     "fishing_catches": lambda c, raw: (
         (c.fishing_catches is not None and bool(np.any(np.asarray(c.fishing_catches) > 0)))
         or _any_set(c.fishing_catches_by_year)
@@ -178,6 +180,8 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
         "inert",
     ),
     (r"simulation\.kill\.if\.no\.school\.enabled", "kill_if_no_school"),
+    (r"simulation\.resources\.computepercent\.legacy", "resource_percent_log"),
+    (r"species\.maturity\.(mode|l50|l75)\..+", "maturity_stochastic"),
     # Resolved in Python before the bundle is built (drop_disabled_species): the engine gets the
     # renumbered config.
     (r"species\.is\.enabled\..+", "phase1"),

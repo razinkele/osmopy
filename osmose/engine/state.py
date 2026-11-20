@@ -27,6 +27,10 @@ class MortalityCause(IntEnum):
     AGING = 7
 
 
+#: Optional boolean fields that read False for schools that lack them when states are merged.
+_FILL_FALSE = frozenset({"is_mature"})
+
+
 @dataclass(frozen=True)
 class SchoolState:
     """Structure-of-Arrays state for all fish schools.
@@ -112,6 +116,11 @@ class SchoolState:
     # SchoolState(...) constructions that omit it stay valid; create() populates it.
     from_seeding: NDArray[np.bool_] | None = None
 
+    # Drawn maturity (OSMOSE 4.4.0 stochastic ogive, osmose.engine.processes.maturity). None
+    # unless a species uses it; where a merged or appended part lacks it, that part is "not
+    # mature yet" (see _FILL_FALSE), so egg and background schools need nothing special.
+    is_mature: NDArray[np.bool_] | None = None
+
     def __post_init__(self) -> None:
         n = len(self.species_id)
         for f in fields(self):
@@ -194,6 +203,13 @@ class SchoolState:
             b = getattr(other, f.name)
             if a is None and b is None:
                 merged[f.name] = None
+            elif f.name in _FILL_FALSE and (a is None or b is None):
+                merged[f.name] = np.concatenate(
+                    [
+                        a if a is not None else np.zeros(len(self), dtype=bool),
+                        b if b is not None else np.zeros(len(other), dtype=bool),
+                    ]
+                )
             elif a is None:
                 merged[f.name] = b
             elif b is None:

@@ -10,6 +10,9 @@ in-place so subsequent causes see the reduced instantaneous abundance.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import cast
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -26,6 +29,7 @@ from osmose.engine.processes.precompute import (  # moved there: Numba-free (pre
     _DUMMY_RSC_1D,
     _precompute_resource_arrays,
 )
+from osmose.engine.processes.resource_percent import resource_percent
 from osmose.engine.processes.starvation import (
     starvation_mortality,  # noqa: F401 — used by tests
     update_starvation_rate,
@@ -544,7 +548,9 @@ def _apply_predation_for_school(
             rsc_range = rsc.size_max - rsc.size_min
             if rsc_range <= 0:
                 continue
-            percent_resource = (overlap_max - overlap_min) / rsc_range
+            percent_resource = resource_percent(
+                overlap_min, overlap_max, rsc.size_min, rsc.size_max, config.resource_percent_log
+            )
 
             access_coeff = 1.0
             if (
@@ -1010,6 +1016,10 @@ def _precompute_bioen_eta(work_state, config) -> NDArray[np.float64]:
 
 
 if _HAS_NUMBA:
+    # The compiled copy of the share; typed for the checker, which cannot see through njit.
+    _resource_percent_nb = cast(
+        "Callable[[float, float, float, float, bool], float]", njit(cache=True)(resource_percent)
+    )
 
     @njit(cache=True)
     def _consume_numba(idx, dead, inst_abd, preyed_biomass, e_net, is_background, bioen):
@@ -1088,6 +1098,7 @@ if _HAS_NUMBA:
         cand_pos,
         cand_lo,
         cand_hi,
+        rsc_percent_log=False,
     ):
         """Numba-compiled single-predator predation (schools + resources).
 
@@ -1203,7 +1214,9 @@ if _HAS_NUMBA:
             rsc_range = rsc_size_max[r] - rsc_size_min[r]
             if rsc_range <= 0:
                 continue
-            percent_resource = (overlap_max - overlap_min) / rsc_range
+            percent_resource = _resource_percent_nb(
+                overlap_min, overlap_max, rsc_size_min[r], rsc_size_max[r], rsc_percent_log
+            )
 
             access_coeff = 1.0
             if use_stage_access:
@@ -1478,6 +1491,7 @@ if _HAS_NUMBA:
         eta_school,
         is_background,
         eff_foraging,
+        rsc_percent_log=False,
     ):
         """Numba-compiled full interleaved mortality: 4 causes, or 5 under bioen.
 
@@ -1565,6 +1579,7 @@ if _HAS_NUMBA:
                         cand_pos,
                         cand_ptr[start + seq_pred[i]],
                         cand_ptr[start + seq_pred[i] + 1],
+                        rsc_percent_log,
                     )
                 elif cause == 1:
                     idx = cell_indices[seq_starv[i]]
@@ -1818,6 +1833,7 @@ if _HAS_NUMBA:
         eff_foraging,
         cand_ptr,
         cand_pos,
+        rsc_percent_log=False,
     ):
         """Numba-compiled batch mortality for ALL cells in one call.
 
@@ -1923,6 +1939,7 @@ if _HAS_NUMBA:
                             cand_pos,
                             cand_ptr[start + seq_pred[i]],
                             cand_ptr[start + seq_pred[i] + 1],
+                            rsc_percent_log,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -2072,6 +2089,7 @@ if _HAS_NUMBA:
         eff_foraging,
         cand_ptr,
         cand_pos,
+        rsc_percent_log=False,
     ):
         """Parallel batch mortality — prange over cells for multi-core execution.
 
@@ -2207,6 +2225,7 @@ if _HAS_NUMBA:
                             cand_pos,
                             cand_ptr[start + seq_pred[i]],
                             cand_ptr[start + seq_pred[i] + 1],
+                            rsc_percent_log,
                         )
                     elif cause == 1:
                         idx = cell_indices[seq_starv[i]]
@@ -2481,6 +2500,7 @@ def _mortality_in_cell(
             k_eta,
             state.is_background,
             k_for,
+            config.resource_percent_log,
         )
         return
 
@@ -2858,6 +2878,7 @@ def mortality(
                 eff_for,
                 cand_ptr_all,
                 cand_pos_all,
+                config.resource_percent_log,
             )
         else:
             # Python fallback: per-cell dispatch (unchanged)
