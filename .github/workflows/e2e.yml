@@ -22,7 +22,7 @@ on:
       - "osmose/schema/**"
       - "osmose/demo.py"
       - "tests/test_e2e_*.py"
-      - "tests/_e2e_support.py"
+      - "tests/_e2e_*.py"  # their helpers: _e2e_support, _e2e_feedback_env
       - "www/**"
       - ".github/workflows/e2e.yml"
       # A dependency bump (shiny, shiny_deckgl, ...) changes the rendered UI with no ui/ diff.
