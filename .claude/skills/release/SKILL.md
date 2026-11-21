@@ -82,9 +82,13 @@ the whole file from git and rewrites released history.
    it the deploy restarts the service twice (once for the new code, once so the app offers the
    engine), and its summary must include the line
    `C# engine:   built from <sha>, self-tested, activated, offered by the app`.
-   A summary that says `REMOVED` or `not built`, or a `C# engine:` error, means prod is
-   running the new version **without** the engine: tell the user, and rerun the same command
-   once the cause is fixed.
+   - A summary that says `REMOVED` or `not built` means prod is running the new version
+     **without** the engine: tell the user, and rerun the same command.
+   - A `C# engine:` error (exit 1, no summary) means the engine is not offered, and its own
+     lines say what state prod is in. Do not assume: it may be running without the engine,
+     it may have a build that could not be removed ("the rollback is incomplete"), or the
+     service may not be answering. Report the lines as printed, check `GET :8838/`, and
+     rerun only once the cause it names is fixed.
 5. Verify from the prod clone `/srv/shiny-server/osmose-src`:
    - `git describe --tags --exact-match` = v{version}, with no offset.
    - `osmose/__version__.py` matches.
