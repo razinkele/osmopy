@@ -59,7 +59,7 @@ Before deleting `osmose-src.old`, list what it held that git does not track, **a
 
 The third engine (`csharp/`, spec `docs/superpowers/specs/2026-11-17-csharp-engine-design.md` section 9.7) is **off by default**: a plain `sudo bash deploy.sh` installs nothing for it. Where a build is installed, the web app offers it as a third engine button; production has had one since 2026-11-21.
 
-**Every deploy removes the build a previous deploy made**, as `shiny` and before the checkout, so an old build never outlives its ref. So once the engine is on a server, **every later deploy must carry the flag too**: one without it leaves the app without the C# engine, and says so only in its summary line (`C# engine: not built`).
+**Every deploy removes the build a previous deploy made**, as `shiny` and before the checkout, so an old build never outlives its ref. So once the engine is on a server, **every later deploy must carry the flag too**: one without it leaves the app without the C# engine. Such a deploy warns where it deletes the build, its summary reads `C# engine: REMOVED`, and its last lines give the command that restores the engine. (A server that never had the engine prints `not built`.) The release procedure's deploy command carries the flag (`.claude/skills/release/SKILL.md`).
 
 To build it on the server:
 
@@ -75,7 +75,7 @@ After the service is up and answering HTTP, the deploy:
 5. only if it passes, moves the build into `osmose/engine_cs/bin` and checks that the service's own path can load it;
 6. **restarts the service once more** and requires the served page to offer the engine. The app decides once, at startup, whether to offer it, and the process the deploy started earlier came up before the build existed. On the first production deploy (2026-11-21, before this step existed) the summary said "activated" while the app showed no C# button until a restart by hand.
 
-So a C# deploy interrupts the service **twice**, a few seconds each. If the app does not offer the engine after that restart, the deploy removes the build, restarts the service without it and exits 1.
+So a C# deploy interrupts the service **twice**, a few seconds each. If the app does not offer the engine after that restart, the deploy removes the build, restarts the service without it and exits 1; if the removal itself fails, it says the rollback is incomplete and names the directory to remove by hand.
 
 The unit always carries `Environment=DOTNET_ROOT=/opt/dotnet`, which is inert when the directory is absent. A failure in any step exits 1 with a `C# engine:` error, and a build that fails never becomes loadable. **The app keeps running the new code without the engine:** the steps run after the restart, so a C# failure can never leave new code on disk under the old process.
 
