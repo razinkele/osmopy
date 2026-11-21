@@ -7,13 +7,17 @@ the first C# deploy to production: the summary said "activated", the build loade
 process, and the running app served no C# button until it was restarted by hand.
 
 The probe is tested by running the function from deploy.sh, under the script's own shell options,
-against a local server; the rest of Step 6 is checked by the order of its commands.
+against a local server. The restart-and-check block is then run whole the same way, with
+``systemctl`` and the other commands that need root replaced by shell functions: the order of
+its commands alone cannot show an early exit under ``set -e``.
 """
 
 from __future__ import annotations
 
 import http.server
 import re
+import shlex
+import socket
 import subprocess
 import threading
 from pathlib import Path
@@ -102,16 +106,15 @@ def test_the_probe_does_not_find_it_in_a_page_without_it(serve):
     assert _offers(serve(page)) is False
 
 
-def test_the_probe_fails_when_nothing_answers(serve):
-    port = serve(b"")
-    # Free the port again: nothing listens there now.
-    import socket
-
+def _dead_port() -> int:
+    """A port nothing listens on: bound once to get a free number, then released."""
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
-        dead = s.getsockname()[1]
-    assert dead != port
-    assert _offers(dead) is False
+        return s.getsockname()[1]
+
+
+def test_the_probe_fails_when_nothing_answers():
+    assert _offers(_dead_port()) is False
 
 
 def test_the_probe_looks_for_the_id_the_app_renders():
@@ -147,3 +150,78 @@ def test_a_build_the_app_does_not_offer_is_removed_and_the_app_restarted_without
     failed = _index(lines, "exit 1", restarted)
     reported = _index(lines, 'CSHARP_RESULT="built from', not_offered)
     assert not_offered < removed < restarted < failed < reported
+
+
+def _offer_block() -> str:
+    """Step 6 from the probe's definition to the line that reports the engine, as written."""
+    step = _step6()
+    start = step.index("    app_offers_csharp() {")
+    end = step.index('offered by the app"\n', start) + len('offered by the app"\n')
+    return step[start:end]
+
+
+def _run_block(port: int, tmp_path: Path, *, systemctl_rc: int = 0):
+    """Run the block under deploy.sh's shell options. ``systemctl`` only records its arguments
+    and returns ``systemctl_rc``; ``as_shiny`` runs its command directly; ``sleep`` does nothing.
+    Returns the process, whether the build is still there, and the systemctl calls."""
+    live = tmp_path / "bin"
+    live.mkdir()
+    (live / "Osmose.Engine.dll").write_text("build")
+    log = tmp_path / "systemctl.log"
+    script = f"""set -euo pipefail
+APP_PORT={port}
+SERVICE_NAME=osmose-shiny
+DEPLOYED_SHA=abc1234
+LIVE_BIN={shlex.quote(str(live))}
+info() {{ echo "INFO $*"; }}
+error() {{ echo "ERROR $*" >&2; }}
+sleep() {{ :; }}
+as_shiny() {{ "$@"; }}
+systemctl() {{ echo "$*" >> {shlex.quote(str(log))}; return {systemctl_rc}; }}
+{_offer_block()}
+echo "RESULT $CSHARP_RESULT"
+"""
+    done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=180)
+    calls = log.read_text().splitlines() if log.exists() else []
+    return done, live.exists(), calls
+
+
+_WITH = b"<html><button " + BUTTON.encode() + b">C#</button></html>\n"
+_WITHOUT = b'<html><button id="engineBtnPython">Python</button></html>\n'
+
+
+def test_an_offered_engine_is_kept_and_reported(serve, tmp_path):
+    done, build_kept, calls = _run_block(serve(_WITH), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert build_kept
+    assert calls == ["restart osmose-shiny"]
+    assert "RESULT built from abc1234, self-tested, activated, offered by the app" in done.stdout
+
+
+def test_an_engine_the_app_does_not_offer_is_removed(serve, tmp_path):
+    done, build_kept, calls = _run_block(serve(_WITHOUT), tmp_path)
+    assert done.returncode == 1
+    assert not build_kept
+    assert calls == ["restart osmose-shiny", "restart osmose-shiny"]
+    assert "the build was removed" in done.stderr
+    assert "The app is running abc1234 WITHOUT the C# engine." in done.stderr
+    assert "RESULT" not in done.stdout
+
+
+def test_a_service_that_does_not_come_back_is_reported_as_not_answering(tmp_path):
+    done, build_kept, calls = _run_block(_dead_port(), tmp_path)
+    assert done.returncode == 1
+    assert not build_kept
+    assert len(calls) == 2
+    assert "The service is NOT answering (HTTP 000)." in done.stderr
+    assert "WITHOUT the C# engine" not in done.stderr
+
+
+def test_a_failed_restart_still_removes_the_build_and_says_so(serve, tmp_path):
+    # Under `set -e` a bare `systemctl restart` that fails would end the script on the spot:
+    # the build left in place, and no word about the engine.
+    done, build_kept, calls = _run_block(serve(_WITHOUT), tmp_path, systemctl_rc=1)
+    assert done.returncode == 1
+    assert not build_kept
+    assert len(calls) == 2
+    assert "the build was removed" in done.stderr

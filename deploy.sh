@@ -41,9 +41,11 @@ DEPLOY_REF="${OSMOSE_DEPLOY_REF:-origin/master}"  # what to ship; override to pi
 PROD_SRC="${SHINY_ROOT}/${APP_NAME}-src"  # the prod clone (real dir; LINK_PATH → here)
 
 # The C# engine (docs/superpowers/specs/2026-11-17-csharp-engine-design.md, section 9.7) is
-# OPT-IN: the web app does not offer it before the Phase 2 UI work, so a plain deploy installs
-# nothing for it. OSMOSE_DEPLOY_CSHARP=1 installs the .NET 10 SDK into DOTNET_DIR if absent,
-# builds the assembly inside the prod clone and self-tests it as the service user (Step 6).
+# OPT-IN: a plain deploy installs nothing for it, and REMOVES a build an earlier deploy made
+# (Step 1), so a server that has the engine needs the flag on every deploy. The web app offers
+# the engine wherever a build is installed. OSMOSE_DEPLOY_CSHARP=1 installs the .NET 10 SDK into
+# DOTNET_DIR if absent, builds the assembly inside the prod clone, self-tests it as the service
+# user, and restarts the service once more so that the app offers it (Step 6).
 DEPLOY_CSHARP="${OSMOSE_DEPLOY_CSHARP:-0}"
 DOTNET_DIR="/opt/dotnet"
 
@@ -492,7 +494,10 @@ ok, why = a(); raise SystemExit(0 if ok else why)" \
         systemctl restart "$SERVICE_NAME" || true
         BACK="000"
         for _ in $(seq 1 20); do
-            BACK=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/" 2>/dev/null || echo "000")
+            # curl prints 000 itself when nothing answers, so no `|| echo 000` (it would add a
+            # second one); the default covers a curl that printed nothing at all.
+            BACK="$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/" 2>/dev/null || true)"
+            BACK="${BACK:-000}"
             [[ "$BACK" == "200" ]] && break
             sleep 2
         done

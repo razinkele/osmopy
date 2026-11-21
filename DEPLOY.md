@@ -69,7 +69,7 @@ sudo OSMOSE_DEPLOY_REF=<tag> OSMOSE_DEPLOY_CSHARP=1 bash deploy.sh
 
 After the service is up and answering HTTP, the deploy:
 1. installs the .NET 10 SDK into `/opt/dotnet` with Microsoft's `dotnet-install.sh`, if no 10.x SDK is there;
-2. installs `pythonnet` into the shiny env (it adds `pythonnet` and `clr_loader` and replaces nothing);
+2. installs `pythonnet` into the shiny env (on 2026-11-21 that added `pythonnet` and `clr_loader` and replaced nothing);
 3. builds the assembly from the deployed ref **as `shiny`**, never as root, into a staging directory;
 4. runs the self-test on the staged build **as the service runs**: user `shiny`, the env's interpreter, the working copy and `DOTNET_ROOT=/opt/dotnet`;
 5. only if it passes, moves the build into `osmose/engine_cs/bin` and checks that the service's own path can load it;
