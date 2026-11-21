@@ -57,22 +57,29 @@ Before deleting `osmose-src.old`, list what it held that git does not track, **a
 
 ## The C# engine (optional, opt-in)
 
-The third engine (`csharp/`, spec `docs/superpowers/specs/2026-11-17-csharp-engine-design.md` section 9.7) is **off by default**. The web app does not offer it before the Phase 2 UI work, so a plain `sudo bash deploy.sh` installs nothing for it. Every deploy also removes any assembly a previous deploy built, as `shiny` and before the checkout, so an old build never outlives its ref.
+The third engine (`csharp/`, spec `docs/superpowers/specs/2026-11-17-csharp-engine-design.md` section 9.7) is **off by default**: a plain `sudo bash deploy.sh` installs nothing for it. Where a build is installed, the web app offers it as a third engine button; production has had one since 2026-11-21.
+
+**Every deploy removes the build a previous deploy made**, as `shiny` and before the checkout, so an old build never outlives its ref. So once the engine is on a server, **every later deploy must carry the flag too**: one without it leaves the app without the C# engine, and says so only in its summary line (`C# engine: not built`).
 
 To build it on the server:
 
 ```bash
-sudo OSMOSE_DEPLOY_CSHARP=1 bash deploy.sh
+sudo OSMOSE_DEPLOY_REF=<tag> OSMOSE_DEPLOY_CSHARP=1 bash deploy.sh
 ```
 
 After the service is up and answering HTTP, the deploy:
 1. installs the .NET 10 SDK into `/opt/dotnet` with Microsoft's `dotnet-install.sh`, if no 10.x SDK is there;
-2. installs `pythonnet` into the shiny env;
+2. installs `pythonnet` into the shiny env: pip installs or updates whatever `pythonnet>=3.2.1` needs, in an env other apps share (on production, 2026-11-21, that added `pythonnet` and `clr_loader` and replaced nothing);
 3. builds the assembly from the deployed ref **as `shiny`**, never as root, into a staging directory;
 4. runs the self-test on the staged build **as the service runs**: user `shiny`, the env's interpreter, the working copy and `DOTNET_ROOT=/opt/dotnet`;
-5. only if it passes, moves the build into `osmose/engine_cs/bin` and checks that the service's own path can load it.
+5. only if it passes, moves the build into `osmose/engine_cs/bin` and checks that the service's own path can load it;
+6. **restarts the service once more** and requires the served page to offer the engine. The app decides once, at startup, whether to offer it, and the process the deploy started earlier came up before the build existed. On the first production deploy (2026-11-21, before this step existed) the summary said "activated" while the app showed no C# button until a restart by hand.
+
+So a C# deploy interrupts the service **twice**, a few seconds each. If the app does not offer the engine after that restart, the deploy removes the build, restarts the service without it and exits 1.
 
 The unit always carries `Environment=DOTNET_ROOT=/opt/dotnet`, which is inert when the directory is absent. A failure in any step exits 1 with a `C# engine:` error, and a build that fails never becomes loadable. **The app keeps running the new code without the engine:** the steps run after the restart, so a C# failure can never leave new code on disk under the old process.
+
+CI and the Docker and Apptainer images test the Python bridge on Python 3.12. Production runs it on Python 3.13; that combination was checked by hand on 2026-11-21 (the self-test, and C#, Python and C# runs in one app process).
 
 To re-check by hand:
 

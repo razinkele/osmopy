@@ -41,9 +41,11 @@ DEPLOY_REF="${OSMOSE_DEPLOY_REF:-origin/master}"  # what to ship; override to pi
 PROD_SRC="${SHINY_ROOT}/${APP_NAME}-src"  # the prod clone (real dir; LINK_PATH → here)
 
 # The C# engine (docs/superpowers/specs/2026-11-17-csharp-engine-design.md, section 9.7) is
-# OPT-IN: the web app does not offer it before the Phase 2 UI work, so a plain deploy installs
-# nothing for it. OSMOSE_DEPLOY_CSHARP=1 installs the .NET 10 SDK into DOTNET_DIR if absent,
-# builds the assembly inside the prod clone and self-tests it as the service user (Step 6).
+# OPT-IN: a plain deploy installs nothing for it, and REMOVES a build an earlier deploy made
+# (Step 1), so a server that has the engine needs the flag on every deploy. The web app offers
+# the engine wherever a build is installed. OSMOSE_DEPLOY_CSHARP=1 installs the .NET 10 SDK into
+# DOTNET_DIR if absent, builds the assembly inside the prod clone, self-tests it as the service
+# user, and restarts the service once more so that the app offers it (Step 6).
 DEPLOY_CSHARP="${OSMOSE_DEPLOY_CSHARP:-0}"
 DOTNET_DIR="/opt/dotnet"
 
@@ -401,10 +403,12 @@ else
 fi
 
 # --- Step 6 (opt-in): the C# engine ---
-# Runs AFTER the restart on purpose. Nothing loads the CLR at startup and availability is checked
-# per call, so the service is already serving the new ref without the engine; a failure here only
-# means "no C# engine", reported loudly with exit 1 -- never new code on disk under the old
-# process (the 2026-10-29 failure mode of an abort between checkout and restart).
+# Runs AFTER the restart on purpose. Nothing loads the CLR at startup, so the service is already
+# serving the new ref without the engine; a failure here only means "no C# engine", reported
+# loudly with exit 1 -- never new code on disk under the old process (the 2026-10-29 failure
+# mode of an abort between checkout and restart). A build that passes is activated, and the
+# service is then restarted ONCE MORE, because the app decides at startup whether to offer the
+# engine: a C# deploy therefore interrupts the service twice.
 CSHARP_RESULT="not built (OSMOSE_DEPLOY_CSHARP=1 builds it)"
 if [[ "$DEPLOY_CSHARP" == "1" ]]; then
     csharp_fail() {
@@ -461,7 +465,59 @@ if [[ "$DEPLOY_CSHARP" == "1" ]]; then
     as_service "$SHINY_PYTHON" -c "from osmose.engine_cs import csharp_engine_available as a
 ok, why = a(); raise SystemExit(0 if ok else why)" \
         || { as_shiny rm -rf "$LIVE_BIN"; csharp_fail "the activated build is not loadable"; }
-    CSHARP_RESULT="built from ${DEPLOYED_SHA}, self-tested, activated"
+    # The app decides ONCE, at import, whether to offer the engine (CSHARP_ENGINE_OFFERED in
+    # app.py), and the process Step 4 started was imported before this build existed: every
+    # deploy removes the old build before the checkout. So restart it, and require the SERVED
+    # PAGE to offer the engine. Only that shows the running process has seen the build; the
+    # check above runs in a fresh process and passes either way. Measured 2026-11-21, on the
+    # first C# deploy to production: "activated", and no C# button until a restart by hand.
+    # Not `curl | grep -q`: grep leaves at the first match, curl then fails writing the rest of
+    # the page, and under pipefail the pipeline is non-zero although the button was found.
+    app_offers_csharp() {
+        local page
+        page="$(curl -sS -m 10 "http://127.0.0.1:${APP_PORT}/" 2>/dev/null)" || return 1
+        grep -q 'id="engineBtnCsharp"' <<<"$page"
+    }
+    info "Restarting ${SERVICE_NAME} so that the app offers the C# engine..."
+    systemctl restart "$SERVICE_NAME" || true  # a failed restart shows as "not offered" below
+    OFFERED=0
+    for _ in $(seq 1 30); do  # up to ~60s (2s interval): the app cold-starts in several seconds
+        if app_offers_csharp; then
+            OFFERED=1
+            break
+        fi
+        sleep 2
+    done
+    if [[ "$OFFERED" != "1" ]]; then
+        # Back to what Steps 4 and 5 verified: no build, and a process started without one.
+        REMOVED=1
+        as_shiny rm -rf "$LIVE_BIN" || REMOVED=0
+        systemctl restart "$SERVICE_NAME" || true
+        BACK="000"
+        for _ in $(seq 1 20); do
+            # curl prints 000 itself when nothing answers, so no `|| echo 000` (it would add a
+            # second one); the default covers a curl that printed nothing at all.
+            BACK="$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${APP_PORT}/" 2>/dev/null || true)"
+            BACK="${BACK:-000}"
+            [[ "$BACK" == "200" ]] && break
+            sleep 2
+        done
+        if [[ "$REMOVED" == "1" ]]; then
+            error "C# engine: the app did not offer the engine after a restart, so the build was removed."
+        else
+            error "C# engine: the app did not offer the engine after a restart, and the build could NOT be removed."
+            error "Remove ${LIVE_BIN} by hand (as shiny) and restart ${SERVICE_NAME}: the rollback is incomplete."
+        fi
+        if [[ "$BACK" != "200" ]]; then
+            error "The service is NOT answering (HTTP ${BACK}). Check: journalctl -u ${SERVICE_NAME} --no-pager -n 30"
+        elif [[ "$REMOVED" == "1" ]]; then
+            error "The app is running ${DEPLOYED_SHA} WITHOUT the C# engine."
+        else
+            error "The app is running ${DEPLOYED_SHA}, with that build still on disk."
+        fi
+        exit 1
+    fi
+    CSHARP_RESULT="built from ${DEPLOYED_SHA}, self-tested, activated, offered by the app"
 fi
 
 # --- Summary ---
