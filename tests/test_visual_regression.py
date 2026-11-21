@@ -16,7 +16,17 @@ from playwright.sync_api import Page
 from shiny.pytest import create_app_fixture
 from shiny.run import ShinyAppProc
 
-from tests._visual_support import assert_clip_snapshot, navigate_to, prepare_page
+from tests._visual_compare import compare_images
+from tests._visual_support import (
+    _DEFAULT_MAX_PIXELS,
+    _DEFAULT_MAX_RATIO,
+    _DEFAULT_MEAN_THRESHOLD,
+    _DEFAULT_THRESHOLD,
+    _stable_screenshot,
+    assert_clip_snapshot,
+    navigate_to,
+    prepare_page,
+)
 
 pytestmark = pytest.mark.visual
 
@@ -30,6 +40,43 @@ def test_visual_nav_chrome(page: Page, app: ShinyAppProc):
     # (#main_nav, #cal_groups, #about_tabs, #help_tabs) -> Playwright strict-mode error.
     prepare_page(page, app.url)
     assert_clip_snapshot(page, "#main_nav", "nav_chrome")
+
+
+@pytest.mark.parametrize("past_the_top", [55, 79])
+def test_a_capture_does_not_depend_on_where_the_page_was_left_scrolled(
+    page: Page, app: ShinyAppProc, past_the_top
+):
+    """The page background is fixed to the viewport, so the same clip looks different at another
+    scroll position. The rail is taller than the viewport, and Playwright leaves a page alone
+    when the viewport is already inside the element, so a scroll position left over from an
+    earlier layout stays. Measured 2026-11-21 in CI: a capture 55 px past the rail's top differs
+    from its baseline in 7,595 pixels (the fixed tint ends at row 955, not 900), with every nav
+    item pixel-identical. No baseline is involved here: the two captures are compared to each
+    other, so this holds in any browser.
+    """
+    prepare_page(page, app.url)
+    rail = page.locator("#main_nav")
+    normal, stable, _ = _stable_screenshot(page, rail, mask=None)
+    assert stable
+    page.evaluate(
+        """(past) => {
+            const top = document.querySelector('#main_nav').getBoundingClientRect().top;
+            window.scrollTo({top: top + window.scrollY + past, behavior: 'instant'});
+        }""",
+        past_the_top,
+    )
+    assert page.evaluate("() => window.scrollY") > 0  # the page can scroll: the case is real
+    after, stable, _ = _stable_screenshot(page, rail, mask=None)
+    assert stable
+    same, metrics, _ = compare_images(
+        normal,
+        after,
+        threshold=_DEFAULT_THRESHOLD,
+        max_ratio=_DEFAULT_MAX_RATIO,
+        max_pixels=_DEFAULT_MAX_PIXELS,
+        mean_threshold=_DEFAULT_MEAN_THRESHOLD,
+    )
+    assert same, metrics
 
 
 def test_visual_setup_page(page: Page, app: ShinyAppProc):
