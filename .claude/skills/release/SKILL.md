@@ -72,14 +72,15 @@ the whole file from git and rewrites released history.
    ```
    The `^{}` line must print the merge commit.
 4. Deploy is the user's step (needs sudo and a TTY, so it can't go through `!`). Give them the
-   **dev-checkout** path, never the prod clone's copy, and only after the tag is pushed:
+   **dev-checkout** path, never the prod clone's copy, and only after the tag is pushed (a
+   deploy run before that now stops with "Was the tag pushed?" and changes nothing):
    ```
    sudo OSMOSE_DEPLOY_REF=v{version} OSMOSE_DEPLOY_CSHARP=1 bash /home/razinka/osmopy/deploy.sh
    ```
    `OSMOSE_DEPLOY_CSHARP=1` is not optional: production has the C# engine (since 2026-11-21),
    every deploy deletes the build the previous one made, and only this flag rebuilds it. With
    it the deploy restarts the service twice (once for the new code, once so the app offers the
-   engine), and its summary must end
+   engine), and its summary must include the line
    `C# engine:   built from <sha>, self-tested, activated, offered by the app`.
    A summary that says `REMOVED` or `not built`, or a `C# engine:` error, means prod is
    running the new version **without** the engine: tell the user, and rerun the same command

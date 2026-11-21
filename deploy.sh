@@ -294,6 +294,16 @@ else
     warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."
 fi
 
+# Resolve the ref BEFORE deleting anything for it. An unknown ref otherwise dies at the checkout
+# below with git's "--detach does not take a path argument", AFTER the C# build is gone, and the
+# old process goes on offering an engine whose files no longer exist. The usual cause is a deploy
+# run before its tag is pushed (2026: v1.5.0, v1.7.0, v1.8.0).
+if ! as_shiny git -C "$PROD_SRC" rev-parse --verify --quiet "${DEPLOY_REF}^{commit}" >/dev/null; then
+    error "The ref '${DEPLOY_REF}' is not in ${PROD_SRC} after the fetch. Was the tag pushed?"
+    error "The checkout was not changed: the service keeps running the previous ref, with its C# engine if it had one."
+    exit 1
+fi
+
 # The C# assembly is gitignored, so `checkout --force` keeps the previous ref's build, and
 # csharp_engine_available() only compares the feature catalogue: a stale assembly would load
 # against the new Python code. Remove it on EVERY deploy, BEFORE the checkout, so a failed

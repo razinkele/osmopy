@@ -61,6 +61,8 @@ The third engine (`csharp/`, spec `docs/superpowers/specs/2026-11-17-csharp-engi
 
 **Every deploy removes the build a previous deploy made**, as `shiny` and before the checkout, so an old build never outlives its ref. So once the engine is on a server, **every later deploy must carry the flag too**: one without it leaves the app without the C# engine. Such a deploy warns where it deletes the build, its summary reads `C# engine: REMOVED`, and its last lines give the command that restores the engine. (A server that never had the engine prints `not built`.) The release procedure's deploy command carries the flag (`.claude/skills/release/SKILL.md`).
 
+The ref is resolved before anything is deleted for it. A deploy for a ref that does not exist, typically a tag that has not been pushed yet, stops with "Was the tag pushed?" and leaves the checkout and the build as they were. Before 2026-11-21 it deleted the build first and then died at the checkout.
+
 To build it on the server:
 
 ```bash

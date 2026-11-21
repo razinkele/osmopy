@@ -28,13 +28,15 @@ BUILT = "built from abc1234, self-tested, activated, offered by the app"
 def _blocks() -> tuple[str, str, str]:
     """The removal before the checkout, the default result line, and the summary to the end.
 
-    Cut at lines the change does not touch (the start of the removal, the checkout, the Step 6
-    header and its opening ``if``), not at the conditions under test: a changed condition must
-    fail an assertion below, not the cutting.
+    The first block runs from the end of the JAR provisioning to the line that announces the
+    deployed ref, so it holds whatever stands between them: the removal, the checkout and the
+    lines that read the ref. Cut at lines the change does not touch, not at the conditions under
+    test: a changed condition must fail an assertion below, not the cutting.
     """
     text = DEPLOY.read_text()
-    a = text.index("CSHARP_REMOVED=0\n")
-    removal = text[a : text.index('as_shiny git -C "$PROD_SRC" checkout ', a)]
+    jars = 'warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."\nfi\n'
+    a = text.index(jars) + len(jars)
+    removal = text[a : text.index('info "Prod source at ${DEPLOY_REF}', a)]
     step6 = text[text.index("# --- Step 6 (opt-in): the C# engine ---") :].splitlines(keepends=True)
     first = next(i for i, ln in enumerate(step6) if not ln.startswith("#"))
     opening = next(
@@ -46,7 +48,14 @@ def _blocks() -> tuple[str, str, str]:
     return removal, default, summary
 
 
-def _deploy(tmp_path: Path, *, build: str | None, flag: str, rm_fails: bool = False):
+def _deploy(
+    tmp_path: Path,
+    *,
+    build: str | None,
+    flag: str,
+    rm_fails: bool = False,
+    ref_exists: bool = True,
+):
     """Run the three blocks in order. ``build`` is "dir", "link" (to a directory outside the
     clone), "dangling" (a link to nothing) or None; with the flag on, the line Step 6 writes on
     success stands in for Step 6 itself."""
@@ -78,7 +87,19 @@ SERVICE_FILE=/etc/systemd/system/osmose-shiny.service
 info() {{ echo "INFO $*"; }}
 warn() {{ echo "WARN $*"; }}
 error() {{ echo "ERROR $*" >&2; }}
-as_shiny() {{ if [[ "$1" == "rm" && "{int(rm_fails)}" == "1" ]]; then return 1; fi; "$@"; }}
+as_shiny() {{
+    if [[ "$1" == "rm" && "{int(rm_fails)}" == "1" ]]; then return 1; fi
+    if [[ "$1" != "git" ]]; then "$@"; return; fi
+    echo "$*" >> {shlex.quote(str(tmp_path / "git.log"))}
+    case " $* " in
+        *" rev-parse --short HEAD "*) echo abc1234 ;;
+        *" rev-parse "*|*" checkout "*)
+            if [[ "{int(ref_exists)}" != "1" ]]; then
+                echo "fatal: git checkout: --detach does not take a path argument 'v9.9.9'" >&2
+                return 128
+            fi ;;
+    esac
+}}
 {removal}
 echo "AFTER_REMOVAL"
 {default}
@@ -151,3 +172,16 @@ def test_the_release_procedure_deploys_with_the_flag():
     assert "OSMOSE_DEPLOY_CSHARP=1" in commands[0].split("bash ")[0]
     # The name the skill sets is the one deploy.sh reads.
     assert 'DEPLOY_CSHARP="${OSMOSE_DEPLOY_CSHARP:-0}"' in DEPLOY.read_text()
+
+
+@pytest.mark.parametrize("flag", ["0", "1"])
+def test_an_unknown_ref_stops_the_deploy_before_the_engine_is_deleted(tmp_path, flag):
+    """A deploy run before its tag is pushed (2026: v1.5.0, v1.7.0, v1.8.0) dies at the checkout.
+    The build must still be there then: the old process goes on running, and offering it."""
+    done, still_there, _ = _deploy(tmp_path, build="dir", flag=flag, ref_exists=False)
+    assert done.returncode != 0
+    assert still_there, "the build was deleted for a ref that does not exist"
+    assert "AFTER_REMOVAL" not in done.stdout
+    assert "v9.9.9" in done.stderr and "pushed" in done.stderr
+    git_calls = (tmp_path / "git.log").read_text()
+    assert " checkout " not in git_calls
