@@ -58,14 +58,18 @@ def test_a_capture_does_not_depend_on_where_the_page_was_left_scrolled(
     rail = page.locator("#main_nav")
     normal, stable, _ = _stable_screenshot(page, rail, mask=None)
     assert stable
-    page.evaluate(
+    rail_top, scrolled_to = page.evaluate(
         """(past) => {
-            const top = document.querySelector('#main_nav').getBoundingClientRect().top;
-            window.scrollTo({top: top + window.scrollY + past, behavior: 'instant'});
+            const top = document.querySelector('#main_nav').getBoundingClientRect().top
+                + window.scrollY;
+            window.scrollTo({top: top + past, behavior: 'instant'});
+            return [top, window.scrollY];
         }""",
         past_the_top,
     )
-    assert page.evaluate("() => window.scrollY") > 0  # the page can scroll: the case is real
+    # The page really is past the rail's top. On a page that could not scroll that far the
+    # two captures would agree without the fix, and this test would prove nothing.
+    assert scrolled_to > rail_top, (scrolled_to, rail_top)
     after, stable, _ = _stable_screenshot(page, rail, mask=None)
     assert stable
     same, metrics, _ = compare_images(
