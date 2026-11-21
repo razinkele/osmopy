@@ -38,6 +38,15 @@ parameters)." toast that lives ~2s; with animations killed it shows as a fully-o
 (this caused an intermittent movement-page failure). If a new transient overlay starts
 flaking a baseline, suppress it here rather than re-blessing it into the PNG.
 
+Every capture also starts from the top of the page (`_capture`). The page background is
+fixed to the viewport, so a clip looks different at another scroll position, and
+Playwright does not re-scroll a clip taller than the viewport (the nav rail) once the
+viewport lies inside it. A scroll position left over from an earlier layout therefore
+stayed: on 2026-11-21 one CI run in seven captured the rail 55 px past its top, and
+`nav_chrome` differed in 7,595 pixels of background while every nav item was identical.
+A diff that is one horizontal band of background is this, not a theme change;
+`test_a_capture_does_not_depend_on_where_the_page_was_left_scrolled` guards it.
+
 ## Recovery
 Baselines are plain committed PNGs: `git checkout <good-sha> -- tests/visual_baselines/`
 reverts a bad update, then re-run `visual-update` for the page you actually meant to change.

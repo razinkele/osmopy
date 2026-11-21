@@ -119,6 +119,20 @@ def navigate_to(page: Page, nav_value: str) -> str:
     return clip
 
 
+def _capture(page: Page, locator, *, mask) -> bytes:
+    """One screenshot of the clip, taken from a known scroll position.
+
+    The page background is fixed to the viewport (`body::before`, `background-attachment:
+    fixed` in osmose.css), so the same clip looks different at another scroll position.
+    Playwright scrolls a clip into view only "if needed", and a clip taller than the viewport
+    (the nav rail: 980 px in a 900 px viewport) needs nothing once the viewport lies inside
+    it, so a scroll position left over from an earlier layout would stay. Starting every
+    capture from the top makes Playwright compute the scroll afresh from the current layout.
+    """
+    page.evaluate("() => window.scrollTo({top: 0, left: 0, behavior: 'instant'})")
+    return locator.screenshot(mask=mask or [], mask_color="#FF00FF")
+
+
 def _stable_screenshot(page: Page, locator, *, mask, attempts: int = 6, settle_ms: int = 400):
     """Capture the clip until two consecutive shots match within the gate tolerances
     (i.e. the reactive page has SETTLED), or `attempts` is exhausted. Returns
@@ -130,11 +144,11 @@ def _stable_screenshot(page: Page, locator, *, mask, attempts: int = 6, settle_m
     The short fixed settle here is a bounded backoff in a condition loop — not a blind
     load wait.
     """
-    shot = locator.screenshot(mask=mask or [], mask_color="#FF00FF")
+    shot = _capture(page, locator, mask=mask)
     metrics: dict = {}
     for _ in range(attempts):
         page.wait_for_timeout(settle_ms)
-        shot2 = locator.screenshot(mask=mask or [], mask_color="#FF00FF")
+        shot2 = _capture(page, locator, mask=mask)
         stable, metrics, _ = compare_images(
             shot,
             shot2,
