@@ -294,14 +294,33 @@ else
     warn "No osmose-java/*.jar in ${SOURCE_DIR}; Java-engine runs will be unavailable in prod."
 fi
 
+# Resolve the ref BEFORE deleting anything for it. An unknown ref otherwise dies at the checkout
+# below with git's "--detach does not take a path argument", AFTER the C# build is gone, and the
+# old process goes on offering an engine whose files no longer exist. The usual cause is a deploy
+# run before its tag is pushed (2026: v1.5.0, v1.7.0, v1.8.0).
+if ! as_shiny git -C "$PROD_SRC" rev-parse --verify --quiet "${DEPLOY_REF}^{commit}" >/dev/null; then
+    error "The ref '${DEPLOY_REF}' is not in ${PROD_SRC} after the fetch. Was the tag pushed?"
+    error "The checkout was not changed: the service keeps running the previous ref, with its C# engine if it had one."
+    exit 1
+fi
+
 # The C# assembly is gitignored, so `checkout --force` keeps the previous ref's build, and
 # csharp_engine_available() only compares the feature catalogue: a stale assembly would load
 # against the new Python code. Remove it on EVERY deploy, BEFORE the checkout, so a failed
 # removal stops the deploy with the previous ref and its build still consistent; Step 6
 # rebuilds it from the new ref when OSMOSE_DEPLOY_CSHARP=1. As shiny, not root: the clone is
 # shiny-writable, and root's rm -rf would follow a symlink planted above bin/ out of the clone.
+# A deploy WITHOUT the flag therefore takes the engine away from a server that had it. It says
+# so here, in the summary and in the last lines it prints: a server that never had the engine
+# prints "not built", and the two must not look alike.
+CSHARP_REMOVED=0
 if [[ -e "${PROD_SRC}/osmose/engine_cs/bin" || -L "${PROD_SRC}/osmose/engine_cs/bin" ]]; then
     as_shiny rm -rf "${PROD_SRC}/osmose/engine_cs/bin"
+    CSHARP_REMOVED=1
+    if [[ "$DEPLOY_CSHARP" != "1" ]]; then
+        warn "Removed the C# engine a previous deploy built. This deploy does not rebuild it"
+        warn "(no OSMOSE_DEPLOY_CSHARP=1), so the app will run WITHOUT the C# engine."
+    fi
 fi
 as_shiny git -C "$PROD_SRC" checkout --quiet --force --detach "$DEPLOY_REF"
 DEPLOYED_SHA="$(as_shiny git -C "$PROD_SRC" rev-parse --short HEAD)"
@@ -409,7 +428,11 @@ fi
 # mode of an abort between checkout and restart). A build that passes is activated, and the
 # service is then restarted ONCE MORE, because the app decides at startup whether to offer the
 # engine: a C# deploy therefore interrupts the service twice.
-CSHARP_RESULT="not built (OSMOSE_DEPLOY_CSHARP=1 builds it)"
+if [[ "$CSHARP_REMOVED" == "1" && "$DEPLOY_CSHARP" != "1" ]]; then
+    CSHARP_RESULT="REMOVED: a previous deploy's build was deleted and not rebuilt"
+else
+    CSHARP_RESULT="not built (OSMOSE_DEPLOY_CSHARP=1 builds it)"
+fi
 if [[ "$DEPLOY_CSHARP" == "1" ]]; then
     csharp_fail() {
         error "C# engine: $*"
@@ -537,3 +560,9 @@ echo "  Commands:"
 echo "    Restart:    sudo bash ${SOURCE_DIR}/deploy.sh --restart"
 echo "    Logs:       journalctl -u ${SERVICE_NAME} -f"
 echo "    Uninstall:  sudo bash ${SOURCE_DIR}/deploy.sh --uninstall"
+if [[ "$CSHARP_REMOVED" == "1" && "$DEPLOY_CSHARP" != "1" ]]; then
+    # Last on the screen: the warning at the removal has scrolled away by now.
+    echo ""
+    warn "This deploy REMOVED the C# engine and did not rebuild it: the app runs without it."
+    warn "To restore it: sudo OSMOSE_DEPLOY_REF=${DEPLOY_REF} OSMOSE_DEPLOY_CSHARP=1 bash ${SOURCE_DIR}/deploy.sh"
+fi

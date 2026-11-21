@@ -72,10 +72,23 @@ the whole file from git and rewrites released history.
    ```
    The `^{}` line must print the merge commit.
 4. Deploy is the user's step (needs sudo and a TTY, so it can't go through `!`). Give them the
-   **dev-checkout** path, never the prod clone's copy, and only after the tag is pushed:
+   **dev-checkout** path, never the prod clone's copy, and only after the tag is pushed (a
+   deploy run before that now stops with "Was the tag pushed?" and changes nothing):
    ```
-   sudo OSMOSE_DEPLOY_REF=v{version} bash /home/razinka/osmopy/deploy.sh
+   sudo OSMOSE_DEPLOY_REF=v{version} OSMOSE_DEPLOY_CSHARP=1 bash /home/razinka/osmopy/deploy.sh
    ```
+   `OSMOSE_DEPLOY_CSHARP=1` is not optional: production has the C# engine (since 2026-11-21),
+   every deploy deletes the build the previous one made, and only this flag rebuilds it. With
+   it the deploy restarts the service twice (once for the new code, once so the app offers the
+   engine), and its summary must include the line
+   `C# engine:   built from <sha>, self-tested, activated, offered by the app`.
+   - A summary that says `REMOVED` or `not built` means prod is running the new version
+     **without** the engine: tell the user, and rerun the same command.
+   - A `C# engine:` error (exit 1, no summary) means the engine is not offered, and its own
+     lines say what state prod is in. Do not assume: it may be running without the engine,
+     it may have a build that could not be removed ("the rollback is incomplete"), or the
+     service may not be answering. Report the lines as printed, check `GET :8838/`, and
+     rerun only once the cause it names is fixed.
 5. Verify from the prod clone `/srv/shiny-server/osmose-src`:
    - `git describe --tags --exact-match` = v{version}, with no offset.
    - `osmose/__version__.py` matches.
@@ -84,6 +97,9 @@ the whole file from git and rewrites released history.
    - `GET :8838/` returns 200.
    - `GET :8838/feedback/review` and `/api/feedback` return **403**. A 200 there means the token
      gate broke.
+   - The C# engine: `osmose/engine_cs/bin` exists in the clone and was built by this deploy,
+     and `GET :8838/` contains `id="engineBtnCsharp"`. Its absence means the app does not
+     offer the engine, whatever the deploy's summary said.
 
 ## Rules
 
