@@ -1,12 +1,16 @@
 name: E2E
 
-# Browser tests for UI config integrity: viewing a tab, switching models or editing must leave the
-# config exactly as loaded or edited. The unit suite cannot see this (it needs Shiny's real
-# rendering and reactivity); three releases in November 2026 fixed corruption of this kind that
-# only a browser run reproduced (#269, #271, #274).
+# Every browser test (tests/test_e2e_*.py), in a real browser against the running app. The unit
+# suite cannot see what these see: Shiny's real rendering and reactivity, and the deck.gl maps.
+# - Config integrity: viewing a tab, switching models or editing must leave the config exactly as
+#   loaded or edited. Three releases in November 2026 fixed corruption of this kind that only a
+#   browser run reproduced (#269, #271, #274).
+# - Maps and results: grid maps and overlays, the map viewer and builder, live movement, spatial
+#   results, and a Baltic run end to end. Until 2026-11-21 this job ran 4 of the 22 files and
+#   none of these, so a shiny_deckgl bump was tested in CI without one map being drawn.
 #
 # Opt-in like visual.yml: PRs to master that touch the UI or the config pipeline, plus manual
-# dispatch. ADVISORY -- do NOT add `config-integrity` to branch-protection required checks (a
+# dispatch. ADVISORY -- do NOT add `browser-tests` to branch-protection required checks (a
 # path-filtered job reports no status on unrelated PRs and would deadlock merges).
 on:
   pull_request:
@@ -17,9 +21,8 @@ on:
       - "osmose/config/**"
       - "osmose/schema/**"
       - "osmose/demo.py"
-      - "tests/test_e2e_config_reload.py"
-      - "tests/test_e2e_species_tab_*.py"
-      - "tests/test_e2e_edit_lock.py"
+      - "tests/test_e2e_*.py"
+      - "tests/_e2e_support.py"
       - "www/**"
       - ".github/workflows/e2e.yml"
       # A dependency bump (shiny, shiny_deckgl, ...) changes the rendered UI with no ui/ diff.
@@ -30,8 +33,10 @@ permissions:
   contents: read
 
 jobs:
-  config-integrity:
+  browser-tests:
     runs-on: ubuntu-latest
+    # All 22 files take about 22 minutes (measured 2026-11-21; test_e2e_config_reload.py alone
+    # is about 10).
     timeout-minutes: 45
     # Same digest-pinned Playwright image as visual.yml; the version-assert step keeps the
     # [viztest] playwright pin and the image's bundled browsers in step.
@@ -40,8 +45,12 @@ jobs:
       - uses: actions/checkout@v5
       - name: Trust the workspace (container runs as root vs checkout UID)
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: Install package with the browser-test extra
-        run: pip install -e ".[viztest]"
+      - name: Install package with the browser-test and numba extras
+        # numba: some of these tests run the Python engine, as production does (numba is
+        # installed there). Without it a 3-year Baltic run misses its 120 s budget
+        # (test_e2e_live_movement.py); with it, on a cold cache and 4 cores, that test takes
+        # about 14 s.
+        run: pip install -e ".[viztest,numba]"
       - name: Assert playwright wheel matches the container image
         run: |
           python - <<'PY'
@@ -53,13 +62,12 @@ jobs:
               sys.exit(f"playwright {installed} != image-pinned {expected}; bump the [viztest] pin, the digest, and this expected together")
           print("playwright", installed, "matches image")
           PY
-      - name: Run the config-integrity browser tests (retry transient timeouts only)
-        # Name the files: collecting the whole suite pulls in modules whose deps are in [dev], not
-        # [viztest]. -o addopts="" drops the ini's `-m 'not e2e ...'` filter and `--dist loadfile`.
+      - name: Run every browser test (retry transient timeouts only)
+        # The glob is the scope, so a new tests/test_e2e_*.py file runs here without being
+        # listed, and there is no `-m e2e`: a file that forgot its marker would be silently
+        # deselected by it. Not the whole suite: its other modules need [dev], not [viztest].
+        # -o addopts="" drops the ini's `-m 'not e2e ...'` filter and `--dist loadfile`.
         run: >-
           python -m pytest
-          tests/test_e2e_config_reload.py
-          tests/test_e2e_species_tab_maturity.py
-          tests/test_e2e_species_tab_multivalue.py
-          tests/test_e2e_edit_lock.py
-          -m e2e -o addopts="" -ra --reruns 1 --only-rerun TimeoutError
+          tests/test_e2e_*.py
+          -o addopts="" -ra --reruns 1 --only-rerun TimeoutError
