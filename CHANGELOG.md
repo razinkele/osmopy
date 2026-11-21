@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.11.1] - 2026-11-21
+
+### Bug Fixes
+
+- **deploy:** review: --no-user, safe clone repair, split recovery (cd18e8e)
+- **deploy:** Step 0 changes a package only below its floor (9eabbd6)
+
+### Documentation
+
+- **deploy:** clone repair lists untracked state as shiny, and its rollback (97161d5)
+
+### Other
+
+- Merge pull request #360 from razinkele/fix/deploy-floor-only (7194abf)
+
 ## [1.11.0] - 2026-11-20
 
 ### Features
