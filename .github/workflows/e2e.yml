@@ -15,7 +15,8 @@ name: E2E
 # - The whole package, not a list of modules: ui/ and app.py import 31 osmose modules
 #   (measured 2026-11-21), and a named list left most of them out twice.
 # - So a release PR starts this job too (it changes osmose/__version__.py). That run is the
-#   only browser run on the combined tree, since this job never runs on a push to master.
+#   one browser run sure to be on the tree about to be tagged: this job never runs on a push
+#   to master, and an earlier PR may not have started it, or ran before a later merge.
 # - A change to the C# bridge (osmose/engine_cs/) starts it as well, although this container
 #   has no C# engine and cannot test one: the run only shows the app still works without it.
 # ADVISORY -- do NOT add `browser-tests` to branch-protection required checks (a
