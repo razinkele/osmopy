@@ -490,7 +490,8 @@ ok, why = a(); raise SystemExit(0 if ok else why)" \
     done
     if [[ "$OFFERED" != "1" ]]; then
         # Back to what Steps 4 and 5 verified: no build, and a process started without one.
-        as_shiny rm -rf "$LIVE_BIN" || true
+        REMOVED=1
+        as_shiny rm -rf "$LIVE_BIN" || REMOVED=0
         systemctl restart "$SERVICE_NAME" || true
         BACK="000"
         for _ in $(seq 1 20); do
@@ -501,11 +502,18 @@ ok, why = a(); raise SystemExit(0 if ok else why)" \
             [[ "$BACK" == "200" ]] && break
             sleep 2
         done
-        error "C# engine: the app did not offer the engine after a restart, so the build was removed."
-        if [[ "$BACK" == "200" ]]; then
+        if [[ "$REMOVED" == "1" ]]; then
+            error "C# engine: the app did not offer the engine after a restart, so the build was removed."
+        else
+            error "C# engine: the app did not offer the engine after a restart, and the build could NOT be removed."
+            error "Remove ${LIVE_BIN} by hand (as shiny) and restart ${SERVICE_NAME}: the rollback is incomplete."
+        fi
+        if [[ "$BACK" != "200" ]]; then
+            error "The service is NOT answering (HTTP ${BACK}). Check: journalctl -u ${SERVICE_NAME} --no-pager -n 30"
+        elif [[ "$REMOVED" == "1" ]]; then
             error "The app is running ${DEPLOYED_SHA} WITHOUT the C# engine."
         else
-            error "The service is NOT answering (HTTP ${BACK}). Check: journalctl -u ${SERVICE_NAME} --no-pager -n 30"
+            error "The app is running ${DEPLOYED_SHA}, with that build still on disk."
         fi
         exit 1
     fi

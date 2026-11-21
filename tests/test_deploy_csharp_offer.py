@@ -160,10 +160,11 @@ def _offer_block() -> str:
     return step[start:end]
 
 
-def _run_block(port: int, tmp_path: Path, *, systemctl_rc: int = 0):
+def _run_block(port: int, tmp_path: Path, *, systemctl_rc: int = 0, rm_fails: bool = False):
     """Run the block under deploy.sh's shell options. ``systemctl`` only records its arguments
-    and returns ``systemctl_rc``; ``as_shiny`` runs its command directly; ``sleep`` does nothing.
-    Returns the process, whether the build is still there, and the systemctl calls."""
+    and returns ``systemctl_rc``; ``as_shiny`` runs its command directly (or, with ``rm_fails``,
+    refuses an ``rm``); ``sleep`` does nothing. Returns the process, whether the build is still
+    there, and the systemctl calls."""
     live = tmp_path / "bin"
     live.mkdir()
     (live / "Osmose.Engine.dll").write_text("build")
@@ -176,7 +177,7 @@ LIVE_BIN={shlex.quote(str(live))}
 info() {{ echo "INFO $*"; }}
 error() {{ echo "ERROR $*" >&2; }}
 sleep() {{ :; }}
-as_shiny() {{ "$@"; }}
+as_shiny() {{ if [[ "$1" == "rm" && "{int(rm_fails)}" == "1" ]]; then return 1; fi; "$@"; }}
 systemctl() {{ echo "$*" >> {shlex.quote(str(log))}; return {systemctl_rc}; }}
 {_offer_block()}
 echo "RESULT $CSHARP_RESULT"
@@ -225,3 +226,14 @@ def test_a_failed_restart_still_removes_the_build_and_says_so(serve, tmp_path):
     assert not build_kept
     assert len(calls) == 2
     assert "the build was removed" in done.stderr
+
+
+def test_a_build_that_cannot_be_removed_is_not_reported_as_removed(serve, tmp_path):
+    done, build_kept, calls = _run_block(serve(_WITHOUT), tmp_path, rm_fails=True)
+    assert done.returncode == 1
+    assert build_kept
+    assert len(calls) == 2
+    assert "could NOT be removed" in done.stderr
+    assert "the rollback is incomplete" in done.stderr
+    assert "so the build was removed" not in done.stderr
+    assert "WITHOUT the C# engine" not in done.stderr
