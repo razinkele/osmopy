@@ -4,12 +4,14 @@ dynamic = ["version"]
 description = "Python orchestration layer and Shiny web interface for the OSMOSE marine ecosystem simulator"
 requires-python = ">=3.12"
 dependencies = [
-    # shiny 1.6.x is the supported baseline. shinyswatch serves its PRECOMPILED theme
-    # (no sass/libsass needed) only when its bundled Bootstrap matches shiny's: shiny 1.6.3
-    # ships Bootstrap 5.3.8 and shinyswatch >=0.11 bundles 5.3.8 (older shinyswatch bundles
-    # 5.3.1 -> mismatch -> falls back to a libsass compile). osmose uses the unmodified
-    # superhero theme, so the precompiled path applies -- do not add libsass.
-    "shiny>=1.6.3,<1.7",
+    # shiny 1.9.x, as production runs it (measured 2026-11-21: shiny 1.9.0, shiny_deckgl 1.16.1;
+    # the shared env is managed for several apps, so CI follows it rather than the reverse).
+    # shinyswatch serves its PRECOMPILED theme (no sass/libsass needed) only when its bundled
+    # Bootstrap matches shiny's: shiny 1.9.0 (like 1.6.3) ships Bootstrap 5.3.8 and shinyswatch
+    # >=0.11 bundles 5.3.8 (0.14.0 too; older shinyswatch bundles 5.3.1 -> mismatch -> falls
+    # back to a libsass compile). osmose uses the unmodified superhero theme, so the
+    # precompiled path applies -- do not add libsass.
+    "shiny>=1.9.0,<1.10",
     "shinyswatch>=0.11",
     "shinywidgets>=0.7",
     "pandas>=2.2",
@@ -28,7 +30,9 @@ dependencies = [
     # (e.g. np.Inf) and breaks cma.CMAEvolutionStrategy under numpy>=2 (fixed in 3.4.0);
     # floor at the current major.
     "cma>=4.0",
-    "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2",
+    # The version production runs (1.16.1, installed there by conda for the server's other
+    # apps). PyPI carries shiny-deckgl 1.12 at most, so the tag comes from GitHub.
+    "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.16.1",
     # The razinkele/pyvis 4.x fork, published on PyPI as `pyvis-optimized` (and as `pyvis` on the
     # maintainer's conda channel); both install the `pyvis` import package. PyPI's own `pyvis` is a
     # different lineage that stops at 0.3.2 -- do not depend on that name from PyPI.

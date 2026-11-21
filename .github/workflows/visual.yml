@@ -10,6 +10,8 @@ on:
       - "ui/**"
       - "www/**"
       - "app.py"
+      # A dependency bump (shiny, shiny_deckgl, ...) changes the rendered UI with no ui/ diff.
+      - "pyproject.toml"
   workflow_dispatch:
     inputs:
       ref:

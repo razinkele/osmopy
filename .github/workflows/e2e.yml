@@ -22,6 +22,8 @@ on:
       - "tests/test_e2e_edit_lock.py"
       - "www/**"
       - ".github/workflows/e2e.yml"
+      # A dependency bump (shiny, shiny_deckgl, ...) changes the rendered UI with no ui/ diff.
+      - "pyproject.toml"
   workflow_dispatch:
 
 permissions:

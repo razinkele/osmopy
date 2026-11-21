@@ -7,7 +7,8 @@ already met their floors: ``pip install --upgrade "cma>=4.0" ...`` moves to the 
 over the 1.16.1 that two other apps need.
 
 The guards are tested by running the exact snippets from deploy.sh against faked installed
-versions, so a guard that stops being a floor test fails here.
+versions, so a guard that stops being a floor test fails here. The floors themselves must be the
+versions CI tests (``pyproject.toml``), which since 2026-11-21 are the ones production runs.
 """
 
 from __future__ import annotations
@@ -92,13 +93,48 @@ def _skips_install(snippet: str, installed: dict[str, str]) -> bool:
     return subprocess.run([sys.executable, "-c", code], capture_output=True).returncode == 0
 
 
+def _pyproject_dependencies() -> list[str]:
+    import tomllib
+
+    pyproject = DEPLOY.parent / "pyproject.toml"
+    return tomllib.loads(pyproject.read_text())["project"]["dependencies"]
+
+
+def test_deploy_floors_match_the_versions_ci_tests():
+    """CI tests what pyproject.toml pins; the deploy's floors must name the same versions.
+
+    The shiny_deckgl version appears in four places (pyproject's tag, the guard's floor, the tag
+    the guard installs, the final floor check) and shiny's in two; a bump that misses one leaves
+    the deploy installing or accepting a version CI never ran.
+    """
+    deps = _pyproject_dependencies()
+    (deckgl,) = [d for d in deps if d.startswith("shiny_deckgl")]
+    (shiny,) = [d for d in deps if re.match(r"shiny[<>=]", d)]
+    tested_deckgl = re.search(r"@v(\d+\.\d+\.\d+)$", deckgl)
+    tested_shiny = re.search(r">=(\d+\.\d+\.\d+)", shiny)
+    assert tested_deckgl and tested_shiny, (deckgl, shiny)
+
+    step0 = "\n".join(_step0())
+    guard_floor = re.search(r'Version\("(\d+\.\d+\.\d+)"\)', _guard("shiny_deckgl"))
+    install_tags = re.findall(r"shiny_deckgl\.git@v(\d+\.\d+\.\d+)", step0)
+    check_deckgl = re.search(r'"shiny_deckgl": "(\d+\.\d+\.\d+)"', step0)
+    check_shiny = re.search(r'"shiny": "(\d+\.\d+\.\d+)"', step0)
+    assert guard_floor and check_deckgl and check_shiny and install_tags
+
+    assert guard_floor.group(1) == tested_deckgl.group(1)
+    assert install_tags == [tested_deckgl.group(1)]
+    assert check_deckgl.group(1) == tested_deckgl.group(1)
+    assert check_shiny.group(1) == tested_shiny.group(1)
+
+
 @pytest.mark.parametrize(
     ("installed", "skips"),
     [
-        ({"shiny_deckgl": "1.16.1"}, True),  # what the other apps installed: never downgraded
-        ({"shiny_deckgl": "1.9.2"}, True),
-        ({"shiny_deckgl": "1.10.0"}, True),  # a string comparison would call this older
-        ({"shiny_deckgl": "1.9.1"}, False),
+        ({"shiny_deckgl": "1.16.1"}, True),  # prod's, and the floor: never reinstalled
+        ({"shiny_deckgl": "1.17.0"}, True),  # newer, e.g. from another app: never downgraded
+        ({"shiny_deckgl": "1.100.0"}, True),  # a string comparison would call this older
+        ({"shiny_deckgl": "1.16.0"}, False),
+        ({"shiny_deckgl": "1.9.2"}, False),  # the floor until 2026-11-21
         ({}, False),
     ],
 )

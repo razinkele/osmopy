@@ -185,16 +185,17 @@ fi
 # "already satisfied" is a no-op, and a missing or older package gets the newest release that
 # meets the floor. (Until 2026-11-21 this line passed --upgrade, which would have replaced cma
 # 4.0.0 with 4.6.0.) cma <=3.3.0 breaks under numpy 2; shinyswatch <0.11 forces a sass compile
-# under shiny 1.6.3; shinywidgets floor raised. packaging is needed by the guards below.
+# (its Bootstrap 5.3.1 against shiny's 5.3.8); shinywidgets floor raised. packaging is needed by
+# the guards below. shiny itself is never installed here: the env's owner manages it, and the
+# floor check below only confirms it is the 1.9 line CI tests.
 info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl, pyvis)..."
 as_shiny "${PIP_INSTALL[@]}" --quiet "packaging" "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
-# shiny_deckgl comes from a git tag: v1.9.2 is the release osmose was built against (its
-# layer_legend_widget API); v1.11.0 was checked on 1.16.1 too (2026-11-21). Install it only when
-# missing or below 1.9.2, since pip reinstalls a git-URL requirement under --upgrade every time.
-# This test used to be "not exactly 1.9.2", which would have downgraded the 1.16.1 that the
-# server's other apps (AQUABC, CENOP) need.
-if ! as_shiny "$SHINY_PYTHON" -c 'import sys; from importlib.metadata import version; from packaging.version import Version; sys.exit(Version(version("shiny_deckgl")) < Version("1.9.2"))' 2>/dev/null; then
-    as_shiny "${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
+# shiny_deckgl comes from a git tag: v1.16.1 is the release CI tests (pyproject.toml) and the one
+# production runs. Install it only when missing or below 1.16.1, since pip reinstalls a git-URL
+# requirement under --upgrade every time. This test used to be "not exactly 1.9.2", which would
+# have downgraded the 1.16.1 that the server's other apps (AQUABC, CENOP) need.
+if ! as_shiny "$SHINY_PYTHON" -c 'import sys; from importlib.metadata import version; from packaging.version import Version; sys.exit(Version(version("shiny_deckgl")) < Version("1.16.1"))' 2>/dev/null; then
+    as_shiny "${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.16.1"
 fi
 # pyvis is a FORK (razinkele/pyvis "Optimized Edition", versioned 4.x); PyPI's `pyvis` is a
 # different lineage that stops at 0.3.2. The fork ships under TWO distribution names: `pyvis`
@@ -215,8 +216,8 @@ as_shiny "$SHINY_PYTHON" - <<'PYCHK'
 import sys
 from importlib.metadata import version
 from packaging.version import Version
-floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.6.3",
-          "shiny_deckgl": "1.9.2"}
+floors = {"cma": "4.0", "shinyswatch": "0.11", "shinywidgets": "0.7", "shiny": "1.9.0",
+          "shiny_deckgl": "1.16.1"}
 have = {k: version(k) for k in floors}
 # pyvis by import-package version: its dist name is `pyvis` or `pyvis-optimized` (see above).
 import pyvis
