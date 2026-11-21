@@ -19,8 +19,10 @@ SHINY_PYTHON="/opt/micromamba/envs/shiny/bin/python3"
 SHINY_PIP="/opt/micromamba/envs/shiny/bin/pip"
 # pip runs AS SHINY (see as_shiny below): the env is shiny-owned. --root-user-action=ignore is
 # inert for a non-root user and kept so a root invocation would not warn. Use
-# 'as_shiny "${PIP_INSTALL[@]}" <pkgs>' for installs.
-PIP_INSTALL=("$SHINY_PIP" install --root-user-action=ignore)
+# 'as_shiny "${PIP_INSTALL[@]}" <pkgs>' for installs. --no-user: pip falls back to a user-site
+# install when site-packages is not writable, and the floor check would then pass on a copy in
+# shiny's home; with it, an install pip cannot write into the env fails the deploy instead.
+PIP_INSTALL=("$SHINY_PIP" install --root-user-action=ignore --no-user)
 LINK_PATH="${SHINY_ROOT}/${APP_NAME}"
 SERVICE_NAME="osmose-shiny"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -144,10 +146,11 @@ as_shiny() { (cd / && setsid -w runuser -u shiny -- env HOME="$SHINY_HOME" "$@")
 
 # --- Step 0: Install missing + version-floored Python dependencies ---
 # BEFORE the checkout: pip runs as shiny (above), and a failure here (a network error, or a
-# package an older deploy installed as root that shiny cannot upgrade; DEPLOY.md, one-time fix)
-# then stops the deploy with the previous ref still checked out, rather than leaving new code on
-# disk under the old process. Installs that completed before the failure stay in the shared env;
-# they are version floors, which the running code already satisfies.
+# package below its floor that shiny cannot replace because it is root-owned; DEPLOY.md, "The
+# shared environment") then stops the deploy with the previous ref still checked out, rather
+# than leaving new code on disk under the old process. Installs that completed before the
+# failure stay in the shared env; they only raise packages to their floors, which the running
+# code already satisfies.
 # Clean up leftover "~"-prefixed dist-info dirs (broken partial installs from interrupted
 # pip upgrades, e.g. ~inycss2 / ~hinyswatch / ~ma). pip warns "Ignoring invalid distribution"
 # for each on every command; removing them is safe (the real packages are the unprefixed dirs).
@@ -159,7 +162,7 @@ if [[ -d "$SHINY_SITE_PACKAGES" ]]; then
         # Cosmetic (pip only warns about them), so a leftover shiny cannot remove, e.g. one an
         # older root deploy left root-owned, is reported, not fatal.
         as_shiny find "$SHINY_SITE_PACKAGES" -maxdepth 1 -name '~*' -exec rm -rf {} + \
-            || warn "Could not remove all of: ${LEFTOVER} (root-owned? DEPLOY.md, one-time step)"
+            || warn "Could not remove all of: ${LEFTOVER} (root-owned? DEPLOY.md, \"The shared environment\")"
     fi
 fi
 
@@ -175,16 +178,22 @@ if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
     as_shiny "${PIP_INSTALL[@]}" "${MISSING_PKGS[@]}" --quiet
 fi
 
-# Version-floored packages: a presence check cannot enforce a minimum, so upgrade
-# unconditionally. cma <=3.3.0 breaks under numpy 2; shinyswatch <0.11 forces a sass
-# compile under shiny 1.6.3; shinywidgets floor raised. shiny_deckgl must match prod's
-# layer_legend_widget API (v1.9.2).
+# Version floors. pip changes a package only when it is missing or BELOW its floor, never to
+# reach a newer release: the env is shared with other apps and conda-managed (DEPLOY.md, "The
+# shared environment"), so replacing a package that already meets its floor can break another
+# app or stop the deploy on a root-owned file. A specifier without --upgrade is exactly that:
+# "already satisfied" is a no-op, and a missing or older package gets the newest release that
+# meets the floor. (Until 2026-11-21 this line passed --upgrade, which would have replaced cma
+# 4.0.0 with 4.6.0.) cma <=3.3.0 breaks under numpy 2; shinyswatch <0.11 forces a sass compile
+# under shiny 1.6.3; shinywidgets floor raised. packaging is needed by the guards below.
 info "Ensuring version-floored packages (cma, shinyswatch, shinywidgets, shiny_deckgl, pyvis)..."
-as_shiny "${PIP_INSTALL[@]}" --quiet --upgrade "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
-# Only when the installed version is not exactly 1.9.2: pip reinstalls a git-URL requirement
-# under --upgrade every time, even at the same version, and that reinstall is what would hit a
-# package an older (root) deploy left root-owned.
-if ! as_shiny "$SHINY_PYTHON" -c 'import sys; from importlib.metadata import version; sys.exit(version("shiny_deckgl") != "1.9.2")' 2>/dev/null; then
+as_shiny "${PIP_INSTALL[@]}" --quiet "packaging" "cma>=4.0" "shinyswatch>=0.11" "shinywidgets>=0.7" "pyarrow>=14"
+# shiny_deckgl comes from a git tag: v1.9.2 is the release osmose was built against (its
+# layer_legend_widget API); v1.11.0 was checked on 1.16.1 too (2026-11-21). Install it only when
+# missing or below 1.9.2, since pip reinstalls a git-URL requirement under --upgrade every time.
+# This test used to be "not exactly 1.9.2", which would have downgraded the 1.16.1 that the
+# server's other apps (AQUABC, CENOP) need.
+if ! as_shiny "$SHINY_PYTHON" -c 'import sys; from importlib.metadata import version; from packaging.version import Version; sys.exit(Version(version("shiny_deckgl")) < Version("1.9.2"))' 2>/dev/null; then
     as_shiny "${PIP_INSTALL[@]}" --quiet --upgrade "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2"
 fi
 # pyvis is a FORK (razinkele/pyvis "Optimized Edition", versioned 4.x); PyPI's `pyvis` is a
@@ -202,7 +211,6 @@ if ! as_shiny "$SHINY_PYTHON" -c 'import sys, pyvis; from packaging.version impo
 fi
 
 # Fail loudly if any floor is unmet after install.
-as_shiny "${PIP_INSTALL[@]}" --quiet "packaging" || true
 as_shiny "$SHINY_PYTHON" - <<'PYCHK'
 import sys
 from importlib.metadata import version
@@ -234,10 +242,10 @@ if [[ -d "${PROD_SRC}/.git" ]]; then
     # Root never writes into the clone, not even to re-own it: a hard link shiny planted there
     # would carry the change to a file outside it. Anything an older, root-git deploy left
     # root-owned would make git as shiny fail half-way, so refuse first (read-only check);
-    # DEPLOY.md has the one-time fix.
+    # DEPLOY.md, "Root-owned files in the clone", has the fix.
     ROOT_OWNED="$(find "$PROD_SRC" -xdev -user root -print -quit 2>/dev/null || true)"
     if [[ -n "$ROOT_OWNED" ]]; then
-        error "Root-owned files in ${PROD_SRC} (first: ${ROOT_OWNED}). See DEPLOY.md, one-time step."
+        error "Root-owned files in ${PROD_SRC} (first: ${ROOT_OWNED}). See DEPLOY.md, \"Root-owned files in the clone\"."
         exit 1
     fi
     as_shiny git -C "$PROD_SRC" fetch --quiet --prune origin
