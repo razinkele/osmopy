@@ -9,12 +9,15 @@ name: E2E
 #   results, and a Baltic run end to end. Until 2026-11-21 this job ran 4 of the 22 files and
 #   none of these, so a shiny_deckgl bump was tested in CI without one map being drawn.
 #
-# Path-filtered like visual.yml: PRs to master that touch the UI, the config pipeline, the
-# Python engine, the results reader or the shipped data, plus manual dispatch. The engine and
-# data see many PRs, so this job (about 22 minutes) runs on most code PRs.
-# NOT covered: the UI imports 31 osmose modules and only config, schema, demo, engine and
-# results start this job. A change to, say, osmose/plotting.py, osmose/live_movement.py or
-# osmose/calibration/ alone does not (measured 2026-11-21).
+# Path-filtered like visual.yml: PRs to master that touch the app (ui/, app.py, www/), the
+# osmose package or the shipped data, plus manual dispatch. That is most code PRs, and the job
+# takes about 22 minutes.
+# - The whole package, not a list of modules: ui/ and app.py import 31 osmose modules
+#   (measured 2026-11-21), and a named list left most of them out twice.
+# - So a release PR starts this job too (it changes osmose/__version__.py). That run is the
+#   only browser run on the combined tree, since this job never runs on a push to master.
+# - A change to the C# bridge (osmose/engine_cs/) starts it as well, although this container
+#   has no C# engine and cannot test one: the run only shows the app still works without it.
 # ADVISORY -- do NOT add `browser-tests` to branch-protection required checks (a
 # path-filtered job reports no status on unrelated PRs and would deadlock merges).
 on:
@@ -23,13 +26,8 @@ on:
     paths:
       - "ui/**"
       - "app.py"
-      - "osmose/config/**"
-      - "osmose/schema/**"
-      - "osmose/demo.py"
-      # The tests run simulations and read their outputs in the Results and Spatial Results
-      # pages, on the demo configs under data/.
-      - "osmose/engine/**"
-      - "osmose/results.py"
+      - "osmose/**"
+      # The tests run simulations and read their outputs on the demo configs under data/.
       - "data/**"
       - "tests/test_e2e_*.py"
       - "tests/_e2e_*.py"  # their helpers: _e2e_support, _e2e_feedback_env
