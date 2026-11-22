@@ -15,6 +15,17 @@ from shiny import reactive, render, ui
 from shiny.types import SilentException
 from shinywidgets import output_widget, render_plotly
 
+try:  # pyvis-optimized >= 5: native Shiny output with node events (no iframe)
+    from pyvis.shiny import (  # type: ignore[import-not-found]
+        PyVisNetworkController,
+        output_pyvis_network,
+        render_pyvis_network,
+    )
+
+    _HAS_PYVIS_SHINY = True
+except ImportError:  # pragma: no cover - pyvis is a declared dependency
+    _HAS_PYVIS_SHINY = False
+
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.pages.scenario_diff import scenario_diff_nav_panel, scenario_diff_server
@@ -357,7 +368,20 @@ def results_ui():
                     inline=True,
                 ),
                 ui.input_slider("trophic_threshold", "Min diet %", min=0, max=50, value=5, step=1),
-                ui.output_ui("trophic_network"),
+                ui.input_select("trophic_focus", "Focus species", {"": "\u2014"}),
+                ui.output_ui("trophic_network_meta"),
+                (
+                    output_pyvis_network(
+                        "trophic_network",
+                        height="640px",
+                        theme="auto",  # follows data-bs-theme, kept in sync with data-theme
+                        show_layout_switcher=False,  # fixed layout: positions are meaningful
+                        events=["selectNode", "deselectNode"],
+                    )
+                    if _HAS_PYVIS_SHINY
+                    else ui.div("Install pyvis-optimized>=5 to view the trophic network.")
+                ),
+                ui.output_ui("trophic_selection"),
             ),
             ui.nav_panel(
                 "Community Metrics",
@@ -811,15 +835,14 @@ def results_server(input, output, session, state: AppState):
         }
         return {"dir": out_dir, "times": times, "layouts": layouts}
 
-    @render.ui
-    def trophic_network():
+    @reactive.calc
+    def _trophic_net():
+        """(diet DataFrame, time, level, layout) for the current controls, or (None, msg)."""
         cache = _trophic_cache()
         if cache is None:
-            return ui.div("No diet-matrix output found.", style=STYLE_EMPTY)
-        try:
-            from osmose.trophic_network import diet_network_at, make_trophic_network_html
-        except ImportError:
-            return ui.div("Install pyvis to view the trophic network.", style=STYLE_EMPTY)
+            return None, "No diet-matrix output found."
+        from osmose.trophic_network import diet_network_at
+
         level = input.trophic_predator_level()
         # The slider holds an INDEX into cache["times"]; map it to the actual Time (clamped),
         # so a fractional/sub-annual Time is addressable and we never pass an absent time value.
@@ -833,16 +856,95 @@ def results_server(input, output, session, state: AppState):
                 threshold=float(input.trophic_threshold()),
                 predator_level=level,
             )
-            # net is already filtered to the user's threshold by diet_network_at; pass 0.0 so
-            # make_trophic_network_html's default (5.0) doesn't silently re-clamp sub-5% sliders.
-            html = make_trophic_network_html(net, positions=cache["layouts"][level], threshold=0.0)
         except (FileNotFoundError, OSError, ValueError) as e:
-            return ui.div(f"Could not build trophic network: {e}", style=STYLE_EMPTY)
-        return ui.div(
-            ui.tags.small(f"Time {t:g}", style=STYLE_MONO_KEY),
-            ui.tags.iframe(
-                srcdoc=html, style="width:100%; height:640px; border:0;", sandbox="allow-scripts"
+            return None, f"Could not build trophic network: {e}"
+        return {"df": net, "time": t, "layout": cache["layouts"][level]}, None
+
+    @render.ui
+    def trophic_network_meta():
+        data, msg = _trophic_net()
+        if data is None:
+            return ui.div(msg, style=STYLE_EMPTY)
+        return ui.tags.small(f"Time {data['time']:g}", style=STYLE_MONO_KEY)
+
+    if _HAS_PYVIS_SHINY:
+        trophic_ctrl = PyVisNetworkController("trophic_network", session)
+
+        @render_pyvis_network
+        def trophic_network():
+            from osmose.trophic_network import build_trophic_network
+
+            data, _msg = _trophic_net()
+            if data is None:
+                return None
+            # net is already filtered to the user's threshold by diet_network_at; pass 0.0 so
+            # the builder's default (5.0) doesn't silently re-clamp sub-5% sliders.
+            return build_trophic_network(data["df"], positions=data["layout"], threshold=0.0)
+
+        @reactive.effect
+        def _trophic_focus_choices():
+            data, _msg = _trophic_net()
+            nodes = sorted(set(data["df"]["predator"]) | set(data["df"]["prey"])) if data else []
+            with reactive.isolate():
+                keep = input.trophic_focus()
+            ui.update_select(
+                "trophic_focus",
+                choices={"": "\u2014", **{n: n for n in nodes}},
+                selected=keep if keep in nodes else "",
+            )
+
+        @reactive.effect
+        @reactive.event(input.trophic_focus)
+        def _trophic_focus():
+            node = input.trophic_focus()
+            # vis.js fires no selectNode for a programmatic selection, so set the panel here
+            _trophic_selected.set(node or None)
+            if node:
+                trophic_ctrl.select_nodes([node])
+                trophic_ctrl.focus(node, scale=1.4)
+            else:
+                trophic_ctrl.unselect_all()
+                trophic_ctrl.fit()
+
+    _trophic_selected: reactive.Value[str | None] = reactive.Value(None)
+
+    @reactive.effect
+    @reactive.event(lambda: input.trophic_network_selectNode())
+    def _on_trophic_select():
+        ev = input.trophic_network_selectNode()
+        _trophic_selected.set(str(ev["nodeId"]) if ev and ev.get("nodeId") is not None else None)
+
+    @reactive.effect
+    @reactive.event(lambda: input.trophic_network_deselectNode())
+    def _on_trophic_deselect():
+        _trophic_selected.set(None)
+
+    @render.ui
+    def trophic_selection():
+        node = _trophic_selected.get()
+        data, _msg = _trophic_net()
+        if not node or data is None:
+            return ui.tags.small(
+                "Click a node to list what it eats and what eats it.", style=STYLE_EMPTY
+            )
+        df = data["df"]
+        eats = df[df["predator"] == node].sort_values("proportion", ascending=False)
+        eaten = df[df["prey"] == node].sort_values("proportion", ascending=False)
+
+        def _rows(sub, col):
+            if not len(sub):
+                return ui.tags.li("\u2014")
+            return ui.TagList(
+                *[ui.tags.li(f"{n} \u2014 {v:.1f}%") for n, v in zip(sub[col], sub["proportion"])]
+            )
+
+        return ui.layout_columns(
+            ui.div(ui.tags.strong(f"{node} eats (% of its diet)"), ui.tags.ul(_rows(eats, "prey"))),
+            ui.div(
+                ui.tags.strong("Eaten by (% of predator's diet)"),
+                ui.tags.ul(_rows(eaten, "predator")),
             ),
+            col_widths=(6, 6),
         )
 
     @render.ui

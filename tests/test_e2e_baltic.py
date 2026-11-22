@@ -89,7 +89,7 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
 
     # Trophic Network tab — the engine writes a species-level `<pred>_<prey>` diet matrix;
     # pre-fix the trophic parser expected the Java `Prey`-column layout and threw an
-    # unhandled KeyError ('Prey'). Assert the output renders (an iframe) and is NOT in
+    # unhandled KeyError ('Prey'). Assert the output renders (a vis canvas) and is NOT in
     # Shiny's error state.
     page.get_by_role("tab", name="Trophic Network").click()
     trophic = page.locator("#trophic_network")
@@ -97,7 +97,7 @@ def test_baltic_full_run_and_outputs(page: Page, app: ShinyAppProc):
     assert page.locator("#trophic_network.shiny-output-error").count() == 0, (
         "trophic_network errored (KeyError 'Prey'?)"
     )
-    expect(trophic.locator("iframe")).to_be_visible(timeout=_LOAD_TIMEOUT)
+    expect(trophic.locator(".pyvis-network-canvas canvas")).to_be_visible(timeout=_LOAD_TIMEOUT)
 
     # 5. Spatial output (enabled via the override). The Spatial Results pill is ALWAYS
     # present but carries `osm-disabled` until the server detects spatial output; wait for
