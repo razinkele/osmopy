@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tests._repo_env import repo_env
+
 
 def test_calibrate_baltic_module_loads_via_spec() -> None:
     """Load the script from disk (scripts/ has no __init__.py).
@@ -35,6 +37,7 @@ def test_calibrate_baltic_help() -> None:
         [sys.executable, str(script), "--help"],
         capture_output=True,
         text=True,
+        env=repo_env(),
     )
     assert result.returncode == 0, result.stderr
     assert "Baltic" in result.stdout or "calibrat" in result.stdout.lower()

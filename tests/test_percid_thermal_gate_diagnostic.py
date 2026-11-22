@@ -1,6 +1,8 @@
 import subprocess
 import sys
 
+from tests._repo_env import REPO_ROOT, repo_env
+
 
 def test_diagnostic_runs_and_reports_both_percids():
     # --nyear 4 keeps the smoke test cheap (two short Baltic runs); the real A/B
@@ -10,6 +12,8 @@ def test_diagnostic_runs_and_reports_both_percids():
         capture_output=True,
         text=True,
         timeout=900,
+        cwd=REPO_ROOT,
+        env=repo_env(),
     )
     assert out.returncode == 0, out.stderr
     lo = out.stdout.lower()

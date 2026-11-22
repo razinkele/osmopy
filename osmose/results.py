@@ -369,7 +369,12 @@ def _build_dataframes_from_outputs(
         else:
             output_type, _, sp_name = key.partition("_")
         annotated = df.copy()
-        annotated["species"] = sp_name
+        # MultiIndex columns (two-row mortality headers) need a full-length tuple key: a bare
+        # string is deprecated in pandas and will raise (Pandas4Warning)
+        if isinstance(annotated.columns, pd.MultiIndex):
+            annotated[("species",) + ("",) * (annotated.columns.nlevels - 1)] = sp_name
+        else:
+            annotated["species"] = sp_name
         cache_shape.setdefault(output_type, []).append(annotated)
 
     return {ot: pd.concat(frames, ignore_index=True) for ot, frames in cache_shape.items()}
@@ -844,8 +849,11 @@ class OsmoseResults:
                 sp_name = _extract_species(filepath.stem, output_type, self.prefix)
                 if sp_name is None:
                     sp_name = "all"
+                # copy() consolidates a wide, fragmented frame so the insert below does not
+                # raise pandas' PerformanceWarning
+                df = df.copy()
                 if isinstance(df.columns, pd.MultiIndex):
-                    df[("species", "")] = sp_name
+                    df[("species",) + ("",) * (df.columns.nlevels - 1)] = sp_name
                 else:
                     df["species"] = sp_name
                 frames.append(df)

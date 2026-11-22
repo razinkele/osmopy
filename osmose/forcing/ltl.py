@@ -171,8 +171,9 @@ def bgc_to_ltl(
         arr = work[name].values
         finite = np.isfinite(arr)
         return {
-            "src_valid": finite.all(axis=0) if arr.ndim == 3 else finite,
-            "target_mask": ocean_mask.astype(bool),
+            # np.asarray: numpy's stubs type .all(axis=0) as possibly a scalar np.bool
+            "src_valid": np.asarray(finite.all(axis=0) if arr.ndim == 3 else finite, dtype=bool),
+            "target_mask": np.asarray(ocean_mask, dtype=bool),
         }
 
     if has_phyc and has_zooc:
