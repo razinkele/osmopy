@@ -1019,6 +1019,38 @@ def register_calibration_handlers(
             ),
         )
 
+    # ── Task buttons (shiny input_task_button, auto_reset=False) ──────────
+    # Work runs on plain threads (a C# run must not fork after the CLR loads, so this is not
+    # an ExtendedTask); each button stays busy until ITS thread exits, however the run ends
+    # (results, error, Stop, a preflight modal dismissed), so it can never stick disabled.
+    _task_threads: dict[str, threading.Thread] = {}
+
+    def _track_task_button(button_id: str, thread: threading.Thread) -> None:
+        _task_threads[button_id] = thread
+        ui.update_task_button(button_id, state="busy")
+
+    def _release_if_no_thread(button_id: str):
+        # The client marks a task button busy on click; a handler that returns early
+        # (validation warning) starts no thread, so release it. priority=-100 runs this
+        # after the button's own handler in the same flush.
+        @reactive.effect(priority=-100)
+        @reactive.event(input[button_id])
+        def _release():
+            t = _task_threads.get(button_id)
+            if t is None or not t.is_alive():
+                ui.update_task_button(button_id, state="ready")
+
+    for _bid in ("btn_start_cal", "btn_validate", "btn_sensitivity"):
+        _release_if_no_thread(_bid)
+
+    @reactive.effect
+    def _reset_finished_task_buttons():
+        reactive.invalidate_later(1.0)
+        for button_id, thread in list(_task_threads.items()):
+            if not thread.is_alive():
+                del _task_threads[button_id]
+                ui.update_task_button(button_id, state="ready")
+
     @reactive.poll(lambda: time.time(), interval_secs=0.5)
     def _poll_cal_messages():
         msgs = msg_queue.drain()
@@ -1252,6 +1284,7 @@ def register_calibration_handlers(
 
             thread = threading.Thread(target=run_surrogate, daemon=True)
             thread.start()
+            _track_task_button("btn_start_cal", thread)
             cal_thread.set(thread)
 
         else:
@@ -1350,6 +1383,7 @@ def register_calibration_handlers(
 
             thread = threading.Thread(target=run_optimization, daemon=True)
             thread.start()
+            _track_task_button("btn_start_cal", thread)
             cal_thread.set(thread)
 
     @reactive.effect
@@ -1550,6 +1584,7 @@ def register_calibration_handlers(
         cancel_event.clear()
         thread = threading.Thread(target=_run_preflight_thread, daemon=True)
         thread.start()
+        _track_task_button("btn_start_cal", thread)
         cal_thread.set(thread)
 
     @reactive.effect
@@ -1662,6 +1697,7 @@ def register_calibration_handlers(
 
         thread = threading.Thread(target=run_validation, daemon=True)
         thread.start()
+        _track_task_button("btn_validate", thread)
 
     @reactive.effect
     def _handle_history_buttons():
@@ -1842,3 +1878,4 @@ def register_calibration_handlers(
 
         thread = threading.Thread(target=run_sensitivity, daemon=True)
         thread.start()
+        _track_task_button("btn_sensitivity", thread)
