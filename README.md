@@ -80,6 +80,17 @@ Median of five runs, measured on 2026-11-22 on an Intel Core i9-10940X (14 cores
 - **The Python engine's first run compiles.** With an empty Numba cache the 5-year run took 92 s instead of 5 s. The compiled code is cached on disk afterwards, and the table is with the cache filled.
 - **The outputs are not file-for-file the same.** Python and C# write the identical set of files; the Java engine lays its distributions out differently and writes about twice the bytes. The engines also use different random number generators, so they agree as ensembles, not run by run (next section).
 
+**On the Baltic Sea model** (`data/baltic`, the production config, run as shipped for 15 years), only Python and C# can be compared: the Java engine refuses this config, because its bottom-oxygen coupling of the benthos has no Java counterpart.
+
+| Engine | Threads | 15-year run | Speed vs Python, 1 thread | Peak memory |
+|---|---|---|---|---|
+| Python | 1 | 64 s | 1.0× | 326 MB |
+| Python | 14 | 30 s | 2.2× | 325 MB |
+| C# | 1 | 26 s | 2.5× | 256 MB |
+| C# | 14 | **7.4 s** | **8.6×** | 258 MB |
+
+Same method and machine, median of five runs on 2026-11-22. Both engines wrote the same 47 files, and each engine's 1-thread and 14-thread runs gave byte-identical files. Record: [`docs/perf/2026-11-22-python-csharp-baltic.md`](https://github.com/razinkele/osmopy/blob/master/docs/perf/2026-11-22-python-csharp-baltic.md).
+
 What makes the Python engine fast:
 
 - Numba JIT mortality loop — full interleaved predation/starvation/fishing compiled to native code
