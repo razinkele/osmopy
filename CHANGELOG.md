@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.11.3] - 2026-11-22
+
+### Bug Fixes
+
+- **ui:** review: a heading named like an earlier suffix gets its own id (ae96a03)
+- **ui:** README and CHANGELOG links work in the app, and their pictures load (2dcf550)
+
+### Documentation
+
+- **readme:** Python and C# measured on the Baltic model (af405f9)
+
+### Other
+
+- Merge pull request #372 from razinkele/docs/readme-baltic-python-csharp (7411872)
+- Merge branch 'master' of https://github.com/razinkele/osmopy into docs/readme-baltic-python-csharp (65425db)
+- Merge pull request #371 from razinkele/fix/about-page-links (0c48254)
+
 ## [1.11.2] - 2026-11-22
 
 ### Bug Fixes
