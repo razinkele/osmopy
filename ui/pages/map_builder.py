@@ -246,7 +246,7 @@ def map_builder_server(input, output, session, state: AppState):
             return ui.div()
         return ui.p(
             f"{n} polygon(s) staged — click 'Apply polygon(s)'.",
-            style="color: var(--osm-accent); font-size: 12px; margin: 4px 0;",
+            style="color: var(--osm-accent-text); font-size: 12px; margin: 4px 0;",
         )
 
     @render.ui

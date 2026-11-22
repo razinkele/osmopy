@@ -5,8 +5,9 @@ Measured 2026-11-22 before the fix: the switch knob read 1.83:1 against its trac
 (1.0:1). Bootstrap paints the knob/tick as an SVG data URI, so this reads the fill colour out of
 the computed ``background-image`` and composites every translucent layer before scoring.
 
-A probe control is injected into a real ``.card-body`` so it inherits the live cascade without
-depending on which page currently shows a switch.
+The test measures REAL controls in place (toggling ``.checked`` without firing a change event,
+then restoring it): an injected Bootstrap probe passed while Shiny's native checkboxes and radios,
+which carry no ``.form-check-input`` class, were still unstyled.
 
 Run explicitly:
     pytest tests/test_e2e_control_contrast.py -m e2e -o addopts="" -p no:cacheprovider
@@ -28,7 +29,7 @@ _T = 60_000
 _MIN = 3.0
 
 _PROBE_JS = r"""
-async (kind) => {
+async (sel) => {
   const hex = s => { const h = s.replace('#', ''); const f = h.length === 3
       ? h.split('').map(c => parseInt(c + c, 16)) : [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
       return [...f, 1]; };
@@ -49,15 +50,9 @@ async (kind) => {
       const m = raw.match(/(?:fill|stroke)='([^']+)'/g); if (!m) return null;
       const v = m.map(x => x.split("'")[1]).find(x => x !== 'none');
       return parse(v.replace(/%28/g, '(').replace(/%29/g, ')')); };
-  const host = [...document.querySelectorAll('.card-body')].find(e => e.offsetParent) || document.body;
-  const w = document.createElement('div');
-  w.className = 'form-check' + (kind === 'switch' ? ' form-switch' : '');
-  const type = kind === 'radio' ? 'radio' : 'checkbox';
-  const role = kind === 'switch' ? ' role="switch"' : '';
-  w.innerHTML = `<input class="form-check-input" type="${type}"${role} id="__probe_${kind}">` +
-                `<label class="form-check-label" for="__probe_${kind}">probe</label>`;
-  host.prepend(w);
-  const el = w.querySelector('input'); const out = [];
+  const el = document.querySelector(sel);
+  if (!el) return { missing: sel };
+  const orig = el.checked; const out = [];
   for (const theme of ['dark', 'light']) {
     document.documentElement.setAttribute('data-theme', theme);
     for (const checked of [false, true]) {
@@ -73,18 +68,31 @@ async (kind) => {
         mark: k ? cr(blend(k, fill), fill) : null });
     }
   }
-  w.remove(); document.documentElement.setAttribute('data-theme', 'dark');
+  el.checked = orig; document.documentElement.setAttribute('data-theme', 'dark');
   return out;
 }
 """
 
 
-@pytest.mark.parametrize("kind", ["switch", "checkbox", "radio"])
+# Real controls as Shiny renders them (2026-11-22: input_checkbox / input_radio_buttons emit
+# plain <input>s WITHOUT .form-check-input, which an injected Bootstrap probe could not see).
+_CONTROLS = {
+    "switch": ("setup", "#simulation_fishing_mortality_enabled"),
+    "checkbox": ("calibration", ".checkbox input[type=checkbox]"),
+    "radio": ("results", "#trophic_predator_level input[type=radio]"),
+}
+
+
+@pytest.mark.parametrize("kind", list(_CONTROLS))
 def test_control_contrast(page: Page, app: ShinyAppProc, kind: str):
+    tab, selector = _CONTROLS[kind]
     page.goto(app.url)
     page.wait_for_selector(".nav-pills", timeout=_T)
     dismiss_changelog_modal(page)
-    rows = page.evaluate(_PROBE_JS, kind)
+    page.locator(f".nav-pills .nav-link[data-value='{tab}']").click()
+    page.wait_for_selector(selector, state="attached", timeout=_T)
+    rows = page.evaluate(_PROBE_JS, selector)
+    assert isinstance(rows, list), rows
     failures = []
     for r in rows:
         if r["boundary"] < _MIN:
@@ -93,7 +101,6 @@ def test_control_contrast(page: Page, app: ShinyAppProc, kind: str):
             )
         if r["mark"] is not None and r["mark"] < _MIN:
             failures.append(f"{kind} {r['theme']} checked={r['checked']}: mark {r['mark']:.2f}")
-    # the switch knob is drawn in both states, so it must have been measured in both
-    if kind == "switch":
-        assert all(r["mark"] is not None for r in rows), rows
+    # the switch knob is drawn in both states; every checked control draws a tick/dot
+    assert all(r["mark"] is not None for r in rows if r["checked"] or kind == "switch"), rows
     assert not failures, "\n".join(failures)
