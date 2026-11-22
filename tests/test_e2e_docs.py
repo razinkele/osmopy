@@ -63,3 +63,50 @@ def test_about_modal_changelog_tab(page: Page, app: ShinyAppProc):
     expect(page.locator("#aboutModal")).to_be_visible(timeout=_LOAD_TIMEOUT)
     page.locator("#aboutModal").get_by_role("tab", name="Changelog").click()
     expect(page.locator("#aboutModal")).to_contain_text("0.13.0", timeout=_LOAD_TIMEOUT)
+
+
+def test_about_readme_links_resolve_and_pictures_load(page: Page, app: ShinyAppProc):
+    """In the About dialog's README tab: every link goes somewhere (GitHub in a new tab, or a
+    heading of this page) and every picture has loaded. Until 2026-11-22 the relative links
+    were 404s, the Contents links led nowhere and both screenshots were missing."""
+    page.goto(app.url)
+    page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    expect(page.locator("#changelogModal")).to_be_visible(timeout=_LOAD_TIMEOUT)
+    page.locator("#changelogModal [data-bs-dismiss='modal']").click()
+    expect(page.locator("#changelogModal")).not_to_be_visible(timeout=_LOAD_TIMEOUT)
+
+    page.get_by_role("link", name="About").click()
+    expect(page.locator("#aboutModal")).to_be_visible(timeout=_LOAD_TIMEOUT)
+    page.locator("#aboutModal").get_by_role("tab", name="README").click()
+    pane = page.locator("#aboutModal .tab-pane.active")
+    expect(pane).to_contain_text("Simulation engines", timeout=_LOAD_TIMEOUT)
+
+    links = pane.evaluate(
+        """(root) => [...root.querySelectorAll('a[href]')].map(a => ({
+            href: a.getAttribute('href'), target: a.getAttribute('target'),
+            resolves: a.getAttribute('href').startsWith('#')
+                ? root.querySelector('#' + CSS.escape(a.getAttribute('href').slice(1))) !== null
+                : null}))"""
+    )
+    assert len(links) > 20, links
+    bad = [
+        link
+        for link in links
+        if not (
+            (link["href"].startswith("https://") and link["target"] == "_blank")
+            or (link["href"].startswith("#") and link["resolves"])
+        )
+    ]
+    assert bad == []
+
+    # Pictures load lazily: bring each into view, then it must have pixels.
+    images = pane.locator("img")
+    assert images.count() >= 2
+    for i in range(images.count()):
+        img = images.nth(i)
+        img.scroll_into_view_if_needed()
+        page.wait_for_function(
+            "(el) => el.complete && el.naturalWidth > 0",
+            arg=img.element_handle(),
+            timeout=_LOAD_TIMEOUT,
+        )

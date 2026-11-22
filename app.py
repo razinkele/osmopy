@@ -135,6 +135,13 @@ def _ensure_cleanup_registered() -> None:
 ensure_templates()
 
 _WWW = Path(__file__).parent / "www"
+# The README shown on the About page has pictures in screenshots/ (the same relative paths
+# GitHub resolves). Served only where the folder exists: the Docker image has none.
+_SCREENSHOTS = Path(__file__).parent / "screenshots"
+_STATIC_ASSETS = {
+    **({"/screenshots": _SCREENSHOTS} if _SCREENSHOTS.is_dir() else {}),
+    "/": _WWW,
+}
 
 
 def _nav_section(label: str):
@@ -791,7 +798,7 @@ def server(input, output, session):
     feedback_server(input, output, session, state)
 
 
-app = App(app_ui, server, static_assets=_WWW)
+app = App(app_ui, server, static_assets=_STATIC_ASSETS)
 
 
 # Both feedback routes answer an unauthenticated caller, so neither may disclose why it
