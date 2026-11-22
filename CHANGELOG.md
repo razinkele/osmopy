@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.12.0] - 2026-11-22
+
+### Bug Fixes
+
+- test-env robustness, pandas deprecations, last pyright error (abbb464)
+- address CodeRabbit review on #374 (b930772)
+- **types:** PyVisNetworkController handle typed Any (library defines it twice) (27dd42a)
+- **types:** explicit nlargest keywords in trophic tooltip (2a4ad6c)
+
+### Chores
+
+- pyvis-optimized>=5.0, drop pre-1.9.2 shiny_deckgl legend shim, document micromamba dev env (b14b7e5)
+
+### Documentation
+
+- **CLAUDE.md:** dynesty now in the shiny env; how to add packages there (b23c7b7)
+- **CLAUDE.md:** working pytest invocation for the micromamba shiny env (6e5e6c0)
+
+### Other
+
+- Merge pull request #375 from razinkele/fix/test-env-and-warnings (b4ab2d9)
+- Merge pull request #374 from razinkele/feat/ui-contrast-and-lib-features (88e098c)
+- switch rows as flex so long labels wrap beside the track (56791bb)
+- **spatial:** percentile value filter via shiny_deckgl data_filter_extension (eaf38fc)
+- **maps:** fix Reset View (NaN), drop Screenshot, series-wide bins, legend, editor theme (cda8a83)
+- contrast reaches Shiny's native checkboxes/radios; accent-as-text token (1cbeb54)
+- gap between check/switch controls and their labels (303d41a)
+- **advanced:** multi-value arrays in input_code_editor, one element per line (45ddc45)
+- **calibration:** input_task_button for Start / Validate / Sensitivity (3031bdf)
+- completion toasts, themed busy indicators, trophic graph follows theme (9e0b87b)
+- **results:** trophic network on pyvis.shiny native output (1710f4f)
+- render.download -> render.download_button (deprecated in shiny 1.9) (f0f8e69)
+- **maps:** shiny_deckgl timeline, binned palettes, reset/screenshot widgets (47d2215)
+- control contrast >= 3:1 in both themes; muted text >= 4.5:1 (f83a7cc)
+
+### Tests
+
+- **visual:** regenerate setup/fishing/movement baselines (CI container) (3a6bb78)
+
 ## [1.11.3] - 2026-11-22
 
 ### Bug Fixes
