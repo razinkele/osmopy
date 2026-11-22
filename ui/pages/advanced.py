@@ -308,7 +308,7 @@ def advanced_server(input, output, session, state: AppState):
             return
         # Join the editor's lines back with the entry's ORIGINAL separator (exact round-trip).
         _old_text, sep = array_to_lines(state.get_config_value(key) or "")
-        raw = lines_to_array(input.adv_mv_value() or "", sep).strip()
+        raw = lines_to_array(input.adv_mv_value() or "", sep)  # no strip: exact round-trip
         # Key-aware: ',' is accepted only for array-capable fields. movement.steps.map{i}, for
         # one, is read on ';' alone by the Python engine (movement_maps._parse_semicolon_ints).
         if not is_multi_value(raw, REGISTRY.match_field(key)):

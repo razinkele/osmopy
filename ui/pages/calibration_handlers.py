@@ -35,7 +35,7 @@ from osmose.calibration.objectives import BiomassRMSEObjective, DietDistanceObje
 from osmose.logging import setup_logging
 from osmose.schema.base import ParamType
 from osmose.schema.registry import ParameterRegistry
-from ui.components.toasts import show_completion_toast
+from ui.components.toasts import pareto_front_size, show_completion_toast
 
 _log = setup_logging("osmose.calibration.ui")
 
@@ -1066,8 +1066,9 @@ def register_calibration_handlers(
                 cal_F.set(F)
                 show_completion_toast(
                     "Calibration finished",
-                    f"{len(F)} Pareto solution(s) ready.",
+                    f"{pareto_front_size(F)} Pareto solution(s) ready.",
                     tab="calibration",
+                    subtabs=(("cal_groups", "Results"), ("cal_results_tabs", "Pareto Front")),
                     action="View results \u2192",
                 )
                 # Scope note: phase and param_keys are NOT in scope at this

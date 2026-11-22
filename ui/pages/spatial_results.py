@@ -37,7 +37,9 @@ from ui.pages.spatial_colors import (
     SCALE_LABELS,
     bin_colors,
     legend_entries,
+    percentile_range,
     series_edges,
+    series_values,
 )
 from ui.state import AppState, get_theme_mode
 
@@ -125,7 +127,7 @@ def spatial_results_ui():
         },
         style=CARTO_POSITRON,
         tooltip={
-            "html": "({properties.row}, {properties.col})<br>Value: {properties.value}",
+            "html": "({properties.row}, {properties.col})<br>Value: {properties.label}",
             "style": {"fontSize": "12px"},
         },
         controls=[],
@@ -346,7 +348,7 @@ def spatial_results_server(input, output, session, state: AppState):
 
     # ── Time step: shiny_deckgl timeline (Play/Pause + labelled scrubber) ──
     # timeline_server binds to a fixed label list, so each loaded dataset gets a fresh
-    # module id; the previous module's inputs vanish with its UI and its observers go idle.
+    # module id, and the previous module scope is destroyed (_drop_timeline).
     _timeline: reactive.Value = reactive.Value(None)
     _timeline_seq = [0]
 
@@ -378,15 +380,26 @@ def spatial_results_server(input, output, session, state: AppState):
             idx = 0
         return max(0, min(idx, int(ds.sizes.get("time", 1)) - 1))
 
+    _timeline_id: list[str | None] = [None]
+
+    def _drop_timeline():
+        # removing the UI does not stop the module's effects (a playing timeline kept
+        # polling): destroy the previous module scope explicitly
+        if _timeline_id[0] is not None:
+            session.destroy(_timeline_id[0])
+            _timeline_id[0] = None
+        _timeline.set(None)
+
     @render.ui
     def spatial_time_controls():
         ds = _spatial_ds.get()
+        _drop_timeline()
         if ds is None or ds.sizes.get("time", 1) <= 1:
-            _timeline.set(None)
             return ui.div()
         labels = _time_labels(ds)
         _timeline_seq[0] += 1
         tl_id = f"spatial_tl_{_timeline_seq[0]}"
+        _timeline_id[0] = tl_id
         _timeline.set(timeline_server(tl_id, labels, interval_ms=600))
         return ui.div(timeline_control(tl_id, labels), class_="osm-timeline")
 
@@ -564,26 +577,21 @@ def spatial_results_server(input, output, session, state: AppState):
     def _filter_range(var_name: str) -> list[float]:
         lo_pct, hi_pct = input.spatial_filter_pct() or (0, 100)
         if lo_pct <= 0 and hi_pct >= 100:
-            return [-1e300, 1e300]  # no filter (bin edges are sampled, so don't clip to them)
-        # quantile edges over the whole series give a cheap, frame-stable percentile scale
-        q = _series_edges_pct(var_name)
-        return [float(np.interp(lo_pct, q[0], q[1])), float(np.interp(hi_pct, q[0], q[1]))]
+            return [-1e300, 1e300]
+        return percentile_range(_series_values(var_name), lo_pct, hi_pct)
 
-    def _series_edges_pct(var_name: str):
+    def _series_values(var_name: str):
         cache = _edges_cache()
-        key = (var_name, "__pct__")
+        key = (var_name, "__values__")
         if key not in cache:
             ds = _spatial_ds.get()
             species = _map_species()
-            edges = series_edges(
+            cache[key] = series_values(
                 (
                     lambda t: spatial_slice_2d(ds, var_name, time_index=t, species=species),
                     int(ds.sizes.get("time", 1)),
-                ),
-                "quantile",
-                n_bins=100,
+                )
             )
-            cache[key] = (np.linspace(0, 100, edges.size), edges)
         return cache[key]
 
     # ── Map View (deck.gl polygon layer) ─────────────────────────
@@ -669,7 +677,8 @@ def spatial_results_server(input, output, session, state: AppState):
                             [lo - dlon / 2, la + dlat / 2],
                         ],
                         "fill": colors[b],
-                        "value": round(float(arr[r, c]), 4),
+                        "value": float(arr[r, c]),  # full precision: the filter reads it
+                        "label": f"{float(arr[r, c]):.4g}",
                         "row": r,
                         "col": c,
                     }

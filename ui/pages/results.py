@@ -899,7 +899,20 @@ def results_server(input, output, session, state: AppState):
 
         @reactive.effect
         def _trophic_theme():
+            # pyvis rebuilds the container from its config on every re-render (new timestep,
+            # threshold...), so re-apply on each _ready as well as on a theme change.
+            input.trophic_network_ready()
             trophic_ctrl.set_theme("dark" if get_theme_mode(input) == "dark" else "light")
+
+        @reactive.effect
+        @reactive.event(input.trophic_network_ready)
+        def _trophic_refocus():
+            # the retained focus survives in the select but not in the rebuilt graph
+            with reactive.isolate():
+                node = input.trophic_focus()
+            if node:
+                trophic_ctrl.select_nodes([node])
+                trophic_ctrl.focus(node, scale=1.4)
 
         @reactive.effect
         @reactive.event(input.trophic_focus)

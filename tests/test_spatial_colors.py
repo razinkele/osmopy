@@ -37,7 +37,7 @@ def test_palettes_differ_and_legend_labels_ranges():
     assert c_v != c_o
     rows = legend_entries("spatial-data", c_v, e)
     assert len(rows) == len(c_v)
-    assert rows[0]["label"].startswith("0 ")
+    assert rows[0]["label"].startswith("< ") and rows[-1]["label"].startswith("\u2265 ")
     assert set(PALETTES) == {"viridis", "ocean", "chlorophyll", "thermal"}
 
 
@@ -69,3 +69,24 @@ def test_series_edges_subsample_and_clamp():
     assert len(calls) <= 50 and calls[0] == 0 and calls[-1] == 999
     idx, colors, _ = bin_colors(np.array([-5.0, 1e9]), scale="linear", edges=edges)
     assert idx.tolist() == [0, len(colors) - 1]  # out-of-range values clamp to end bins
+
+
+def test_single_bin_legend_is_open():
+    _, colors, edges = bin_colors(np.array([3.0, 3.0]), scale="linear")
+    assert [r["label"] for r in legend_entries("x", colors, edges)] == ["all values"]
+
+
+def test_percentile_range_keeps_ties_and_constant_fields():
+    from ui.pages.spatial_colors import percentile_range
+
+    const = np.full(50, 5.0)
+    lo, hi = percentile_range(const, 50, 100)
+    assert lo <= 5.0 <= hi  # a constant field is not filtered away
+    tied = np.r_[np.full(90, 1.0), np.arange(2.0, 12.0)]
+    lo, hi = percentile_range(tied, 0, 50)
+    assert lo <= 1.0 <= hi  # the 90% tie at 1.0 stays inside the lower half
+    assert percentile_range(tied, 0, 100) == [-1e300, 1e300]
+    # tiny values survive (no rounding before filtering)
+    tiny = np.array([1e-5, 2e-5, 3e-5])
+    lo, hi = percentile_range(tiny, 0, 50)
+    assert (tiny >= lo).sum() and (tiny <= hi).sum() >= 2

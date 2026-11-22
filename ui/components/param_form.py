@@ -602,7 +602,9 @@ def render_species_table(
                         f"\u25bc {display_cat} ",
                         ui.tags.span(
                             f"({n_fields} params)",
-                            style="color: var(--osm-text-muted); font-weight: 400; font-size: 10px;",
+                            # the header background is a fixed dark #1a2a3a in BOTH themes, so a theme
+                            # token (muted) fails there; #a0b4c8 is ~8:1 on it
+                            style="color: #a0b4c8; font-weight: 400; font-size: 10px;",
                         ),
                         style="cursor: pointer;",
                     ),
