@@ -287,8 +287,8 @@ def build_trophic_network(
 
 def _node_title(df: pd.DataFrame, node: str, top: int = 5) -> str:
     """Plain-text tooltip: the node's top prey (its diet) and top predators."""
-    eats = df[df["predator"] == node].nlargest(top, "proportion")
-    eaten = df[df["prey"] == node].nlargest(top, "proportion")
+    eats = cast(pd.DataFrame, df[df["predator"] == node]).nlargest(n=top, columns="proportion")
+    eaten = cast(pd.DataFrame, df[df["prey"] == node]).nlargest(n=top, columns="proportion")
     lines = [node]
     if len(eats):
         lines.append(
