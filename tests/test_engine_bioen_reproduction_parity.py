@@ -242,11 +242,28 @@ def test_create_egg_schools_tags_seeded_origin():
 def _load_reference():
     if not REF_NPZ.exists() or not REF_JSON.exists():
         pytest.skip(
-            "reproduction reference not generated (gitignored; see task-5-report.md §Step 2)"
+            "reproduction reference not generated (gitignored; run "
+            "scripts/save_reproduction_reference.py on a PRE-change checkout)"
         )
     z = np.load(REF_NPZ)  # plain arrays only; never allow_pickle (security policy)
     meta = json.loads(REF_JSON.read_text())
     return z, meta
+
+
+def _upgrade_legacy_field(name: str, arr: np.ndarray) -> np.ndarray:
+    """Adapt a reference INPUT array to the current SchoolState schema.
+
+    The reference predates the ninth mortality cause (#137), so its ``n_dead`` has 8 columns.
+    Reproduction never reads that new column, so it is zero-padded rather than regenerating
+    the reference: regenerating would re-bless today's output and drop the comparison with the
+    PRE-extraction code, which is the point of this gate. Verified 2026-11-22: all six cases
+    stay bit-identical to the original outputs with the padded input.
+    """
+    from osmose.engine.state import MortalityCause
+
+    if name == "n_dead" and arr.ndim == 2 and arr.shape[1] < len(MortalityCause):
+        return np.pad(arr, ((0, 0), (0, len(MortalityCause) - arr.shape[1])))
+    return arr
 
 
 @pytest.mark.parametrize("case", ["none", "a", "b", "c", "d", "e"])
@@ -274,7 +291,9 @@ def test_standard_reproduction_bit_identical_after_extraction(case):
     config = EngineConfig.from_dict(dict(meta["cases"][case]))
     state_fields = set(meta["state_fields"])
     kwargs = {
-        f.name: (z[f"state_{f.name}"] if f.name in state_fields else None)
+        f.name: (
+            _upgrade_legacy_field(f.name, z[f"state_{f.name}"]) if f.name in state_fields else None
+        )
         for f in fields(SchoolState)
     }
     state = SchoolState(**kwargs)

@@ -34,6 +34,7 @@ import pandas as pd
 import pytest
 
 from osmose.engine import PythonEngine
+from tests._repo_env import repo_env
 
 from ._tutorial_config import (
     ACCESSIBILITY_CSV_RELPATH,
@@ -395,6 +396,7 @@ def test_markdown_code_block_parses_and_runs(tmp_path: Path, numba_warmup: None)
     result = subprocess.run(
         [sys.executable, str(script_path)],
         cwd=tmp_path,
+        env=repo_env(),
         capture_output=True,
         text=True,
         timeout=900,
