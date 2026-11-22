@@ -6,7 +6,7 @@ import atexit
 import shutil
 import tempfile
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -870,7 +870,9 @@ def results_server(input, output, session, state: AppState):
         return ui.tags.small(f"Time {data['time']:g}", style=STYLE_MONO_KEY)
 
     if _HAS_PYVIS_SHINY:
-        trophic_ctrl = PyVisNetworkController("trophic_network", session)
+        # Any: pyvis defines PyVisNetworkController twice (real / shiny-missing stub), so the
+        # checker sees a union whose stub half lacks the controller methods.
+        trophic_ctrl: Any = PyVisNetworkController("trophic_network", session)
 
         @render_pyvis_network
         def trophic_network():
