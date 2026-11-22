@@ -544,7 +544,7 @@ def render_species_table(
     if n_species == 0:
         return ui.div(
             "Load a configuration to view species parameters.",
-            style="padding: 20px; text-align: center; color: #5a6a7a;",
+            style="padding: 20px; text-align: center; color: var(--osm-text-muted);",
         )
 
     # Filter to indexed, non-advanced fields
@@ -602,7 +602,7 @@ def render_species_table(
                         f"\u25bc {display_cat} ",
                         ui.tags.span(
                             f"({n_fields} params)",
-                            style="color: #5a6a7a; font-weight: 400; font-size: 10px;",
+                            style="color: var(--osm-text-muted); font-weight: 400; font-size: 10px;",
                         ),
                         style="cursor: pointer;",
                     ),
@@ -625,7 +625,7 @@ def render_species_table(
             tooltip_html = _tooltip_content(field)
             param_cell = ui.tags.td(
                 ui.tags.span(label),
-                ui.tags.span(unit_text, style="color: #5a6a7a;"),
+                ui.tags.span(unit_text, style="color: var(--osm-text-muted);"),
                 " ",
                 ui.tags.span(
                     "(?)",
@@ -678,7 +678,7 @@ def render_species_table(
                     widget = ui.tags.span(
                         "age-based",
                         title="Matures by species.maturity.age (no maturity size set)",
-                        style="color: #5a6a7a; font-size: 11px;",
+                        style="color: var(--osm-text-muted); font-size: 11px;",
                     )
                 elif config and is_multi_value(config.get(config_key), field):
                     # A per-stage array cannot sit in a numeric input: rendering one showed the
@@ -689,7 +689,7 @@ def render_species_table(
                         config[config_key],
                         title="Per-stage values: edit in the Advanced tab",
                         class_="osm-multivalue-readonly-label",
-                        style="color: #5a6a7a; font-size: 11px; font-family: monospace;",
+                        style="color: var(--osm-text-muted); font-size: 11px; font-family: monospace;",
                     )
                 elif config and _unrepresentable(field, config.get(config_key)):
                     # Raw text, not what the widget would show instead: the sync would write that
@@ -729,7 +729,7 @@ def render_species_table(
                         width="90px",
                     )
                 elif field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
-                    widget = ui.tags.span("file", style="color: #5a6a7a; font-size: 11px;")
+                    widget = ui.tags.span("file", style="color: var(--osm-text-muted); font-size: 11px;")
                 else:
                     widget = ui.input_text(input_id, "", value=str(val or ""), width="90px")
 

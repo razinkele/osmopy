@@ -27,7 +27,7 @@
   /* Text hierarchy */
   --osm-text-primary:  #e2e8f0;
   --osm-text-secondary:#a0b4c8;
-  --osm-text-muted:    #5a6a7a;
+  --osm-text-muted:    #7d8fa1;  /* 5.2:1 on bg-deep (was #5a6a7a, 3.19:1) */
 
   /* Borders & surfaces */
   --osm-border:        rgba(255, 255, 255, 0.06);
@@ -930,7 +930,7 @@ hr {
   /* Text hierarchy */
   --osm-text-primary:  #1a2a3a;
   --osm-text-secondary:#4a5a6a;
-  --osm-text-muted:    #8a95a0;
+  --osm-text-muted:    #5f6b77;  /* ~5:1 on light bg-deep (was #8a95a0, ~2.6:1) */
 
   /* Borders & surfaces */
   --osm-border:        rgba(0, 0, 0, 0.08);
@@ -2097,4 +2097,86 @@ body > .row > [class*="col-"]:first-child {
   opacity: 0.4;
   pointer-events: none;
   cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONTROL CONTRAST — switches, checkboxes, radios (WCAG 1.4.11, >= 3:1)
+   Measured before (2026-11-22): switch knob 1.83:1 off / 2.08:1 on (dark),
+   light-theme off track 1.0:1 against the card. Bootstrap draws the knob and
+   the tick as SVG data URIs, so their colours are literals per theme/state
+   (a CSS var cannot reach inside url()). Enforced by
+   tests/e2e/test_control_contrast.py.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Dark (default) ── */
+.form-switch .form-check-input {
+  width: 2.4em;
+  height: 1.3em;
+  background-color: var(--osm-bg-surface) !important;
+  border: 1.5px solid #a0b4c8 !important;
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23a0b4c8'/%3e%3c/svg%3e");
+  cursor: pointer;
+}
+.form-switch .form-check-input:focus {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23e2e8f0'/%3e%3c/svg%3e");
+}
+.form-switch .form-check-input:checked {
+  background-color: var(--osm-accent) !important;
+  border-color: var(--osm-accent) !important;
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%230f1923'/%3e%3c/svg%3e");
+}
+.form-check-input[type="checkbox"]:not([role="switch"]) {
+  background-color: var(--osm-bg-surface);
+  border: 1.5px solid #a0b4c8;
+}
+.form-check-input[type="checkbox"]:not([role="switch"]):checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%230f1923' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+.form-check-input[type="radio"] {
+  border: 1.5px solid #a0b4c8 !important;
+}
+.form-check-input[type="radio"]:checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230f1923'/%3e%3c/svg%3e");
+}
+.form-check-input:focus-visible {
+  outline: 2px solid var(--osm-teal);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.form-check-input:disabled {
+  opacity: 0.5;
+  border-style: dashed !important;
+  cursor: not-allowed;
+}
+
+/* ── Light ── (#9a6512 = amber darkened to 5:1 on white; the #d4942e accent is 2.6:1) */
+[data-theme="light"] .form-switch .form-check-input {
+  background-color: #c4ceda !important;
+  border-color: #5f6b77 !important;
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%233d4b5a'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-switch .form-check-input:focus {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%231a2a3a'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-switch .form-check-input:checked,
+[data-theme="light"] .form-check-input[type="checkbox"]:checked,
+[data-theme="light"] .form-check-input[type="radio"]:checked {
+  background-color: #9a6512 !important;
+  border-color: #9a6512 !important;
+}
+[data-theme="light"] .form-switch .form-check-input:checked {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-check-input[type="checkbox"]:not([role="switch"]) {
+  background-color: #ffffff;
+  border-color: #5f6b77;
+}
+[data-theme="light"] .form-check-input[type="checkbox"]:not([role="switch"]):checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-check-input[type="radio"] {
+  border-color: #5f6b77 !important;
+}
+[data-theme="light"] .form-check-input[type="radio"]:checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23fff'/%3e%3c/svg%3e");
 }
