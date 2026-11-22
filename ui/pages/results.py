@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover - pyvis is a declared dependency
 from osmose.logging import setup_logging
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.pages.scenario_diff import scenario_diff_nav_panel, scenario_diff_server
-from ui.state import AppState
+from ui.state import AppState, get_theme_mode
 from ui.styles import STYLE_EMPTY, STYLE_MONO_KEY
 
 _log = setup_logging("osmose.results.ui")
@@ -374,7 +374,9 @@ def results_ui():
                     output_pyvis_network(
                         "trophic_network",
                         height="640px",
-                        theme="auto",  # follows data-bs-theme, kept in sync with data-theme
+                        # the app themes via data-theme (not Bootstrap's data-bs-theme, which
+                        # would swap superhero's palette); _trophic_theme follows it instead
+                        theme="light",
                         show_layout_switcher=False,  # fixed layout: positions are meaningful
                         events=["selectNode", "deselectNode"],
                     )
@@ -892,6 +894,10 @@ def results_server(input, output, session, state: AppState):
                 choices={"": "\u2014", **{n: n for n in nodes}},
                 selected=keep if keep in nodes else "",
             )
+
+        @reactive.effect
+        def _trophic_theme():
+            trophic_ctrl.set_theme("dark" if get_theme_mode(input) == "dark" else "light")
 
         @reactive.effect
         @reactive.event(input.trophic_focus)

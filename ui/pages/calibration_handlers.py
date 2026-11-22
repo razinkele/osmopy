@@ -35,6 +35,7 @@ from osmose.calibration.objectives import BiomassRMSEObjective, DietDistanceObje
 from osmose.logging import setup_logging
 from osmose.schema.base import ParamType
 from osmose.schema.registry import ParameterRegistry
+from ui.components.toasts import show_completion_toast
 
 _log = setup_logging("osmose.calibration.ui")
 
@@ -1031,6 +1032,12 @@ def register_calibration_handlers(
                 X, F = payload
                 cal_X.set(X)
                 cal_F.set(F)
+                show_completion_toast(
+                    "Calibration finished",
+                    f"{len(F)} Pareto solution(s) ready.",
+                    tab="calibration",
+                    action="View results \u2192",
+                )
                 # Scope note: phase and param_keys are NOT in scope at this
                 # callsite. NSGA-II UI runs use a fixed phase string. param_keys
                 # comes from cal_param_names (register_calibration_handlers closure parameter).

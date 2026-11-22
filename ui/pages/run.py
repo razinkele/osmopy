@@ -51,6 +51,7 @@ from osmose.runner import (
     validate_java_opts,
 )
 from ui.components.collapsible import body_collapse_header
+from ui.components.toasts import show_completion_toast
 from ui.pages.live_movement_render import choose_live_layer, live_legend_widget
 from ui.state import AppState, get_theme_mode
 from ui.styles import STYLE_CONSOLE
@@ -557,6 +558,19 @@ def run_server(input, output, session, state: AppState):
             _set_run_buttons(False, session)
             ui.update_action_button("btn_cancel", disabled=True, session=session)
             _handle_result(result, _run_config_cell[0], state, run_log, status, _run_start_cell[0])
+            if result.returncode == 0:
+                show_completion_toast(
+                    "Simulation complete",
+                    f"Output: {result.output_dir}",
+                    tab="results",
+                    action="Open Results \u2192",
+                )
+            elif getattr(result, "status", "") != "cancelled":
+                show_completion_toast(
+                    "Simulation failed",
+                    (result.message or result.stderr or "See the run log.")[:300],
+                    ok=False,
+                )
             while True:
                 try:
                     _progress_q.get_nowait()
