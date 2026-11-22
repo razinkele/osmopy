@@ -20,7 +20,9 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     compass_widget,
     fullscreen_widget,
     polygon_layer,
+    reset_view_widget,
     scale_widget,
+    screenshot_widget,
     zoom_widget,
 )
 
@@ -425,6 +427,8 @@ def map_builder_server(input, output, session, state: AppState):
             fullscreen_widget(placement="top-left"),
             zoom_widget(placement="top-right"),
             compass_widget(placement="top-right"),
+            reset_view_widget(placement="top-right"),
+            screenshot_widget(placement="top-right"),
             scale_widget(placement="bottom-right"),
         ]
         await _map.update(

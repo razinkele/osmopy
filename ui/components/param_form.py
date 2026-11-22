@@ -729,7 +729,9 @@ def render_species_table(
                         width="90px",
                     )
                 elif field.param_type in (ParamType.FILE_PATH, ParamType.MATRIX):
-                    widget = ui.tags.span("file", style="color: var(--osm-text-muted); font-size: 11px;")
+                    widget = ui.tags.span(
+                        "file", style="color: var(--osm-text-muted); font-size: 11px;"
+                    )
                 else:
                     widget = ui.input_text(input_id, "", value=str(val or ""), width="90px")
 

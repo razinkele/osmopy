@@ -13,7 +13,11 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     compass_widget,
     fullscreen_widget,
     polygon_layer,
+    reset_view_widget,
     scale_widget,
+    screenshot_widget,
+    timeline_control,
+    timeline_server,
     zoom_widget,
 )
 from shinywidgets import output_widget, render_plotly  # type: ignore[import-untyped]
@@ -27,6 +31,12 @@ from ui.pages.grid_helpers import (
     _zoom_for_span,
     make_legend,
     make_spatial_map,
+)
+from ui.pages.spatial_colors import (
+    PALETTE_LABELS,
+    SCALE_LABELS,
+    bin_colors,
+    legend_entries,
 )
 from ui.state import AppState, get_theme_mode
 
@@ -129,6 +139,15 @@ def spatial_results_ui():
                 ui.output_ui("spatial_var_selector"),
                 ui.output_ui("spatial_species_dim_selector"),
                 ui.output_ui("spatial_time_controls"),
+                ui.layout_columns(
+                    ui.input_select(
+                        "spatial_palette", "Palette", PALETTE_LABELS, selected="viridis"
+                    ),
+                    ui.input_select(
+                        "spatial_scale", "Colour scale", SCALE_LABELS, selected="quantile"
+                    ),
+                    col_widths=(6, 6),
+                ),
                 ui.output_ui("spatial_scale_info"),
             ),
             ui.navset_card_tab(
@@ -315,29 +334,51 @@ def spatial_results_server(input, output, session, state: AppState):
             sel = "__sum__"
         return None if sel in ("__sum__", None) else sel
 
-    # ── Time step slider ─────────────────────────────────────────
+    # ── Time step: shiny_deckgl timeline (Play/Pause + labelled scrubber) ──
+    # timeline_server binds to a fixed label list, so each loaded dataset gets a fresh
+    # module id; the previous module's inputs vanish with its UI and its observers go idle.
+    _timeline: reactive.Value = reactive.Value(None)
+    _timeline_seq = [0]
+
+    def _time_labels(ds) -> list[str]:
+        n = int(ds.sizes.get("time", 1))
+        if "time" not in ds.coords:
+            return [f"Step {i}" for i in range(n)]
+        ndt = ds.attrs.get("n_dt_per_year")
+        if ndt and np.issubdtype(ds["time"].dtype, np.number):
+            # engine writes time = step / n_dt_per_year (fractional years)
+            ndt = int(ndt)
+            steps = np.rint(ds["time"].values.astype(float) * ndt).astype(int)
+            return [f"Year {s // ndt + 1} · step {s % ndt + 1}/{ndt}" for s in steps]
+        out = []
+        for v in ds["time"].values:
+            if np.issubdtype(np.asarray(v).dtype, np.number):
+                out.append(f"{float(v):g}")
+            else:
+                out.append(str(v)[:10])
+        return out
+
+    def _time_index(ds) -> int:
+        tl = _timeline.get()
+        if tl is None:
+            return 0
+        try:
+            idx = int(tl.index())
+        except (SilentException, ValueError, TypeError):
+            idx = 0
+        return max(0, min(idx, int(ds.sizes.get("time", 1)) - 1))
+
     @render.ui
     def spatial_time_controls():
         ds = _spatial_ds.get()
-        if ds is None:
+        if ds is None or ds.sizes.get("time", 1) <= 1:
+            _timeline.set(None)
             return ui.div()
-        n_time = ds.sizes.get("time", 1)
-        if n_time <= 1:
-            return ui.div()
-        return ui.input_slider(
-            "spatial_time",
-            "Time step",
-            min=0,
-            max=n_time - 1,
-            value=0,
-            step=1,
-            animate=ui.AnimationOptions(
-                interval=500,
-                loop=True,
-                play_button="Play",
-                pause_button="Pause",
-            ),
-        )
+        labels = _time_labels(ds)
+        _timeline_seq[0] += 1
+        tl_id = f"spatial_tl_{_timeline_seq[0]}"
+        _timeline.set(timeline_server(tl_id, labels, interval_ms=600))
+        return ui.div(timeline_control(tl_id, labels), class_="osm-timeline")
 
     # ── Color scale info ─────────────────────────────────────────
     @render.ui
@@ -374,13 +415,8 @@ def spatial_results_server(input, output, session, state: AppState):
         if var_name is None:
             return go.Figure().update_layout(title="No spatial variables found", template=tmpl)
         try:
-            time_idx = int(input.spatial_time())
-        except (SilentException, ValueError, TypeError):
-            time_idx = 0
-        max_t = ds.sizes.get("time", 1) - 1
-        try:
             return make_spatial_map(
-                ds, var_name, time_idx=min(time_idx, max_t), template=tmpl, species=_map_species()
+                ds, var_name, time_idx=_time_index(ds), template=tmpl, species=_map_species()
             )
         except (KeyError, ValueError) as exc:
             return go.Figure().update_layout(
@@ -493,6 +529,16 @@ def spatial_results_server(input, output, session, state: AppState):
         return fig
 
     # ── Map View (deck.gl polygon layer) ─────────────────────────
+    def _base_widgets() -> list[dict]:
+        return [
+            fullscreen_widget(placement="top-left"),
+            zoom_widget(placement="top-right"),
+            compass_widget(placement="top-right"),
+            reset_view_widget(placement="top-right"),
+            screenshot_widget(placement="top-right"),
+            scale_widget(placement="bottom-left"),
+        ]
+
     @reactive.effect
     async def _update_spatial_map():
         ds = _spatial_ds.get()
@@ -508,12 +554,7 @@ def spatial_results_server(input, output, session, state: AppState):
                 layers=[],
                 view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5},
                 transition_duration=800,
-                widgets=[
-                    fullscreen_widget(placement="top-left"),
-                    zoom_widget(placement="top-right"),
-                    compass_widget(placement="top-right"),
-                    scale_widget(placement="bottom-left"),
-                ],
+                widgets=_base_widgets(),
             )
             return
 
@@ -521,12 +562,7 @@ def spatial_results_server(input, output, session, state: AppState):
         if var_name is None:
             return
 
-        try:
-            time_idx = int(input.spatial_time())
-        except (SilentException, ValueError, TypeError):
-            time_idx = 0
-        max_t = ds.sizes.get("time", 1) - 1
-        time_idx = min(time_idx, max_t)
+        time_idx = _time_index(ds)
 
         # Collapse any species dimension to a 2-D (lat, lon) slice; the engine
         # writes (time, species, lat, lon), so a plain time-isel leaves 3-D.
@@ -542,29 +578,28 @@ def spatial_results_server(input, output, session, state: AppState):
         lat = lat_raw[:, 0] if lat_raw.ndim == 2 else lat_raw
         lon = lon_raw[0, :] if lon_raw.ndim == 2 else lon_raw
 
-        vmin = float(np.nanmin(data_slice))
-        vmax = float(np.nanmax(data_slice))
-        val_range = vmax - vmin if vmax > vmin else 1.0
-
         # Cell spacing — hoisted above loop (regular grid assumption)
         ny, nx = data_slice.shape
         dlat = abs(float(lat[1] - lat[0])) if ny > 1 else 1.0
         dlon = abs(float(lon[1] - lon[0])) if nx > 1 else 1.0
 
-        # Build polygon cells with value-mapped colors (Viridis-like)
+        # Colour by bins over the drawn (non-zero, finite) cells; legend shows each bin's range.
+        arr = np.asarray(data_slice, dtype=float)
+        drawn = np.isfinite(arr) & (arr != 0)
+        palette = input.spatial_palette() or "viridis"
+        scale = input.spatial_scale() or "quantile"
+        bin_idx, colors, edges = bin_colors(arr[drawn], palette=palette, scale=scale)
+        cell_bin = np.full(arr.shape, -1)
+        cell_bin[drawn] = bin_idx
+
         cells = []
         for r in range(ny):
             la = float(lat[r])
             for c in range(nx):
-                val = float(data_slice[r, c])
-                if np.isnan(val) or val == 0:
+                b = int(cell_bin[r, c])
+                if b < 0:
                     continue
                 lo = float(lon[c])
-                t = (val - vmin) / val_range
-                red = int(min(255, max(0, 68 + t * 187)))
-                green = int(min(255, max(0, 1 + t * 204)))
-                blue = int(min(255, max(0, 84 - t * 84)))
-                alpha = 180
                 cells.append(
                     {
                         "polygon": [
@@ -573,8 +608,8 @@ def spatial_results_server(input, output, session, state: AppState):
                             [lo + dlon / 2, la + dlat / 2],
                             [lo - dlon / 2, la + dlat / 2],
                         ],
-                        "fill": [red, green, blue, alpha],
-                        "value": round(val, 4),
+                        "fill": colors[b],
+                        "value": round(float(arr[r, c]), 4),
                         "row": r,
                         "col": c,
                     }
@@ -595,25 +630,15 @@ def spatial_results_server(input, output, session, state: AppState):
                 )
             )
 
-        legend_entries = []
+        widgets = _base_widgets()
         if cells:
-            legend_entries.append(
-                {
-                    "layer_id": "spatial-data",
-                    "label": f"{var_name} ({vmin:.2g}\u2013{vmax:.2g})",
-                    "color": [68, 100, 84],
-                    "shape": "rect",
-                }
+            widgets.append(
+                make_legend(
+                    legend_entries("spatial-data", colors, edges),
+                    placement="bottom-right",
+                    title=var_name,
+                )
             )
-
-        widgets = [
-            fullscreen_widget(placement="top-left"),
-            zoom_widget(placement="top-right"),
-            compass_widget(placement="top-right"),
-            scale_widget(placement="bottom-left"),
-        ]
-        if legend_entries:
-            widgets.append(make_legend(legend_entries, placement="bottom-right"))
 
         # Compute view state from lat/lon bounds
         center_lat = float(np.mean(lat))

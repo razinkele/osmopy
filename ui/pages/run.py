@@ -15,7 +15,9 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     MapWidget,
     compass_widget,
     fullscreen_widget,
+    reset_view_widget,
     scale_widget,
+    screenshot_widget,
     zoom_widget,
 )
 
@@ -709,6 +711,8 @@ def run_server(input, output, session, state: AppState):
                 fullscreen_widget(placement="top-left"),
                 zoom_widget(placement="top-right"),
                 compass_widget(placement="top-right"),
+                reset_view_widget(placement="top-right"),
+                screenshot_widget(placement="top-right"),
                 scale_widget(placement="bottom-left"),
                 legend,
             ]
