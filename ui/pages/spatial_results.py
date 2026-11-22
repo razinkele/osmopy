@@ -11,6 +11,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     CARTO_POSITRON,
     MapWidget,
     compass_widget,
+    data_filter_extension,
     fullscreen_widget,
     polygon_layer,
     scale_widget,
@@ -147,6 +148,15 @@ def spatial_results_ui():
                         "spatial_scale", "Colour scale", SCALE_LABELS, selected="quantile"
                     ),
                     col_widths=(6, 6),
+                ),
+                ui.input_slider(
+                    "spatial_filter_pct",
+                    "Show cells by value (percentile)",
+                    min=0,
+                    max=100,
+                    value=(0, 100),
+                    step=1,
+                    post="%",
                 ),
                 ui.output_ui("spatial_scale_info"),
             ),
@@ -551,6 +561,31 @@ def spatial_results_server(input, output, session, state: AppState):
             )
         return cache[key]
 
+    def _filter_range(var_name: str) -> list[float]:
+        lo_pct, hi_pct = input.spatial_filter_pct() or (0, 100)
+        if lo_pct <= 0 and hi_pct >= 100:
+            return [-1e300, 1e300]  # no filter (bin edges are sampled, so don't clip to them)
+        # quantile edges over the whole series give a cheap, frame-stable percentile scale
+        q = _series_edges_pct(var_name)
+        return [float(np.interp(lo_pct, q[0], q[1])), float(np.interp(hi_pct, q[0], q[1]))]
+
+    def _series_edges_pct(var_name: str):
+        cache = _edges_cache()
+        key = (var_name, "__pct__")
+        if key not in cache:
+            ds = _spatial_ds.get()
+            species = _map_species()
+            edges = series_edges(
+                (
+                    lambda t: spatial_slice_2d(ds, var_name, time_index=t, species=species),
+                    int(ds.sizes.get("time", 1)),
+                ),
+                "quantile",
+                n_bins=100,
+            )
+            cache[key] = (np.linspace(0, 100, edges.size), edges)
+        return cache[key]
+
     # ── Map View (deck.gl polygon layer) ─────────────────────────
     _DEFAULT_VIEW = {"latitude": 46.0, "longitude": -4.5, "zoom": 5}
 
@@ -652,6 +687,11 @@ def spatial_results_server(input, output, session, state: AppState):
                     filled=True,
                     stroked=False,
                     pickable=True,
+                    # GPU-side value filter (shiny_deckgl data_filter_extension): the
+                    # percentile slider maps to a value range over the series' drawn cells
+                    extensions=[data_filter_extension(filter_size=1)],
+                    getFilterValue="@@=d.value",
+                    filterRange=_filter_range(var_name),
                 )
             )
 
