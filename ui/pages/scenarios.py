@@ -540,7 +540,7 @@ def scenarios_server(input, output, session, state: AppState):
 
     # --- Bulk Export ---
 
-    @render.download(filename="osmose_scenarios.zip")
+    @render.download_button(filename="osmose_scenarios.zip")
     def export_all_scenarios():
         import atexit
         import shutil

@@ -953,7 +953,7 @@ def results_server(input, output, session, state: AppState):
             return ui.div(f"Could not load run outputs: {e}")
         return ui.markdown(format_delta_report(deltas, metric=metric, window_years=window_years))
 
-    @render.download(
+    @render.download_button(
         filename=lambda: (  # type: ignore[arg-type]
             f"osmose_{input.result_type()}"
             + (f"_{input.result_species()}" if input.result_species() != "all" else "")

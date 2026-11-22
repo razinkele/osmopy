@@ -283,7 +283,7 @@ def advanced_server(input, output, session, state: AppState):
             state.load_trigger.set(state.load_trigger.get() + 1)
         ui.notification_show(f"Updated {key}.", type="message", duration=3)
 
-    @render.download(filename="osm_all-parameters.csv")
+    @render.download_button(filename="osm_all-parameters.csv")
     def export_config():
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
         atexit.register(shutil.rmtree, str(work_dir), True)

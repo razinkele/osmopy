@@ -647,7 +647,7 @@ def calibration_server(input, output, session, state: AppState):
             ),
         )
 
-    @render.download(filename="pareto_solution_params.csv")
+    @render.download_button(filename="pareto_solution_params.csv")
     def cal_export_params():
         sol = _picked_solution()
         yield solution_overrides_csv(sol["params"] if sol else {})
