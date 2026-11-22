@@ -7,7 +7,15 @@ client-side via data-bs-toggle, avoiding any server round-trip.
 from shiny import ui
 
 from osmose import __version__
-from osmose.docs_content import latest_changelog_entry, read_doc
+from osmose.docs_content import html_for_app, latest_changelog_entry, read_doc
+
+
+def _doc_markdown(text: str, id_prefix: str):
+    """Markdown from the repository (README, CHANGELOG, the About text), rendered for the app:
+    relative links go to GitHub at this version's tag, web links open in a new tab, headings
+    get GitHub's ids behind ``id_prefix`` (unique per rendered document) and images load
+    lazily (``html_for_app``)."""
+    return ui.HTML(html_for_app(str(ui.markdown(text)), f"v{__version__}", id_prefix))
 
 
 def _bs_modal(modal_id: str, title: str, body, *, size: str = "lg"):
@@ -47,8 +55,9 @@ def about_modal():
             ui.tags.span("Python Interface", class_="osmose-version-label"),
             class_="osmose-about-version",
         ),
-        ui.markdown(
-            """
+        _doc_markdown(
+            id_prefix="about-",
+            text="""
 **OSMOSE** (Object-oriented Simulator of Marine Ecosystems) is an individual-based
 model for exploring marine ecosystem dynamics. This Python interface provides
 configuration, execution, calibration, and visualization of OSMOSE simulations.
@@ -70,13 +79,13 @@ configuration, execution, calibration, and visualization of OSMOSE simulations.
 ---
 
 Released under the **MIT License**. [View on GitHub](https://github.com/razinkele/osmopy)
-"""
+""",
         ),
     )
     body = ui.navset_pill(
         ui.nav_panel("Overview", overview),
-        ui.nav_panel("README", ui.markdown(read_doc("readme"))),
-        ui.nav_panel("Changelog", ui.markdown(read_doc("changelog"))),
+        ui.nav_panel("README", _doc_markdown(read_doc("readme"), "readme-")),
+        ui.nav_panel("Changelog", _doc_markdown(read_doc("changelog"), "changelog-")),
         id="about_tabs",
     )
     return _bs_modal("aboutModal", "About OSMOSE", body, size="xl")
@@ -91,7 +100,7 @@ def changelog_modal():
             ui.tags.span("What's new", class_="osmose-version-label"),
             class_="osmose-about-version",
         ),
-        ui.markdown(entry["body"]),
+        _doc_markdown(entry["body"], "whatsnew-"),
         ui.markdown("_Full history under **About → Changelog**._"),
     )
     return _bs_modal("changelogModal", f"What's new in v{__version__}", body, size="lg")
@@ -102,8 +111,9 @@ def help_modal():
     body = ui.navset_pill(
         ui.nav_panel(
             "OSMOSE Model",
-            ui.markdown(
-                """
+            _doc_markdown(
+                id_prefix="help-",
+                text="""
 ### What is OSMOSE?
 
 **OSMOSE** (Object-oriented Simulator of Marine Ecosystems) is an
@@ -466,7 +476,7 @@ OSMOSE has been applied to marine ecosystems worldwide:
 
 For full documentation and the complete publication list visit
 [osmose-model.org](https://osmose-model.org)
-"""
+""",
             ),
         ),
         ui.nav_panel(
