@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.11.2] - 2026-11-22
+
+### Bug Fixes
+
+- **bench:** review: count the partial last window, fail a run that left no outputs (4e4d7b3)
+- **deploy:** resolve the ref before deleting the C# build (8184288)
+- **deploy:** releases rebuild the C# engine, and a deploy that removes it says so (6acfa64)
+- **deploy:** review: a build that cannot be removed is not reported as removed (e10ead8)
+- **deploy:** a C# deploy restarts once more and requires the app to offer the engine (b8e509f)
+
+### CI/CD
+
+- **e2e:** the browser job also starts for README.md and CHANGELOG.md (86a8765)
+- **e2e:** correct the header's claim about the release PR's run (ac9993d)
+- **e2e:** the browser job starts for any change in the osmose package (f646769)
+- **e2e:** the browser job also starts for engine, results and data changes (7013912)
+- **e2e:** the path filter covers both e2e helper modules (f0be968)
+- **e2e:** run every browser test, not 4 of the 22 files (06cccfc)
+- test the shiny and shiny_deckgl versions production runs (e1991c6)
+
+### Documentation
+
+- **readme:** Java, Python and C# measured on the same model (ed29bc7)
+- **release:** a C# engine error does not always mean prod runs without the engine (b344c2d)
+
+### Other
+
+- Merge pull request #369 from razinkele/docs/readme-three-engine-benchmark (da9d615)
+- Merge pull request #368 from razinkele/fix/deploy-warn-csharp-removal (c920fbb)
+- Merge pull request #367 from razinkele/fix/deploy-csharp-restart (fe87b20)
+- Merge pull request #366 from razinkele/ci/e2e-trigger-readme-changelog (4a4a965)
+- Merge pull request #365 from razinkele/ci/e2e-trigger-all-osmose (bf6b41b)
+- Merge pull request #364 from razinkele/ci/e2e-trigger-engine-results-data (2ad29bf)
+- Merge pull request #363 from razinkele/ci/e2e-all-files (794c730)
+- Merge pull request #362 from razinkele/ci/align-shiny-deckgl-with-prod (e823a4d)
+
+### Tests
+
+- **deploy:** run the restart-and-check block with stubs; say 000 once (28dfccf)
+- **visual:** the stale-scroll test asserts the page is past the rail's top (950af0b)
+- **visual:** every capture starts from the top of the page (0647ec4)
+
 ## [1.11.1] - 2026-11-21
 
 ### Bug Fixes
