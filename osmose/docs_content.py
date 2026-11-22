@@ -98,13 +98,18 @@ def heading_slug(heading_html: str, seen: dict[str, int]) -> str:
     """The id GitHub gives a heading, so the README's own ``#...`` links work in the app too.
 
     Lowercase, drop every character that is not a letter, digit, underscore, hyphen or space,
-    then each space becomes a hyphen; a repeat gets ``-1``, ``-2``... (GitHub's rule).
+    then each space becomes a hyphen. A slug already taken gets ``-1``, ``-2``..., skipping any
+    that an earlier heading took itself ("Usage", "Usage", "Usage-1" give usage, usage-1,
+    usage-1-1), as github-slugger does. ``seen`` holds every slug given so far.
     """
     text = html.unescape(_TAG.sub("", heading_html)).strip().lower()
-    slug = re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
-    count = seen.get(slug, 0)
-    seen[slug] = count + 1
-    return slug if count == 0 else f"{slug}-{count}"
+    original = re.sub(r"[^\w\- ]", "", text).replace(" ", "-")
+    slug = original
+    while slug in seen:
+        seen[original] += 1
+        slug = f"{original}-{seen[original]}"
+    seen[slug] = 0
+    return slug
 
 
 def html_for_app(rendered: str, ref: str, id_prefix: str) -> str:

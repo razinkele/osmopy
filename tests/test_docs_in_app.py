@@ -92,6 +92,15 @@ def test_a_repeated_heading_gets_a_suffix():
     assert [heading_slug("Usage", seen) for _ in range(3)] == ["usage", "usage-1", "usage-2"]
 
 
+def test_a_heading_named_like_an_earlier_suffix_still_gets_its_own_id():
+    # GitHub (github-slugger) skips an id already taken: "Usage-1" after two "Usage" headings
+    # is usage-1-1, not a second usage-1.
+    seen: dict[str, int] = {}
+    got = [heading_slug(h, seen) for h in ("Usage", "Usage", "Usage-1", "Usage")]
+    assert got == ["usage", "usage-1", "usage-1-1", "usage-2"]
+    assert len(set(got)) == len(got)
+
+
 # ------------------------------------------------------------------ the rendered HTML
 
 
