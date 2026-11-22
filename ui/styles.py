@@ -18,10 +18,10 @@ STYLE_CONSOLE = (
 STYLE_MONO_KEY = "font-family: 'JetBrains Mono', 'Cascadia Code', monospace; font-size: 12px;"
 
 # Empty state placeholder
-STYLE_EMPTY = "padding: 20px; text-align: center; color: #5a6a7a;"
+STYLE_EMPTY = "padding: 20px; text-align: center; color: var(--osm-text-muted);"
 
 # Scrollable table container
 STYLE_SCROLL_TABLE = "max-height: 600px; overflow-y: auto;"
 
 # Inline hint text (like "Select parameters to optimize:")
-STYLE_HINT_BLOCK = "padding: 0 20px; color: #5a6a7a; font-size: 13px;"
+STYLE_HINT_BLOCK = "padding: 0 20px; color: var(--osm-text-muted); font-size: 13px;"

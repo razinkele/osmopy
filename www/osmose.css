@@ -19,6 +19,7 @@
   --osm-accent:        #e8a838;
   --osm-accent-dim:    rgba(232, 168, 56, 0.15);
   --osm-accent-glow:   rgba(232, 168, 56, 0.3);
+  --osm-accent-text:   #e8a838;  /* accent used AS TEXT: 7.6:1 on bg-deep */
 
   /* Secondary: teal bioluminescence */
   --osm-teal:          #38c9b1;
@@ -27,7 +28,7 @@
   /* Text hierarchy */
   --osm-text-primary:  #e2e8f0;
   --osm-text-secondary:#a0b4c8;
-  --osm-text-muted:    #5a6a7a;
+  --osm-text-muted:    #7d8fa1;  /* 5.2:1 on bg-deep (was #5a6a7a, 3.19:1) */
 
   /* Borders & surfaces */
   --osm-border:        rgba(255, 255, 255, 0.06);
@@ -146,7 +147,7 @@ body {
   border-radius: 20px;
   font-size: 0.6rem;
   font-weight: 600;
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -171,7 +172,7 @@ body {
   margin-right: 8px;
 }
 .osm-config-name {
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
   font-weight: 600;
   font-size: 0.78rem;
   overflow: hidden;
@@ -214,7 +215,7 @@ body {
 }
 
 .osmose-header-btn:hover {
-  color: var(--osm-accent) !important;
+  color: var(--osm-accent-text) !important;
   background: var(--osm-accent-dim);
 }
 
@@ -243,7 +244,7 @@ body {
 }
 
 .osm-engine-toggle .osm-engine-btn.active {
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
   background: var(--osm-accent-dim);
 }
 
@@ -269,7 +270,7 @@ body {
   font-family: var(--osm-font-mono);
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
 }
 
 .osmose-version-label {
@@ -318,7 +319,7 @@ body {
 }
 
 .modal-body h3 {
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
   font-size: 1rem;
   margin-top: 4px;
   margin-bottom: 12px;
@@ -366,7 +367,7 @@ body {
 }
 
 .modal-body a:hover {
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
   text-decoration: underline;
 }
 
@@ -442,7 +443,7 @@ body {
 }
 
 .nav-pills .nav-link.active {
-  color: var(--osm-accent) !important;
+  color: var(--osm-accent-text) !important;
   background: var(--osm-accent-dim) !important;
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--osm-accent);
@@ -692,7 +693,7 @@ input[type="number"] {
 
 .accordion-button:not(.collapsed) {
   background: var(--osm-accent-dim) !important;
-  color: var(--osm-accent) !important;
+  color: var(--osm-accent-text) !important;
 }
 
 .accordion-button::after {
@@ -726,7 +727,7 @@ input[type="number"] {
 
 .nav-tabs .nav-link.active {
   background: var(--osm-bg-card) !important;
-  color: var(--osm-accent) !important;
+  color: var(--osm-accent-text) !important;
   border-bottom: 2px solid var(--osm-accent) !important;
   font-weight: 600;
 }
@@ -922,6 +923,7 @@ hr {
   --osm-accent:        #d4942e;
   --osm-accent-dim:    rgba(212, 148, 46, 0.1);
   --osm-accent-glow:   rgba(212, 148, 46, 0.2);
+  --osm-accent-text:   #9a6512;  /* #d4942e as text is ~2.6:1 on white; this is 5:1 */
 
   /* Secondary: darkened teal */
   --osm-teal:          #2ba89e;
@@ -930,7 +932,7 @@ hr {
   /* Text hierarchy */
   --osm-text-primary:  #1a2a3a;
   --osm-text-secondary:#4a5a6a;
-  --osm-text-muted:    #8a95a0;
+  --osm-text-muted:    #5f6b77;  /* ~5:1 on light bg-deep (was #8a95a0, ~2.6:1) */
 
   /* Borders & surfaces */
   --osm-border:        rgba(0, 0, 0, 0.08);
@@ -1014,7 +1016,7 @@ hr {
 }
 
 [data-theme="light"] .nav-pills .nav-link.active {
-  color: var(--osm-accent) !important;
+  color: var(--osm-accent-text) !important;
   background: var(--osm-accent-dim) !important;
 }
 
@@ -1065,7 +1067,7 @@ hr {
 
 [data-theme="light"] .accordion-button:not(.collapsed) {
   background: var(--osm-accent-dim) !important;
-  color: var(--osm-accent) !important;
+  color: var(--osm-accent-text) !important;
 }
 
 [data-theme="light"] .accordion-button::after {
@@ -1092,7 +1094,7 @@ hr {
 
 [data-theme="light"] .nav-tabs .nav-link.active {
   background: #ffffff !important;
-  color: var(--osm-accent) !important;
+  color: var(--osm-accent-text) !important;
 }
 
 /* ── Light: Console ──────────────────────────────────────────────── */
@@ -1176,7 +1178,7 @@ hr {
 }
 
 .osmose-theme-toggle:hover {
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
   border-color: var(--osm-border-accent);
   background: var(--osm-accent-dim);
 }
@@ -1266,7 +1268,7 @@ hr {
   padding: 0.5rem 1rem;
   background: var(--osm-accent-dim);
   border-left: 3px solid var(--osm-accent);
-  color: var(--osm-accent);
+  color: var(--osm-accent-text);
   font-size: 0.85rem;
   font-weight: 500;
 }
@@ -1433,7 +1435,7 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     transition: all var(--osm-transition);
 }
 .osm-expand-tab:hover {
-    color: var(--osm-accent);
+    color: var(--osm-accent-text);
     background: var(--osm-bg-card-hover);
 }
 .osm-expand-tab.visible {
@@ -1456,7 +1458,7 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     transition: all var(--osm-transition);
 }
 .osm-collapse-btn:hover {
-    color: var(--osm-accent);
+    color: var(--osm-accent-text);
     background: var(--osm-accent-dim);
 }
 .card-header:has(.osm-collapse-btn) {
@@ -1479,21 +1481,21 @@ body > .row > .nav-col-collapsed ~ [class*="col-"] {
     color: var(--osm-text-secondary);
 }
 [data-theme="light"] .osm-expand-tab:hover {
-    color: var(--osm-accent);
+    color: var(--osm-accent-text);
     background: var(--osm-bg-card-hover);
 }
 [data-theme="light"] .osm-collapse-btn {
     color: var(--osm-text-muted);
 }
 [data-theme="light"] .osm-collapse-btn:hover {
-    color: var(--osm-accent);
+    color: var(--osm-accent-text);
     background: var(--osm-accent-dim);
 }
 [data-theme="light"] .osm-hamburger {
     color: var(--osm-text-secondary);
 }
 [data-theme="light"] .osm-hamburger:hover {
-    color: var(--osm-accent);
+    color: var(--osm-accent-text);
 }
 
 /* ── Grid map container (plain map, no card) ─────────────────── */
@@ -2097,4 +2099,184 @@ body > .row > [class*="col-"]:first-child {
   opacity: 0.4;
   pointer-events: none;
   cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONTROL CONTRAST — switches, checkboxes, radios (WCAG 1.4.11, >= 3:1)
+   Measured before (2026-11-22): switch knob 1.83:1 off / 2.08:1 on (dark),
+   light-theme off track 1.0:1 against the card. Bootstrap draws the knob and
+   the tick as SVG data URIs, so their colours are literals per theme/state
+   (a CSS var cannot reach inside url()). Enforced by
+   tests/e2e/test_control_contrast.py.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Dark (default) ── */
+.form-switch .form-check-input {
+  width: 2.4em;
+  height: 1.3em;
+  background-color: var(--osm-bg-surface) !important;
+  border: 1.5px solid #a0b4c8 !important;
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23a0b4c8'/%3e%3c/svg%3e");
+  cursor: pointer;
+}
+.form-switch .form-check-input:focus {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23e2e8f0'/%3e%3c/svg%3e");
+}
+.form-switch .form-check-input:checked {
+  background-color: var(--osm-accent) !important;
+  border-color: var(--osm-accent) !important;
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%230f1923'/%3e%3c/svg%3e");
+}
+.form-check-input[type="checkbox"]:not([role="switch"]) {
+  background-color: var(--osm-bg-surface);
+  border: 1.5px solid #a0b4c8;
+}
+.form-check-input[type="checkbox"]:not([role="switch"]):checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%230f1923' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+.form-check-input[type="radio"] {
+  border: 1.5px solid #a0b4c8 !important;
+}
+.form-check-input[type="radio"]:checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230f1923'/%3e%3c/svg%3e");
+}
+/* breathing room between a control and its label (the wider switch touched its text) */
+.form-check:not(.form-check-reverse):not(.form-switch) > .form-check-input { margin-right: 0.5em; }
+/* Switch rows as flex: with float layout, a long label next to the wider track overflowed
+   shiny's 300px form width and dropped to its own line (visual diff, Fishing page). */
+.form-check.form-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+  padding-left: 0;
+}
+.form-check.form-switch > .form-check-input {
+  float: none;
+  flex-shrink: 0;
+  margin: 0.1em 0 0 0;
+}
+.form-check.form-switch > .form-check-label { min-width: 0; }
+.form-check-input:focus-visible {
+  outline: 2px solid var(--osm-teal);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.form-check-input:disabled {
+  opacity: 0.5;
+  border-style: dashed !important;
+  cursor: not-allowed;
+}
+
+/* ── Light ── (#9a6512 = amber darkened to 5:1 on white; the #d4942e accent is 2.6:1) */
+[data-theme="light"] .form-switch .form-check-input {
+  background-color: #c4ceda !important;
+  border-color: #5f6b77 !important;
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%233d4b5a'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-switch .form-check-input:focus {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%231a2a3a'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-switch .form-check-input:checked,
+[data-theme="light"] .form-check-input[type="checkbox"]:checked,
+[data-theme="light"] .form-check-input[type="radio"]:checked {
+  background-color: #9a6512 !important;
+  border-color: #9a6512 !important;
+}
+[data-theme="light"] .form-switch .form-check-input:checked {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23fff'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-check-input[type="checkbox"]:not([role="switch"]) {
+  background-color: #ffffff;
+  border-color: #5f6b77;
+}
+[data-theme="light"] .form-check-input[type="checkbox"]:not([role="switch"]):checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .form-check-input[type="radio"] {
+  border-color: #5f6b77 !important;
+}
+[data-theme="light"] .form-check-input[type="radio"]:checked {
+  --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23fff'/%3e%3c/svg%3e");
+}
+
+/* ── Completion toasts (ui/components/toasts.py) ──
+   The toast body is text-bg-success/danger, so the link inherits that text colour
+   (an amber link on green would fail contrast) and is marked by weight + underline. */
+.osm-toast-action {
+  font-weight: 700;
+  color: inherit !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Native Shiny checkboxes / radios ──
+   ui.input_checkbox / input_checkbox_group / input_radio_buttons render plain
+   <input> elements inside .checkbox / .shiny-options-group with NO
+   .form-check-input class, so the rules above never reached them (found
+   2026-11-22 by inspecting the live DOM). Same look and contrast, applied
+   via appearance:none. */
+.checkbox input[type="checkbox"],
+.shiny-options-group input[type="checkbox"],
+.shiny-options-group input[type="radio"],
+.radio input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0 0.5em 0 0;
+  vertical-align: -0.15em;
+  background-color: var(--osm-bg-surface);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  border: 1.5px solid #a0b4c8;
+  border-radius: 0.25em;
+  cursor: pointer;
+}
+.shiny-options-group input[type="radio"],
+.radio input[type="radio"] { border-radius: 50%; }
+.checkbox input[type="checkbox"]:checked,
+.shiny-options-group input[type="checkbox"]:checked,
+.shiny-options-group input[type="radio"]:checked,
+.radio input[type="radio"]:checked {
+  background-color: var(--osm-accent);
+  border-color: var(--osm-accent);
+}
+.checkbox input[type="checkbox"]:checked,
+.shiny-options-group input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%230f1923' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+.shiny-options-group input[type="radio"]:checked,
+.radio input[type="radio"]:checked {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230f1923'/%3e%3c/svg%3e");
+}
+.checkbox input:focus-visible,
+.shiny-options-group input:focus-visible,
+.radio input:focus-visible { outline: 2px solid var(--osm-teal); outline-offset: 2px; }
+.checkbox input:disabled,
+.shiny-options-group input:disabled,
+.radio input:disabled { opacity: 0.5; border-style: dashed; cursor: not-allowed; }
+
+[data-theme="light"] .checkbox input[type="checkbox"],
+[data-theme="light"] .shiny-options-group input[type="checkbox"],
+[data-theme="light"] .shiny-options-group input[type="radio"],
+[data-theme="light"] .radio input[type="radio"] {
+  background-color: #ffffff;
+  border-color: #5f6b77;
+}
+[data-theme="light"] .checkbox input[type="checkbox"]:checked,
+[data-theme="light"] .shiny-options-group input[type="checkbox"]:checked,
+[data-theme="light"] .shiny-options-group input[type="radio"]:checked,
+[data-theme="light"] .radio input[type="radio"]:checked {
+  background-color: #9a6512;
+  border-color: #9a6512;
+}
+[data-theme="light"] .checkbox input[type="checkbox"]:checked,
+[data-theme="light"] .shiny-options-group input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+}
+[data-theme="light"] .shiny-options-group input[type="radio"]:checked,
+[data-theme="light"] .radio input[type="radio"]:checked {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23fff'/%3e%3c/svg%3e");
 }

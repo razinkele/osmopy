@@ -30,6 +30,7 @@ from ui.pages.grid_helpers import (
     load_netcdf_grid,
     load_netcdf_overlay,
     make_legend,
+    reset_view_widget_for,
 )
 from ui.state import AppState, get_theme_mode
 
@@ -378,6 +379,7 @@ def map_viewer_server(input, output, session, state: AppState):
             fullscreen_widget(placement="top-left"),
             zoom_widget(placement="top-right"),
             compass_widget(placement="top-right"),
+            reset_view_widget_for(view_state),
             scale_widget(placement="bottom-right"),
         ]
         if legend_entries:

@@ -1148,28 +1148,14 @@ def list_movement_species(cfg: dict[str, str]) -> list[str]:
 
 
 def make_legend(entries: list[dict], **kwargs) -> dict:
-    """Create a deck.gl legend control, adapting to shiny_deckgl version.
+    """Create a deck.gl legend widget (shiny_deckgl ``layer_legend_widget``).
 
-    The dev venv (v1.9.1 fork) exports ``deck_legend_control``, while the
-    server (stock PyPI) exports ``layer_legend_widget``.  Accepts
-    ``placement`` as an alias for ``position`` for convenience.
+    The pinned shiny_deckgl (>=1.16.1) exports ``layer_legend_widget`` publicly;
+    the pre-1.9.2 ``deck_legend_control`` fallback is gone.
     """
-    import shiny_deckgl as _sdgl  # type: ignore[import-untyped]
+    from shiny_deckgl import layer_legend_widget  # type: ignore[import-untyped]
 
-    if hasattr(_sdgl, "layer_legend_widget"):
-        # layer_legend_widget exists in the module namespace but isn't in
-        # shiny_deckgl's __all__ (>=v1.9.2); the hasattr guard above makes this
-        # attribute access safe at runtime.
-        return _sdgl.layer_legend_widget(entries=entries, **kwargs)  # pyright: ignore[reportPrivateImportUsage]
-    if hasattr(_sdgl, "deck_legend_control"):
-        kw = dict(kwargs)
-        if "placement" in kw:
-            kw["position"] = kw.pop("placement")
-        return _sdgl.deck_legend_control(entries=entries, **kw)
-    _log.warning(
-        "make_legend: shiny_deckgl has neither layer_legend_widget nor deck_legend_control"
-    )
-    return {}
+    return layer_legend_widget(entries=entries, **kwargs)
 
 
 def _z_nan_to_none(data):
@@ -1261,3 +1247,17 @@ def make_diff_map(
     )
     fig.update_layout(template=template)
     return fig
+
+
+def reset_view_widget_for(view_state: dict, placement: str = "top-right") -> dict:
+    """deck.gl ResetViewWidget that resets to ``view_state``.
+
+    Without an explicit ``initialViewState`` the widget falls back to the Deck's own, which
+    shiny_deckgl's MapLibre-interleaved map leaves unset: clicking it threw "Invalid LngLat
+    object: (NaN, NaN)" (seen 2026-11-22). Pass the view the map was framed with.
+    """
+    from shiny_deckgl import reset_view_widget  # type: ignore[import-untyped]
+
+    return reset_view_widget(
+        placement=placement, initialViewState={"pitch": 0, "bearing": 0, **view_state}
+    )

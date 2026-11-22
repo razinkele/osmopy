@@ -33,10 +33,13 @@ dependencies = [
     # The version production runs (1.16.1, installed there by conda for the server's other
     # apps). PyPI carries shiny-deckgl 1.12 at most, so the tag comes from GitHub.
     "shiny_deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.16.1",
-    # The razinkele/pyvis 4.x fork, published on PyPI as `pyvis-optimized` (and as `pyvis` on the
+    # The razinkele/pyvis fork, published on PyPI as `pyvis-optimized` (and as `pyvis` on the
     # maintainer's conda channel); both install the `pyvis` import package. PyPI's own `pyvis` is a
     # different lineage that stops at 0.3.2 -- do not depend on that name from PyPI.
-    "pyvis-optimized>=4.2",
+    # Floor = the 5.0.0 the production/dev micromamba `shiny` env runs (2026-11-22); the trophic
+    # network's calls (Network(cdn_resources="in_line"), set_options, add_node/edge,
+    # generate_html) were checked against it.
+    "pyvis-optimized>=5.0",
     "pyarrow>=14",
 ]
 

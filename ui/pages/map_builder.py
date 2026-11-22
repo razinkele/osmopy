@@ -40,6 +40,7 @@ from ui.pages.grid_helpers import (
     _zoom_for_span,
     build_grid_layers,
     load_mask,
+    reset_view_widget_for,
 )
 from ui.state import AppState, get_theme_mode
 
@@ -244,7 +245,7 @@ def map_builder_server(input, output, session, state: AppState):
             return ui.div()
         return ui.p(
             f"{n} polygon(s) staged — click 'Apply polygon(s)'.",
-            style="color: var(--osm-accent); font-size: 12px; margin: 4px 0;",
+            style="color: var(--osm-accent-text); font-size: 12px; margin: 4px 0;",
         )
 
     @render.ui
@@ -425,6 +426,7 @@ def map_builder_server(input, output, session, state: AppState):
             fullscreen_widget(placement="top-left"),
             zoom_widget(placement="top-right"),
             compass_widget(placement="top-right"),
+            reset_view_widget_for(_view_state(grid)),
             scale_widget(placement="bottom-right"),
         ]
         await _map.update(

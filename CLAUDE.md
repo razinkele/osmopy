@@ -9,6 +9,7 @@
 Python orchestration layer, simulation engine, and Shiny web interface for the OSMOSE marine ecosystem simulator. Provides dual engine backends: a pure-Python engine (NumPy/Numba; within 1 OoM of Java on 14/14 EEC species but only 7/8 Bay of Biscay — Hake is the exception, see the RNG gotcha below) and the original Java engine (via subprocess). Python handles config I/O, execution, output reading, calibration, and visualization.
 
 ## Commands
+- **Dev environment:** use the micromamba `shiny` env, `/opt/micromamba/envs/shiny/bin/python` (Python 3.13) — the env production runs (shiny 1.9.0, shiny_deckgl 1.16.1, shinyswatch 0.14.0, pyvis-optimized 5.0.0 on 2026-11-22), with this checkout installed editable. Substitute it for `.venv/bin/python` in the commands below (app: `/opt/micromamba/envs/shiny/bin/shiny run app.py ...`). It is shared and shiny-owned: do not pip-install or upgrade into it without asking (see the `deploy.sh` gotcha). It has no `pytest-xdist` and no `hypothesis` (2026-11-22), so a bare `pytest` stops on `--dist`/`-n` from `addopts`: run `/opt/micromamba/envs/shiny/bin/python -m pytest -o addopts="" -m "not e2e and not visual" --ignore=tests/test_maps_builder.py ...` (serial; that file imports hypothesis at module scope), or use `.venv` for the parallel full suite.
 - **Run tests:** `.venv/bin/python -m pytest`
 - **Run single test:** `.venv/bin/python -m pytest tests/test_schema.py::test_name -v`
 - **Run app:** `.venv/bin/shiny run app.py --host 0.0.0.0 --port 8000`

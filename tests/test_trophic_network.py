@@ -208,7 +208,8 @@ def test_results_has_trophic_network_wiring():
     assert "Trophic Network" in src  # the nav_panel
     assert "trophic_network" in src  # the output id / render fn
     assert "trophic_time" in src  # the time slider
-    assert "make_trophic_network_html" in src  # the builder is used
+    assert "build_trophic_network" in src  # the builder is used
+    assert "render_pyvis_network" in src  # native pyvis.shiny output (no iframe)
     assert "update_slider" in src  # slider populated on load
     assert "_dietMatrix" not in src  # reads via the helper, not a hardcoded glob here
 
@@ -457,3 +458,21 @@ def test_a_real_baltic_run_is_read_with_its_own_species(baltic_output):
     fig = make_diet_heatmap(OsmoseResults(out, strict=False).diet_matrix())
     assert list(fig.data[0].y) == predators
     assert list(fig.data[0].x)[: len(fish)] == fish
+
+
+def test_build_trophic_network_returns_network_with_diet_tooltips():
+    from osmose.trophic_network import build_trophic_network
+
+    df = pd.DataFrame(
+        {
+            "predator": ["cod", "cod", "herring"],
+            "prey": ["herring", "sprat", "sprat"],
+            "proportion": [70.0, 30.0, 100.0],
+        }
+    )
+    net = build_trophic_network(df, positions=species_layout(["cod", "herring", "sprat"]))
+    titles = {n["id"]: n["title"] for n in net.nodes}
+    assert "Eats: herring 70%, sprat 30%" in titles["cod"]
+    assert "Eaten by: cod (70%)" in titles["herring"]
+    assert "Eats" not in titles["sprat"] and "Eaten by: herring (100%)" in titles["sprat"]
+    assert len(net.edges) == 3

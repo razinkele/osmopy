@@ -49,6 +49,8 @@ from osmose.runner import (
     validate_java_opts,
 )
 from ui.components.collapsible import body_collapse_header
+from ui.components.toasts import show_completion_toast
+from ui.pages.grid_helpers import reset_view_widget_for
 from ui.pages.live_movement_render import choose_live_layer, live_legend_widget
 from ui.state import AppState, get_theme_mode
 from ui.styles import STYLE_CONSOLE
@@ -555,6 +557,19 @@ def run_server(input, output, session, state: AppState):
             _set_run_buttons(False, session)
             ui.update_action_button("btn_cancel", disabled=True, session=session)
             _handle_result(result, _run_config_cell[0], state, run_log, status, _run_start_cell[0])
+            if result.returncode == 0:
+                show_completion_toast(
+                    "Simulation complete",
+                    f"Output: {result.output_dir}",
+                    tab="results",
+                    action="Open Results \u2192",
+                )
+            elif result.returncode != -1 and getattr(result, "status", "") != "cancelled":
+                show_completion_toast(
+                    "Simulation failed",
+                    (result.message or result.stderr or "See the run log.")[:300],
+                    ok=False,
+                )
             while True:
                 try:
                     _progress_q.get_nowait()
@@ -705,10 +720,16 @@ def run_server(input, output, session, state: AppState):
             layer, note = choose_live_layer(snap, species_filter, mode, stage_filter=stage_filter)
             _live_note.set(note)
             legend = live_legend_widget(snap, species_filter, stage_filter, layer["id"])
+            live_view = {
+                "latitude": (snap.lat_min + snap.lat_max) / 2,
+                "longitude": (snap.lon_min + snap.lon_max) / 2,
+                "zoom": 5,
+            }
             widgets = [
                 fullscreen_widget(placement="top-left"),
                 zoom_widget(placement="top-right"),
                 compass_widget(placement="top-right"),
+                reset_view_widget_for(live_view),
                 scale_widget(placement="bottom-left"),
                 legend,
             ]
@@ -717,11 +738,7 @@ def run_server(input, output, session, state: AppState):
                 await _live_map.update(
                     session,
                     layers=[layer],
-                    view_state={
-                        "latitude": (snap.lat_min + snap.lat_max) / 2,
-                        "longitude": (snap.lon_min + snap.lon_max) / 2,
-                        "zoom": 5,
-                    },
+                    view_state=live_view,
                     widgets=widgets,
                 )
                 _live_framed[0] = True

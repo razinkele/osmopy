@@ -158,6 +158,10 @@ app_ui = ui.page_fillable(
         href="#main-content",
         class_="visually-hidden-focusable",
     ),
+    # Busy indicators are on by default in shiny 1.9; match them to the amber accent.
+    ui.busy_indicators.options(
+        spinner_type="ring2", spinner_color="#e8a838", spinner_delay="300ms"
+    ),
     # ── Custom CSS + theme toggle JS ────────────────────────────
     ui.head_content(ui.include_css(_WWW / "osmose.css")),
     ui.head_content(ui.include_css(_WWW / "deckgl-widgets.css")),

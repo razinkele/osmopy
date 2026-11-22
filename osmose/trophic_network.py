@@ -250,6 +250,58 @@ def species_layout(node_ids: list[str]) -> dict[str, tuple[float, float]]:
     return {n: (float(x) * 600.0, float(y) * 600.0) for n, (x, y) in pos.items()}
 
 
+def build_trophic_network(
+    diet_df: pd.DataFrame,
+    *,
+    positions: dict[str, tuple[float, float]],
+    threshold: float = 5.0,
+    height: str = "600px",
+):
+    """pyvis ``Network`` (fixed layout, physics off) for a diet network.
+
+    Returned as a ``Network`` so the Shiny page can hand it to ``pyvis.shiny``'s
+    ``render_pyvis_network`` (native output, node events, no iframe);
+    :func:`make_trophic_network_html` wraps it for standalone HTML. Each node's tooltip
+    lists its main prey and predators.
+    """
+    from pyvis.network import Network  # type: ignore[import-not-found]
+
+    net = Network(directed=True, cdn_resources="in_line", height=height, width="100%")
+    net.set_options('{"physics": {"enabled": false}}')
+    df = cast(pd.DataFrame, diet_df[diet_df["proportion"] >= threshold])
+    nodes = sorted(set(df["predator"]) | set(df["prey"]))
+    for n in nodes:
+        x, y = positions.get(n, (0.0, 0.0))
+        net.add_node(n, label=n, x=float(x), y=float(y), physics=False, title=_node_title(df, n))
+    # zip over columns rather than itertuples(): pandas-stubs types the latter's
+    # rows as plain tuple[Any, ...], so named-attribute access doesn't type-check.
+    for predator, prey, proportion in zip(df["predator"], df["prey"], df["proportion"]):
+        net.add_edge(
+            predator,
+            prey,
+            value=float(proportion),
+            title=f"{proportion:.1f}% of {predator}'s diet",
+        )
+    return net
+
+
+def _node_title(df: pd.DataFrame, node: str, top: int = 5) -> str:
+    """Plain-text tooltip: the node's top prey (its diet) and top predators."""
+    eats = cast(pd.DataFrame, df[df["predator"] == node]).nlargest(n=top, columns="proportion")
+    eaten = cast(pd.DataFrame, df[df["prey"] == node]).nlargest(n=top, columns="proportion")
+    lines = [node]
+    if len(eats):
+        lines.append(
+            "Eats: " + ", ".join(f"{q} {v:.0f}%" for q, v in zip(eats["prey"], eats["proportion"]))
+        )
+    if len(eaten):
+        lines.append(
+            "Eaten by: "
+            + ", ".join(f"{p} ({v:.0f}%)" for p, v in zip(eaten["predator"], eaten["proportion"]))
+        )
+    return "\n".join(lines)
+
+
 def make_trophic_network_html(
     diet_df: pd.DataFrame,
     *,
@@ -263,22 +315,6 @@ def make_trophic_network_html(
     already filtered (e.g. by ``diet_network_at``), pass ``threshold=0.0`` to avoid a
     second, stricter clamp.
     """
-    from pyvis.network import Network  # type: ignore[import-not-found]
-
-    net = Network(directed=True, cdn_resources="in_line", height=height, width="100%")
-    net.set_options('{"physics": {"enabled": false}}')
-    df = cast(pd.DataFrame, diet_df[diet_df["proportion"] >= threshold])
-    nodes = sorted(set(df["predator"]) | set(df["prey"]))
-    for n in nodes:
-        x, y = positions.get(n, (0.0, 0.0))
-        net.add_node(n, label=n, x=float(x), y=float(y), physics=False)
-    # zip over columns rather than itertuples(): pandas-stubs types the latter's
-    # rows as plain tuple[Any, ...], so named-attribute access doesn't type-check.
-    for predator, prey, proportion in zip(df["predator"], df["prey"], df["proportion"]):
-        net.add_edge(
-            predator,
-            prey,
-            value=float(proportion),
-            title=f"{proportion:.1f}% of {predator}'s diet",
-        )
-    return net.generate_html()
+    return build_trophic_network(
+        diet_df, positions=positions, threshold=threshold, height=height
+    ).generate_html()

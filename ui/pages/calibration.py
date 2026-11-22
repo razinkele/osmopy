@@ -277,8 +277,13 @@ def calibration_ui():
                     class_="small text-muted",
                 ),
                 ui.layout_columns(
-                    ui.input_action_button(
-                        "btn_start_cal", "Start Calibration", class_="btn-success w-100"
+                    ui.input_task_button(
+                        "btn_start_cal",
+                        "Start Calibration",
+                        label_busy="Calibrating\u2026",
+                        auto_reset=False,
+                        type="success",
+                        class_="w-100",
                     ),
                     ui.input_action_button("btn_stop_cal", "Stop", class_="btn-danger w-100"),
                     col_widths=[8, 4],
@@ -367,10 +372,13 @@ def calibration_ui():
                                     ui.input_numeric(
                                         "cal_val_seeds", "Seeds", value=5, min=2, max=20
                                     ),
-                                    ui.input_action_button(
+                                    ui.input_task_button(
                                         "btn_validate",
                                         "Validate",
-                                        class_="btn-info w-100",
+                                        label_busy="Validating\u2026",
+                                        auto_reset=False,
+                                        type="info",
+                                        class_="w-100",
                                     ),
                                     col_widths=[4, 4, 4],
                                 ),
@@ -380,10 +388,13 @@ def calibration_ui():
                         ui.nav_panel(
                             "Sensitivity",
                             ui.div(
-                                ui.input_action_button(
+                                ui.input_task_button(
                                     "btn_sensitivity",
                                     "Run Sensitivity Analysis",
-                                    class_="btn-info w-100",
+                                    label_busy="Running sensitivity\u2026",
+                                    auto_reset=False,
+                                    type="info",
+                                    class_="w-100",
                                 ),
                                 ui.output_ui("sensitivity_objective_selector"),
                                 output_widget("sensitivity_chart"),
@@ -647,7 +658,7 @@ def calibration_server(input, output, session, state: AppState):
             ),
         )
 
-    @render.download(filename="pareto_solution_params.csv")
+    @render.download_button(filename="pareto_solution_params.csv")
     def cal_export_params():
         sol = _picked_solution()
         yield solution_overrides_csv(sol["params"] if sol else {})

@@ -12,7 +12,7 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.pages._helpers import parse_nspecies
-from ui.state import REGISTRY, AppState
+from ui.state import REGISTRY, AppState, get_theme_mode
 from ui.styles import (
     COLOR_DANGER,
     COLOR_MUTED,
@@ -47,6 +47,23 @@ def multi_value_keys(cfg: dict[str, str]) -> list[str]:
     same test.
     """
     return sorted(k for k, v in cfg.items() if is_multi_value(v, REGISTRY.match_field(k)))
+
+
+def array_to_lines(value: str) -> tuple[str, str]:
+    """Split a multi-value entry into one element per line, returning (text, separator).
+
+    ``;`` wins when present (it is the general array separator), else ``,``. The split keeps
+    empty elements, so :func:`lines_to_array` reproduces the original string exactly, spacing
+    and any trailing separator included.
+    """
+    sep = ";" if ";" in value else ","
+    return "\n".join(value.split(sep)), sep
+
+
+def lines_to_array(text: str, sep: str) -> str:
+    """Inverse of :func:`array_to_lines` (exact: a trailing empty line is a trailing separator)."""
+    text = text.replace("\r\n", "\n")
+    return sep.join(text.split("\n"))
 
 
 def advanced_ui():
@@ -218,6 +235,18 @@ def advanced_server(input, output, session, state: AppState):
     # by re-importing a CSV.
     _mv_selected = reactive.value("")
 
+    def _editor_theme_name() -> str:
+        with reactive.isolate():
+            return "github-dark" if get_theme_mode(input) == "dark" else "github-light"
+
+    @reactive.effect
+    def _editor_theme():
+        # bslib's code editor picks theme_dark only under data-bs-theme="dark"; the app themes
+        # via data-theme (setting data-bs-theme would swap superhero's palette), so follow the
+        # app theme by re-pointing the editor's light slot.
+        dark = get_theme_mode(input) == "dark"
+        ui.update_code_editor("adv_mv_value", theme_light="github-dark" if dark else "github-light")
+
     @render.ui
     def multi_value_editor():
         # Same re-render contract as param_table: explicit loads/imports only.
@@ -241,7 +270,18 @@ def advanced_server(input, output, session, state: AppState):
                 ui.input_select(
                     "adv_mv_key", "Parameter", choices={k: k for k in keys}, selected=selected
                 ),
-                ui.input_text("adv_mv_value", "Value (array)", value=cfg[selected]),
+                ui.input_code_editor(
+                    "adv_mv_value",
+                    "Value (one element per line)",
+                    value=array_to_lines(cfg[selected])[0],
+                    language="plain",
+                    line_numbers=True,
+                    height="160px",
+                    # the editor watches data-bs-theme, which this app never sets (see
+                    # _editor_theme); its "light" slot is driven from the app theme instead
+                    theme_light=_editor_theme_name(),
+                    theme_dark="github-dark",
+                ),
                 ui.div(
                     ui.input_action_button("adv_mv_apply", "Apply", class_="btn-primary w-100"),
                     style="display: flex; align-items: flex-end; height: 100%;",
@@ -258,15 +298,17 @@ def advanced_server(input, output, session, state: AppState):
         if not key:
             return
         _mv_selected.set(key)
-        ui.update_text("adv_mv_value", value=state.get_config_value(key))
+        ui.update_code_editor("adv_mv_value", value=array_to_lines(state.get_config_value(key))[0])
 
     @reactive.effect
     @reactive.event(input.adv_mv_apply)
     def _apply_multi_value():
         key = input.adv_mv_key()
-        raw = (input.adv_mv_value() or "").strip()
         if not key:
             return
+        # Join the editor's lines back with the entry's ORIGINAL separator (exact round-trip).
+        _old_text, sep = array_to_lines(state.get_config_value(key) or "")
+        raw = lines_to_array(input.adv_mv_value() or "", sep)  # no strip: exact round-trip
         # Key-aware: ',' is accepted only for array-capable fields. movement.steps.map{i}, for
         # one, is read on ';' alone by the Python engine (movement_maps._parse_semicolon_ints).
         if not is_multi_value(raw, REGISTRY.match_field(key)):
@@ -283,7 +325,7 @@ def advanced_server(input, output, session, state: AppState):
             state.load_trigger.set(state.load_trigger.get() + 1)
         ui.notification_show(f"Updated {key}.", type="message", duration=3)
 
-    @render.download(filename="osm_all-parameters.csv")
+    @render.download_button(filename="osm_all-parameters.csv")
     def export_config():
         work_dir = Path(tempfile.mkdtemp(prefix="osmose_export_"))
         atexit.register(shutil.rmtree, str(work_dir), True)

@@ -438,3 +438,19 @@ def test_make_diff_map_all_zero_valid_range():
     fig = make_diff_map(data, [54.0, 55.0], [10.0, 11.0], var_name="biomass")
     # EPS floor keeps a finite, symmetric range rather than zmin==zmax==0
     assert fig.layout.coloraxis.cmin < 0 < fig.layout.coloraxis.cmax
+
+
+def test_reset_view_widget_for_carries_initial_view_state():
+    from ui.pages.grid_helpers import reset_view_widget_for
+
+    w = reset_view_widget_for({"latitude": 58.0, "longitude": 20.0, "zoom": 4.5})
+    assert w["@@widgetClass"] == "ResetViewWidget"
+    # without initialViewState deck.gl falls back to the Deck's (unset under shiny_deckgl's
+    # MapLibre map) and the click throws "Invalid LngLat object: (NaN, NaN)"
+    assert w["initialViewState"] == {
+        "pitch": 0,
+        "bearing": 0,
+        "latitude": 58.0,
+        "longitude": 20.0,
+        "zoom": 4.5,
+    }

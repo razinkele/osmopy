@@ -178,11 +178,11 @@ def sensitivity_explorer_server(input, output, session, state: AppState):
             style="font-size: 13px;",
         )
 
-    @render.download(filename="sensitivity_ranked.csv")
+    @render.download_button(filename="sensitivity_ranked.csv")
     def sens_export_csv():
         yield rows_to_csv(_rows())
 
-    @render.download(filename="influential_keys.txt")
+    @render.download_button(filename="influential_keys.txt")
     def sens_export_keys():
         thr = float(_safe(input.sens_threshold, 0.05) or 0.05)
         yield "\n".join(influential_keys(_rows(), thr))
