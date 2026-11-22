@@ -49,6 +49,23 @@ def multi_value_keys(cfg: dict[str, str]) -> list[str]:
     return sorted(k for k, v in cfg.items() if is_multi_value(v, REGISTRY.match_field(k)))
 
 
+def array_to_lines(value: str) -> tuple[str, str]:
+    """Split a multi-value entry into one element per line, returning (text, separator).
+
+    ``;`` wins when present (it is the general array separator), else ``,``. The split keeps
+    empty elements, so :func:`lines_to_array` reproduces the original string exactly, spacing
+    and any trailing separator included.
+    """
+    sep = ";" if ";" in value else ","
+    return "\n".join(value.split(sep)), sep
+
+
+def lines_to_array(text: str, sep: str) -> str:
+    """Inverse of :func:`array_to_lines` (exact: a trailing empty line is a trailing separator)."""
+    text = text.replace("\r\n", "\n")
+    return sep.join(text.split("\n"))
+
+
 def advanced_ui():
     categories = ["all"] + REGISTRY.categories()
 
@@ -241,7 +258,16 @@ def advanced_server(input, output, session, state: AppState):
                 ui.input_select(
                     "adv_mv_key", "Parameter", choices={k: k for k in keys}, selected=selected
                 ),
-                ui.input_text("adv_mv_value", "Value (array)", value=cfg[selected]),
+                ui.input_code_editor(
+                    "adv_mv_value",
+                    "Value (one element per line)",
+                    value=array_to_lines(cfg[selected])[0],
+                    language="plain",
+                    line_numbers=True,
+                    height="160px",
+                    theme_light="github-light",
+                    theme_dark="github-dark",
+                ),
                 ui.div(
                     ui.input_action_button("adv_mv_apply", "Apply", class_="btn-primary w-100"),
                     style="display: flex; align-items: flex-end; height: 100%;",
@@ -258,15 +284,17 @@ def advanced_server(input, output, session, state: AppState):
         if not key:
             return
         _mv_selected.set(key)
-        ui.update_text("adv_mv_value", value=state.get_config_value(key))
+        ui.update_code_editor("adv_mv_value", value=array_to_lines(state.get_config_value(key))[0])
 
     @reactive.effect
     @reactive.event(input.adv_mv_apply)
     def _apply_multi_value():
         key = input.adv_mv_key()
-        raw = (input.adv_mv_value() or "").strip()
         if not key:
             return
+        # Join the editor's lines back with the entry's ORIGINAL separator (exact round-trip).
+        _old_text, sep = array_to_lines(state.get_config_value(key) or "")
+        raw = lines_to_array(input.adv_mv_value() or "", sep).strip()
         # Key-aware: ',' is accepted only for array-capable fields. movement.steps.map{i}, for
         # one, is read on ';' alone by the Python engine (movement_maps._parse_semicolon_ints).
         if not is_multi_value(raw, REGISTRY.match_field(key)):
