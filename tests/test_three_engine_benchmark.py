@@ -45,25 +45,43 @@ def _times(value: float) -> str:
     return f"{value:.1f}×" if value < 10 else f"{value:.0f}×"
 
 
-def _readme_rows() -> dict[tuple[str, str], list[str]]:
+EEC_HEADER = [
+    "Engine",
+    "Threads",
+    "5-year run",
+    "70-year run",
+    "Speed vs Java (70 years)",
+    "Peak memory (70 years)",
+]
+BALTIC_HEADER = ["Engine", "Threads", "15-year run", "Speed vs Python, 1 thread", "Peak memory"]
+
+
+def _tables() -> dict[tuple[str, ...], dict[tuple[str, str], list[str]]]:
+    """Every table of the README's Performance section, keyed by its header row; each table's
+    rows keyed by (engine, threads)."""
     text = README.read_text(encoding="utf-8")
     section = text[text.index("## Performance") : text.index("## Engine parity validation")]
-    rows = {}
+    tables: dict[tuple[str, ...], dict[tuple[str, str], list[str]]] = {}
+    current: dict[tuple[str, str], list[str]] | None = None
     for line in section.splitlines():
-        if not line.startswith("|") or set(line) <= set("|- "):
+        if not line.startswith("|"):
+            current = None  # a table ends at the first line that is not a table row
+            continue
+        if set(line) <= set("|- "):
             continue
         cells = [c.strip().replace("**", "") for c in line.strip().strip("|").split("|")]
-        if cells[0] == "Engine":
-            assert cells[1:] == [
-                "Threads",
-                "5-year run",
-                "70-year run",
-                "Speed vs Java (70 years)",
-                "Peak memory (70 years)",
-            ]
+        if current is None:
+            current = tables.setdefault(tuple(cells), {})
             continue
-        rows[(cells[0], cells[1])] = cells[2:]
-    return rows
+        current[(cells[0], cells[1])] = cells[2:]
+    return tables
+
+
+def _readme_rows() -> dict[tuple[str, str], list[str]]:
+    """The three-engine EEC table."""
+    tables = _tables()
+    assert tuple(EEC_HEADER) in tables, list(tables)
+    return tables[tuple(EEC_HEADER)]
 
 
 def test_the_readme_table_has_exactly_the_measured_arms():
@@ -208,3 +226,57 @@ def test_the_parent_never_imports_the_dotnet_bridge():
         for n in ast.walk(child)
     )
     assert re.search(r'sys\.argv\[1\] == "--child"', Path(bench.__file__).read_text())
+
+
+# ------------------------------------------------------------- the Baltic table (Python and C#)
+
+RECORD_BALTIC = ROOT / "docs" / "perf" / "2026-11-22-python-csharp-baltic.json"
+BALTIC_ARMS = {
+    ("Python", "1"): "python@1",
+    ("Python", "14"): "python@14",
+    ("C#", "1"): "csharp@1",
+    ("C#", "14"): "csharp@14",
+}
+
+
+def test_the_readme_has_exactly_two_performance_tables():
+    assert set(_tables()) == {tuple(EEC_HEADER), tuple(BALTIC_HEADER)}
+
+
+def test_every_cell_of_the_baltic_table_is_the_recorded_median():
+    record = json.loads(RECORD_BALTIC.read_text())
+    assert record["years"] == 15
+    assert record["config"] == "data/baltic/baltic_all-parameters.csv"
+    rows = _tables()[tuple(BALTIC_HEADER)]
+    assert set(rows) == set(BALTIC_ARMS)
+    python_one = _median(record, "python@1", "wall_s")
+    for label, arm in BALTIC_ARMS.items():
+        wall = _median(record, arm, "wall_s")
+        assert rows[label] == [
+            _seconds(wall),
+            _times(python_one / wall),
+            f"{_median(record, arm, 'peak_rss_mb'):.0f} MB",
+        ], label
+
+
+def test_the_baltic_record_is_five_clean_measured_rounds_per_arm():
+    record = json.loads(RECORD_BALTIC.read_text())
+    assert record["rounds"] == 5 and record["warmup_rounds"] == 1
+    assert set(record["arms"]) == set(BALTIC_ARMS.values())  # no Java arm: Java refuses it
+    for name, arm in record["arms"].items():
+        measured = [r for r in arm["runs"] if not r["warmup"]]
+        assert len(measured) == 5, name
+        assert all(r["ok"] and r["biomass_rows"] == 15 for r in measured), name
+        walls = sorted(r["wall_s"] for r in measured)
+        assert arm["summary"]["wall_s"] == {"median": walls[2], "min": walls[0], "max": walls[-1]}
+    assert "/home/" not in RECORD_BALTIC.read_text()
+
+
+def test_java_really_refuses_the_baltic_config():
+    """The table says Java is missing because it refuses this config; keep that true."""
+    from osmose.config.reader import OsmoseConfigReader
+    from osmose.runner import java_engine_block_reason
+
+    raw = OsmoseConfigReader().read(ROOT / "data" / "baltic" / "baltic_all-parameters.csv")
+    reason = java_engine_block_reason(raw)
+    assert reason and "oxygen" in reason
