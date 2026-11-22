@@ -2141,7 +2141,21 @@ body > .row > [class*="col-"]:first-child {
   --bs-form-check-bg-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230f1923'/%3e%3c/svg%3e");
 }
 /* breathing room between a control and its label (the wider switch touched its text) */
-.form-check:not(.form-check-reverse) > .form-check-input { margin-right: 0.5em; }
+.form-check:not(.form-check-reverse):not(.form-switch) > .form-check-input { margin-right: 0.5em; }
+/* Switch rows as flex: with float layout, a long label next to the wider track overflowed
+   shiny's 300px form width and dropped to its own line (visual diff, Fishing page). */
+.form-check.form-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55em;
+  padding-left: 0;
+}
+.form-check.form-switch > .form-check-input {
+  float: none;
+  flex-shrink: 0;
+  margin: 0.1em 0 0 0;
+}
+.form-check.form-switch > .form-check-label { min-width: 0; }
 .form-check-input:focus-visible {
   outline: 2px solid var(--osm-teal);
   outline-offset: 2px;
