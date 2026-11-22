@@ -13,9 +13,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     compass_widget,
     fullscreen_widget,
     polygon_layer,
-    reset_view_widget,
     scale_widget,
-    screenshot_widget,
     zoom_widget,
 )
 
@@ -38,6 +36,7 @@ from ui.pages.grid_helpers import (
     load_netcdf_grid,
     load_netcdf_overlay,
     make_legend,
+    reset_view_widget_for,
 )
 from ui.state import AppState, get_theme_mode, sync_inputs
 
@@ -826,8 +825,7 @@ def grid_server(input, output, session, state: AppState):
             fullscreen_widget(placement="top-left"),
             zoom_widget(placement="top-right"),
             compass_widget(placement="top-right"),
-            reset_view_widget(placement="top-right"),
-            screenshot_widget(placement="top-right"),
+            reset_view_widget_for(view_state),
             scale_widget(placement="bottom-right"),
         ]
         if legend_entries:

@@ -39,3 +39,33 @@ def test_palettes_differ_and_legend_labels_ranges():
     assert len(rows) == len(c_v)
     assert rows[0]["label"].startswith("0 ")
     assert set(PALETTES) == {"viridis", "ocean", "chlorophyll", "thermal"}
+
+
+def test_series_edges_span_the_whole_run_so_frames_differ():
+    from ui.pages.spatial_colors import series_edges
+
+    frames = [np.full((3, 3), 1.0 + t) for t in range(10)]  # field grows over time
+    edges = series_edges((lambda t: frames[t], len(frames)), "linear")
+    first, _, _ = bin_colors(frames[0].ravel(), scale="linear", edges=edges)
+    last, _, _ = bin_colors(frames[-1].ravel(), scale="linear", edges=edges)
+    assert first.max() < last.min()  # early frame in low bins, late frame in high bins
+    # per-frame edges would have put both frames in the same (single) bin
+    assert (
+        bin_colors(frames[0].ravel(), scale="linear")[0].tolist()
+        == bin_colors(frames[-1].ravel(), scale="linear")[0].tolist()
+    )
+
+
+def test_series_edges_subsample_and_clamp():
+    from ui.pages.spatial_colors import series_edges
+
+    calls = []
+
+    def fn(t):
+        calls.append(t)
+        return np.array([[float(t + 1)]])
+
+    edges = series_edges((fn, 1000), "linear", max_steps=50)
+    assert len(calls) <= 50 and calls[0] == 0 and calls[-1] == 999
+    idx, colors, _ = bin_colors(np.array([-5.0, 1e9]), scale="linear", edges=edges)
+    assert idx.tolist() == [0, len(colors) - 1]  # out-of-range values clamp to end bins

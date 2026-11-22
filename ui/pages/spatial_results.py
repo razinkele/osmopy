@@ -13,9 +13,7 @@ from shiny_deckgl import (  # type: ignore[import-untyped]
     compass_widget,
     fullscreen_widget,
     polygon_layer,
-    reset_view_widget,
     scale_widget,
-    screenshot_widget,
     timeline_control,
     timeline_server,
     zoom_widget,
@@ -31,12 +29,14 @@ from ui.pages.grid_helpers import (
     _zoom_for_span,
     make_legend,
     make_spatial_map,
+    reset_view_widget_for,
 )
 from ui.pages.spatial_colors import (
     PALETTE_LABELS,
     SCALE_LABELS,
     bin_colors,
     legend_entries,
+    series_edges,
 )
 from ui.state import AppState, get_theme_mode
 
@@ -528,14 +528,38 @@ def spatial_results_server(input, output, session, state: AppState):
         )
         return fig
 
+    # Colour-bin edges over the WHOLE series (per variable / species / scale), so playback
+    # shows change over time instead of re-stretching the palette every frame.
+    @reactive.calc
+    def _edges_cache() -> dict:
+        _spatial_ds.get()
+        _map_species()
+        return {}
+
+    def _series_edges(var_name: str, scale: str):
+        cache = _edges_cache()
+        key = (var_name, scale)
+        if key not in cache:
+            ds = _spatial_ds.get()
+            species = _map_species()
+            cache[key] = series_edges(
+                (
+                    lambda t: spatial_slice_2d(ds, var_name, time_index=t, species=species),
+                    int(ds.sizes.get("time", 1)),
+                ),
+                scale,
+            )
+        return cache[key]
+
     # ── Map View (deck.gl polygon layer) ─────────────────────────
-    def _base_widgets() -> list[dict]:
+    _DEFAULT_VIEW = {"latitude": 46.0, "longitude": -4.5, "zoom": 5}
+
+    def _base_widgets(view_state: dict) -> list[dict]:
         return [
             fullscreen_widget(placement="top-left"),
             zoom_widget(placement="top-right"),
             compass_widget(placement="top-right"),
-            reset_view_widget(placement="top-right"),
-            screenshot_widget(placement="top-right"),
+            reset_view_widget_for(view_state),
             scale_widget(placement="bottom-left"),
         ]
 
@@ -552,9 +576,9 @@ def spatial_results_server(input, output, session, state: AppState):
             await _map.update(
                 session,
                 layers=[],
-                view_state={"latitude": 46.0, "longitude": -4.5, "zoom": 5},
+                view_state=_DEFAULT_VIEW,
                 transition_duration=800,
-                widgets=_base_widgets(),
+                widgets=_base_widgets(_DEFAULT_VIEW),
             )
             return
 
@@ -588,7 +612,8 @@ def spatial_results_server(input, output, session, state: AppState):
         drawn = np.isfinite(arr) & (arr != 0)
         palette = input.spatial_palette() or "viridis"
         scale = input.spatial_scale() or "quantile"
-        bin_idx, colors, edges = bin_colors(arr[drawn], palette=palette, scale=scale)
+        edges = _series_edges(var_name, scale)
+        bin_idx, colors, edges = bin_colors(arr[drawn], palette=palette, scale=scale, edges=edges)
         cell_bin = np.full(arr.shape, -1)
         cell_bin[drawn] = bin_idx
 
@@ -630,16 +655,6 @@ def spatial_results_server(input, output, session, state: AppState):
                 )
             )
 
-        widgets = _base_widgets()
-        if cells:
-            widgets.append(
-                make_legend(
-                    legend_entries("spatial-data", colors, edges),
-                    placement="bottom-right",
-                    title=var_name,
-                )
-            )
-
         # Compute view state from lat/lon bounds
         center_lat = float(np.mean(lat))
         center_lon = float(np.mean(lon))
@@ -649,6 +664,18 @@ def spatial_results_server(input, output, session, state: AppState):
         zoom = _zoom_for_span(span)
 
         view_state = {"latitude": center_lat, "longitude": center_lon, "zoom": zoom}
+
+        widgets = _base_widgets(view_state)
+        if cells:
+            widgets.append(
+                make_legend(
+                    legend_entries("spatial-data", colors, edges),
+                    placement="bottom-right",
+                    title=var_name,
+                    # every row is a bin of ONE layer: a per-row checkbox would hide it all
+                    show_checkbox=False,
+                )
+            )
 
         await _map.update(
             session,

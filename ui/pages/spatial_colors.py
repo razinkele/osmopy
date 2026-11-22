@@ -51,19 +51,43 @@ def bin_edges(values: np.ndarray, scale: str, n_bins: int = N_BINS) -> np.ndarra
 
 
 def bin_colors(
-    values: np.ndarray, palette: str = "viridis", scale: str = "quantile", n_bins: int = N_BINS
+    values: np.ndarray,
+    palette: str = "viridis",
+    scale: str = "quantile",
+    n_bins: int = N_BINS,
+    *,
+    edges: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[list[int]], np.ndarray]:
     """Return (bin index per value, RGBA colour per bin, edges).
 
-    The bin index is -1 for non-finite values. The last edge is inclusive.
+    Pass ``edges`` (from :func:`bin_edges` over the WHOLE time series) when animating: edges
+    recomputed per frame would give every frame the same colour spread, hiding change over time.
+    Values outside the edges clamp to the end bins. The bin index is -1 for non-finite values.
     """
-    edges = bin_edges(np.asarray(values, dtype=float), scale, n_bins)
+    if edges is None:
+        edges = bin_edges(np.asarray(values, dtype=float), scale, n_bins)
     k = edges.size - 1
     colors = [[*c[:3], ALPHA] for c in color_range(k, PALETTES.get(palette, PALETTE_VIRIDIS))]
     vals = np.asarray(values, dtype=float)
     idx = np.clip(np.searchsorted(edges, vals, side="right") - 1, 0, k - 1)
     idx = np.where(np.isfinite(vals), idx, -1)
     return idx, colors, edges
+
+
+def series_edges(slices, scale: str, n_bins: int = N_BINS, max_steps: int = 120) -> np.ndarray:
+    """Bin edges over a time series of 2-D slices (zeros/non-finite excluded, as on the map).
+
+    ``slices`` is a callable ``t -> 2-D array`` plus its length, given as ``(fn, n_time)``; at
+    most ``max_steps`` evenly spaced steps are read, so long monthly runs stay cheap.
+    """
+    fn, n_time = slices
+    steps = np.unique(np.linspace(0, max(n_time - 1, 0), min(n_time, max_steps)).astype(int))
+    parts = []
+    for t in steps:
+        a = np.asarray(fn(int(t)), dtype=float).ravel()
+        parts.append(a[np.isfinite(a) & (a != 0)])
+    allv = np.concatenate(parts) if parts else np.array([])
+    return bin_edges(allv, scale, n_bins)
 
 
 def legend_entries(layer_id: str, colors: list[list[int]], edges: np.ndarray) -> list[dict]:

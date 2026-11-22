@@ -1247,3 +1247,17 @@ def make_diff_map(
     )
     fig.update_layout(template=template)
     return fig
+
+
+def reset_view_widget_for(view_state: dict, placement: str = "top-right") -> dict:
+    """deck.gl ResetViewWidget that resets to ``view_state``.
+
+    Without an explicit ``initialViewState`` the widget falls back to the Deck's own, which
+    shiny_deckgl's MapLibre-interleaved map leaves unset: clicking it threw "Invalid LngLat
+    object: (NaN, NaN)" (seen 2026-11-22). Pass the view the map was framed with.
+    """
+    from shiny_deckgl import reset_view_widget  # type: ignore[import-untyped]
+
+    return reset_view_widget(
+        placement=placement, initialViewState={"pitch": 0, "bearing": 0, **view_state}
+    )

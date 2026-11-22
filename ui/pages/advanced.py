@@ -12,7 +12,7 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.config.writer import OsmoseConfigWriter
 from ui.components.collapsible import collapsible_card_header, expand_tab
 from ui.pages._helpers import parse_nspecies
-from ui.state import REGISTRY, AppState
+from ui.state import REGISTRY, AppState, get_theme_mode
 from ui.styles import (
     COLOR_DANGER,
     COLOR_MUTED,
@@ -235,6 +235,18 @@ def advanced_server(input, output, session, state: AppState):
     # by re-importing a CSV.
     _mv_selected = reactive.value("")
 
+    def _editor_theme_name() -> str:
+        with reactive.isolate():
+            return "github-dark" if get_theme_mode(input) == "dark" else "github-light"
+
+    @reactive.effect
+    def _editor_theme():
+        # bslib's code editor picks theme_dark only under data-bs-theme="dark"; the app themes
+        # via data-theme (setting data-bs-theme would swap superhero's palette), so follow the
+        # app theme by re-pointing the editor's light slot.
+        dark = get_theme_mode(input) == "dark"
+        ui.update_code_editor("adv_mv_value", theme_light="github-dark" if dark else "github-light")
+
     @render.ui
     def multi_value_editor():
         # Same re-render contract as param_table: explicit loads/imports only.
@@ -265,7 +277,9 @@ def advanced_server(input, output, session, state: AppState):
                     language="plain",
                     line_numbers=True,
                     height="160px",
-                    theme_light="github-light",
+                    # the editor watches data-bs-theme, which this app never sets (see
+                    # _editor_theme); its "light" slot is driven from the app theme instead
+                    theme_light=_editor_theme_name(),
                     theme_dark="github-dark",
                 ),
                 ui.div(
