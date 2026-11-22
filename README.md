@@ -59,23 +59,28 @@ Both engines implement the same `Engine` protocol and produce identical output s
 | Implementation | Pure Python (NumPy + Numba JIT) | Java subprocess (OSMOSE 4.4.1 JAR default; 4.3.3 selectable) |
 | Dependencies | Python packages only | Java 17+ and an OSMOSE JAR |
 | Parity | EEC 14/14, Bay of Biscay 7/8 within 1 OoM | Reference implementation |
-| Speed | 1.2×–5.7× faster than Java (below) | Production-ready |
+| Speed | 2.8× faster than Java on one thread, 6.5× on 14 (EEC, 70 years; below) | Production-ready |
 | Use case | Production runs, calibration, development | Legacy compatibility, reference |
 
 ## Performance
 
-Numba JIT + parallel cell processing + vectorized diet aggregation put the Python engine ahead of Java on every benchmarked config:
+The same model run by each engine: the Eastern English Channel reference config (`data/eec_full`, 14 species, 24 steps per year). Every run is one fresh process that reads the config, simulates and writes the outputs. The third engine in the table is the **C# engine** (`csharp/`, .NET 10): the Python engine's model reimplemented, optional, and offered in the UI wherever it is built.
 
-| Configuration | Python | Java | Speedup |
-|---|---|---|---|
-| Bay of Biscay, 1 yr (8 species) | **0.24 s** | 0.80 s | 3.3× |
-| Bay of Biscay, 5 yr (8 species) | **1.99 s** | 2.3 s | 1.2× |
-| Eastern English Channel, 1 yr (14 species) | **0.44 s** | 2.5 s | 5.7× |
-| Eastern English Channel, 5 yr (14 species) | **5.2 s** | 7.2 s | 1.4× |
+| Engine | Threads | 5-year run | 70-year run | Speed vs Java (70 years) | Peak memory (70 years) |
+|---|---|---|---|---|---|
+| Java 4.4.1 | no setting | 8.0 s | 220 s | 1.0× | 584 MB |
+| Python | 1 | 5.0 s | 78 s | 2.8× | 330 MB |
+| Python | 14 | **3.1 s** | 34 s | 6.5× | 330 MB |
+| C# | 1 | 4.6 s | 28 s | 7.9× | 305 MB |
+| C# | 14 | 4.0 s | **9.3 s** | **24×** | 312 MB |
 
-Benchmarked on Linux x86_64 with Numba 0.60, NumPy 1.26, Python 3.12. First run includes ~20 s Numba compilation overhead (cached for subsequent runs).
+Median of five runs, measured on 2026-11-22 on an Intel Core i9-10940X (14 cores) with Python 3.12, NumPy 2.4, Numba 0.65, .NET 10.0 and OpenJDK 21. The ranges, the CPU use, the method and its limits are in [`docs/perf/2026-11-22-three-engines-eec_full.md`](https://github.com/razinkele/osmopy/blob/master/docs/perf/2026-11-22-three-engines-eec_full.md) (a full link, so that it also works from the app's About page). Three things to read the table with:
 
-Key optimisations:
+- **A short run is mostly start-up.** Over 5 years the engines are within a factor of about 2.5 of each other, and on 14 threads the Python engine finishes before the C# engine, which has the .NET runtime to start. The C# engine's advantage is in long runs.
+- **The Python engine's first run compiles.** With an empty Numba cache the 5-year run took 92 s instead of 5 s. The compiled code is cached on disk afterwards, and the table is with the cache filled.
+- **The outputs are not file-for-file the same.** Python and C# write the identical set of files; the Java engine lays its distributions out differently and writes about twice the bytes. The engines also use different random number generators, so they agree as ensembles, not run by run (next section).
+
+What makes the Python engine fast:
 
 - Numba JIT mortality loop — full interleaved predation/starvation/fishing compiled to native code
 - `prange` parallel cell processing with per-cell deterministic seeding
@@ -84,11 +89,13 @@ Key optimisations:
 - Precomputed species masks; compiled movement (map rejection sampling + random walk)
 - Results caching across repeated reads (CSV + NetCDF)
 
-Run the suite yourself:
+Repeat the comparison (the Java arm needs `java` and the 4.4.1 jar in `osmose-java/`; the C# arm needs `bash scripts/build_csharp_engine.sh` once):
 
 ```bash
-.venv/bin/python scripts/benchmark_engine.py --years 5 --seed 42 --repeats 3
+.venv/bin/python scripts/benchmark_three_engines.py --years 70 --repeats 5
 ```
+
+`scripts/benchmark_engine.py` times the in-process core of the Python or the C# engine alone, for before-and-after work on one engine. Its numbers are not comparable with the table above.
 
 ## Engine parity validation
 
