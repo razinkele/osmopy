@@ -46,7 +46,7 @@ def _times(value: float) -> str:
 
 
 def _readme_rows() -> dict[tuple[str, str], list[str]]:
-    text = README.read_text()
+    text = README.read_text(encoding="utf-8")
     section = text[text.index("## Performance") : text.index("## Engine parity validation")]
     rows = {}
     for line in section.splitlines():
@@ -114,7 +114,8 @@ def test_the_speed_row_above_the_table_quotes_the_same_measurement():
     java = _median(seventy, "java", "wall_s")
     one = _times(java / _median(seventy, "python@1", "wall_s"))
     many = _times(java / _median(seventy, "python@14", "wall_s"))
-    assert f"| Speed | {one} faster than Java on one thread, {many} on 14 " in README.read_text()
+    readme = README.read_text(encoding="utf-8")
+    assert f"| Speed | {one} faster than Java on one thread, {many} on 14 " in readme
 
 
 # ------------------------------------------------------------------ the harness itself
@@ -138,8 +139,33 @@ def test_outputs_counts_one_biomass_row_per_saved_step(tmp_path):
     assert bench._outputs(out, 3, 24, 12)["expected_rows"] == 6
 
 
+def test_a_partial_last_window_is_a_row_too(tmp_path):
+    # Both in-process engines write the window the run ends inside, complete or not: 12 steps
+    # saved every 5 give rows at steps 5, 10 and 12 (measured 2026-11-22 on data/minimal).
+    assert (
+        bench._outputs(tmp_path, years=1, steps_per_year=12, record_every=5)["expected_rows"] == 3
+    )
+
+
 def test_outputs_without_a_biomass_file_has_no_row_count(tmp_path):
     assert bench._outputs(tmp_path, 1, 24, 24)["biomass_rows"] is None
+
+
+@pytest.mark.parametrize(
+    ("run", "ok"),
+    [
+        ({"exit": 0, "biomass_rows": 70, "expected_rows": 70}, True),
+        ({"exit": 1, "biomass_rows": 70, "expected_rows": 70}, False),
+        ({"exit": 0, "biomass_rows": 69, "expected_rows": 70}, False),
+        # No output directory at all: no counts, and that is a failure, not a match.
+        ({"exit": 0}, False),
+        ({"exit": 0, "biomass_rows": None, "expected_rows": 3}, False),
+        # A run that saves nothing, by design, is still a run whose count matches.
+        ({"exit": 0, "biomass_rows": 0, "expected_rows": 0}, True),
+    ],
+)
+def test_a_run_is_clean_only_with_its_outputs(run, ok):
+    assert bench._run_ok(run) is ok
 
 
 def test_summary_is_the_median_and_the_range():

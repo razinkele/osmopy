@@ -115,14 +115,15 @@ def _outputs(out_dir: Path, years: int, steps_per_year: int, record_every: int) 
     biomass = sorted(p for p in files if p.name.endswith("_biomass_Simu0.csv"))
     rows = None
     if biomass:
-        lines = [ln for ln in biomass[0].read_text().splitlines() if ln.strip()]
+        lines = [ln for ln in biomass[0].read_text(encoding="utf-8").splitlines() if ln.strip()]
         # A title line and a header line, then one row per saved step.
         rows = max(0, len(lines) - 2)
     return {
         "files": len(files),
         "bytes": sum(p.stat().st_size for p in files),
         "biomass_rows": rows,
-        "expected_rows": years * steps_per_year // record_every,
+        # The engines also write the window the run ends inside, complete or not.
+        "expected_rows": -(-(years * steps_per_year) // record_every),
     }
 
 
@@ -180,6 +181,13 @@ def _versions(jar: Path) -> dict:
         "osmose": pkg("osmose-python"),
         "git": first_line(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"]),
     }
+
+
+def _run_ok(run: dict) -> bool:
+    """Exit 0 AND an output directory whose biomass series has every expected row. A run that
+    left no output at all has no counts, and must not pass as "None equals None"."""
+    rows = run.get("biomass_rows")
+    return run["exit"] == 0 and rows is not None and rows == run.get("expected_rows")
 
 
 def _summary(runs: list[dict]) -> dict:
@@ -287,7 +295,7 @@ def main() -> int:
             )
             run["round"] = rnd
             run["warmup"] = rnd < args.warmup
-            ok = run["exit"] == 0 and run.get("biomass_rows") == run.get("expected_rows")
+            ok = _run_ok(run)
             run["ok"] = ok
             tag = "warm-up" if run["warmup"] else f"round {rnd - args.warmup + 1}"
             print(
