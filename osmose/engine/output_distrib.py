@@ -26,15 +26,26 @@ DEFAULTS: dict[str, tuple[float, float, float]] = {
 }
 
 
+#: Upper bound on thresholds per distribution (a config error beyond it, not an allocation).
+MAX_CLASSES = 10_000
+
+
 def java_thresholds(cfg: dict[str, str], kind: str) -> NDArray[np.float32]:
     keys = [f"output.distrib.by{kind}.{p}" for p in ("min", "max", "incr")]
     if all(str(cfg.get(k, "")).strip() for k in keys):
         mn, mx, incr = (np.float32(float(cfg[k])) for k in keys)
     else:
         mn, mx, incr = (np.float32(v) for v in DEFAULTS[kind])
+    if not all(np.isfinite(v) for v in (mn, mx, incr)) or incr <= 0 or mn < 0 or mx < mn:
+        raise ValueError(
+            f"output.distrib.by{kind}: need finite min >= 0, max >= min and incr > 0 "
+            f"(got {mn}, {mx}, {incr})"
+        )
     if mn == 0:
         mn = incr
-    n = int(np.ceil(np.float32(mx - mn) / incr)) + 1
+    n = int(np.ceil(np.float32(max(mx - mn, 0)) / incr)) + 1
+    if n > MAX_CLASSES:
+        raise ValueError(f"output.distrib.by{kind}: {n} classes, more than {MAX_CLASSES}")
     return (mn + np.arange(n, dtype=np.float32) * incr).astype(np.float32)
 
 

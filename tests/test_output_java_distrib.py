@@ -100,3 +100,17 @@ def test_no_cutoff_is_applied():
     out = _collect_outputs(young, c, 0)
     assert out.biomass_by_tl[0].sum() == pytest.approx(10.0)  # still counted (DistribOutput)
     assert out.meansize_byage_den[0].sum() == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize(
+    ("mn", "mx", "incr"),
+    [("1", "6", "0"), ("1", "6", "-1"), ("6", "1", "1"), ("1", "nan", "1"), ("1", "1e9", "0.001")],
+)
+def test_bad_or_huge_bins_are_a_config_error(mn, mx, incr):
+    cfg = {
+        "output.distrib.bytl.min": mn,
+        "output.distrib.bytl.max": mx,
+        "output.distrib.bytl.incr": incr,
+    }
+    with pytest.raises(ValueError, match="output.distrib.bytl"):
+        java_thresholds(cfg, "tl")
