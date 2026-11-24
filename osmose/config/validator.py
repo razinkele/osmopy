@@ -146,8 +146,27 @@ def check_species_consistency(config: dict[str, str]) -> list[str]:
         key = f"species.name.sp{i}"
         if key not in config:
             warnings.append(f"Missing focal species name: {key}")
-    for i in range(nresource):
-        idx = nspecies + i
+    # OSMOSE 4.x lets a config place resources at ANY index, declared by
+    # species.type.spN = resource (Benguela uses sp300-sp303), which is how the engine finds them
+    # (osmose/config/aliases.py). Only a config with no type keys falls back to the 3.x layout,
+    # resources directly after the focal species.
+    typed = sorted(
+        int(k[len("species.type.sp") :])
+        for k, v in config.items()
+        if k.startswith("species.type.sp")
+        and k[len("species.type.sp") :].isdigit()
+        and str(v).strip().lower() == "resource"
+    )
+    if typed:
+        resource_idx = typed
+        if len(typed) != nresource:
+            warnings.append(
+                f"simulation.nresource is {nresource} but {len(typed)} species are typed "
+                f"'resource' (species.type.sp{{i}})"
+            )
+    else:
+        resource_idx = [nspecies + i for i in range(nresource)]
+    for idx in resource_idx:
         key = f"species.name.sp{idx}"
         if key not in config:
             warnings.append(f"Missing resource species name: {key}")

@@ -249,3 +249,38 @@ def test_validate_config_accepts_a_lone_separator_on_an_array_field(registry, va
     """The engine reads "2.3," as [2.3] on an array-capable field, so it is valid there."""
     errors, _ = validate_config({"predation.predprey.sizeratio.max.sp0": value}, registry)
     assert errors == []
+
+
+def test_species_consistency_finds_resources_by_type_at_any_index():
+    # OSMOSE 4.x: resources declared by species.type at arbitrary indices (Benguela: sp300+)
+    cfg = {
+        "simulation.nspecies": "1",
+        "simulation.nresource": "2",
+        "species.name.sp0": "Anchovy",
+        "species.type.sp0": "focal",
+        "species.type.sp300": "resource",
+        "species.name.sp300": "Diatoms",
+        "species.type.sp301": "resource",
+    }
+    w = check_species_consistency(cfg)
+    assert w == ["Missing resource species name: species.name.sp301"]  # NOT sp1/sp2
+
+
+def test_species_consistency_warns_on_resource_count_mismatch():
+    cfg = {
+        "simulation.nspecies": "0",
+        "simulation.nresource": "3",
+        "species.type.sp300": "resource",
+        "species.name.sp300": "Diatoms",
+    }
+    assert any("nresource is 3 but 1" in m for m in check_species_consistency(cfg))
+
+
+def test_benguela_example_has_no_false_resource_warnings():
+    from pathlib import Path
+
+    from osmose.config.reader import OsmoseConfigReader
+
+    master = Path(__file__).resolve().parent.parent / "data/benguela/benguela_all-parameters.csv"
+    cfg = OsmoseConfigReader().read(master)
+    assert not [m for m in check_species_consistency(cfg) if "resource" in m]
