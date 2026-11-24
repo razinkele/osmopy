@@ -2218,6 +2218,10 @@ def simulate(
                 ctx=ctx,
             )
 
+        # imax_school only when a trait evolves it: tests and scripts/csharp/* replace
+        # _mortality with spies of the original signature, and genetic configs never reach them
+        # (the C# engine refuses genetics).
+        mortality_kw = {} if imax_school is None else {"imax_school": imax_school}
         state = _mortality(
             state,
             resources,
@@ -2227,7 +2231,7 @@ def simulate(
             step=step,
             species_rngs=mortality_rngs,
             ctx=ctx,
-            imax_school=imax_school,
+            **mortality_kw,
         )
 
         # -- Aggregate diet immediately after mortality, before state mutations --
