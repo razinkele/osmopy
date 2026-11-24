@@ -67,12 +67,12 @@ def test_the_implemented_features_are_exactly_these():
     # lmax_cap and movement_none in the follow-up to task 2.2 (the code was in the Phase 1 core;
     # what they waited for was a test of a whole step and of a whole run), depensation_gate in
     # task 3.6 (that gate only: the ceiling and thermal gates of the same task are not ported),
-    # depletable_ltl in task 3.1.
+    # depletable_ltl in task 3.1, per_fishery_fishing with its port (spec 2026-11-24, PR-2b).
     implemented = {f.name for f in cap.load_catalog().values() if f.implemented}
     assert implemented == {
         "core", "oxygen_benthos", "stock_recruitment", "rv_gate", "seeding_linear",
         "salinity_gate", "background_species", "full_outputs", "lmax_cap", "movement_none",
-        "depensation_gate", "depletable_ltl",
+        "depensation_gate", "depletable_ltl", "per_fishery_fishing",
     }  # fmt: skip
 
 
