@@ -266,6 +266,15 @@ class StepOutput:
     abundance_by_age: dict[int, NDArray[np.float64]] | None = None
     biomass_by_size: dict[int, NDArray[np.float64]] | None = None
     abundance_by_size: dict[int, NDArray[np.float64]] | None = None
+    # Java-rule families (osmose/engine/output_distrib.py): biomass by TL class, and the
+    # numerator/denominator of mean size by age (sum abundance*length / sum abundance) and of mean
+    # TL by size (sum biomass*TL / sum biomass). Carrying num and den, both mean-folded over a
+    # window, gives Java's ratio of sums at write time (WeightedDistribOutput).
+    biomass_by_tl: dict[int, NDArray[np.float64]] | None = None
+    meansize_byage_num: dict[int, NDArray[np.float64]] | None = None
+    meansize_byage_den: dict[int, NDArray[np.float64]] | None = None
+    meantl_bysize_num: dict[int, NDArray[np.float64]] | None = None
+    meantl_bysize_den: dict[int, NDArray[np.float64]] | None = None
 
     # Per-species realized mean trophic level (sp_idx -> biomass-weighted mean TL), or None
     mean_tl: dict[int, float] | None = None
@@ -1594,6 +1603,43 @@ def _species_without_fish(state: SchoolState, config: EngineConfig) -> list[str]
     return [config.species_names[sp] for sp in np.flatnonzero(total[: config.n_species] == 0)]
 
 
+def _collect_java_distributions(state: SchoolState, config: EngineConfig) -> dict:
+    """The Java-rule families (DistribOutput / WeightedDistribOutput): every focal school, no
+    cutoff, classes per osmose.engine.output_distrib. Only the switched-on families are filled."""
+    from osmose.engine.output_distrib import java_classes
+
+    out: dict = {}
+    n_sp = config.n_species
+    sp = state.species_id
+    focal = sp < n_sp
+
+    def per_species(n_cls, cls, val):
+        d = {}
+        for s in range(n_sp):
+            arr = np.zeros(n_cls, dtype=np.float64)
+            m = focal & (sp == s)
+            if m.any():
+                np.add.at(arr, cls[m], val[m])
+            d[s] = arr
+        return d
+
+    if getattr(config, "output_biomass_bytl", False):
+        t = config.output_tl_thresholds
+        cls = java_classes(state.trophic_level, t)
+        out["biomass_by_tl"] = per_species(len(t) + 1, cls, state.biomass)
+    if getattr(config, "output_meansize_byage", False):
+        t = config.output_age_thresholds
+        cls = java_classes(state.age_dt / config.n_dt_per_year, t)
+        out["meansize_byage_num"] = per_species(len(t) + 1, cls, state.abundance * state.length)
+        out["meansize_byage_den"] = per_species(len(t) + 1, cls, state.abundance)
+    if getattr(config, "output_meantl_bysize", False):
+        t = config.output_size_thresholds
+        cls = java_classes(state.length, t)
+        out["meantl_bysize_num"] = per_species(len(t) + 1, cls, state.biomass * state.trophic_level)
+        out["meantl_bysize_den"] = per_species(len(t) + 1, cls, state.biomass)
+    return out
+
+
 def _collect_outputs(
     state: SchoolState,
     config: EngineConfig,
@@ -1660,6 +1706,7 @@ def _collect_outputs(
         )
 
     trait_stats = _collect_trait_stats(state, phenotypes) if phenotypes else None
+    java_distrib = _collect_java_distributions(state, config)
 
     return StepOutput(
         step=step,
@@ -1674,6 +1721,7 @@ def _collect_outputs(
         abundance_by_age=abundance_by_age,
         biomass_by_size=biomass_by_size,
         abundance_by_size=abundance_by_size,
+        **java_distrib,
         mean_tl=mean_tl,
         yield_n=yield_n,
         mean_size=mean_size,
@@ -1750,6 +1798,15 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
     return build_initial_population(config, grid, rng)
 
 
+_JAVA_DISTRIB_FIELDS = (
+    "biomass_by_tl",
+    "meansize_byage_num",
+    "meansize_byage_den",
+    "meantl_bysize_num",
+    "meantl_bysize_den",
+)
+
+
 def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step: int) -> StepOutput:
     """Average accumulated StepOutputs over recording frequency."""
 
@@ -1811,6 +1868,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             abundance_by_age=accumulated[0].abundance_by_age,
             biomass_by_size=accumulated[0].biomass_by_size,
             abundance_by_size=accumulated[0].abundance_by_size,
+            **{f: getattr(accumulated[0], f) for f in _JAVA_DISTRIB_FIELDS},
             mean_tl=accumulated[0].mean_tl,
             yield_n=accumulated[0].yield_n,
             mean_size=accumulated[0].mean_size,
@@ -1909,6 +1967,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         abundance_by_age=_avg_spatial("abundance_by_age", "mean"),
         biomass_by_size=_avg_spatial("biomass_by_size", "mean"),
         abundance_by_size=_avg_spatial("abundance_by_size", "mean"),
+        **{f: _avg_spatial(f, "mean") for f in _JAVA_DISTRIB_FIELDS},
         mean_tl=_avg_scalar_dict("mean_tl"),
         yield_n=yield_n_sum,
         mean_size=_avg_scalar_dict("mean_size"),

@@ -108,6 +108,10 @@ FULL_OUTPUT_KEYS = {
     "output.ssb.enabled", "output.ssb.netcdf.enabled",
     "output.yield.abundance.enabled", "output.yield.abundance.netcdf.enabled",
     "output.yield.biomass.netcdf.enabled",
+    # Java-rule distribution families (2026-11-24), collected by the C# engine
+    "output.biomass.bytl.enabled", "output.meansize.byage.enabled", "output.meantl.bysize.enabled",
+    "output.distrib.bytl.min", "output.distrib.bytl.max", "output.distrib.bytl.incr",
+    "output.distrib.byage.min", "output.distrib.byage.max", "output.distrib.byage.incr",
 }  # fmt: skip
 
 

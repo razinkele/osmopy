@@ -32,6 +32,12 @@ from osmose.engine.config_validation import (
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
+        "output.distrib.bytl.min",
+        "output.distrib.bytl.max",
+        "output.distrib.bytl.incr",
+        "output.distrib.byage.min",
+        "output.distrib.byage.max",
+        "output.distrib.byage.incr",
         "fisheries.movement.steps.map{idx}",
         "fisheries.movement.years.map{idx}",
         "fisheries.movement.initialyear.map{idx}",

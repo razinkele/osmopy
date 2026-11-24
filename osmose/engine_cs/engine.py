@@ -169,6 +169,12 @@ def _step_outputs(buffers: Any, records: int) -> list:
             abundance_by_age=by_age("abundance_by_age", i),
             biomass_by_size=by_size("biomass_by_size", i),
             abundance_by_size=by_size("abundance_by_size", i),
+            # Java-rule families: (species x classes) records, the same per-species shape
+            biomass_by_tl=by_size("biomass_by_tl", i),
+            meansize_byage_num=by_size("meansize_byage_num", i),
+            meansize_byage_den=by_size("meansize_byage_den", i),
+            meantl_bysize_num=by_size("meantl_bysize_num", i),
+            meantl_bysize_den=by_size("meantl_bysize_den", i),
             mean_tl=present("mean_tl", i),
             yield_n=row("yield_n", i),
             mean_size=present("mean_size", i),

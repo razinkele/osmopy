@@ -155,7 +155,15 @@ public sealed class DietOutputsTests : IDisposable
     [Fact]
     public void TheDietIsTheLastFamilyWithARowPerSpeciesAndASum()
     {
-        OutputLayout layout = new(NTotal, NFocal, OutputFamilies.Known) { AgeBinOffsets = [0, 2, 4], SizeEdges = [0.0, 5.0], DietColumns = Cols };
+        OutputLayout layout = new(NTotal, NFocal, OutputFamilies.Known)
+        {
+            AgeBinOffsets = [0, 2, 4],
+            SizeEdges = [0.0, 5.0],
+            DietColumns = Cols,
+            TlThresholds = [2.0, 3.0],
+            AgeThresholds = [1.0],
+            JavaSizeThresholds = [10.0, 20.0],
+        };
         IReadOnlyList<FamilySpec> specs = layout.Specs();
         Assert.Equal(OutputLayout.AllNames, specs.Select(s => s.Name));
         FamilySpec diet = specs[^1];

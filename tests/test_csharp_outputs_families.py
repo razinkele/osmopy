@@ -72,7 +72,11 @@ NAMES = tuple(SWITCHES)
 OFF = (
     {"output.minimal.enabled": "false", "output.diet.composition.enabled": "false"}  # diet: 2.6c
     | {k: "false" for keys in SWITCHES.values() for k in keys}
+    # the Java-rule families (own tests: test_csharp_outputs_java_distrib.py); EEC ships them on
+    | {f"output.{k}.enabled": "false" for k in ("biomass.bytl", "meansize.byage", "meantl.bysize")}
 )
+#: Java-rule families: (species x classes) records, the same dict shape as by-size.
+JAVA_DISTRIB = ("biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den")  # fmt: skip
 #: Every family on, with length classes that leave schools below the first and beyond the last.
 ALL = (
     OFF
@@ -84,7 +88,7 @@ ALL = (
     }
 )
 TIER_L = 1e-12
-BY_AGE, BY_SIZE, PRESENT = NAMES[:2], NAMES[2:4], ("mean_tl", "mean_size")
+BY_AGE, BY_SIZE, PRESENT = NAMES[:2], (*NAMES[2:4], *JAVA_DISTRIB), ("mean_tl", "mean_size")
 
 
 def _row(record: StepOutput, name: str, n_species: int) -> np.ndarray:

@@ -213,6 +213,57 @@ def _build_distribution_dataframes(
             df.insert(0, "Time", times)
             result[f"{label}_{sp_name}"] = df
 
+    result.update(_build_java_distribution_dataframes(outputs, config, times))
+    return result
+
+
+def _build_java_distribution_dataframes(
+    outputs: list[StepOutput], config: EngineConfig, times: NDArray[np.float64]
+) -> dict[str, pd.DataFrame]:
+    """The Java-rule families (osmose/engine/output_distrib.py), one wide frame per species.
+
+    Columns are the class lower bounds as Java writes them (class 0 -> "0"). biomassByTL is the
+    window mean (DistribOutput); meanSizeByAge and meanTLBySize are the ratio of the window's
+    numerator and denominator (WeightedDistribOutput), NaN where nothing was weighted.
+    """
+    from osmose.engine.output_distrib import class_labels
+
+    result: dict[str, pd.DataFrame] = {}
+    plans = [
+        ("biomassByTL", "biomass_by_tl", None, getattr(config, "output_tl_thresholds", None)),
+        (
+            "meanSizeByAge",
+            "meansize_byage_num",
+            "meansize_byage_den",
+            getattr(config, "output_age_thresholds", None),
+        ),
+        (
+            "meanTLBySize",
+            "meantl_bysize_num",
+            "meantl_bysize_den",
+            getattr(config, "output_size_thresholds", None),
+        ),
+    ]
+    for label, num_attr, den_attr, thresholds in plans:
+        if thresholds is None or not any(getattr(o, num_attr) is not None for o in outputs):
+            continue
+        cols = class_labels(thresholds)
+        n_cls = len(cols)
+        for sp_idx, sp_name in enumerate(config.species_names[: config.n_species]):
+            data = np.full((len(outputs), n_cls), np.nan if den_attr else 0.0)
+            for t_idx, o in enumerate(outputs):
+                num = getattr(o, num_attr)
+                if num is None or sp_idx not in num:
+                    continue
+                if den_attr is None:
+                    data[t_idx] = num[sp_idx]
+                else:
+                    den = getattr(o, den_attr)[sp_idx]
+                    with np.errstate(invalid="ignore", divide="ignore"):
+                        data[t_idx] = np.where(den != 0, num[sp_idx] / den, np.nan)
+            df = pd.DataFrame(data, columns=cols)  # type: ignore[arg-type]
+            df.insert(0, "Time", times)
+            result[f"{label}_{sp_name}"] = df
     return result
 
 

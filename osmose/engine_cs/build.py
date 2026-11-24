@@ -818,6 +818,11 @@ def _output(b: Bundle, config: Any, n_total: int) -> None:
         b.set_array("output.size_edges", size_edges(config))
     if families & FAMILY_DIET:
         b.set_int("output.diet_columns", diet_columns(config))
+    for bit, name, attr in _JAVA_DISTRIB_TABLES:
+        if families & bit:
+            b.set_array(
+                name, np.asarray(getattr(config, attr), dtype=np.float32).astype(np.float64)
+            )
 
 
 N_STAGES = 3  # Eggs, Juvenil, Adult
@@ -834,6 +839,18 @@ FAMILY_YIELD_N = 64
 FAMILY_MEAN_SIZE = 128
 FAMILY_SSB = 256
 FAMILY_DIET = 512  # diet_by_species; predator pressure is derived from it
+# Java-rule distributions (osmose/engine/output_distrib.py, 2026-11-24)
+FAMILY_BIOMASS_BY_TL = 1024
+FAMILY_MEANSIZE_BY_AGE = 2048
+FAMILY_MEANTL_BY_SIZE = 4096
+
+
+#: Each Java-rule family's threshold table (float32 values as float64), as the C# reader expects.
+_JAVA_DISTRIB_TABLES = (
+    (FAMILY_BIOMASS_BY_TL, "output.tl_thresholds", "output_tl_thresholds"),
+    (FAMILY_MEANSIZE_BY_AGE, "output.age_thresholds", "output_age_thresholds"),
+    (FAMILY_MEANTL_BY_SIZE, "output.java_size_thresholds", "output_size_thresholds"),
+)
 
 
 def output_families(config: Any) -> int:
@@ -853,6 +870,9 @@ def output_families(config: Any) -> int:
         (FAMILY_MEAN_SIZE, config.output_mean_size or config.output_mean_size_netcdf),
         (FAMILY_SSB, config.output_ssb or config.output_ssb_netcdf),
         (FAMILY_DIET, config.diet_output_enabled),
+        (FAMILY_BIOMASS_BY_TL, getattr(config, "output_biomass_bytl", False)),
+        (FAMILY_MEANSIZE_BY_AGE, getattr(config, "output_meansize_byage", False)),
+        (FAMILY_MEANTL_BY_SIZE, getattr(config, "output_meantl_bysize", False)),
     ]
     return sum(bit for bit, flag in on if flag)
 
@@ -921,6 +941,22 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
     ):
         if families & bit:
             shapes[name] = (nf,)
+    for bit, names, attr in (
+        (FAMILY_BIOMASS_BY_TL, ("biomass_by_tl",), "output_tl_thresholds"),
+        (
+            FAMILY_MEANSIZE_BY_AGE,
+            ("meansize_byage_num", "meansize_byage_den"),
+            "output_age_thresholds",
+        ),
+        (
+            FAMILY_MEANTL_BY_SIZE,
+            ("meantl_bysize_num", "meantl_bysize_den"),
+            "output_size_thresholds",
+        ),
+    ):
+        if families & bit:
+            for name in names:
+                shapes[name] = (nf, len(getattr(config, attr)) + 1)
     if families & FAMILY_DIET:
         # Predator rows: every species, background ones included (they eat).
         shapes["diet_by_species"] = (nf + config.n_background, diet_columns(config))
