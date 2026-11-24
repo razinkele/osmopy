@@ -17,6 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from osmose.engine.config import EngineConfig
+from osmose.engine.fisheries import fishing_map
 from osmose.engine.grid import Grid
 from osmose.engine.processes.feeding_stage import compute_feeding_stages
 from osmose.engine.processes.fishing import fishing_mortality  # noqa: F401 — used by tests
@@ -315,6 +316,7 @@ def _apply_fishing_for_school(
 
     # Spatial fishing distribution: multiply rate by cell-specific factor
     sp_map = config.fishing_spatial_maps[sp] if sp < len(config.fishing_spatial_maps) else None
+    sp_map = fishing_map(config, sp_map)
     if sp_map is not None:
         cy = int(state.cell_y[idx])
         cx = int(state.cell_x[idx])
@@ -833,7 +835,7 @@ def _per_fishery_effective(work_state, config, n_subdt, step, fleet_state=None):
         step,
         config.n_dt_per_year,
         n_subdt,
-        _lookup_spatial_factors,
+        lambda m, cy, cx, mask: _lookup_spatial_factors(fishing_map(config, m), cy, cx, mask),
     )
     if config.mpa_zones is not None:
         year = step // config.n_dt_per_year
@@ -962,7 +964,7 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
                 continue
             mask = sp == sp_id
             spatial_factor[mask] = _lookup_spatial_factors(
-                sp_map, work_state.cell_y, work_state.cell_x, mask
+                fishing_map(config, sp_map), work_state.cell_y, work_state.cell_x, mask
             )
 
         mpa_factor = np.ones(n, dtype=np.float64)

@@ -1,6 +1,6 @@
 # Per-fishery fishing (Java parity) — design
 
-Date: 2026-11-24. Status: APPROVED 2026-11-24 (staging: PR-2a Python path + C# refuses, PR-2b C# port; G5 normalisation fixed in its own PR after, with Baltic certification re-run). Context: the Baltic run lists 28 Java-only keys
+Date: 2026-11-24. Status: APPROVED 2026-11-24; G5 IMPLEMENTED 2026-11-24 (no-op on shipped configs, no certification re-run needed) (staging: PR-2a Python path + C# refuses, PR-2b C# port; G5 normalisation fixed in its own PR after, with Baltic certification re-run). Context: the Baltic run lists 28 Java-only keys
 (#123 follow-up, PR #382). Owner order: per-fishery maps first, then outputs + prefix, then a
 separate staged-diet output. This spec covers the first item.
 
@@ -23,9 +23,11 @@ per-species arrays in `config._parse_fisheries`:
 | G6 duplicate maps | n/a | twin files merged (no behavioural effect) |
 
 Shipped configs (`baltic`, `baltic_ev`, `baltic-fine`, `eec_full`): exactly one fishery per species,
-q = 1, every map of a species identical, no map schedules → G1–G4 do not bite. **G5 does:** the
-Baltic map (0/1 mask) has mean 0.9935 over ocean, so Java fishes fished cells 0.65% harder than
-Python; EEC's all-ones map has mean 1.000 (no effect).
+q = 1, every map of a species identical, no map schedules → G1–G4 do not bite. **G5 does not
+either (corrected 2026-11-24):** Java's mean is over VALID cells only (`isValueOk`: value > 0, not
+NaN, not land), so zero cells are excluded and the Baltic 0/1 mask and EEC's all-ones map both
+have mean exactly 1 — normalisation is a no-op for every shipped config. (An earlier draft said
+"+0.65% on Baltic"; that mean wrongly counted the zero cells.)
 
 ## 2. Design
 

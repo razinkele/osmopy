@@ -1960,6 +1960,10 @@ def simulate(
         movement_rngs = [rng] * config.n_species
     if mortality_rngs is None:
         mortality_rngs = [rng] * config.n_species
+    # Fishing maps are normalised on this grid's ocean, as Java does (fisheries.fishing_map).
+    from osmose.engine.fisheries import attach_ocean_mask
+
+    attach_ocean_mask(config, grid)
 
     # Per-simulation context — replaces module-level globals for thread safety
     ctx = SimulationContext(config_dir=config.raw_config.get("_osmose.config.dir", ""))

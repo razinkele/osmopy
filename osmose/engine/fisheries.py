@@ -316,3 +316,59 @@ def per_fishery_rates(
     with np.errstate(invalid="ignore", divide="ignore"):
         frac = np.where(total > 0, disc / total, 0.0)
     return total, frac
+
+
+def normalize_fishing_map(
+    m: NDArray[np.float64] | None, ocean: NDArray[np.bool_]
+) -> NDArray[np.float64] | None:
+    """Java ``FisheryMapSet.normalize_map``: rescale so the mean over valid ocean cells is 1.
+
+    Valid = not land and ``value > 0`` and not NaN (``isValueOk``): zero cells are EXCLUDED from
+    the mean, so a 0/1 mask has mean 1 and is unchanged (every shipped config). Only valid cells
+    are rescaled; zeros, negatives and NaN keep their meaning (no fishing). A map whose shape
+    does not match the grid, or with no valid cell, is returned unchanged. Java accumulates in
+    float32; this uses float64 (same result for the shipped maps, whose mean is exactly 1).
+    """
+    if m is None:
+        return None
+    arr = np.asarray(m, dtype=np.float64)
+    if arr.shape != ocean.shape:
+        return arr
+    valid = ocean & np.isfinite(arr) & (arr > 0)
+    if not valid.any():
+        return arr
+    k = float(arr[valid].mean())
+    if k == 0.0 or not np.isfinite(k) or k == 1.0:
+        return arr  # nothing to do (k == 1 keeps the array bit-identical)
+    out = arr.copy()
+    out[valid] = arr[valid] / k
+    return out
+
+
+def fishing_map(config, m: NDArray[np.float64] | None) -> NDArray[np.float64] | None:
+    """The map the engine fishes with: ``m`` normalised on ``config.fishing_ocean_mask``.
+
+    Always computed from the RAW map (cached per map object), so repeated runs on one config
+    never drift. Without an ocean mask (a config used before any grid was attached) the raw map
+    is returned. The C# bundle build normalises the same raw maps from the grid, so both engines
+    fish with identical arrays.
+    """
+    ocean = getattr(config, "fishing_ocean_mask", None)
+    if m is None or ocean is None:
+        return m
+    cache = config.__dict__.setdefault("_fishing_map_cache", {})
+    key = (id(m), id(ocean))
+    hit = cache.get(key)
+    if hit is not None and hit[0] is m and hit[1] is ocean:
+        return hit[2]
+    out = normalize_fishing_map(m, np.asarray(ocean, dtype=bool))
+    cache[key] = (m, ocean, out)
+    return out
+
+
+def attach_ocean_mask(config, grid) -> None:
+    """Record the grid's ocean mask on ``config`` for :func:`fishing_map` (idempotent)."""
+    ocean = getattr(grid, "ocean_mask", None)
+    if ocean is not None and getattr(config, "fishing_ocean_mask", None) is not ocean:
+        config.fishing_ocean_mask = ocean
+        config.__dict__.pop("_fishing_map_cache", None)

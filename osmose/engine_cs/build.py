@@ -289,10 +289,14 @@ def _fishing(b: Bundle, config: Any, grid: Any, n_total: int) -> None:
     maps += [None] * (n_focal - len(maps))
     index = np.full(n_focal, -1, dtype=np.int32)
     stack = []
+    from osmose.engine.fisheries import normalize_fishing_map
+
+    ocean = np.asarray(grid.ocean_mask, dtype=bool)
     for sp, m in enumerate(maps):
         if m is None:
             continue
-        arr = np.asarray(m, dtype=np.float64)
+        # normalised from the RAW map on the grid's ocean, as the Python engine's fishing_map
+        arr = np.asarray(normalize_fishing_map(m, ocean), dtype=np.float64)
         if arr.shape != (grid.ny, grid.nx):
             raise BundleBuildError(
                 f"fishing.maps: species {sp} map shape {arr.shape}, grid {(grid.ny, grid.nx)}"
@@ -322,7 +326,7 @@ def _fishery_tables(
     OFF and the C# engine needs no third case. Present only for configs the per-species arrays
     cannot represent; every other bundle is unchanged.
     """
-    from osmose.engine.fisheries import OFF
+    from osmose.engine.fisheries import OFF, normalize_fishing_map
 
     fm = getattr(config, "fishery_model", None)
     if fm is None:
@@ -360,7 +364,9 @@ def _fishery_tables(
         if m is None:
             index[index == k] = OFF  # a map without a file fishes nothing
             continue
-        arr = np.asarray(m, dtype=np.float64)
+        arr = np.asarray(
+            normalize_fishing_map(m, np.asarray(grid.ocean_mask, dtype=bool)), dtype=np.float64
+        )
         if arr.shape != (grid.ny, grid.nx):
             raise BundleBuildError(
                 f"fishing.fishery.maps: map {k} shape {arr.shape}, grid {(grid.ny, grid.nx)}"
