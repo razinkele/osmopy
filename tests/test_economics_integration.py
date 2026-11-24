@@ -64,7 +64,7 @@ class TestEconomicsIntegration:
         cfg_dict["evolution.trait.imax.envvar.sp0"] = "0.05"
         cfg_dict["evolution.trait.imax.nlocus.sp0"] = "5"
         cfg_dict["evolution.trait.imax.nval.sp0"] = "20"
-        cfg_dict["evolution.trait.imax.target"] = "ingestion_rate"
+        cfg_dict["evolution.trait.imax.target"] = "bioen_i_max"
 
         cfg = EngineConfig.from_dict(cfg_dict)
         grid = Grid.from_dimensions(ny=3, nx=3)
