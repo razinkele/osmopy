@@ -319,6 +319,27 @@ _ALWAYS_INERT_PATTERNS = (
     re.compile(r"^(grid|ltl)\.java\.classname$"),
     re.compile(r"^simulation\.ncpu$"),
 )
+# Outputs this engine ALWAYS writes (osmose/engine/output.py write_outputs): Java's switch set to
+# true asks for exactly what is produced anyway.
+_ALWAYS_WRITTEN_OUTPUTS = frozenset(
+    {
+        "output.biomass.enabled",
+        "output.abundance.enabled",
+        "output.yield.biomass.enabled",
+        "output.mortality.enabled",
+    }
+)
+# Java 4.3.1+ has a single grid class, NcGrid (grid.java.classname deprecated, Releases.java):
+# with grid.netcdf.file set, the regular-grid corner/mask keys are read by neither engine.
+_LEGACY_GRID_KEYS = frozenset(
+    {
+        "grid.upleft.lat",
+        "grid.upleft.lon",
+        "grid.lowright.lat",
+        "grid.lowright.lon",
+        "grid.mask.file",
+    }
+)
 _PERIOD_RX = re.compile(r"^fisheries\.(period\.number|period\.start|rate\.byperiod)\.fsh(\d+)$")
 
 
@@ -333,6 +354,9 @@ def _inert_java_only_key(key: str, cfg: dict) -> bool:
     """True when ignoring this Java-only key gives the SAME result as Java honouring it.
 
     - a switch that is off (``*.enabled`` = false): ignoring a disabled feature changes nothing;
+    - a value that already matches this engine: always-written outputs set true, predator
+      pressure with diet output on, ``output.start.year`` = 0, ``output.dir.path``;
+    - the regular-grid corner/mask keys when ``grid.netcdf.file`` is set (dead in Java 4.3.1+);
     - labels / Java class names / ``simulation.ncpu``;
     - ``simulation.nsimulation`` = 1 (a single replicate is what this engine runs);
     - a fishery whose period triple is the identity -- one period, starting at 0, multiplier 1 --
@@ -341,6 +365,18 @@ def _inert_java_only_key(key: str, cfg: dict) -> bool:
     val = str(cfg.get(key, "")).strip().lower()
     if key.endswith(".enabled") and val in _OFF_VALUES:
         return True
+    # The value already matches what this engine does.
+    if key in _ALWAYS_WRITTEN_OUTPUTS and val == "true":
+        return True
+    if key == "output.diet.pressure.enabled" and val == "true":
+        # predatorPressure is written alongside dietMatrix whenever diet output is on
+        return str(cfg.get("output.diet.composition.enabled", "")).strip().lower() == "true"
+    if key == "output.start.year":
+        return _num(val) == 0  # this engine records from year 0
+    if key == "output.dir.path":
+        return True  # the run's output directory is the caller's (UI/CLI/API) argument
+    if key in _LEGACY_GRID_KEYS:
+        return bool(str(cfg.get("grid.netcdf.file", "")).strip())
     if any(rx.match(key) for rx in _ALWAYS_INERT_PATTERNS):
         return True
     if key == "simulation.nsimulation":
