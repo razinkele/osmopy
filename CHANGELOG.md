@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.14.0] - 2026-11-24
+
+### Features
+
+- **csharp:** per-fishery fishing in the C# engine (bundle contract 3) (a5da813)
+- **fishing:** per-fishery fishing path (Java's model) for configs per-species arrays can't represent (f20a64e)
+
+### Bug Fixes
+
+- **#123:** don't list Java-only keys whose value already matches, or dead grid keys (ad593f6)
+
+### Other
+
+- Merge pull request #383 from razinkele/feat/per-fishery-csharp (1efb8df)
+- Merge remote-tracking branch 'origin/master' into feat/per-fishery-csharp (224aa00)
+- Merge pull request #382 from razinkele/fix/inert-matching-and-grid (ad8a91f)
+
+### Tests
+
+- per_fishery_fishing joins the implemented C# features (b8da08b)
+- Baltic lists 19 Java-only keys once the fishery-map keys are read (33afa5d)
+
 ## [1.13.1] - 2026-11-24
 
 ### Bug Fixes
