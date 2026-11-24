@@ -1,6 +1,6 @@
 {
   "_doc": "The C# engine's feature catalogue: the ONE source both sides read. Python (osmose/engine_cs/capabilities.py) detects which features a config needs; the C# engine embeds this file and refuses a bundle that needs a feature not marked implemented. Ids are stable: never renumber, only append. status: planned (phase 1-4), refused (spec Q4: Python parses but ignores; the C# engine refuses), not_planned (stays on the Python engine). Flip 'implemented' only in the PR that makes the feature run end to end.",
-  "contract_versions": [2],
+  "contract_versions": [2, 3],
   "features": [
     {"id": 0, "name": "core", "phase": 1, "status": "planned", "implemented": true, "description": "the Phase 1 engine: step loop, VB growth, interleaved mortality (type I), stage accessibility, size-based feeding stages, LTL forcing, constant larva mortality, lagged starvation, fishing by rate (age knife-edge or no selectivity, seasonality, maps, discards), reproduction, map and random movement including out-of-domain schools (null maps, uncovered ages or steps, failed placement) and mortality.out.rate, cutoff age, minimal outputs"},
     {"id": 1, "name": "full_outputs", "phase": 2, "status": "planned", "implemented": true, "description": "any output beyond output.minimal.enabled = true (life-stage, by-age and by-size, SSB, mean TL and size, yield in numbers, diet)"},
@@ -48,6 +48,6 @@
     {"id": 43, "name": "movement_gradient", "phase": 3, "status": "planned", "implemented": false, "description": "movement.distribution.method = gradient (OSMOSE 4.4.x): moves drawn from a probability map near the school"},
     {"id": 44, "name": "semelparous", "phase": 3, "status": "planned", "implemented": false, "description": "species.reproduction.strategy = semelparous (OSMOSE 4.4.x): death after spawning, cause SPAWNING"},
     {"id": 45, "name": "output_regions", "phase": 3, "status": "planned", "implemented": false, "description": "output.regions (OSMOSE 4.4.x): every output also written over the schools of each region"},
-    {"id": 46, "name": "per_fishery_fishing", "phase": 3, "status": "planned", "implemented": false, "description": "per-fishery fishing (several fisheries per species, catchability other than 1, per-fishery or scheduled fishing maps): runs on the Python engine; C# port planned (spec 2026-11-24)"}
+    {"id": 46, "name": "per_fishery_fishing", "phase": 3, "status": "planned", "implemented": true, "description": "per-fishery fishing (several fisheries per species, catchability other than 1, per-fishery or scheduled fishing maps): bundle group fishing.fishery (contract 3), per-fishery sum in StepPreparation.Rates (spec 2026-11-24)"}
   ]
 }

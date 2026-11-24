@@ -140,7 +140,50 @@ public static class StepPreparation
             s.RateAdditional = Finite(Exempt(add[(t * nTotal) + sp], exempt) / denom);
 
             double fishing = 0.0, discard = 0.0;
-            if (f.Enabled)
+            if (f.Enabled && f.Fishery is { } fm)
+            {
+                // The per-fishery path: osmose.engine.fisheries.per_fishery_rates, term for term and
+                // in the same floating-point order, then _per_fishery_effective's exempt/finite.
+                double total = 0.0, disc = 0.0;
+                if (sp < nFocal)
+                {
+                    int cell = life[i].CellId;
+                    int cy = cell >= 0 ? cell / nx : -1, cx = cell >= 0 ? cell % nx : -1;
+                    int ts = Math.Min(t, fm.NSteps - 1);
+                    for (int k = 0; k < fm.Count; k++)
+                    {
+                        double q = fm.Catchability[(sp * fm.Count) + k];
+                        if (!(q > 0) || fm.Rate[k] <= 0)
+                        {
+                            continue;
+                        }
+
+                        int mi = fm.MapIndex[(k * fm.NSteps) + ts];
+                        if (mi == FisheryParameters.Off)
+                        {
+                            continue;
+                        }
+
+                        double sel = FisherySelectivity(fm, k, c, ndt);
+                        double spatial = 1.0;
+                        if (mi != FisheryParameters.NoMap)
+                        {
+                            double v = (cy >= 0 && cy < ny && cx >= 0 && cx < nx) ? fm.Maps[(((mi * ny) + cy) * nx) + cx] : 0.0;
+                            spatial = double.IsNaN(v) || v <= 0 ? 0.0 : v;
+                        }
+
+                        double b = q * fm.Rate[k] * sel * spatial;
+                        double term = fm.Season is { } se ? b * se[(k * ndt) + (t % ndt)] / nsub : b / denom;
+                        total += term;
+                        disc += term * fm.Discard[(sp * fm.Count) + k];
+                    }
+                }
+
+                double frac = total > 0 ? disc / total : 0.0;
+                fishing = Finite(Exempt(total, exempt));
+                discard = fishing > 0 ? frac : 0.0;
+            }
+            else if (f.Enabled)
             {
                 double rate = f.RateByStep[(t * nTotal) + sp];
                 double sel = 1.0, spatial = 1.0;
@@ -170,6 +213,23 @@ public static class StepPreparation
             s.RateFishing = fishing;
             s.DiscardFraction = discard;
         }
+    }
+
+    private static double FisherySelectivity(FisheryParameters fm, int k, in SchoolCore c, int ndt)
+    {
+        int type = fm.SelectivityType[k];
+        if (type == 0)
+        {
+            return (c.AgeDt / (double)ndt) < fm.SelectivityA50[k] ? 0.0 : 1.0;
+        }
+
+        if (type == 1)
+        {
+            throw new NotSupportedException("logistic selectivity is the selectivity_logistic feature (phase 3)");
+        }
+
+        double l50 = fm.SelectivityL50[k];
+        return l50 > 0 && c.Length < l50 ? 0.0 : 1.0;
     }
 
     private static double Selectivity(FishingParameters f, int sp, in SchoolCore c, int ndt)

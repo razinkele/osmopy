@@ -84,8 +84,14 @@ def _focal(c: Any, values: Any) -> np.ndarray:
 
 
 def _selectivity(c: Any) -> tuple[np.ndarray, np.ndarray]:
-    # Python applies selectivity in a focal-only loop (_precompute_effective_rates).
-    return _focal(c, c.fishing_selectivity_type), _focal(c, c.fishing_selectivity_l50)
+    # Python applies selectivity in a focal-only loop (_precompute_effective_rates); on the
+    # per-fishery path each fishery's selectivity applies too, so its types count as well.
+    types, l50 = _focal(c, c.fishing_selectivity_type), _focal(c, c.fishing_selectivity_l50)
+    fm = getattr(c, "fishery_model", None)
+    if fm is not None and hasattr(fm, "sel_type"):
+        types = np.concatenate([types, np.asarray(fm.sel_type)])
+        l50 = np.concatenate([l50, np.asarray(fm.sel_l50, dtype=np.float64)])
+    return types, l50
 
 
 def _detect_raw(fn_path: str):
@@ -116,8 +122,8 @@ DETECTORS: dict[str, Any] = {
     "incoming_flux": _detect_raw("osmose.engine.incoming_flux.incoming_flux_in_use"),
     "mpa": lambda c, raw: bool(c.mpa_zones),
     # Configs the per-species fishing arrays cannot represent (several fisheries per species,
-    # catchability other than 1, per-fishery or scheduled maps): the C# engine fishes per
-    # species only, so it refuses them until the per-fishery port (spec 2026-11-24, PR-2b).
+    # catchability other than 1, per-fishery or scheduled maps): the bundle's fishing.fishery
+    # tables (contract 3) and StepPreparation.Rates' per-fishery sum (spec 2026-11-24).
     "per_fishery_fishing": lambda c, raw: getattr(c, "fishery_model", None) is not None,
     "fishing_rate_by_year": lambda c, raw: _any_set(c.fishing_rate_by_year),
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),

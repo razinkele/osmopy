@@ -166,16 +166,18 @@ def _write_per_fishery_demo(tmp_path: Path) -> dict[str, str]:
     return cfg
 
 
-def test_a_non_reducible_config_gets_a_model_and_is_refused_by_csharp(tmp_path):
-    from osmose.engine_cs.capabilities import csharp_engine_block_reason
+def test_a_non_reducible_config_gets_a_model_and_runs_on_csharp(tmp_path):
+    """The C# engine implements the per-fishery path (feature 46, bundle contract 3), so it no
+    longer refuses such configs; its byte-for-byte equality is tests/test_csharp_per_fishery.py."""
+    from osmose.engine_cs.capabilities import csharp_engine_block_reason, required_features
 
     cfg = _write_per_fishery_demo(tmp_path)
     ec = EngineConfig.from_dict(cfg)
     assert isinstance(ec.fishery_model, FisheryModel)
-    assert "per_fishery_fishing" in (csharp_engine_block_reason(cfg) or "")
-    assert csharp_engine_block_reason(_load("eec_full")) is None or (
-        "per_fishery_fishing" not in csharp_engine_block_reason(_load("eec_full"))
-    )
+    assert "per_fishery_fishing" in required_features(ec, cfg)
+    assert csharp_engine_block_reason(cfg) is None
+    shipped = _load("eec_full")
+    assert "per_fishery_fishing" not in required_features(EngineConfig.from_dict(shipped), shipped)
 
 
 def test_schedule_keys_build_the_map_index(tmp_path):
