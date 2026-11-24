@@ -395,6 +395,7 @@ def _apply_foraging_for_school(
         and config.foraging_k2_for is not None
         and config.foraging_I_max is not None
         and state.imax_trait is not None
+        and bool(np.isfinite(state.imax_trait[idx]))
     )
     if genetic:
         # Narrow Optional fields to concrete arrays for the type-checker; the
@@ -981,22 +982,28 @@ def _precompute_foraging_rates(work_state, config, n_subdt) -> NDArray[np.float6
         and config.foraging_I_max is not None
         and work_state.imax_trait is not None
     )
+    k_for = (
+        config.bioen_k_for[sp_f]
+        if config.bioen_k_for is not None
+        else np.zeros(n, dtype=np.float64)
+    )
+    rate = foraging_rate(k_for=k_for, ndt_per_year=config.n_dt_per_year)
     if genetic:
-        rate = foraging_rate(
-            k_for=None,
-            ndt_per_year=config.n_dt_per_year,
-            k1_for=config.foraging_k1_for[sp_f],  # type: ignore[index] - guarded by `if genetic:`
-            k2_for=config.foraging_k2_for[sp_f],  # type: ignore[index] - guarded by `if genetic:`
-            imax_trait=work_state.imax_trait,
-            I_max=config.foraging_I_max[sp_f],  # type: ignore[index] - guarded by `if genetic:`
-        )
-    else:
-        k_for = (
-            config.bioen_k_for[sp_f]
-            if config.bioen_k_for is not None
-            else np.zeros(n, dtype=np.float64)
-        )
-        rate = foraging_rate(k_for=k_for, ndt_per_year=config.n_dt_per_year)
+        # Java applies the genetic form to schools carrying an imax trait; a school without one
+        # (background, NaN) keeps the constant rate above.
+        trait = np.asarray(work_state.imax_trait, dtype=np.float64)
+        has = np.isfinite(trait)
+        if has.any():
+            g = foraging_rate(
+                k_for=None,
+                ndt_per_year=config.n_dt_per_year,
+                k1_for=config.foraging_k1_for[sp_f][has],  # type: ignore[index] - `genetic`
+                k2_for=config.foraging_k2_for[sp_f][has],  # type: ignore[index] - `genetic`
+                imax_trait=trait[has],
+                I_max=config.foraging_I_max[sp_f][has],  # type: ignore[index] - `genetic`
+            )
+            rate = rate.copy()
+            rate[has] = g
 
     eff_foraging = rate / n_subdt
     _zero_exempt(eff_foraging, work_state)
@@ -2590,8 +2597,13 @@ def mortality(
     species_rngs: list[np.random.Generator] | None = None,
     parallel: bool = True,
     ctx: SimulationContext | None = None,
+    imax_school: NDArray[np.float64] | None = None,
 ) -> SchoolState:
     """Apply all mortality sources with per-cell per-school interleaved ordering.
+
+    ``imax_school``: the evolving ``imax`` trait per school (NaN where a school has none, e.g.
+    background schools), or None without genetics. It sets the bioen ingestion cap and genetic
+    foraging mortality, as Java's ``School.getTrait("imax")`` does.
 
     Matches Java's MortalityProcess.computeMortality() structure:
     1. Pre-pass: larva mortality on eggs
@@ -2647,6 +2659,12 @@ def mortality(
     # Compute feeding stages for predation
     feeding_stage = compute_feeding_stages(work_state, config)
     work_state = work_state.replace(feeding_stage=feeding_stage)
+    if imax_school is not None:
+        if len(imax_school) != len(work_state):
+            raise ValueError(
+                f"imax_school has {len(imax_school)} values for {len(work_state)} schools"
+            )
+        work_state = work_state.replace(imax_trait=np.asarray(imax_school, dtype=np.float64))
 
     # Precompute accessibility info
     if config.stage_accessibility is not None:
@@ -2770,6 +2788,7 @@ def mortality(
             config.n_species,
             config.n_dt_per_year,
             n_subdt,
+            imax_school=work_state.imax_trait,
         )
         raw_preyed = np.zeros(len(work_state), dtype=np.float64)
 

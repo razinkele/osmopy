@@ -88,58 +88,10 @@ class TestBioenGeneticsIntegration:
         outputs = simulate(cfg, grid, rng)
         assert len(outputs) == 12
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "KNOWN GAP, owner: C3 Stage-1 Task 5 (Ev-OSMOSE). The allometric ingestion cap "
-            "moved out of _bioen_step and into the mortality loop (spec decision 14 / Java "
-            "BioenPredationMortality), so _bioen_step no longer reads "
-            "trait_overrides['bioen_i_max'] at all. mortality() cannot read it either, because "
-            "simulate.py expresses traits AFTER mortality (express_traits at :1818 vs "
-            "_mortality at :1749). Java DOES honour the per-school trait "
-            "(getMaxPredationRate: existsTrait('imax')), so this is a real parity gap; closing "
-            "it needs BOTH the phenotypes available before mortality (a step-order change) AND "
-            "new wiring to populate state.imax_trait from the expressed phenotypes -- "
-            "reordering alone would not fix it, since state.imax_trait is assigned nowhere in "
-            "the codebase today (confirmed by a full-repo grep, ruling R26). Both are in "
-            "Ev-OSMOSE's territory. The other three evolving traits (r, m0, m1) still reach "
-            "compute_energy_budget and are covered by the tests below. strict=True so this "
-            "flips loudly the moment the plumbing is restored."
-        ),
-    )
-    def test_trait_overrides_affect_growth(self):
-        """_bioen_step must apply per-school trait overrides when genetics is active."""
-        from osmose.engine.simulate import _bioen_step
-        from osmose.engine.state import SchoolState
-
-        cfg = EngineConfig.from_dict(_bioen_genetics_config())
-
-        # Create 2 schools with large preyed_biomass so ingestion cap matters
-        state = SchoolState.create(n_schools=2, species_id=np.array([0, 0], dtype=np.int32))
-        state = state.replace(
-            weight=np.array([10.0, 10.0]),
-            biomass=np.array([1e6, 1e6]),
-            length=np.array([15.0, 15.0]),
-            abundance=np.array([1e6, 1e6]),
-            preyed_biomass=np.array([500.0, 500.0]),  # very large → cap will differ
-            e_net_avg=np.array([0.0, 0.0]),
-            cell_y=np.array([0, 0], dtype=np.int32),
-            cell_x=np.array([0, 0], dtype=np.int32),
-            age_dt=np.array([36, 36], dtype=np.int32),
-            first_feeding_age_dt=np.array([1, 1], dtype=np.int32),
-        )
-
-        # School 0: high imax (cap = 100×), school 1: very low imax (cap ≈ 0)
-        out_hi = _bioen_step(
-            state, cfg, None, step=0, trait_overrides={"bioen_i_max": np.array([10.0, 0.0001])}
-        )
-        out_lo = _bioen_step(
-            state, cfg, None, step=0, trait_overrides={"bioen_i_max": np.array([0.0001, 10.0])}
-        )
-
-        # School 0 should do better under hi, school 1 should do better under lo
-        assert out_hi.weight[0] > out_lo.weight[0]
-        assert out_hi.weight[1] < out_lo.weight[1]
+    # The evolving imax acts in MORTALITY (bioen ingestion cap + genetic foraging), as Java's
+    # getMaxPredationRate / ForagingMortality do -- not in _bioen_step's energy budget, which
+    # Java never feeds imax either. A former strict xfail asserted it here (the wrong layer);
+    # the behaviour is now tested where it lives: tests/test_genetics_imax_wiring.py.
 
 
 class TestBioenReproductionOverride:

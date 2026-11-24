@@ -2042,16 +2042,45 @@ def detect_fishing_scenario(config: dict[str, str], species_idx: int) -> str | N
     return None
 
 
-def _validate_trait_declarations(cfg: dict[str, str], n_sp: int) -> None:
-    """Each declared `evolution.trait.<name>.target` must have a per-species
-    mean for every species where variance is nonzero."""
+# Trait targets the engine actually reads, and where: an evolving trait whose target is not
+# here would be inherited and reported but change nothing (a silent no-op), so it is an error.
+#   bioen_i_max     -> mortality: bioen ingestion cap + genetic foraging (Java "imax")
+#   bioen_r/m0/m1   -> bioen energy budget / maturation (Java "r", "m0", "m1")
+GENETIC_TRAIT_TARGETS: frozenset[str] = frozenset(
+    {"bioen_i_max", "bioen_r", "bioen_m0", "bioen_m1"}
+)
+
+
+def _validate_trait_declarations(cfg: dict[str, str], n_sp: int, bioen_enabled: bool) -> None:
+    """Validate `evolution.trait.<name>.*` declarations.
+
+    - the target must be one the engine reads (GENETIC_TRAIT_TARGETS), else ValueError;
+    - each species with nonzero variance needs a mean;
+    - every target acts through bioenergetics, so declared traits with bioen off warn.
+    """
     import re
+    import warnings
 
     trait_names: set[str] = set()
     for key in cfg:
         m = re.match(r"evolution\.trait\.(\w+)\.target", key)
         if m:
             trait_names.add(m.group(1))
+    for name in sorted(trait_names):
+        target = cfg[f"evolution.trait.{name}.target"].strip()
+        if target not in GENETIC_TRAIT_TARGETS:
+            raise ValueError(
+                f"evolution.trait.{name}.target = {target!r} is not a trait the engine reads; "
+                f"it would evolve without effect. Supported: {sorted(GENETIC_TRAIT_TARGETS)}"
+            )
+    if trait_names and not bioen_enabled:
+        warnings.warn(
+            f"Genetics declares evolving trait(s) {sorted(trait_names)}, but every supported "
+            "target acts through bioenergetics and module.bioenergetics.enabled is off: the "
+            "genotypes will be inherited and reported, but will not affect the simulation.",
+            UserWarning,
+            stacklevel=3,
+        )
     for name in trait_names:
         for i in range(n_sp):
             var_key = f"evolution.trait.{name}.var.sp{i}"
@@ -3098,7 +3127,7 @@ class EngineConfig:
         genetics_n_neutral_val = int(cfg.get("evolution.neutral.nval", "50"))
 
         if genetics_enabled:
-            _validate_trait_declarations(cfg, n_sp)
+            _validate_trait_declarations(cfg, n_sp, _bioen_enabled)
 
         # DSVM fleet economics
         # #121: read the real upstream 4.4.0 name (module.bioeconomics.enabled) first; the

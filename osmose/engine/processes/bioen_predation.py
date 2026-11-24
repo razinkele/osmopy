@@ -42,8 +42,15 @@ def per_fish_ingestion_cap(
     n_species: int,
     n_dt_per_year: int,
     n_subdt: int,
+    imax_school: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Java ``getMaxPredationRate`` x ``(w*1e6)^beta / subdt``, per FISH, in tonnes.
+
+    ``imax_school`` (optional, one value per school, NaN = none) is the evolving ``imax``
+    trait: a focal school that carries it uses it in place of its species' ``Imax``, as Java's
+    ``getMaxPredationRate`` does (``School.existsTrait("imax") ? getTrait("imax") : rate[sp]``,
+    ``BioenPredationMortality.java:213``); the larval term and the per-step division still apply.
+    Background schools are not ``School``s in Java and always take the species value.
 
     ``max_eatable`` for a school is ``cap[p] * instantaneous_abundance[p]``: Java
     multiplies by ``getInstantaneousAbundance()`` at every predator visit
@@ -64,6 +71,9 @@ def per_fish_ingestion_cap(
     sp_f = np.where(is_focal, sp, 0)
     b = np.where(is_focal, beta[sp_f], 0.8)
     imax = i_max_all[sp]
+    if imax_school is not None:
+        trait = np.asarray(imax_school, dtype=np.float64)
+        imax = np.where(is_focal & np.isfinite(trait), trait, imax)
     larval = is_focal & (np.asarray(age_dt) < larvae_thres_dt[sp_f])
     i_focal = np.where(larval, imax + (theta[sp_f] - 1.0) * c_rate[sp_f], imax) / n_dt_per_year
     i_eff = np.where(is_focal, i_focal, imax)

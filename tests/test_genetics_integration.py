@@ -34,7 +34,7 @@ def _genetics_config() -> dict[str, str]:
         "evolution.trait.imax.envvar.sp0": "0.05",
         "evolution.trait.imax.nlocus.sp0": "5",
         "evolution.trait.imax.nval.sp0": "20",
-        "evolution.trait.imax.target": "ingestion_rate",
+        "evolution.trait.imax.target": "bioen_i_max",
     }
 
 
