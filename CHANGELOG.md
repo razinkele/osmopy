@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.13.1] - 2026-11-24
+
+### Bug Fixes
+
+- **#123:** warn only on Java-only keys that can matter; honour cutoff.enabled; reject stage.structure=size (3e369aa)
+
+### Other
+
+- Merge pull request #380 from razinkele/fix/issue-123-signal (94a076c)
+
 ## [1.13.0] - 2026-11-24
 
 ### Bug Fixes
