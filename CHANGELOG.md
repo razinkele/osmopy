@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.13.0] - 2026-11-24
+
+### Bug Fixes
+
+- **genetics:** pass imax_school to _mortality only when a trait evolves it (65d44af)
+- **genetics:** evolving imax acts in mortality; validate trait targets; warn without bioen (fd21e7b)
+- **validator:** find resources by species.type at any index (Benguela sp300+) (45b9465)
+
+### Other
+
+- Merge pull request #378 from razinkele/fix/genetics-imax-and-validation (d4a1684)
+- Merge pull request #377 from razinkele/fix/validator-typed-resources (718fa31)
+
+### Styling
+
+- ruff format (7b43089)
+
+### Tests
+
+- economics+genetics fixture used the unread target 'ingestion_rate' (7972b17)
+- **fie:** re-diagnose the FIE xfail -- imax now acts (A/B 2.20x vs 1.0000 pre-fix); remaining gap is selection strength (fdb2cbf)
+
 ## [1.12.0] - 2026-11-22
 
 ### Bug Fixes
