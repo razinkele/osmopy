@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.14.1] - 2026-11-24
+
+### Bug Fixes
+
+- **types:** fishing_map's Optional return at the two lookups that never pass None (6c92dc5)
+- **fishing:** normalise fishing maps as Java does (G5), in both engines (45f1ae8)
+
+### Other
+
+- Merge pull request #385 from razinkele/fix/fishing-map-normalisation (0707d60)
+
 ## [1.14.0] - 2026-11-24
 
 ### Features
