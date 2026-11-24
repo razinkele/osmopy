@@ -2285,6 +2285,10 @@ class EngineConfig:
 
     # Spatial fishing distribution maps: one 2D grid per species, or None
     fishing_spatial_maps: list  # list[NDArray[np.float64] | None]
+    # Per-fishery fishing (osmose.engine.fisheries.FisheryModel) for v4 fisheries configs that
+    # the per-species arrays cannot represent exactly; None = the per-species path (all shipped
+    # configs). Spec docs/superpowers/specs/2026-11-24-per-fishery-fishing-design.md.
+    fishery_model: Any = field(default=None, kw_only=True)
 
     # Egg weight override: if species.egg.weight.sp{i} is set, use it instead of allometry
     egg_weight_override: NDArray[np.float64] | None  # shape (n_species,) or None
@@ -2680,7 +2684,18 @@ class EngineConfig:
                 focal_fishing_l50_fsh,
                 focal_fishing_slope,
             ) = _parse_fisheries(cfg, _focal_names, n_sp)
+            from osmose.engine.fisheries import build_fishery_model
+
+            fishery_model = build_fishery_model(
+                cfg,
+                _focal_names,
+                n_dt,
+                n_yr * n_dt,
+                require_file=lambda value, key: _require_file(value, _cfg_dir(cfg), key),
+                load_spatial_csv=_load_spatial_csv,
+            )
         else:
+            fishery_model = None
             # Legacy per-species rate
             fishing = _species_float_optional(
                 cfg, "mortality.fishing.rate.sp{i}", n_sp, default=0.0
@@ -2860,6 +2875,12 @@ class EngineConfig:
         # Phase 2 fishing features
         fishing_seasonality = _load_fishing_seasonality(cfg, n_sp, n_dt, focal_species_names)
         fishing_rate_by_year = _load_fishing_rate_by_year(cfg, n_sp)
+        if fishery_model is not None and fishing_rate_by_year is not None:
+            raise ValueError(
+                "mortality.fishing.rate.byyear.file.sp* (a per-species rate) cannot be combined with "
+                "per-fishery fishing (several fisheries per species, catchability other than 1, or "
+                "per-fishery/scheduled maps); give the fisheries' rates instead"
+            )
         # F1 spec §2b: a by-year series shorter than the run would silently fall
         # back to the base rate mid-run (fishing.py / mortality.py guard on
         # `year < len(arr)`). Fail at load instead. Longer-than-run is fine
@@ -3256,6 +3277,7 @@ class EngineConfig:
             maturity_age_dt=maturity_age_dt,
             lmax=lmax,
             fishing_spatial_maps=fishing_spatial_maps,
+            fishery_model=fishery_model,
             seeding_biomass=seeding_biomass,
             seeding_max_step=seeding_max_step,
             seeding_mode=_parse_seeding_mode(cfg),

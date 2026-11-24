@@ -47,6 +47,7 @@
     {"id": 42, "name": "mortality_rate_factor", "phase": 3, "status": "planned", "implemented": false, "description": "multiplier and seasonality of the constant additional and larval mortality rates (OSMOSE 4.4.x)"},
     {"id": 43, "name": "movement_gradient", "phase": 3, "status": "planned", "implemented": false, "description": "movement.distribution.method = gradient (OSMOSE 4.4.x): moves drawn from a probability map near the school"},
     {"id": 44, "name": "semelparous", "phase": 3, "status": "planned", "implemented": false, "description": "species.reproduction.strategy = semelparous (OSMOSE 4.4.x): death after spawning, cause SPAWNING"},
-    {"id": 45, "name": "output_regions", "phase": 3, "status": "planned", "implemented": false, "description": "output.regions (OSMOSE 4.4.x): every output also written over the schools of each region"}
+    {"id": 45, "name": "output_regions", "phase": 3, "status": "planned", "implemented": false, "description": "output.regions (OSMOSE 4.4.x): every output also written over the schools of each region"},
+    {"id": 46, "name": "per_fishery_fishing", "phase": 3, "status": "planned", "implemented": false, "description": "per-fishery fishing (several fisheries per species, catchability other than 1, per-fishery or scheduled fishing maps): runs on the Python engine; C# port planned (spec 2026-11-24)"}
   ]
 }

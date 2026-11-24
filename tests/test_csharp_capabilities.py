@@ -373,6 +373,8 @@ def _recipes(c: EngineConfig) -> dict:
         "carbon_output": (R(c, output_carbon=True), {}),
         "bioenergetics": (R(c, bioen_enabled=True), {}),
         "genetics": (R(c, genetics_enabled=True), {}),
+        # any non-None FisheryModel takes the per-fishery path (osmose/engine/fisheries.py)
+        "per_fishery_fishing": (R(c, fishery_model=object()), {}),
         "economics": (R(c, economics_enabled=True), {}),
         "java_compat_rng": (R(c, java_compat_rng=True), {}),
         "kill_if_no_school": (R(c, kill_if_no_school=True), {}),

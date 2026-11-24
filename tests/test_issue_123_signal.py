@@ -59,7 +59,7 @@ def test_identity_fishing_periods_are_inert_real_seasonality_is_not():
 def test_benguela_lists_only_the_keys_that_can_matter():
     cfg = OsmoseConfigReader().read(ROOT / "data/benguela/benguela_all-parameters.csv")
     listed = cv.warn_unread_java_only_keys(cfg)
-    assert len(cv.java_only_keys_set(cfg)) > 70  # the raw set is still complete
+    assert len(cv.java_only_keys_set(cfg)) > 60  # the raw set is still complete
     assert listed == [
         "output.biomass.enabled",
         "output.file.prefix",

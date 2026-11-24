@@ -115,6 +115,10 @@ DETECTORS: dict[str, Any] = {
     # demo ships so), and a config must not be refused for a feature it does not use.
     "incoming_flux": _detect_raw("osmose.engine.incoming_flux.incoming_flux_in_use"),
     "mpa": lambda c, raw: bool(c.mpa_zones),
+    # Configs the per-species fishing arrays cannot represent (several fisheries per species,
+    # catchability other than 1, per-fishery or scheduled maps): the C# engine fishes per
+    # species only, so it refuses them until the per-fishery port (spec 2026-11-24, PR-2b).
+    "per_fishery_fishing": lambda c, raw: getattr(c, "fishery_model", None) is not None,
     "fishing_rate_by_year": lambda c, raw: _any_set(c.fishing_rate_by_year),
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),
     "larva_rate_by_step": lambda c, raw: _any_set(c.larva_mortality_by_dt),

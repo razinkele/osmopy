@@ -32,6 +32,10 @@ from osmose.engine.config_validation import (
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
+        "fisheries.movement.steps.map{idx}",
+        "fisheries.movement.years.map{idx}",
+        "fisheries.movement.initialyear.map{idx}",
+        "fisheries.movement.lastyear.map{idx}",
         "economic.fleet.fuel.cost.fsh{idx}",
         "economic.fleet.gear.fsh{idx}",
         "economic.fleet.homeport.x.fsh{idx}",
