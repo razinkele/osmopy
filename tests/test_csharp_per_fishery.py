@@ -44,7 +44,8 @@ def _overrides(workdir: Path) -> dict[str, str]:
     q.loc[sp0, other] = 0.5  # G1 + G2
     (workdir / "q.csv").write_text(q.to_csv())
     base = pd.read_csv(cfg_dir / raw["fisheries.movement.file.map0"], sep=";", header=None)
-    grad = base.astype(float) * np.linspace(0.2, 1.8, base.shape[1])[None, :]  # G3
+    # G3, and mean ~2 over ocean so Java's normalisation (G5) genuinely rescales it
+    grad = base.astype(float) * np.linspace(0.5, 3.5, base.shape[1])[None, :]
     grad.to_csv(workdir / "grad.csv", sep=";", header=False, index=False)
     # G4 on a fishery that is NOT the one carrying the 0.5 term, so that term is live at STEP
     gap = next(
@@ -59,7 +60,13 @@ def _overrides(workdir: Path) -> dict[str, str]:
     )
     return {
         "fisheries.catchability.file": str(workdir / "q.csv"),
-        "fisheries.movement.file.map0": str(workdir / "grad.csv"),
+        # the gradient on EVERY fishery map: on map0 alone it sat on a fishery that catches
+        # nothing (the dogfish one), so it reached no rate and the G3/G5 checks were vacuous
+        **{
+            k.replace("fishery.map", "file.map"): str(workdir / "grad.csv")
+            for k in raw
+            if k.startswith("fisheries.movement.fishery.map")
+        },
         f"fisheries.movement.steps.map{gap}": "0;1;2;3;4;5",  # G4: off on steps 6-23
         "_test.gap_map": str(gap),
         "_test.q_species": str(sp0),
@@ -140,3 +147,73 @@ def test_the_half_catchability_term_is_live_at_the_captured_step(probe):
     with_term = _precompute_effective_rates(st, config, config.mortality_subdt, STEP)[2]
     without = _precompute_effective_rates(st, c2, config.mortality_subdt, STEP)[2]
     assert not np.array_equal(with_term, without)
+
+
+def test_normalisation_genuinely_changes_the_python_rates(probe):
+    """Guards the byte test for G5: the rates with normalised maps must differ from the rates
+    with raw maps, or a C# build skipping normalisation would still pass (it once did twice:
+    a 0.2-1.8 ramp with mean 1, then a ramp on a fishery that catches nothing)."""
+    import copy
+
+    config, _, st, _ = probe
+    raw_cfg = copy.copy(config)
+    raw_cfg.fishing_ocean_mask = None  # fishing_map then returns the raw maps
+    raw_cfg.__dict__.pop("_fishing_map_cache", None)
+    norm = _precompute_effective_rates(st, config, config.mortality_subdt, STEP)[2]
+    raw = _precompute_effective_rates(st, raw_cfg, config.mortality_subdt, STEP)[2]
+    assert not np.array_equal(norm, raw)
+
+
+def _gradient_only(workdir: Path) -> dict[str, str]:
+    """Only the gradient maps: catchability untouched, every map the same file -> the config
+    stays species-reducible, so this exercises the PER-SPECIES path with a map normalisation
+    genuinely rescales (shipped maps all have mean 1 and cannot)."""
+    over = _overrides(workdir)
+    return {k: v for k, v in over.items() if k.startswith("fisheries.movement.file.map")}
+
+
+@pytest.fixture(scope="module")
+def probe_species(tmp_path_factory):
+    ok, why = csharp_engine_available()
+    if not ok:
+        if os.environ.get("OSMOSE_REQUIRE_CSHARP") == "1":
+            pytest.fail(f"OSMOSE_REQUIRE_CSHARP=1 but the C# engine is unavailable: {why}")
+        pytest.skip(f"C# engine unavailable ({why})")
+    d = tmp_path_factory.mktemp("per_species_gradient")
+    config, grid, raw, st, _ = capture_state("eec_full", STEP, d, _gradient_only(d))
+    build_bundle(config, raw, grid, seed=11).save(d / "model.bin")
+    write_state(st, d / "state.bin")
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); from osmose.engine_cs import bridge; "
+        "bridge.load().Diagnostics.PrepProbe.Run(sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5])"
+    )
+    args = [
+        sys.executable,
+        "-c",
+        code,
+        str(ROOT),
+        str(d / "model.bin"),
+        str(d / "state.bin"),
+        str(STEP),
+        str(d / "prep.bin"),
+    ]
+    proc = subprocess.run(args, capture_output=True, text=True, timeout=300, cwd=ROOT)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    return config, st, Bundle.load(d / "prep.bin")
+
+
+def test_per_species_path_normalised_maps_equal_python_byte_for_byte(probe_species):
+    import copy
+
+    config, st, prep = probe_species
+    assert config.fishery_model is None  # the per-species path
+    want = _precompute_effective_rates(st, config, config.mortality_subdt, STEP)[2]
+    assert (
+        np.asarray(prep.get("prep.eff_fishing")).tobytes()
+        == np.asarray(want, dtype=np.float64).tobytes()
+    )
+    raw_cfg = copy.copy(config)
+    raw_cfg.fishing_ocean_mask = None
+    raw_cfg.__dict__.pop("_fishing_map_cache", None)
+    raw = _precompute_effective_rates(st, raw_cfg, config.mortality_subdt, STEP)[2]
+    assert not np.array_equal(want, raw)  # normalisation is live: not vacuous

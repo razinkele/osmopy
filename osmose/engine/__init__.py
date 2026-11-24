@@ -90,6 +90,9 @@ class PythonEngine:
         )  # #123: warn on Java-only keys inert on the Python engine
         engine_config = EngineConfig.from_dict(config)
         grid = self._resolve_grid(config)
+        from osmose.engine.fisheries import attach_ocean_mask
+
+        attach_ocean_mask(engine_config, grid)  # fishing maps normalised on this grid (Java)
 
         rng = np.random.default_rng(seed)
         movement_rngs = build_rng(seed, engine_config.n_species, engine_config.movement_seed_fixed)

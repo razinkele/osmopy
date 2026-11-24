@@ -2289,6 +2289,9 @@ class EngineConfig:
     # the per-species arrays cannot represent exactly; None = the per-species path (all shipped
     # configs). Spec docs/superpowers/specs/2026-11-24-per-fishery-fishing-design.md.
     fishery_model: Any = field(default=None, kw_only=True)
+    # The grid's ocean mask, attached by simulate()/PythonEngine._prepare_run: fishing maps are
+    # normalised on it as Java does (osmose.engine.fisheries.fishing_map). None = raw maps.
+    fishing_ocean_mask: Any = field(default=None, kw_only=True)
 
     # Egg weight override: if species.egg.weight.sp{i} is set, use it instead of allometry
     egg_weight_override: NDArray[np.float64] | None  # shape (n_species,) or None
