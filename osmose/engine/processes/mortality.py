@@ -277,6 +277,9 @@ def _apply_fishing_for_school(
         return
     if not config.fishing_enabled:
         return
+    if getattr(config, "fishery_model", None) is not None:
+        _apply_per_fishery_for_school(idx, state, config, n_subdt, inst_abd, step, fleet_state)
+        return
     sp = state.species_id[idx]
     f_rate = config.fishing_rate[sp]
 
@@ -365,6 +368,24 @@ def _apply_fishing_for_school(
         state.n_dead[idx, _DISCARDS] += n_dead * discard_r
     else:
         state.n_dead[idx, _FISHING] += n_dead
+    _consume(state, idx, n_dead, inst_abd, config.bioen_enabled)
+
+
+def _apply_per_fishery_for_school(idx, state, config, n_subdt, inst_abd, step, fleet_state):
+    """Per-cell oracle counterpart of the per-fishery branch: the same helper, read at ``idx``.
+
+    Computes every school's rate to read one (O(n) per call); the per-cell path runs only when
+    Numba is absent, and per-fishery configs are small, so simplicity wins over speed here.
+    """
+    eff, frac = _per_fishery_effective(state, config, n_subdt, step, fleet_state)
+    F = float(eff[idx])
+    abd = inst_abd[idx]
+    if F <= 0 or abd <= 0:
+        return
+    n_dead = abd * (1.0 - np.exp(-F))
+    discard_r = float(frac[idx])
+    state.n_dead[idx, _FISHING] += n_dead * (1.0 - discard_r)
+    state.n_dead[idx, _DISCARDS] += n_dead * discard_r
     _consume(state, idx, n_dead, inst_abd, config.bioen_enabled)
 
 
@@ -793,6 +814,47 @@ def _fleet_effort_factor(sp_id, cell_y, cell_x, fleet_state) -> float:
     return 0.0
 
 
+def _per_fishery_effective(work_state, config, n_subdt, step, fleet_state=None):
+    """(eff_fishing, discard fraction) per school on the per-fishery path (config.fishery_model).
+
+    The sum over fisheries (osmose.engine.fisheries.per_fishery_rates), then the same MPA, fleet,
+    exemption and finite-value steps as the per-species branch of _precompute_effective_rates.
+    """
+    from osmose.engine.fisheries import per_fishery_rates
+
+    n = len(work_state)
+    eff, frac = per_fishery_rates(
+        config.fishery_model,
+        work_state.species_id,
+        work_state.age_dt,
+        work_state.length,
+        work_state.cell_y,
+        work_state.cell_x,
+        step,
+        config.n_dt_per_year,
+        n_subdt,
+        _lookup_spatial_factors,
+    )
+    if config.mpa_zones is not None:
+        year = step // config.n_dt_per_year
+        cy, cx = work_state.cell_y, work_state.cell_x
+        for mpa in config.mpa_zones:
+            if not (mpa.start_year <= year < mpa.end_year):
+                continue
+            valid = (cy >= 0) & (cy < mpa.grid.shape[0]) & (cx >= 0) & (cx < mpa.grid.shape[1])
+            in_mpa = np.zeros(n, dtype=np.bool_)
+            in_mpa[valid] = mpa.grid[cy[valid], cx[valid]] > 0
+            eff = eff * np.where(in_mpa, 1.0 - mpa.percentage, 1.0)
+    _zero_exempt(eff, work_state)
+    np.nan_to_num(eff, copy=False, nan=0.0, posinf=0.0, neginf=0.0)
+    if fleet_state is not None:
+        for i in range(n):
+            eff[i] *= _fleet_effort_factor(
+                work_state.species_id[i], work_state.cell_y[i], work_state.cell_x[i], fleet_state
+            )
+    return eff, np.where(eff > 0, frac, 0.0)
+
+
 def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=None):
     """Pre-compute per-school effective mortality rates for the Numba path.
 
@@ -853,7 +915,11 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
     eff_fishing = np.zeros(n, dtype=np.float64)
     fishing_discard = np.zeros(n, dtype=np.float64)
 
-    if config.fishing_enabled:
+    if config.fishing_enabled and getattr(config, "fishery_model", None) is not None:
+        eff_fishing, fishing_discard = _per_fishery_effective(
+            work_state, config, n_subdt, step, fleet_state
+        )
+    elif config.fishing_enabled:
         f_rates = config.fishing_rate[sp].copy()
 
         if config.fishing_rate_by_year is not None:

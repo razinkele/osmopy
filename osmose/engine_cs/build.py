@@ -28,7 +28,7 @@ from osmose.engine_cs.philox import SCHEME as RNG_SCHEME
 
 # 2: nine mortality causes in every result buffer (OSMOSE 4.4.x SPAWNING); a binary built for
 # 1 must refuse these bundles rather than fail on a buffer shape.
-CONTRACT_VERSION = 2
+CONTRACT_VERSION = 3
 
 #: ``predation.stage.metric`` codes.
 STAGE_METRICS = {"size": 0, "age": 1, "weight": 2, "tl": 3}
@@ -309,6 +309,72 @@ def _fishing(b: Bundle, config: Any, grid: Any, n_total: int) -> None:
             "fishing.discard_rate",
             _f8("fishing.discard_rate", config.fishing_discard_rate, (n_total,)),
         )
+    _fishery_tables(b, config, grid, n_steps, ndt, n_focal)
+
+
+def _fishery_tables(
+    b: Bundle, config: Any, grid: Any, n_steps: int, ndt: int, n_focal: int
+) -> None:
+    """The per-fishery path (``config.fishery_model``, osmose/engine/fisheries.py), when present.
+
+    ``fishing.fishery.map_index[f, t]``: a map, OFF (-1, no fishing that step) or NO_MAP (-2, the
+    fishery defines no map: factor 1). A map without a file fishes nothing, so it is written as
+    OFF and the C# engine needs no third case. Present only for configs the per-species arrays
+    cannot represent; every other bundle is unchanged.
+    """
+    from osmose.engine.fisheries import OFF
+
+    fm = getattr(config, "fishery_model", None)
+    if fm is None:
+        return
+    n_f = fm.n_fisheries
+    b.set_int("fishing.fishery.count", n_f)
+    b.set_array("fishing.fishery.rate", _f8("fishing.fishery.rate", fm.rate, (n_f,)))
+    b.set_array(
+        "fishing.fishery.selectivity.type",
+        _i4("fishing.fishery.selectivity.type", fm.sel_type, (n_f,)),
+    )
+    for name, arr in (("a50", fm.sel_a50), ("l50", fm.sel_l50), ("slope", fm.sel_slope)):
+        b.set_array(
+            f"fishing.fishery.selectivity.{name}",
+            _f8(f"fishing.fishery.selectivity.{name}", arr, (n_f,)),
+        )
+    b.set_array(
+        "fishing.fishery.catchability",
+        _f8("fishing.fishery.catchability", fm.catchability, (n_focal, n_f)),
+    )
+    b.set_array(
+        "fishing.fishery.discard", _f8("fishing.fishery.discard", fm.discard, (n_focal, n_f))
+    )
+    if fm.season is not None:
+        b.set_array("fishing.fishery.season", _f8("fishing.fishery.season", fm.season, (n_f, ndt)))
+    index = np.asarray(fm.map_index, dtype=np.int32)
+    if index.shape != (n_f, n_steps):
+        raise BundleBuildError(
+            f"fishing.fishery.map_index: shape {index.shape}, want {(n_f, n_steps)}"
+        )
+    index = index.copy()
+    stack: list[np.ndarray] = []
+    remap: dict[int, int] = {}
+    for k, m in enumerate(fm.maps):
+        if m is None:
+            index[index == k] = OFF  # a map without a file fishes nothing
+            continue
+        arr = np.asarray(m, dtype=np.float64)
+        if arr.shape != (grid.ny, grid.nx):
+            raise BundleBuildError(
+                f"fishing.fishery.maps: map {k} shape {arr.shape}, grid {(grid.ny, grid.nx)}"
+            )
+        remap[k] = len(stack)
+        stack.append(arr)
+    out = index.copy()
+    for k, j in remap.items():
+        out[index == k] = j
+    b.set_array("fishing.fishery.map_index", np.ascontiguousarray(out))
+    b.set_array(
+        "fishing.fishery.maps",
+        np.ascontiguousarray(np.stack(stack)) if stack else np.zeros((0, grid.ny, grid.nx)),
+    )
 
 
 def _reproduction(b: Bundle, config: Any, n_total: int) -> None:

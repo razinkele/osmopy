@@ -139,6 +139,51 @@ public sealed class FishingParameters
 
     /// <summary>Null when the config sets no discard rate.</summary>
     public double[]? DiscardRate { get; init; }
+
+    /// <summary>The per-fishery path (Java's model), or null: the per-species tables above then
+    /// apply. Present only for configs the per-species tables cannot represent
+    /// (osmose/engine/fisheries.py).</summary>
+    public FisheryParameters? Fishery { get; init; }
+}
+
+/// <summary>Per-fishery fishing (bundle group <c>fishing.fishery</c>, contract version 3).</summary>
+public sealed class FisheryParameters
+{
+    /// <summary><c>MapIndex</c> value: no map covers this step, the fishery does not fish.</summary>
+    public const int Off = -1;
+
+    /// <summary><c>MapIndex</c> value: the fishery defines no map, spatial factor 1.</summary>
+    public const int NoMap = -2;
+
+    public int Count { get; init; }
+
+    public double[] Rate { get; init; } = [];
+
+    public int[] SelectivityType { get; init; } = [];
+
+    public double[] SelectivityA50 { get; init; } = [];
+
+    public double[] SelectivityL50 { get; init; } = [];
+
+    public double[] SelectivitySlope { get; init; } = [];
+
+    /// <summary><c>[species * Count + fishery]</c>, focal species.</summary>
+    public double[] Catchability { get; init; } = [];
+
+    /// <summary><c>[species * Count + fishery]</c>, focal species.</summary>
+    public double[] Discard { get; init; } = [];
+
+    /// <summary><c>[fishery * ndt + step_in_year]</c>, or null (no seasonality: the term's
+    /// denominator is <c>ndt * n_subdt</c>).</summary>
+    public double[]? Season { get; init; }
+
+    /// <summary><c>[fishery * NSteps + step]</c>: a map, <see cref="Off"/> or <see cref="NoMap"/>.</summary>
+    public int[] MapIndex { get; init; } = [];
+
+    public int NSteps { get; init; }
+
+    /// <summary><c>[(map * ny + y) * nx + x]</c>.</summary>
+    public double[] Maps { get; init; } = [];
 }
 
 /// <summary>LTL resources, non-depletable (bundle group <c>resources</c>).</summary>
@@ -491,7 +536,31 @@ internal static class ModelReader
         MapIndex = I4(r, "fishing.map_index", nFocal),
         Maps = r.Array("fishing.maps", DType.F8, BundleReader.Any, ny, nx)?.ToArray<double>() ?? [],
         DiscardRate = config.TryGet("fishing.discard_rate", out _) ? F8(r, "fishing.discard_rate", nTotal) : null,
+        Fishery = config.TryGet("fishing.fishery.count", out _) ? Fishery(r, config, nSteps, nFocal, ny, nx) : null,
     };
+
+    private static FisheryParameters Fishery(BundleReader r, SimulationConfig config, int nSteps, int nFocal, int ny, int nx)
+    {
+        int n = (int)r.Int("fishing.fishery.count");
+        int ndt = (int)r.Int("time.n_dt_per_year");
+        return new FisheryParameters
+        {
+            Count = n,
+            Rate = F8(r, "fishing.fishery.rate", n),
+            SelectivityType = I4(r, "fishing.fishery.selectivity.type", n),
+            SelectivityA50 = F8(r, "fishing.fishery.selectivity.a50", n),
+            SelectivityL50 = F8(r, "fishing.fishery.selectivity.l50", n),
+            SelectivitySlope = F8(r, "fishing.fishery.selectivity.slope", n),
+            Catchability = r.Array("fishing.fishery.catchability", DType.F8, nFocal, n)?.ToArray<double>() ?? [],
+            Discard = r.Array("fishing.fishery.discard", DType.F8, nFocal, n)?.ToArray<double>() ?? [],
+            Season = config.TryGet("fishing.fishery.season", out _)
+                ? r.Array("fishing.fishery.season", DType.F8, n, ndt)?.ToArray<double>()
+                : null,
+            MapIndex = r.Array("fishing.fishery.map_index", DType.I4, n, nSteps)?.ToArray<int>() ?? [],
+            NSteps = nSteps,
+            Maps = r.Array("fishing.fishery.maps", DType.F8, BundleReader.Any, ny, nx)?.ToArray<double>() ?? [],
+        };
+    }
 
     public static ResourceParameters Resources(BundleReader r, int nSteps, int nCells, bool oxygen, bool depletable)
     {

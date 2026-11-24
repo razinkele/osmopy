@@ -47,6 +47,13 @@ _SUGGESTION_CUTOFF = 0.85
 # allowlist, so build_known_keys() and all unknown-key validation are unchanged.
 _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
+        # per-fishery maps and their schedule (osmose/engine/fisheries.py, 2026-11-24)
+        "fisheries.movement.fishery.map{idx}",
+        "fisheries.name.fsh{idx}",  # matched by fisheries.movement.fishery.map{idx}
+        "fisheries.movement.steps.map{idx}",
+        "fisheries.movement.years.map{idx}",
+        "fisheries.movement.initialyear.map{idx}",
+        "fisheries.movement.lastyear.map{idx}",
         "output.cutoff.enabled",  # #123: honoured since 2026-11-24 (Java semantics)
         "predation.accessibility.stage.structure",  # #123: "age" honoured, "size" raises
         "evolution.trait.{name}.envvar.sp{idx}",
@@ -186,8 +193,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
     [
         "economic.output.stage",
         "fisheries.check.enabled",
-        "fisheries.movement.fishery.map{idx}",
-        "fisheries.name.fsh{idx}",
         "fisheries.period.number.fsh{idx}",
         "fisheries.period.start.fsh{idx}",
         "fisheries.rate.byperiod.fsh{idx}",

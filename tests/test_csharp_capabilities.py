@@ -67,12 +67,12 @@ def test_the_implemented_features_are_exactly_these():
     # lmax_cap and movement_none in the follow-up to task 2.2 (the code was in the Phase 1 core;
     # what they waited for was a test of a whole step and of a whole run), depensation_gate in
     # task 3.6 (that gate only: the ceiling and thermal gates of the same task are not ported),
-    # depletable_ltl in task 3.1.
+    # depletable_ltl in task 3.1, per_fishery_fishing with its port (spec 2026-11-24, PR-2b).
     implemented = {f.name for f in cap.load_catalog().values() if f.implemented}
     assert implemented == {
         "core", "oxygen_benthos", "stock_recruitment", "rv_gate", "seeding_linear",
         "salinity_gate", "background_species", "full_outputs", "lmax_cap", "movement_none",
-        "depensation_gate", "depletable_ltl",
+        "depensation_gate", "depletable_ltl", "per_fishery_fishing",
     }  # fmt: skip
 
 
@@ -373,6 +373,8 @@ def _recipes(c: EngineConfig) -> dict:
         "carbon_output": (R(c, output_carbon=True), {}),
         "bioenergetics": (R(c, bioen_enabled=True), {}),
         "genetics": (R(c, genetics_enabled=True), {}),
+        # any non-None FisheryModel takes the per-fishery path (osmose/engine/fisheries.py)
+        "per_fishery_fishing": (R(c, fishery_model=object()), {}),
         "economics": (R(c, economics_enabled=True), {}),
         "java_compat_rng": (R(c, java_compat_rng=True), {}),
         "kill_if_no_school": (R(c, kill_if_no_school=True), {}),
