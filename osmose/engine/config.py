@@ -429,7 +429,32 @@ def _accessibility_path_or_none(cfg: dict[str, str]) -> Path | None:
     file_key = cfg.get("predation.accessibility.file", "")
     if not file_key:
         return None
+    _check_accessibility_stage_structure(cfg)
     return _require_file(file_key, _cfg_dir(cfg), "predation.accessibility.file")
+
+
+def _check_accessibility_stage_structure(cfg: dict[str, str]) -> None:
+    """The engine reads accessibility stage thresholds ("hake < 1") as AGES (accessibility.py).
+
+    Java's ``predation.accessibility.stage.structure`` picks "age" or "size"
+    (PredationMortality.init). "size" would make Java split stages by length, which this engine
+    cannot do: running it would silently treat lengths as ages and mis-assign juvenile and adult
+    predators, so it is an error (#123). Absent = age, as before.
+    """
+    if "predation.accessibility.stage.structure" not in cfg:
+        return
+    structure = _get(cfg, "predation.accessibility.stage.structure").strip().lower()
+    if structure == "age":
+        return
+    if structure == "size":
+        raise ValueError(
+            "predation.accessibility.stage.structure = size is not supported by this engine: it "
+            "reads the accessibility stage thresholds as ages, so size thresholds would be "
+            "silently misread. Use the Java engine, or re-express the thresholds as ages."
+        )
+    raise ValueError(
+        f"predation.accessibility.stage.structure must be 'age' or 'size' (Java), got {structure!r}"
+    )
 
 
 def _load_accessibility(cfg: dict[str, str], n_species: int) -> NDArray[np.float64] | None:
@@ -1202,6 +1227,11 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
             cutoff_vals.append(0.0)
     cutoff_vals.extend([0.0] * n_bkg)
     cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
+    # Java applies the cutoff ages only when output.cutoff.enabled is true
+    # (Configuration.initOutputParameters); an explicit false switches them off (#123). Absent
+    # keeps this engine's long-standing behaviour (ages apply), so existing results don't move.
+    if "output.cutoff.enabled" in cfg and not _enabled(cfg, "output.cutoff.enabled"):
+        cutoff_age = None
 
     flags = {
         "output_record_frequency": output_record_freq,

@@ -47,6 +47,8 @@ _SUGGESTION_CUTOFF = 0.85
 # allowlist, so build_known_keys() and all unknown-key validation are unchanged.
 _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
+        "output.cutoff.enabled",  # #123: honoured since 2026-11-24 (Java semantics)
+        "predation.accessibility.stage.structure",  # #123: "age" honoured, "size" raises
         "evolution.trait.{name}.envvar.sp{idx}",
         "evolution.trait.{name}.mean.sp{idx}",
         "evolution.trait.{name}.nlocus.sp{idx}",
@@ -210,7 +212,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.biomass.byweight.enabled",
         "output.biomass.enabled",
         "output.csv.separator",
-        "output.cutoff.enabled",
         "output.diet.composition.byage.enabled",
         "output.diet.composition.bysize.enabled",
         "output.diet.composition.netcdf.enabled",
@@ -257,7 +258,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.yield.biomass.bysize.enabled",
         "output.yield.biomass.enabled",
         "population.initialization.method.sp{idx}",
-        "predation.accessibility.stage.structure",
         "predation.accessibility.stage.threshold.sp{idx}",
         "simulation.ncpu",
         "simulation.nsimulation",
@@ -311,11 +311,64 @@ _MAX_NAMED_JAVA_ONLY_KEYS = (
 )
 
 
+_OFF_VALUES = frozenset({"false", "0", "no", "off", "none", "null", ""})
+# Java-only keys whose mere presence cannot make the engines differ: labels, Java class names,
+# and the thread count. Listing them only buries the keys that matter.
+_ALWAYS_INERT_PATTERNS = (
+    re.compile(r"^fisheries\.name\.fsh\d+$"),
+    re.compile(r"^(grid|ltl)\.java\.classname$"),
+    re.compile(r"^simulation\.ncpu$"),
+)
+_PERIOD_RX = re.compile(r"^fisheries\.(period\.number|period\.start|rate\.byperiod)\.fsh(\d+)$")
+
+
+def _num(v: str | None) -> float | None:
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _inert_java_only_key(key: str, cfg: dict) -> bool:
+    """True when ignoring this Java-only key gives the SAME result as Java honouring it.
+
+    - a switch that is off (``*.enabled`` = false): ignoring a disabled feature changes nothing;
+    - labels / Java class names / ``simulation.ncpu``;
+    - ``simulation.nsimulation`` = 1 (a single replicate is what this engine runs);
+    - a fishery whose period triple is the identity -- one period, starting at 0, multiplier 1 --
+      which is constant fishing, exactly what this engine applies.
+    """
+    val = str(cfg.get(key, "")).strip().lower()
+    if key.endswith(".enabled") and val in _OFF_VALUES:
+        return True
+    if any(rx.match(key) for rx in _ALWAYS_INERT_PATTERNS):
+        return True
+    if key == "simulation.nsimulation":
+        return _num(val) == 1
+    m = _PERIOD_RX.match(key)
+    if m:
+        # Names built from parts: this INSPECTS the Java-only period keys to decide they are
+        # inert; it does not make the engine honour them (test_read_clearance scans for reads).
+        def period(part: str, default: str) -> float | None:
+            return _num(cfg.get("fisheries." + part + ".fsh" + m.group(2), default))
+
+        return (
+            period("period" + ".number", "1") == 1
+            and period("period" + ".start", "0") == 0
+            and period("rate" + ".byperiod", "1") == 1
+        )
+    return False
+
+
 def warn_unread_java_only_keys(cfg: dict) -> list[str]:
-    """If `cfg` sets java-only keys, emit ONE deduped summary warning naming (up to
-    _MAX_NAMED_JAVA_ONLY_KEYS of) them. Returns the full key list (empty if none). Call only from
-    the Python-engine run seam."""
-    keys = java_only_keys_set(cfg)
+    """If `cfg` sets java-only keys that could change the result, emit ONE deduped summary warning
+    naming (up to _MAX_NAMED_JAVA_ONLY_KEYS of) them. Keys whose value is inert here (see
+    `_inert_java_only_key`) are not listed (#123: they buried the ones that matter). Returns the
+    listed keys (empty if none). Call only from the Python-engine run seam."""
+    from osmose.config.aliases import canonicalize_config
+
+    canonical, _ = canonicalize_config(cfg)
+    keys = [k for k in java_only_keys_set(cfg) if not _inert_java_only_key(k, canonical)]
     if not keys:
         return keys
     # Dedup on the FULL key set so two configs differing only in the un-listed tail warn distinctly.

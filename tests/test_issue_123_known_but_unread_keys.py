@@ -400,17 +400,17 @@ def _load_minimal_config() -> dict:
 
 def test_warn_emits_one_summary_naming_the_keys(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
-        keys = cv.warn_unread_java_only_keys({"simulation.ncpu": "8", "grid.java.classname": "X"})
-    assert keys == ["grid.java.classname", "simulation.ncpu"]
+        keys = cv.warn_unread_java_only_keys({"output.start.year": "60", "output.file.prefix": "x"})
+    assert keys == ["output.file.prefix", "output.start.year"]
     msgs = [r.getMessage() for r in caplog.records if "issue #123" in r.getMessage()]
     assert len(msgs) == 1
-    assert "grid.java.classname" in msgs[0] and "simulation.ncpu" in msgs[0]
+    assert "output.file.prefix" in msgs[0] and "output.start.year" in msgs[0]
 
 
 def test_warn_dedups_once_per_process(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
-        cv.warn_unread_java_only_keys({"simulation.ncpu": "8"})
-        cv.warn_unread_java_only_keys({"simulation.ncpu": "8"})
+        cv.warn_unread_java_only_keys({"output.start.year": "60"})
+        cv.warn_unread_java_only_keys({"output.start.year": "60"})
     assert sum("issue #123" in r.getMessage() for r in caplog.records) == 1
 
 

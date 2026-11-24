@@ -276,8 +276,10 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"ltl\..+", "phase1"),
     (
         (
-            r"predation\.(accessibility\.file|predprey\..+|ingestion\.rate\.max\..+"
-            r"|efficiency\.critical\..+|functional\.response\..+)"
+            # accessibility.stage.structure: "age" is what both engines do; EngineConfig raises on
+            # "size" before a bundle is built (#123), so the C# engine never sees it.
+            r"predation\.(accessibility\.file|accessibility\.stage\.structure|predprey\..+"
+            r"|ingestion\.rate\.max\..+|efficiency\.critical\..+|functional\.response\..+)"
         ),
         "phase1",
     ),
@@ -300,7 +302,11 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     ),
     (r"population\.seeding\.(biomass\..+|year\.max|mode)", "phase1"),
     (r"reproduction\.(season\.file\..+|normalisation\.enabled)", "phase1"),
-    (r"output\.(minimal\.enabled|cutoff\.age\..+|recordfrequency\.ndt|step0\.include)", "phase1"),
+    # cutoff.enabled: honoured in EngineConfig.output_cutoff_age, which the C# builder reads (#123)
+    (
+        r"output\.(minimal\.enabled|cutoff\.(age\..+|enabled)|recordfrequency\.ndt|step0\.include)",
+        "phase1",
+    ),
     # The output keys the Python engine reads: each is a family the C# engine collects since
     # task 2.6 (the life-stage split needs no key), the binning of one, or a NetCDF switch of
     # the shared writers. There is deliberately NO catch-all for output.*: with full_outputs
