@@ -382,13 +382,39 @@ def _mortality(
     step: int = 0,
     species_rngs: list[np.random.Generator] | None = None,
     ctx: SimulationContext | None = None,
+    imax_school: NDArray[np.float64] | None = None,
 ) -> SchoolState:
     """Apply all mortality sources with interleaved ordering."""
     from osmose.engine.processes.mortality import mortality
 
     return mortality(
-        state, resources, config, rng, grid, step=step, species_rngs=species_rngs, ctx=ctx
+        state,
+        resources,
+        config,
+        rng,
+        grid,
+        step=step,
+        species_rngs=species_rngs,
+        ctx=ctx,
+        imax_school=imax_school,
     )
+
+
+def _imax_phenotype(genetic_state, species_id: NDArray[np.int32]) -> NDArray[np.float64] | None:
+    """Per-school evolving Imax (trait targeting ``bioen_i_max``), or None if none evolves.
+
+    Expressed BEFORE mortality: the ingestion cap is applied inside the mortality loop, so a
+    phenotype expressed afterwards (as r/m0/m1 are, for the energy budget) could never act on
+    feeding -- the reason the Ev-OSMOSE imax trait was inert until 2026-11-24.
+    """
+    if genetic_state is None:
+        return None
+    from osmose.engine.genetics import express_traits
+
+    names = [n for n, t in genetic_state.registry.traits.items() if t.target_param == "bioen_i_max"]
+    if not names:
+        return None
+    return express_traits(genetic_state, species_id)[names[0]]
 
 
 def _growth(state: SchoolState, config: EngineConfig, rng: np.random.Generator) -> SchoolState:
@@ -2133,11 +2159,17 @@ def simulate(
                     _collect_outputs(subset(state, r.mask(state, 0)), config, step=-1, grid=grid)
                 )
 
+        # Evolving Imax for the focal schools (the genetic state is aligned with them here,
+        # before background injection); background schools get NaN = no trait.
+        imax_school = _imax_phenotype(ctx.genetic_state, state.species_id)
+
         # Inject background schools before mortality
         bkg_schools = background.get_schools(step)
         n_focal = len(state)
         if len(bkg_schools) > 0:
             state = state.append(bkg_schools)
+        if imax_school is not None and len(state) > n_focal:
+            imax_school = np.concatenate([imax_school, np.full(len(state) - n_focal, np.nan)])
 
         # -- DSVM fleet decision (before mortality) --
         if ctx.fleet_state is not None:
@@ -2187,7 +2219,15 @@ def simulate(
             )
 
         state = _mortality(
-            state, resources, config, rng, grid, step=step, species_rngs=mortality_rngs, ctx=ctx
+            state,
+            resources,
+            config,
+            rng,
+            grid,
+            step=step,
+            species_rngs=mortality_rngs,
+            ctx=ctx,
+            imax_school=imax_school,
         )
 
         # -- Aggregate diet immediately after mortality, before state mutations --
