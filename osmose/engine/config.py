@@ -1230,12 +1230,14 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
     from osmose.engine.output_distrib import java_thresholds
 
     # Only the bins an enabled family uses are parsed: a bad unused key stays harmless.
-    _bin_users = {"tl": "biomass.bytl", "age": "meansize.byage", "size": "meantl.bysize"}
+    bin_on = {
+        "tl": _enabled(cfg, "output.biomass.bytl.enabled"),
+        "age": _enabled(cfg, "output.meansize.byage.enabled"),
+        "size": _enabled(cfg, "output.meantl.bysize.enabled"),
+    }
     java_bins = {
-        kind: java_thresholds(cfg, kind)
-        if _enabled(cfg, f"output.{user}.enabled")
-        else np.zeros(0, dtype=np.float32)
-        for kind, user in _bin_users.items()
+        kind: java_thresholds(cfg, kind) if on else np.zeros(0, dtype=np.float32)
+        for kind, on in bin_on.items()
     }
     # Java applies the cutoff ages only when output.cutoff.enabled is true
     # (Configuration.initOutputParameters); an explicit false switches them off (#123). Absent
