@@ -61,14 +61,45 @@ def test_benguela_lists_only_the_keys_that_can_matter():
     listed = cv.warn_unread_java_only_keys(cfg)
     assert len(cv.java_only_keys_set(cfg)) > 60  # the raw set is still complete
     assert listed == [
-        "output.biomass.enabled",
         "output.file.prefix",
         "output.fisheries.enabled",
-        "output.start.year",
-        "output.yield.biomass.enabled",
+        "output.start.year",  # 60 on a 15-yr run: Java would write nothing
         "simulation.restart.recordfrequency.ndt",
         "simulation.restart.spinup.nyear",
     ]
+
+
+def test_values_matching_this_engine_are_not_listed():
+    cfg = {
+        "output.biomass.enabled": "true",  # always written here
+        "output.abundance.enabled": "true",
+        "output.yield.biomass.enabled": "true",
+        "output.mortality.enabled": "true",
+        "output.diet.composition.enabled": "true",
+        "output.diet.pressure.enabled": "true",  # written with diet output
+        "output.start.year": "0",
+        "output.dir.path": "output",
+    }
+    assert cv.warn_unread_java_only_keys(cfg) == []
+    assert cv.warn_unread_java_only_keys({"output.start.year": "5"}) == ["output.start.year"]
+    # predator pressure without diet output on is NOT produced -> listed
+    assert cv.warn_unread_java_only_keys({"output.diet.pressure.enabled": "true"}) == [
+        "output.diet.pressure.enabled"
+    ]
+
+
+def test_legacy_grid_keys_inert_only_with_a_netcdf_grid():
+    corners = {"grid.upleft.lat": "66", "grid.lowright.lon": "30", "grid.mask.file": "m.csv"}
+    assert cv.warn_unread_java_only_keys({**corners, "grid.netcdf.file": "g.nc"}) == []
+    assert cv.warn_unread_java_only_keys(corners) == sorted(corners)
+
+
+def test_baltic_lists_exactly_the_unimplemented_features():
+    cfg = OsmoseConfigReader().read(ROOT / "data/baltic/baltic_all-parameters.csv")
+    listed = cv.warn_unread_java_only_keys(cfg)
+    assert len(listed) == 28
+    assert not [k for k in listed if k.startswith("grid.")]
+    assert "output.biomass.enabled" not in listed
 
 
 def _cutoff(cfg_extra: dict[str, str]):
