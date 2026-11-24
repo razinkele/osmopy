@@ -93,6 +93,7 @@ class TestBioenGeneticsIntegration:
     # Java never feeds imax either. A former strict xfail asserted it here (the wrong layer);
     # the behaviour is now tested where it lives: tests/test_genetics_imax_wiring.py.
 
+
 class TestBioenReproductionOverride:
     def test_different_m0_affects_maturity(self):
         """Per-school m0 from genetics should change which schools mature.
