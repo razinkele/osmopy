@@ -97,7 +97,7 @@ def test_legacy_grid_keys_inert_only_with_a_netcdf_grid():
 def test_baltic_lists_exactly_the_unimplemented_features():
     cfg = OsmoseConfigReader().read(ROOT / "data/baltic/baltic_all-parameters.csv")
     listed = cv.warn_unread_java_only_keys(cfg)
-    assert len(listed) == 28
+    assert len(listed) == 19  # 28 minus the 9 fishery-map keys, read since the per-fishery path
     assert not [k for k in listed if k.startswith("grid.")]
     assert "output.biomass.enabled" not in listed
 
