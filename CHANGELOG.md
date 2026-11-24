@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.15.0] - 2026-11-25
+
+### Features
+
+- **outputs:** biomass by TL, mean size by age, mean TL by size in Python and C# (6b2ae2c)
+
+### Bug Fixes
+
+- **outputs:** literal switch keys so the key validator sees them (b02e7fe)
+- **outputs:** validate distribution bins, parse them only for enabled families (42be089)
+
+### Other
+
+- Merge pull request #387 from razinkele/feat/outputs-state-distributions (c259ba3)
+
 ## [1.14.1] - 2026-11-24
 
 ### Bug Fixes
