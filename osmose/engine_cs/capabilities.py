@@ -331,6 +331,9 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
             r"|output\.(size|ssb|yield\.abundance)\.(netcdf\.)?enabled"
             r"|output\.(tl|meantl|diet\.composition)\.enabled"
             r"|output\.distrib\.bysize\.(min|max|incr)"
+            # Java-rule families (2026-11-24): collected by the C# engine too
+            r"|output\.(biomass\.bytl|meansize\.byage|meantl\.bysize)\.enabled"
+            r"|output\.distrib\.by(tl|age)\.(min|max|incr)"
         ),
         "full_outputs",
     ),

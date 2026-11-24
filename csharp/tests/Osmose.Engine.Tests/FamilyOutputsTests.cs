@@ -21,7 +21,10 @@ public sealed class FamilyOutputsTests : IDisposable
     private static readonly int[] AgeOffsets = [0, 4, 6]; // 4 age classes, then 2
     private static readonly double[] Edges = [2.0, 6.0, 10.0];
 
-    private const OutputFamilies All = OutputFamilies.Known & ~OutputFamilies.Diet; // the diet has its own tests
+    // the diet and the Java-rule distributions have their own tests
+    private const OutputFamilies All = OutputFamilies.Known & ~OutputFamilies.Diet & ~OutputFamilies.JavaDistributions;
+
+    private static readonly string[] JavaNames = ["biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den"];
 
     private readonly List<GCHandle> _pins = [];
 
@@ -148,7 +151,7 @@ public sealed class FamilyOutputsTests : IDisposable
     public void EveryFamilyHasItsShapeAndWindowRuleInRecordOrder()
     {
         IReadOnlyList<FamilySpec> specs = Layout().Specs();
-        Assert.Equal(OutputLayout.AllNames.Where(n => n != "diet_by_species"), specs.Select(s => s.Name));
+        Assert.Equal(OutputLayout.AllNames.Where(n => n != "diet_by_species" && !JavaNames.Contains(n)), specs.Select(s => s.Name));
         Assert.Equal(new[] { 6 }, specs.Single(s => s.Name == "biomass_by_age").Shape);
         Assert.Equal(AgeOffsets, specs.Single(s => s.Name == "abundance_by_age").Blocks); // one block per species
         Assert.Equal(new[] { NFocal, 3 }, specs.Single(s => s.Name == "biomass_by_size").Shape);
@@ -318,7 +321,7 @@ public sealed class FamilyOutputsTests : IDisposable
         Assert.Equal(All, o.Families);
         Assert.Equal(AgeOffsets, o.AgeBinOffsets);
         Assert.Equal(Edges, o.SizeEdges);
-        Assert.Equal(OutputLayout.AllNames.Where(n => n != "diet_by_species"), o.Layout(NTotal, NFocal).Specs().Select(s => s.Name));
+        Assert.Equal(OutputLayout.AllNames.Where(n => n != "diet_by_species" && !JavaNames.Contains(n)), o.Layout(NTotal, NFocal).Specs().Select(s => s.Name));
     }
 
     [Fact]
@@ -389,5 +392,21 @@ public sealed class FamilyOutputsTests : IDisposable
         BundleValidationException extra = Assert.Throws<BundleValidationException>(() => ResultBuffers.From(c, n, fewer));
         Assert.Equal(2, extra.Problems.Count);
         Assert.Contains(extra.Problems, m => m.Contains("result.biomass_by_age: the bundle's output.families does not include it", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void JavaClassCountsTheThresholdsAtOrBelowAndTheJavaFamiliesNeedTheirTables()
+    {
+        double[] t = [1.0, 2.0, 3.0];
+        Assert.Equal(0, OutputCollector.JavaClass(t, 0.5));
+        Assert.Equal(1, OutputCollector.JavaClass(t, 1.0)); // on a threshold: the class it opens
+        Assert.Equal(1, OutputCollector.JavaClass(t, 1.5));
+        Assert.Equal(3, OutputCollector.JavaClass(t, 9.0)); // beyond the last: the last class
+        Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.BiomassByTl).Specs());
+        Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.MeanSizeByAge).Specs());
+        Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.MeanTlBySize).Specs());
+        FamilySpec tl = new OutputLayout(NTotal, NFocal, OutputFamilies.BiomassByTl) { TlThresholds = t }.Specs().Single();
+        Assert.Equal(new[] { NFocal, 4 }, tl.Shape); // thresholds + 1 classes per focal species
+        Assert.Equal(WindowFold.Mean, tl.Fold);
     }
 }

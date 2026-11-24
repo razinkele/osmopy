@@ -1227,6 +1227,18 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
             cutoff_vals.append(0.0)
     cutoff_vals.extend([0.0] * n_bkg)
     cutoff_age = np.array(cutoff_vals, dtype=np.float64) if found_any else None
+    from osmose.engine.output_distrib import java_thresholds
+
+    # Only the bins an enabled family uses are parsed: a bad unused key stays harmless.
+    bin_on = {
+        "tl": _enabled(cfg, "output.biomass.bytl.enabled"),
+        "age": _enabled(cfg, "output.meansize.byage.enabled"),
+        "size": _enabled(cfg, "output.meantl.bysize.enabled"),
+    }
+    java_bins = {
+        kind: java_thresholds(cfg, kind) if on else np.zeros(0, dtype=np.float32)
+        for kind, on in bin_on.items()
+    }
     # Java applies the cutoff ages only when output.cutoff.enabled is true
     # (Configuration.initOutputParameters); an explicit false switches them off (#123). Absent
     # keeps this engine's long-standing behaviour (ages apply), so existing results don't move.
@@ -1238,6 +1250,9 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "diet_output_enabled": diet_output,
         "output_step0_include": step0,
         "output_cutoff_age": cutoff_age,
+        "output_tl_thresholds": java_bins["tl"],
+        "output_age_thresholds": java_bins["age"],
+        "output_size_thresholds": java_bins["size"],
         "output_biomass_byage": _enabled(cfg, "output.biomass.byage.enabled"),
         "output_biomass_bysize": _enabled(cfg, "output.biomass.bysize.enabled"),
         "output_abundance_byage": _enabled(cfg, "output.abundance.byage.enabled"),
@@ -1286,6 +1301,10 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_size_min": float(cfg.get("output.distrib.bysize.min", "0")),
         "output_size_max": float(cfg.get("output.distrib.bysize.max", "205")),
         "output_size_incr": float(cfg.get("output.distrib.bysize.incr", "10")),
+        # Java-rule distribution families (osmose/engine/output_distrib.py, 2026-11-24)
+        "output_biomass_bytl": _enabled(cfg, "output.biomass.bytl.enabled"),
+        "output_meansize_byage": _enabled(cfg, "output.meansize.byage.enabled"),
+        "output_meantl_bysize": _enabled(cfg, "output.meantl.bysize.enabled"),
         "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
         "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
         "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
@@ -2447,6 +2466,13 @@ class EngineConfig:
     output_size_min: float = 0.0
     output_size_max: float = 205.0
     output_size_incr: float = 10.0
+    # Java-rule distribution families and their thresholds (osmose/engine/output_distrib.py)
+    output_biomass_bytl: bool = False
+    output_meansize_byage: bool = False
+    output_meantl_bysize: bool = False
+    output_tl_thresholds: Any = None
+    output_age_thresholds: Any = None
+    output_size_thresholds: Any = None
 
     # Bioenergetic output flags (default False; meanEnet is always written when bioen enabled)
     output_bioen_ingest: bool = False
@@ -3441,6 +3467,12 @@ class EngineConfig:
             output_size_min=_output["output_size_min"],
             output_size_max=_output["output_size_max"],
             output_size_incr=_output["output_size_incr"],
+            output_biomass_bytl=_output["output_biomass_bytl"],
+            output_meansize_byage=_output["output_meansize_byage"],
+            output_meantl_bysize=_output["output_meantl_bysize"],
+            output_tl_thresholds=_output["output_tl_thresholds"],
+            output_age_thresholds=_output["output_age_thresholds"],
+            output_size_thresholds=_output["output_size_thresholds"],
             output_bioen_ingest=_output["output_bioen_ingest"],
             output_bioen_maint=_output["output_bioen_maint"],
             output_bioen_rho=_output["output_bioen_rho"],

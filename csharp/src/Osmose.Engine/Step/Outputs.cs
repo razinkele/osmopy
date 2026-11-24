@@ -39,11 +39,25 @@ public enum OutputFamilies : long
     /// prey column (focal species, then resources). Predator pressure is derived from it.</summary>
     Diet = 512,
 
+    /// <summary>Biomass by trophic-level class (Java <c>biomassDistribByTL</c>), every focal school,
+    /// no cutoff, Java's class rule (<c>osmose/engine/output_distrib.py</c>).</summary>
+    BiomassByTl = 1024,
+
+    /// <summary>Mean length by age class: numerator <c>sum(A * L)</c> and denominator <c>sum(A)</c>,
+    /// both window means, divided at write time (Java <c>WeightedDistribOutput</c>).</summary>
+    MeanSizeByAge = 2048,
+
+    /// <summary>Mean trophic level by length class: <c>sum(B * TL)</c> over <c>sum(B)</c>.</summary>
+    MeanTlBySize = 4096,
+
+    /// <summary>The three Java-rule distribution families.</summary>
+    JavaDistributions = BiomassByTl | MeanSizeByAge | MeanTlBySize,
+
     ByAge = BiomassByAge | AbundanceByAge,
     BySize = BiomassBySize | AbundanceBySize,
 
     /// <summary>Every family this engine can collect.</summary>
-    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet,
+    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet | BiomassByTl | MeanSizeByAge | MeanTlBySize,
 }
 
 /// <summary>How a record window folds a family's per-step rows (<c>_average_step_outputs</c>).</summary>
@@ -85,12 +99,22 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
     /// species, then the resources the reference discovered. Needed with the diet family.</summary>
     public int DietColumns { get; init; }
 
+    /// <summary>Java-rule class thresholds (float32 values) of the trophic-level, age and length
+    /// distributions: a value's class is the count of thresholds at or below it.</summary>
+    public double[] TlThresholds { get; init; } = [];
+
+    public double[] AgeThresholds { get; init; } = [];
+
+    public double[] JavaSizeThresholds { get; init; } = [];
+
     /// <summary>Every family name, on or off, in record order.</summary>
     public static readonly string[] AllNames =
     [
         "abundance_by_stage", "mortality_by_cause_stage", "mortality_rate_by_cause_stage",
         "biomass_by_age", "abundance_by_age", "biomass_by_size", "abundance_by_size",
-        "mean_tl", "yield_n", "mean_size", "ssb", "diet_by_species",
+        "mean_tl", "yield_n", "mean_size", "ssb",
+        "biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den",
+        "diet_by_species",
     ];
 
     /// <summary>The families that are on, in the order of <see cref="AllNames"/>.</summary>
@@ -135,7 +159,33 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         Add("yield_n", OutputFamilies.YieldN, WindowFold.Sum, [NFocal]);
         Add("mean_size", OutputFamilies.MeanSize, WindowFold.MeanOfPresent, [NFocal]);
         Add("ssb", OutputFamilies.Ssb, WindowFold.Mean, [NFocal]);
-        Add("diet_by_species", OutputFamilies.Diet, WindowFold.Sum, [NTotal, DietColumns]);
+        void AddJava(string name, OutputFamilies bit, double[] thresholds)
+        {
+            int n = thresholds.Length + 1;
+            Add(name, bit, WindowFold.Mean, [NFocal, n], [.. Enumerable.Range(0, NFocal + 1).Select(sp => sp * n)]);
+        }
+
+        if ((Families & OutputFamilies.BiomassByTl) != 0 && TlThresholds.Length == 0)
+        {
+            throw new ArgumentException("biomass by TL needs TlThresholds");
+        }
+
+        if ((Families & OutputFamilies.MeanSizeByAge) != 0 && AgeThresholds.Length == 0)
+        {
+            throw new ArgumentException("mean size by age needs AgeThresholds");
+        }
+
+        if ((Families & OutputFamilies.MeanTlBySize) != 0 && JavaSizeThresholds.Length == 0)
+        {
+            throw new ArgumentException("mean TL by size needs JavaSizeThresholds");
+        }
+
+        AddJava("biomass_by_tl", OutputFamilies.BiomassByTl, TlThresholds);
+        AddJava("meansize_byage_num", OutputFamilies.MeanSizeByAge, AgeThresholds);
+        AddJava("meansize_byage_den", OutputFamilies.MeanSizeByAge, AgeThresholds);
+        AddJava("meantl_bysize_num", OutputFamilies.MeanTlBySize, JavaSizeThresholds);
+        AddJava("meantl_bysize_den", OutputFamilies.MeanTlBySize, JavaSizeThresholds);
+        Add("diet_by_species", OutputFamilies.Diet, WindowFold.Sum, [NTotal, DietColumns]); // last
         return specs;
     }
 }
@@ -251,6 +301,7 @@ public sealed class OutputCollector
     private readonly double[] _stageAbundance, _stageDeaths, _stageRates;
     private readonly double[] _biomassByAge, _abundanceByAge, _biomassBySize, _abundanceBySize, _meanTl, _yieldN, _meanSize, _ssb;
     private readonly double[] _dietRows;
+    private readonly double[] _biomassByTl, _sizeAgeNum, _sizeAgeDen, _tlSizeNum, _tlSizeDen;
     private readonly double[] _weighted, _weight; // scratch of the two weighted means, per focal species
     private readonly double[] _present; // scratch of a fold: one value per step of the window
     private int _k;
@@ -285,6 +336,11 @@ public sealed class OutputCollector
         _stageDeaths = Rows("mortality_by_cause_stage");
         _stageRates = Rows("mortality_rate_by_cause_stage");
         _biomassByAge = Rows("biomass_by_age");
+        _biomassByTl = Rows("biomass_by_tl");
+        _sizeAgeNum = Rows("meansize_byage_num");
+        _sizeAgeDen = Rows("meansize_byage_den");
+        _tlSizeNum = Rows("meantl_bysize_num");
+        _tlSizeDen = Rows("meantl_bysize_den");
         _abundanceByAge = Rows("abundance_by_age");
         _biomassBySize = Rows("biomass_by_size");
         _abundanceBySize = Rows("abundance_by_size");
@@ -597,6 +653,16 @@ public sealed class OutputCollector
         _weighted.AsSpan().Clear();
         _weight.AsSpan().Clear();
         bool byAge = bAge.Length + aAge.Length > 0, bySize = bSize.Length + aSize.Length > 0;
+        double[] tlThr = _layout.TlThresholds, ageThr = _layout.AgeThresholds, jSizeThr = _layout.JavaSizeThresholds;
+        int nTl = tlThr.Length + 1, nAgeJ = ageThr.Length + 1, nSizeJ = jSizeThr.Length + 1;
+        Span<double> bTl = Row(_biomassByTl, _nFocal * nTl);
+        Span<double> saNum = Row(_sizeAgeNum, _nFocal * nAgeJ), saDen = Row(_sizeAgeDen, _nFocal * nAgeJ);
+        Span<double> tsNum = Row(_tlSizeNum, _nFocal * nSizeJ), tsDen = Row(_tlSizeDen, _nFocal * nSizeJ);
+        bTl.Clear();
+        saNum.Clear();
+        saDen.Clear();
+        tsNum.Clear();
+        tsDen.Clear();
         if (!ssb.IsEmpty && maturitySize.Length < _nFocal)
         {
             throw new InvalidOperationException("SSB needs the maturity thresholds: use a Collect overload that takes them");
@@ -643,6 +709,26 @@ public sealed class OutputCollector
                 }
             }
 
+            // Java-rule families (_collect_java_distributions): every focal school, no cutoff.
+            if (!bTl.IsEmpty)
+            {
+                bTl[(sp * nTl) + JavaClass(tlThr, c.TrophicLevel)] += b;
+            }
+
+            if (!saNum.IsEmpty)
+            {
+                int at = (sp * nAgeJ) + JavaClass(ageThr, c.AgeDt / (double)ndt);
+                saNum[at] += c.Abundance * c.Length;
+                saDen[at] += c.Abundance;
+            }
+
+            if (!tsNum.IsEmpty)
+            {
+                int at = (sp * nSizeJ) + JavaClass(jSizeThr, c.Length);
+                tsNum[at] += b * c.TrophicLevel;
+                tsDen[at] += b;
+            }
+
             if (!ssb.IsEmpty && c.Length >= maturitySize[sp] && c.AgeDt >= maturityAgeDt[sp] && c.Abundance > 0)
             {
                 ssb[sp] += b;
@@ -678,6 +764,27 @@ public sealed class OutputCollector
         {
             meanSize[sp] = sizeWeight[sp] > 0 ? sizeSum[sp] / sizeWeight[sp] : double.NaN;
         }
+    }
+
+    /// <summary>Java's <c>OutputDistribution.getClass</c>: the count of thresholds at or below
+    /// <paramref name="value"/> (<c>np.searchsorted(thresholds, value, side="right")</c>).</summary>
+    public static int JavaClass(ReadOnlySpan<double> thresholds, double value)
+    {
+        int lo = 0, hi = thresholds.Length;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >>> 1;
+            if (thresholds[mid] <= value)
+            {
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return lo;
     }
 
     /// <summary>The length class of <paramref name="length"/>: the last edge at or below it

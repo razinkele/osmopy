@@ -30,13 +30,13 @@ def _fresh_dedup():
 def test_off_switches_and_labels_are_not_listed_but_on_switches_are():
     cfg = {
         "output.mortality.enabled": "FALSE",  # off: inert
-        "output.biomass.bytl.enabled": "true",  # on: an output this engine won't write
+        "output.size.catch.enabled": "true",  # on: an output this engine won't write (yet)
         "fisheries.name.fsh0": "trawl",  # label
         "grid.java.classname": "fr.ird.osmose.grid.NcGrid",
         "simulation.ncpu": "8",
         "simulation.nsimulation": "1",
     }
-    assert cv.warn_unread_java_only_keys(cfg) == ["output.biomass.bytl.enabled"]
+    assert cv.warn_unread_java_only_keys(cfg) == ["output.size.catch.enabled"]
 
 
 def test_more_than_one_replicate_is_listed():
@@ -97,7 +97,7 @@ def test_legacy_grid_keys_inert_only_with_a_netcdf_grid():
 def test_baltic_lists_exactly_the_unimplemented_features():
     cfg = OsmoseConfigReader().read(ROOT / "data/baltic/baltic_all-parameters.csv")
     listed = cv.warn_unread_java_only_keys(cfg)
-    assert len(listed) == 19  # 28 minus the 9 fishery-map keys, read since the per-fishery path
+    assert len(listed) == 16  # minus the 9 fishery-map keys and the 3 Java-rule distributions
     assert not [k for k in listed if k.startswith("grid.")]
     assert "output.biomass.enabled" not in listed
 

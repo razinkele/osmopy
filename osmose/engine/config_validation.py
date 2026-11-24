@@ -47,6 +47,16 @@ _SUGGESTION_CUTOFF = 0.85
 # allowlist, so build_known_keys() and all unknown-key validation are unchanged.
 _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
+        # Java-rule distribution families (osmose/engine/output_distrib.py, 2026-11-24)
+        "output.biomass.bytl.enabled",
+        "output.meansize.byage.enabled",
+        "output.meantl.bysize.enabled",
+        "output.distrib.bytl.min",
+        "output.distrib.bytl.max",
+        "output.distrib.bytl.incr",
+        "output.distrib.byage.min",
+        "output.distrib.byage.max",
+        "output.distrib.byage.incr",
         # per-fishery maps and their schedule (osmose/engine/fisheries.py, 2026-11-24)
         "fisheries.movement.fishery.map{idx}",
         "fisheries.name.fsh{idx}",  # matched by fisheries.movement.fishery.map{idx}
@@ -213,7 +223,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.abundance.enabled",
         "output.age.at.death.enabled",
         "output.bioen.enet.enabled",
-        "output.biomass.bytl.enabled",
         "output.biomass.byweight.enabled",
         "output.biomass.enabled",
         "output.csv.separator",
@@ -233,9 +242,7 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.fisheries.bysize.enabled",
         "output.fisheries.enabled",
         "output.flush.enabled",
-        "output.meansize.byage.enabled",
         "output.meantl.byage.enabled",
-        "output.meantl.bysize.enabled",
         "output.meanweight.byage.enabled",
         "output.mortality.additional.byage.enabled",
         "output.mortality.additional.bysize.enabled",

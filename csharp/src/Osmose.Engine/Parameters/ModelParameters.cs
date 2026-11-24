@@ -354,9 +354,25 @@ public sealed class OutputParameters
     /// family.</summary>
     public int DietColumns { get; init; }
 
+    /// <summary>Java-rule class thresholds of the trophic-level, age and length distributions;
+    /// each empty without its family.</summary>
+    public double[] TlThresholds { get; init; } = [];
+
+    public double[] AgeThresholds { get; init; } = [];
+
+    public double[] JavaSizeThresholds { get; init; } = [];
+
     /// <summary>The collector's layout for a model with these species counts.</summary>
     public Step.OutputLayout Layout(int nTotal, int nFocal) =>
-        new(nTotal, nFocal, Families) { AgeBinOffsets = AgeBinOffsets, SizeEdges = SizeEdges, DietColumns = DietColumns };
+        new(nTotal, nFocal, Families)
+        {
+            AgeBinOffsets = AgeBinOffsets,
+            SizeEdges = SizeEdges,
+            DietColumns = DietColumns,
+            TlThresholds = TlThresholds,
+            AgeThresholds = AgeThresholds,
+            JavaSizeThresholds = JavaSizeThresholds,
+        };
 
     /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
     public int Records(int nSteps) => (Step0Include ? 1 : 0) + ((nSteps + RecordFrequency - 1) / RecordFrequency);
@@ -858,6 +874,40 @@ internal static class ModelReader
             on &= ~Step.OutputFamilies.BySize;
         }
 
+        // Java-rule thresholds (osmose/engine/output_distrib.py), each exactly with its family.
+        double[] Thresholds(string name, Step.OutputFamilies bit)
+        {
+            if ((on & bit) == 0)
+            {
+                if (r.Has(name))
+                {
+                    r.Problem($"{name}: present, but output.families has no family that uses it");
+                }
+
+                return [];
+            }
+
+            double[] t = r.Array(name, DType.F8, BundleReader.Any)?.ToArray<double>() ?? [];
+            bool ok = t.Length > 0;
+            for (int i = 1; ok && i < t.Length; i++)
+            {
+                ok = t[i] > t[i - 1];
+            }
+
+            if (!ok)
+            {
+                r.Problem($"{name}: needs at least one threshold, strictly increasing");
+                on &= ~bit;
+                return [];
+            }
+
+            return t;
+        }
+
+        double[] tlThr = Thresholds("output.tl_thresholds", Step.OutputFamilies.BiomassByTl);
+        double[] ageThr = Thresholds("output.age_thresholds", Step.OutputFamilies.MeanSizeByAge);
+        double[] jSizeThr = Thresholds("output.java_size_thresholds", Step.OutputFamilies.MeanTlBySize);
+
         return new()
         {
             CutoffAge = F8(r, "output.cutoff_age", nTotal),
@@ -867,6 +917,9 @@ internal static class ModelReader
             AgeBinOffsets = ageOffsets,
             SizeEdges = edges,
             DietColumns = dietColumns,
+            TlThresholds = tlThr,
+            AgeThresholds = ageThr,
+            JavaSizeThresholds = jSizeThr,
         };
     }
 
