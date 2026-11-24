@@ -835,7 +835,9 @@ def _per_fishery_effective(work_state, config, n_subdt, step, fleet_state=None):
         step,
         config.n_dt_per_year,
         n_subdt,
-        lambda m, cy, cx, mask: _lookup_spatial_factors(fishing_map(config, m), cy, cx, mask),
+        lambda m, cy, cx, mask: _lookup_spatial_factors(
+            cast(NDArray[np.float64], fishing_map(config, m)), cy, cx, mask
+        ),  # m is never None here (per_fishery_rates skips null maps)
     )
     if config.mpa_zones is not None:
         year = step // config.n_dt_per_year
@@ -964,7 +966,10 @@ def _precompute_effective_rates(work_state, config, n_subdt, step, fleet_state=N
                 continue
             mask = sp == sp_id
             spatial_factor[mask] = _lookup_spatial_factors(
-                fishing_map(config, sp_map), work_state.cell_y, work_state.cell_x, mask
+                cast(NDArray[np.float64], fishing_map(config, sp_map)),  # sp_map is not None here
+                work_state.cell_y,
+                work_state.cell_x,
+                mask,
             )
 
         mpa_factor = np.ones(n, dtype=np.float64)
