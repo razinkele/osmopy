@@ -116,6 +116,9 @@ FULL_OUTPUT_KEYS = {
     "output.yield.biomass.bysize.enabled", "output.size.catch.enabled", "output.tl.catch.enabled",
     "output.mortality.perspecies.bysize.enabled",
     "output.fisheries.yield.biomass.enabled",  # yield by fishery (PR-C)
+    # staged diet (PR-E)
+    "output.diet.pressure.enabled", "output.diet.stage.structure",
+    "output.diet.stage.structure.sp{idx}", "output.diet.stage.threshold.sp{idx}",
 }  # fmt: skip
 
 

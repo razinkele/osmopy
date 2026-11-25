@@ -71,8 +71,14 @@ public sealed class SimulationRun
             Store.EnableDiet(layout.DietColumns);
         }
 
+        if ((layout.Families & OutputFamilies.DietStaged) != 0)
+        {
+            Store.EnableStagedDiet(layout.DietStages.Width);
+        }
+
         Results = new RunResults(nRecords, layout);
         Collector = new OutputCollector(layout, p.Output.RecordFrequency);
+        Collector.SetLifespans(p.Species.LifespanDt);
         _control = ControlBlock.From(config);
         _buffers = ResultBuffers.From(config, nRecords, layout);
     }
@@ -155,6 +161,7 @@ public sealed class SimulationRun
         var draws = new PhiloxCellDraws(_key, step);
         Mortality<PhiloxCellDraws, PhiloxDrawSource>(step, ref draws);
         Collector.SnapshotDiet(Store); // before the background schools leave: they have rows
+        Collector.SnapshotStagedDiet(_p, Store); // likewise: background predators are staged now
         if (background)
         {
             RemoveBackground(firstBackground);
@@ -240,7 +247,9 @@ public sealed class SimulationRun
             _larva = new double[Math.Max(Store.Count, _larva.Length * 2)];
         }
 
+        Collector.SnapshotBiomassDietStage(_p, Store); // Java initStep: before the larva pre-pass
         MortalityStep.Prepare(_p, Store, step, _rsc, _larva);
+        Collector.SnapshotResourceBiomass(_p, _rsc); // the step's resources, now set
         if (_workers == 1)
         {
             for (int cell = 0; cell < Store.CellCount; cell++)

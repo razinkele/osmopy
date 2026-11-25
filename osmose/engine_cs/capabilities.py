@@ -340,6 +340,9 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
             r"|output\.(yield\.biomass\.bysize|size\.catch|tl\.catch)\.enabled"
             r"|output\.mortality\.perspecies\.bysize\.enabled"
             r"|output\.fisheries\.yield\.biomass\.enabled"
+            # staged diet outputs (2026-11-25)
+            r"|output\.diet\.pressure\.enabled"
+            r"|output\.diet\.stage\.(structure|structure\.sp\{idx\}|threshold\.sp\{idx\})"
             r"|output\.distrib\.by(tl|age)\.(min|max|incr)"
         ),
         "full_outputs",

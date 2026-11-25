@@ -205,8 +205,14 @@ def test_a_stock_run_hands_on_exactly_the_records_the_engine_computed(demo, tmp_
             assert a.tobytes() == b.tobytes(), (cs_name, i)
         for name in names:
             row, want = _families_row(r, name, nf), probe.get(f"out.{name}")[i]
-            if row is None:  # only the diet of the initial record, which no step preceded
-                assert name == "diet_by_species" and r.step == -1 and not want.any()
+            if row is None:  # the diet families of the initial record, which no step preceded
+                staged = (
+                    "diet_stage_num",
+                    "diet_stage_den",
+                    "predpressure_stage",
+                    "biomass_diet_stage",
+                )
+                assert name in ("diet_by_species", *staged) and r.step == -1 and not want.any()
             else:
                 assert _same(row, want), (name, i)
 

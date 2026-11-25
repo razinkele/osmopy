@@ -366,6 +366,8 @@ public sealed class OutputParameters
 
     public int[] FisheryOfSpecies { get; init; } = [];
 
+    public Step.DietStageTable DietStages { get; init; } = Step.DietStageTable.Empty;
+
     /// <summary>The collector's layout for a model with these species counts.</summary>
     public Step.OutputLayout Layout(int nTotal, int nFocal) =>
         new(nTotal, nFocal, Families)
@@ -378,6 +380,7 @@ public sealed class OutputParameters
             JavaSizeThresholds = JavaSizeThresholds,
             FisheryCount = FisheryCount,
             FisheryOfSpecies = FisheryOfSpecies,
+            DietStages = DietStages,
         };
 
     /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
@@ -914,6 +917,31 @@ internal static class ModelReader
         double[] ageThr = Thresholds("output.age_thresholds", Step.OutputFamilies.MeanSizeByAge);
         double[] jSizeThr = Thresholds("output.java_size_thresholds", Step.OutputFamilies.JavaSize);
 
+        // Staged diet: the stage tables (osmose.engine.diet_stage), exactly with their families.
+        Step.DietStageTable dietStages = Step.DietStageTable.Empty;
+        if ((on & Step.OutputFamilies.DietStageFamilies) != 0)
+        {
+            int[] nStages = I4(r, "output.diet_stage.n_stages", nTotal);
+            int[] structure = I4(r, "output.diet_stage.structure", nTotal);
+            double[] thr = r.Array("output.diet_stage.thresholds", DType.F8, BundleReader.Any)?.ToArray<double>() ?? [];
+            bool ok = nStages.Length == nTotal && structure.Length == nTotal
+                && nStages.All(n => n >= 1) && structure.All(s => s is >= 0 and <= 3)
+                && thr.Length == nStages.Sum(n => n - 1);
+            if (!ok)
+            {
+                r.Problem("output.diet_stage.*: the stage tables do not describe every species");
+                on &= ~Step.OutputFamilies.DietStageFamilies;
+            }
+            else
+            {
+                dietStages = new Step.DietStageTable(nStages, thr, structure, nResources);
+            }
+        }
+        else if (r.Has("output.diet_stage.n_stages"))
+        {
+            r.Problem("output.diet_stage.*: present, but output.families has no staged diet family");
+        }
+
         // Yield by fishery: the fishery count, and on the reduced path each species' fishery.
         int fisheryCount = 0;
         int[] fisheryOfSpecies = [];
@@ -956,6 +984,7 @@ internal static class ModelReader
             JavaSizeThresholds = jSizeThr,
             FisheryCount = fisheryCount,
             FisheryOfSpecies = fisheryOfSpecies,
+            DietStages = dietStages,
         };
     }
 

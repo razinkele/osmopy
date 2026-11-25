@@ -83,6 +83,7 @@ OFF = (
             "size.catch",
             "tl.catch",
             "mortality.perspecies.bysize",
+            "diet.pressure",  # biomassDietStage (staged diet: off with diet composition)
         )
     }
 )

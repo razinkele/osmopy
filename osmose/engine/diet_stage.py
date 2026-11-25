@@ -177,29 +177,37 @@ def _accumulate_numpy(r, abundance, rows, in_diet, in_pp, num, den, pp):
         np.add.at(pp, r[in_pp], rows[in_pp])
 
 
-try:
-    from numba import njit
+_NUMBA_KERNEL: list = []  # compiled lazily: the C# bridge path must not import numba
 
-    @njit(cache=True)
-    def _accumulate_numba(r, abundance, rows, in_diet, in_pp, num, den, pp):  # pragma: no cover
-        n, w = rows.shape
-        for i in range(n):
-            tot = 0.0
-            for c in range(w):
-                tot += rows[i, c]
-            k = r[i]
-            if in_diet[i] and tot > 0:
-                a = abundance[i]
-                for c in range(w):
-                    num[k, c] += a * (rows[i, c] / tot)
-                den[k] += a
-            if in_pp[i]:
-                for c in range(w):
-                    pp[k, c] += rows[i, c]
 
-    _HAS_NUMBA = True
-except ImportError:  # pragma: no cover
-    _HAS_NUMBA = False
+def _numba_kernel():
+    """The Numba loop, or None without Numba (compiled on first use)."""
+    if not _NUMBA_KERNEL:
+        try:
+            from numba import njit
+        except ImportError:  # pragma: no cover
+            _NUMBA_KERNEL.append(None)
+            return None
+
+        @njit(cache=True)
+        def kernel(r, abundance, rows, in_diet, in_pp, num, den, pp):  # pragma: no cover
+            n, w = rows.shape
+            for i in range(n):
+                tot = 0.0
+                for c in range(w):
+                    tot += rows[i, c]
+                k = r[i]
+                if in_diet[i] and tot > 0:
+                    a = abundance[i]
+                    for c in range(w):
+                        num[k, c] += a * (rows[i, c] / tot)
+                    den[k] += a
+                if in_pp[i]:
+                    for c in range(w):
+                        pp[k, c] += rows[i, c]
+
+        _NUMBA_KERNEL.append(kernel)
+    return _NUMBA_KERNEL[0]
 
 
 def _accumulate(ds, rows_at, sp, stage, abundance, rows, in_diet, in_pp, num, den, pp):
@@ -216,8 +224,9 @@ def _accumulate(ds, rows_at, sp, stage, abundance, rows, in_diet, in_pp, num, de
         den,
         pp,
     )
-    if _HAS_NUMBA:
-        _accumulate_numba(*args)
+    kernel = _numba_kernel()
+    if kernel is not None:
+        kernel(*args)
     else:
         _accumulate_numpy(*args)
 
@@ -230,10 +239,12 @@ def collect(state, config, snap) -> dict:
     sid, rows, (num, den, pp) = snap
     num, den, pp = num.copy(), den.copy(), pp.copy()
     n = len(sid)
-    if len(state) < n or not np.array_equal(state.species_id[:n], sid):
+    # the snapshot's focal schools, in order (reproduction only appends; a state that still
+    # holds background schools, as a test's may, has them skipped like the C# collector does)
+    sub = np.flatnonzero(state.species_id < config.n_species)[:n]
+    if len(sub) != n or not np.array_equal(state.species_id[sub], sid):
         raise RuntimeError("staged diet: school order changed since the mortality snapshot")
     if n:
-        sub = slice(0, n)
         vals = _values(ds, state, config)[sub]
         alive = _alive(state, config)[sub]
         present = alive & ~state.is_out[sub]

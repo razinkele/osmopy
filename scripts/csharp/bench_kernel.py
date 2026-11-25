@@ -149,7 +149,7 @@ class NumbaStep:
                 t["fr_shape"], t["fr_halfsat"], self.ndt, self.n_subdt, self.access,
                 self.has_access, self.use_stage, s["prey_idx"], s["pred_idx"], self.rsc,
                 self.rsc_meta[0], self.rsc_meta[1], self.rsc_meta[2], self.rsc_meta[3], self.n_rsc, self.n_species, self.tl_ws, True, mort._DUMMY_DIET,
-                False, egg, False, mort._DUMMY_RSC_1D, mort._DUMMY_RSC_1D, self.zeros,
+                False, mort._DUMMY_DIET, mort._DUMMY_STAGED_COL, egg, False, mort._DUMMY_RSC_1D, mort._DUMMY_RSC_1D, self.zeros,
                 self.zeros, self.zeros, s["is_bkg"], self.zeros, cand_ptr, cand_pos,
             )  # fmt: skip
 

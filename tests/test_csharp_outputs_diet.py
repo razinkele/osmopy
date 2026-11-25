@@ -64,12 +64,17 @@ STEPS = {"eec_full": 30, "bay_of_biscay": 9, "tutorial": 129}
 def test_the_switch_turns_on_the_diet_family_and_nothing_else(tmp_path):
     on = EngineConfig.from_dict(_raw("eec_full", tmp_path, 1, DIET))
     assert on.diet_output_enabled
-    assert output_families(on) == build.FAMILY_STAGE | build.FAMILY_DIET == 513
+    # EEC ships diet-stage thresholds, so the staged diet comes with the diet (PR-E)
+    assert output_families(on) == build.FAMILY_STAGE | build.FAMILY_DIET | build.FAMILY_DIET_STAGED
+    unstaged = DIET | {f"output.diet.stage.threshold.sp{i}": "" for i in range(14)}
+    assert output_families(EngineConfig.from_dict(_raw("eec_full", tmp_path, 1, unstaged))) == 513
     off = EngineConfig.from_dict(_raw("eec_full", tmp_path, 1, OFF))
     assert output_families(off) == build.FAMILY_STAGE
-    # Predator pressure is derived from the diet; its own switch collects nothing.
+    # Predator pressure itself is derived from the diet; its switch adds biomassDietStage.
     pressure = OFF | {"output.diet.pressure.enabled": "true"}
-    assert output_families(EngineConfig.from_dict(_raw("eec_full", tmp_path, 1, pressure))) == 1
+    assert output_families(EngineConfig.from_dict(_raw("eec_full", tmp_path, 1, pressure))) == (
+        build.FAMILY_STAGE | build.FAMILY_BIOMASS_DIET_STAGE
+    )
     minimal = DIET | {"output.minimal.enabled": "true"}
     assert output_families(EngineConfig.from_dict(_raw("eec_full", tmp_path, 1, minimal))) == 0
 

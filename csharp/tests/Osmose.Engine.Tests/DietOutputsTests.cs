@@ -164,6 +164,7 @@ public sealed class DietOutputsTests : IDisposable
             AgeThresholds = [1.0],
             JavaSizeThresholds = [10.0, 20.0],
             FisheryCount = 2,
+            DietStages = new DietStageTable([.. Enumerable.Repeat(1, NTotal)], [], [.. Enumerable.Repeat(1, NTotal)], 1),
         };
         IReadOnlyList<FamilySpec> specs = layout.Specs();
         Assert.Equal(OutputLayout.AllNames, specs.Select(s => s.Name));

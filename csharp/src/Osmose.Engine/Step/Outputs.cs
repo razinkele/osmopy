@@ -68,11 +68,23 @@ public enum OutputFamilies : long
     /// catch shares (<see cref="OutputCollector.SnapshotFisheries"/>) on the per-fishery path.</summary>
     YieldByFishery = 131072,
 
+    /// <summary>Staged diet (Java DietOutput / PredatorPressureOutput with output.diet.stage.*):
+    /// per predator (focal, then background) x stage, the abundance-weighted diet fractions and
+    /// their weight, and the biomass eaten, on the staged prey axis; summed.</summary>
+    DietStaged = 262144,
+
+    /// <summary>Biomass by diet stage at the start of the step (Java BiomassDietStageOutput), plus
+    /// each resource's total biomass over the ocean; summed.</summary>
+    BiomassDietStage = 524288,
+
     /// <summary>The three Java-rule distribution families.</summary>
     JavaDistributions = BiomassByTl | MeanSizeByAge | MeanTlBySize,
 
     /// <summary>The catch-derived families.</summary>
     CatchFamilies = YieldBySize | SizeCatch | TlCatch | MortalityBySize | YieldByFishery,
+
+    /// <summary>The staged diet families.</summary>
+    DietStageFamilies = DietStaged | BiomassDietStage,
 
     /// <summary>Every family binned by <see cref="OutputLayout.JavaSizeThresholds"/>.</summary>
     JavaSize = MeanTlBySize | YieldBySize | MortalityBySize,
@@ -81,7 +93,7 @@ public enum OutputFamilies : long
     BySize = BiomassBySize | AbundanceBySize,
 
     /// <summary>Every family this engine can collect.</summary>
-    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet | BiomassByTl | MeanSizeByAge | MeanTlBySize | CatchFamilies,
+    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet | BiomassByTl | MeanSizeByAge | MeanTlBySize | CatchFamilies | DietStageFamilies,
 }
 
 /// <summary>How a record window folds a family's per-step rows (<c>_average_step_outputs</c>).</summary>
@@ -138,6 +150,11 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
     /// -1 for none; empty on the per-fishery path, where the catch is split by shares.</summary>
     public int[] FisheryOfSpecies { get; init; } = [];
 
+    /// <summary>Diet stages (<c>osmose.engine.diet_stage</c>), per species (focal, then
+    /// background): the stage count, the thresholds (float32 values) concatenated, and the
+    /// structure (0 age, 1 size, 2 weight, 3 tl). Empty without a staged diet family.</summary>
+    public DietStageTable DietStages { get; init; } = DietStageTable.Empty;
+
     /// <summary>Every family name, on or off, in record order.</summary>
     public static readonly string[] AllNames =
     [
@@ -147,6 +164,7 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         "biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den",
         "yield_by_size", "size_catch_num", "size_catch_den", "tl_catch_num", "tl_catch_den", "mortality_rate_by_cause_size",
         "yield_by_fishery_landed", "yield_by_fishery_discarded",
+        "diet_stage_num", "diet_stage_den", "predpressure_stage", "biomass_diet_stage",
         "diet_by_species",
     ];
 
@@ -237,6 +255,15 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
 
         Add("yield_by_fishery_landed", OutputFamilies.YieldByFishery, WindowFold.Sum, [NFocal, FisheryCount]);
         Add("yield_by_fishery_discarded", OutputFamilies.YieldByFishery, WindowFold.Sum, [NFocal, FisheryCount]);
+        if ((Families & OutputFamilies.DietStageFamilies) != 0 && DietStages.NSpecies != NTotal)
+        {
+            throw new ArgumentException("a staged diet family needs DietStages for every species");
+        }
+
+        Add("diet_stage_num", OutputFamilies.DietStaged, WindowFold.Sum, [DietStages.PredRows, DietStages.Width]);
+        Add("diet_stage_den", OutputFamilies.DietStaged, WindowFold.Sum, [DietStages.PredRows]);
+        Add("predpressure_stage", OutputFamilies.DietStaged, WindowFold.Sum, [DietStages.PredRows, DietStages.Width]);
+        Add("biomass_diet_stage", OutputFamilies.BiomassDietStage, WindowFold.Sum, [DietStages.Width]);
         Add("diet_by_species", OutputFamilies.Diet, WindowFold.Sum, [NTotal, DietColumns]); // last
         return specs;
     }
@@ -357,6 +384,15 @@ public sealed class OutputCollector
     private readonly double[] _yieldBySize, _sizeCatchNum, _sizeCatchDen, _tlCatchNum, _tlCatchDen, _sizeRates;
     private readonly double[] _sizeAbundanceScratch, _sizeDeathsScratch; // one step, by Java size class
     private readonly double[] _yfLand, _yfDisc;
+    private readonly double[] _dsNum, _dsDen, _dsPp, _dsBiomass;
+    private double[] _snapRows = [], _bkgNum = [], _bkgDen = [], _bkgPp = [];
+    private int[] _snapSpecies = [];
+    private int _snapCount = -1; // focal rows of this step's staged-diet snapshot; -1: not taken
+    private bool _biomassTaken;
+    private int[] _lifespanDt = [];
+
+    /// <summary>Lifespans (steps, every species) for Java's alive filter of the staged diet.</summary>
+    public void SetLifespans(int[] lifespanDt) => _lifespanDt = lifespanDt;
     private double[] _shareLand = [], _shareDisc = [], _termScratch = [];
     private int[] _shareSpecies = [];
     private int _shareCount = -1; // -1: no shares taken this step
@@ -407,6 +443,10 @@ public sealed class OutputCollector
         _sizeRates = Rows("mortality_rate_by_cause_size");
         _yfLand = Rows("yield_by_fishery_landed");
         _yfDisc = Rows("yield_by_fishery_discarded");
+        _dsNum = Rows("diet_stage_num");
+        _dsDen = Rows("diet_stage_den");
+        _dsPp = Rows("predpressure_stage");
+        _dsBiomass = Rows("biomass_diet_stage");
         int nJ = layout.JavaSizeThresholds.Length + 1;
         _sizeAbundanceScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * nJ];
         _sizeDeathsScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * RunResults.MortalityCauses * nJ];
@@ -685,7 +725,19 @@ public sealed class OutputCollector
             CollectFull(cutoff, ndt, maturitySize, maturityAgeDt, store);
         }
 
+        if (_dsNum.Length > 0)
+        {
+            CollectStagedDiet(ndt, store);
+        }
+
+        if (_dsBiomass.Length > 0 && !_biomassTaken)
+        {
+            _dsBiomass.AsSpan(_k * _layout.DietStages.Width, _layout.DietStages.Width).Clear();
+        }
+
         _k++;
+        _snapCount = -1;
+        _biomassTaken = false;
         _stageTaken = false;
         _dietTaken = false;
         _shareCount = -1;
@@ -975,6 +1027,217 @@ public sealed class OutputCollector
         }
 
         _shareCount = n;
+    }
+
+    /// <summary>
+    /// The step's staged diet (<c>diet_stage.collect</c>): the snapshot's background
+    /// contributions, then each focal school of the snapshot, in order, staged by its END-of-step
+    /// value: diet over present schools that ate, pressure over alive ones. A step without a
+    /// snapshot (the initial record) records zeros.
+    /// </summary>
+    private void CollectStagedDiet(int ndt, SchoolStore store)
+    {
+        DietStageTable ds = _layout.DietStages;
+        int w = ds.Width, rows = ds.PredRows;
+        Span<double> num = _dsNum.AsSpan(_k * rows * w, rows * w);
+        Span<double> den = _dsDen.AsSpan(_k * rows, rows);
+        Span<double> pp = _dsPp.AsSpan(_k * rows * w, rows * w);
+        num.Clear();
+        den.Clear();
+        pp.Clear();
+        if (_snapCount < 0)
+        {
+            return;
+        }
+
+        _bkgNum.CopyTo(num);
+        _bkgDen.CopyTo(den);
+        _bkgPp.CopyTo(pp);
+        int[] lifespan = _lifespanDt;
+        int j = 0;
+        foreach (SchoolCore c in store.Core)
+        {
+            if (j == _snapCount)
+            {
+                break;
+            }
+
+            if ((c.Flags & SchoolFlags.IsBackground) != 0 || c.SpeciesId >= _nFocal)
+            {
+                continue;
+            }
+
+            if (_snapSpecies[j] != c.SpeciesId)
+            {
+                throw new InvalidOperationException("staged diet: school order changed since the mortality snapshot");
+            }
+
+            bool alive = Alive(c, lifespan);
+            bool present = alive && (c.Flags & SchoolFlags.IsOut) == 0;
+            int predRow = ds.ColOffset[c.SpeciesId] + ds.Stage(c.SpeciesId, ds.Value(c, ndt));
+            AccumulateStaged(_snapRows.AsSpan(j * w, w), predRow, c.Abundance, present, alive, num, den, pp);
+            j++;
+        }
+
+        if (j != _snapCount)
+        {
+            throw new InvalidOperationException("staged diet: schools of the mortality snapshot are missing");
+        }
+    }
+
+    /// <summary>Java's <c>School.isAlive</c>: abundance above 0 and age at most lifespan - 1.</summary>
+    private static bool Alive(in SchoolCore c, int[] lifespanDt) => c.Abundance > 0 && c.AgeDt <= lifespanDt[c.SpeciesId] - 1;
+
+    /// <summary>Java's update for one predator school (<c>diet_stage._accumulate</c>): its total
+    /// summed left to right, each column's fraction weighted by its abundance (diet), and its
+    /// biomass eaten (predator pressure).</summary>
+    private static void AccumulateStaged(ReadOnlySpan<double> row, int predRow, double abundance, bool inDiet, bool inPp, Span<double> num, Span<double> den, Span<double> pp)
+    {
+        int w = row.Length;
+        double tot = 0.0;
+        for (int c = 0; c < w; c++)
+        {
+            tot += row[c];
+        }
+
+        if (inDiet && tot > 0)
+        {
+            Span<double> n = num.Slice(predRow * w, w);
+            for (int c = 0; c < w; c++)
+            {
+                n[c] += abundance * (row[c] / tot);
+            }
+
+            den[predRow] += abundance;
+        }
+
+        if (inPp)
+        {
+            Span<double> q = pp.Slice(predRow * w, w);
+            for (int c = 0; c < w; c++)
+            {
+                q[c] += row[c];
+            }
+        }
+    }
+
+    /// <summary>
+    /// The staged diet snapshot (<c>diet_stage.snapshot_after_mortality</c>): right after
+    /// mortality, before the background schools leave, the background predators' contributions
+    /// (staged by their values now; diet when they ate, pressure always) and the focal schools'
+    /// staged rows in store order (the order <see cref="SchoolStore.RemoveBackground"/> keeps).
+    /// Nothing to do without <see cref="OutputFamilies.DietStaged"/>.
+    /// </summary>
+    public void SnapshotStagedDiet(EngineParameters p, SchoolStore store)
+    {
+        if (_dsNum.Length == 0)
+        {
+            return;
+        }
+
+        DietStageTable ds = _layout.DietStages;
+        int w = ds.Width, rows = ds.PredRows, n = store.Count;
+        if (store.StagedCols != w && n > 0)
+        {
+            throw new InvalidOperationException($"the store tracks {store.StagedCols} staged columns, the layout has {w}");
+        }
+
+        if (_bkgNum.Length != rows * w)
+        {
+            _bkgNum = new double[rows * w];
+            _bkgPp = new double[rows * w];
+            _bkgDen = new double[rows];
+        }
+
+        Array.Clear(_bkgNum);
+        Array.Clear(_bkgPp);
+        Array.Clear(_bkgDen);
+        if (_snapRows.Length < n * w)
+        {
+            _snapRows = new double[n * w * 2];
+        }
+
+        if (_snapSpecies.Length < n)
+        {
+            _snapSpecies = new int[n * 2];
+        }
+
+        ReadOnlySpan<SchoolCore> core = store.Core;
+        ReadOnlySpan<double> staged = store.Staged;
+        int focal = 0;
+        for (int i = 0; i < n; i++)
+        {
+            SchoolCore c = core[i];
+            ReadOnlySpan<double> row = staged.Slice(i * w, w);
+            if ((c.Flags & SchoolFlags.IsBackground) != 0)
+            {
+                int predRow = ds.ColOffset[c.SpeciesId] + ds.Stage(c.SpeciesId, ds.Value(c, p.NDtPerYear));
+                AccumulateStaged(row, predRow, c.Abundance, true, true, _bkgNum, _bkgDen, _bkgPp);
+            }
+            else if (c.SpeciesId < _nFocal)
+            {
+                _snapSpecies[focal] = c.SpeciesId;
+                row.CopyTo(_snapRows.AsSpan(focal * w, w));
+                focal++;
+            }
+        }
+
+        _snapCount = focal;
+    }
+
+    /// <summary>The schools' half of biomassDietStage (<c>diet_stage.biomass_at_step_start</c>):
+    /// present focal schools and every background school, by species and stage. Call it before
+    /// the mortality step's preparation (the larva pre-pass changes abundances).</summary>
+    public void SnapshotBiomassDietStage(EngineParameters p, SchoolStore store)
+    {
+        if (_dsBiomass.Length == 0)
+        {
+            return;
+        }
+
+        DietStageTable ds = _layout.DietStages;
+        Span<double> b = _dsBiomass.AsSpan(_k * ds.Width, ds.Width);
+        b.Clear();
+        int[] lifespan = p.Species.LifespanDt;
+        foreach (SchoolCore c in store.Core)
+        {
+            bool bkg = (c.Flags & SchoolFlags.IsBackground) != 0;
+            bool present = !bkg && c.SpeciesId < _nFocal && Alive(c, lifespan) && (c.Flags & SchoolFlags.IsOut) == 0;
+            if (bkg || present)
+            {
+                b[ds.Column(c, p.NDtPerYear)] += c.Abundance * c.Weight;
+            }
+        }
+
+        _biomassTaken = true;
+    }
+
+    /// <summary>The resources' half of biomassDietStage: each resource's biomass summed over the
+    /// ocean cells (left to right, NaN skipped). Call it once the step's resources are set.</summary>
+    public void SnapshotResourceBiomass(EngineParameters p, ReadOnlySpan<double> rscCellMajor)
+    {
+        if (_dsBiomass.Length == 0)
+        {
+            return;
+        }
+
+        DietStageTable ds = _layout.DietStages;
+        Span<double> b = _dsBiomass.AsSpan(_k * ds.Width, ds.Width);
+        int nRsc = ds.NResources, nCells = p.Ny * p.Nx;
+        for (int r = 0; r < nRsc; r++)
+        {
+            double tot = 0.0;
+            for (int cell = 0; cell < nCells; cell++)
+            {
+                double v = rscCellMajor[(cell * nRsc) + r];
+                if (p.OceanMask[cell] != 0 && !double.IsNaN(v))
+                {
+                    tot += v;
+                }
+            }
+
+            b[ds.Width - nRsc + r] = tot;
+        }
     }
 
     /// <summary>The mortality-by-size split (<c>_collect_by_java_size</c>): every focal school by
@@ -1271,4 +1534,75 @@ public sealed class OutputCollector
         n2 -= n2 % 8;
         return PairwiseSum(a[..n2]) + PairwiseSum(a[n2..]);
     }
+}
+
+/// <summary>Java's diet stages (<c>osmose.engine.diet_stage.DietStages</c>): a species' stage is
+/// the count of its thresholds at or below its value, compared in float32; the staged prey axis
+/// is every species' stages, then one column per resource.</summary>
+public sealed class DietStageTable
+{
+    public static readonly DietStageTable Empty = new([], [], [], 0);
+
+    public DietStageTable(int[] nStages, double[] thresholds, int[] structure, int nResources)
+    {
+        NStages = nStages;
+        Thresholds = thresholds;
+        Structure = structure;
+        NResources = nResources;
+        ColOffset = new int[nStages.Length + 1];
+        ThresholdOffset = new int[nStages.Length + 1];
+        for (int s = 0; s < nStages.Length; s++)
+        {
+            ColOffset[s + 1] = ColOffset[s] + nStages[s];
+            ThresholdOffset[s + 1] = ThresholdOffset[s] + nStages[s] - 1;
+        }
+    }
+
+    public int[] NStages { get; }
+
+    public double[] Thresholds { get; }
+
+    public int[] Structure { get; }
+
+    public int NResources { get; }
+
+    public int[] ColOffset { get; }
+
+    public int[] ThresholdOffset { get; }
+
+    public int NSpecies => NStages.Length;
+
+    /// <summary>Predator rows (every species' stages; the prey axis without the resources).</summary>
+    public int PredRows => ColOffset.Length > 0 ? ColOffset[^1] : 0;
+
+    public int Width => PredRows + NResources;
+
+    /// <summary>The staging value of a school (Java's float getters).</summary>
+    public float Value(in SchoolCore c, int ndt) => Structure[c.SpeciesId] switch
+    {
+        0 => (float)(c.AgeDt / (double)ndt),
+        1 => (float)c.Length,
+        2 => (float)(c.Weight * 1e6),
+        _ => (float)c.TrophicLevel,
+    };
+
+    /// <summary>Java <c>SchoolStage.getStage</c>.</summary>
+    public int Stage(int species, float value)
+    {
+        int stage = 0;
+        for (int k = ThresholdOffset[species]; k < ThresholdOffset[species + 1]; k++)
+        {
+            if (value < (float)Thresholds[k])
+            {
+                break;
+            }
+
+            stage++;
+        }
+
+        return stage;
+    }
+
+    /// <summary>The staged column of a school: its species' first column plus its stage.</summary>
+    public int Column(in SchoolCore c, int ndt) => ColOffset[c.SpeciesId] + Stage(c.SpeciesId, Value(c, ndt));
 }

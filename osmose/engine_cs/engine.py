@@ -147,6 +147,12 @@ def _step_outputs(buffers: Any, records: int) -> list:
             return None
         return families["diet_by_species"][i]
 
+    def stepped(name, i):
+        """A family's record, or None for the initial record (step -1)."""
+        if name not in families or buffers.record_step[i] < 0:
+            return None
+        return families[name][i]
+
     def present(name, i):
         """``{species: value}`` without the species absent from the record (NaN in the row)."""
         if name not in families:
@@ -183,6 +189,11 @@ def _step_outputs(buffers: Any, records: int) -> list:
             mortality_rate_by_cause_size=row("mortality_rate_by_cause_size", i),
             yield_by_fishery_landed=row("yield_by_fishery_landed", i),
             yield_by_fishery_discarded=row("yield_by_fishery_discarded", i),
+            # staged diet: none for the initial record (no step preceded it), as simulate does
+            diet_stage_num=stepped("diet_stage_num", i),
+            diet_stage_den=stepped("diet_stage_den", i),
+            predpressure_stage=stepped("predpressure_stage", i),
+            biomass_diet_stage=stepped("biomass_diet_stage", i),
             mean_tl=present("mean_tl", i),
             yield_n=row("yield_n", i),
             mean_size=present("mean_size", i),

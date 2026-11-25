@@ -1101,6 +1101,19 @@ def _diet_stage_labels(config, style: str) -> tuple[list[str], list[str]]:
 def _write_diet_stage_csvs(
     output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
 ) -> None:
+    """Write _build_diet_stage_dataframes' frames under Trophic/."""
+    frames = _build_diet_stage_dataframes(outputs, config)
+    if not frames:
+        return
+    trophic = output_dir / "Trophic"
+    trophic.mkdir(exist_ok=True)
+    for key, df in frames.items():
+        df.to_csv(trophic / f"{prefix}_{key}_Simu0.csv", index=False)
+
+
+def _build_diet_stage_dataframes(
+    outputs: list[StepOutput], config: EngineConfig
+) -> dict[str, pd.DataFrame]:
     """The staged diet outputs (Java DietOutput / PredatorPressureOutput with
     output.diet.stage.*, and BiomassDietStageOutput), as separate files under Trophic/:
     dietMatrixByStage (percent, 100 * sum(A * prey/preyed) / sum(A), NaN where no predator of
@@ -1109,10 +1122,9 @@ def _write_diet_stage_csvs(
     Rows of the first two are prey (species x stage, then resources) per record."""
     staged = [o for o in outputs if o.diet_stage_num is not None]
     biom = [o for o in outputs if o.biomass_diet_stage is not None]
+    frames: dict[str, pd.DataFrame] = {}
     if not staged and not biom:
-        return
-    trophic = output_dir / "Trophic"
-    trophic.mkdir(exist_ok=True)
+        return frames
     freq = float(config.output_record_frequency)
     stage_lab, rsc = _diet_stage_labels(config, "in")
     prey_rows = stage_lab + rsc
@@ -1131,20 +1143,17 @@ def _write_diet_stage_csvs(
             for j, lab in enumerate(prey_rows):
                 diet_rows.append([t, lab, *pct[:, j]])
                 pres_rows.append([t, pp_rows[j], *(pp[:nf_rows, j] / freq)])
-        pd.DataFrame(diet_rows, columns=["Time", "Prey", *stage_lab]).to_csv(
-            trophic / f"{prefix}_dietMatrixByStage_Simu0.csv", index=False
-        )
-        pd.DataFrame(pres_rows, columns=["Time", "Prey", *pp_lab[:nf_rows]]).to_csv(
-            trophic / f"{prefix}_predatorPressureByStage_Simu0.csv", index=False
+        frames["dietMatrixByStage"] = pd.DataFrame(diet_rows, columns=["Time", "Prey", *stage_lab])
+        frames["predatorPressureByStage"] = pd.DataFrame(
+            pres_rows, columns=["Time", "Prey", *pp_lab[:nf_rows]]
         )
     if biom:
         rows = [
             [o.step / config.n_dt_per_year, *(np.asarray(o.biomass_diet_stage) / freq)]
             for o in biom
         ]
-        pd.DataFrame(rows, columns=["Time", *prey_rows]).to_csv(
-            trophic / f"{prefix}_biomassDietStage_Simu0.csv", index=False
-        )
+        frames["biomassDietStage"] = pd.DataFrame(rows, columns=["Time", *prey_rows])
+    return frames
 
 
 def _write_yield_by_fishery_netcdf(

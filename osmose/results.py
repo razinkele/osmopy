@@ -294,6 +294,9 @@ _CROSS_SPECIES_OUTPUT_TYPES = {
     "yield",
     "dietMatrix",
     "predatorPressure",
+    "dietMatrixByStage",
+    "predatorPressureByStage",
+    "biomassDietStage",
     "biomassDistribBySize",
     "abundanceDistribBySize",
     "meanTL",
@@ -330,6 +333,7 @@ def _build_dataframes_from_outputs(
         _build_bioen_dataframes,
         _build_carbon_dataframes,
         _build_diet_dataframe,
+        _build_diet_stage_dataframes,
         _build_distrib_bysize_community_dataframes,
         _build_distribution_dataframes,
         _build_meansize_dataframe,
@@ -360,6 +364,8 @@ def _build_dataframes_from_outputs(
         # Same source array as dietMatrix, long-form and per-step-mean — mirrors the disk writer
         # so the in-memory and disk paths agree on output types.
         disk_shape.update(_build_predator_pressure_dataframe(outputs, config))
+    # staged diet and biomassDietStage (Trophic/), as the disk writer writes them
+    disk_shape.update(_build_diet_stage_dataframes(outputs, config))
     _ = grid  # reserved for future NetCDF-in-memory work
 
     cache_shape: dict[str, list[pd.DataFrame]] = {}

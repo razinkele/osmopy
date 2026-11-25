@@ -22,13 +22,14 @@ public sealed class FamilyOutputsTests : IDisposable
     private static readonly double[] Edges = [2.0, 6.0, 10.0];
 
     // the diet and the Java-rule distributions have their own tests
-    private const OutputFamilies All = OutputFamilies.Known & ~OutputFamilies.Diet & ~OutputFamilies.JavaDistributions & ~OutputFamilies.CatchFamilies;
+    private const OutputFamilies All = OutputFamilies.Known & ~OutputFamilies.Diet & ~OutputFamilies.JavaDistributions & ~OutputFamilies.CatchFamilies & ~OutputFamilies.DietStageFamilies;
 
     private static readonly string[] JavaNames =
     [
         "biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den",
         "yield_by_size", "size_catch_num", "size_catch_den", "tl_catch_num", "tl_catch_den", "mortality_rate_by_cause_size",
         "yield_by_fishery_landed", "yield_by_fishery_discarded",
+        "diet_stage_num", "diet_stage_den", "predpressure_stage", "biomass_diet_stage",
     ];
 
     private readonly List<GCHandle> _pins = [];
