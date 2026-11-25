@@ -18,6 +18,7 @@ BOB = ROOT / "data" / "examples" / "osm_all-parameters.csv"
 def test_bob_runs_on_python_engine():
     raw = dict(OsmoseConfigReader().read(str(BOB)))
     raw["simulation.time.nyear"] = "3"  # pin: do NOT inherit nyear;50
+    raw["output.start.year"] = "0"  # the demo starts later (Java)
     res = PythonEngine().run_in_memory(raw, seed=42)
     bio = res.biomass()
     assert bio is not None and len(bio) > 0

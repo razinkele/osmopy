@@ -49,6 +49,7 @@ def engine_ok():
 def _raw(demo: str, d: Path, nyear: int, minimal: bool = True, extra: dict | None = None) -> dict:
     raw = dict(OsmoseConfigReader().read(Path(osmose_demo(demo, d)["config_file"])))
     raw["simulation.time.nyear"] = str(nyear)
+    raw["output.start.year"] = "0"  # the demo starts later (Java)
     if minimal:
         raw["output.minimal.enabled"] = "true"
     return raw | (extra or {})

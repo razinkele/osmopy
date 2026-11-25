@@ -867,8 +867,16 @@ FAMILY_MORTALITY_BY_SIZE = 65536
 FAMILY_YIELD_BY_FISHERY = 131072  # landings and discards by species x fishery
 FAMILY_DIET_STAGED = 262144  # staged diet: num/den and predator pressure by stage
 FAMILY_BIOMASS_DIET_STAGE = 524288  # biomass by diet stage at the step start
+FAMILY_ADDITIONAL_BY_SIZE = 1048576  # additional-mortality biomass by size (window mean)
+FAMILY_ADDITIONAL_N_BY_SIZE = 2097152  # additional-mortality numbers by size (window mean)
 #: Every family that bins by the Java size thresholds (they share one table).
-FAMILIES_JAVA_SIZE = FAMILY_MEANTL_BY_SIZE | FAMILY_YIELD_BY_SIZE | FAMILY_MORTALITY_BY_SIZE
+FAMILIES_JAVA_SIZE = (
+    FAMILY_MEANTL_BY_SIZE
+    | FAMILY_YIELD_BY_SIZE
+    | FAMILY_MORTALITY_BY_SIZE
+    | FAMILY_ADDITIONAL_BY_SIZE
+    | FAMILY_ADDITIONAL_N_BY_SIZE
+)
 
 
 #: Each Java-rule family's threshold table (float32 values as float64), as the C# reader expects.
@@ -909,6 +917,8 @@ def output_families(config: Any) -> int:
         ),
         (FAMILY_DIET_STAGED, bool(getattr(config, "diet_staged_output", False))),
         (FAMILY_BIOMASS_DIET_STAGE, bool(getattr(config, "output_biomass_diet_stage", False))),
+        (FAMILY_ADDITIONAL_BY_SIZE, bool(config.output_additional_mortality_bysize)),
+        (FAMILY_ADDITIONAL_N_BY_SIZE, bool(config.output_additional_n_bysize)),
     ]
     return sum(bit for bit, flag in on if flag)
 
@@ -996,6 +1006,10 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
     n_jsize = len(config.output_size_thresholds) + 1 if families & FAMILIES_JAVA_SIZE else 0
     if families & FAMILY_YIELD_BY_SIZE:
         shapes["yield_by_size"] = (nf, n_jsize)
+    if families & FAMILY_ADDITIONAL_BY_SIZE:
+        shapes["additional_mortality_bysize"] = (nf, n_jsize)
+    if families & FAMILY_ADDITIONAL_N_BY_SIZE:
+        shapes["additional_n_bysize"] = (nf, n_jsize)
     for bit, pair in (
         (FAMILY_SIZE_CATCH, ("size_catch_num", "size_catch_den")),
         (FAMILY_TL_CATCH, ("tl_catch_num", "tl_catch_den")),

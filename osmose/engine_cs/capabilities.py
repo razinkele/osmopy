@@ -199,6 +199,8 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     # Output file names: the shared Python writer (write_outputs) applies the prefix for both
     # engines, so nothing about it reaches the C# engine.
     (r"output\.file\.prefix", "inert"),
+    # Records before output.start.year are dropped by the shared Python path (records_from_start)
+    (r"output\.start\.year", "inert"),
     # No effect on the Python engine's results (per-species generators never consumed, 2026-11-17).
     # simulation.fixed.seed.enabled is OSMOSE 4.4.0's one key for the same two flags.
     (
@@ -340,6 +342,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
             r"|output\.(yield\.biomass\.bysize|size\.catch|tl\.catch)\.enabled"
             r"|output\.mortality\.perspecies\.bysize\.enabled"
             r"|output\.fisheries\.yield\.biomass\.enabled"
+            r"|output\.mortality\.(additional|additionaln)\.bysize\.enabled"
             # staged diet outputs (2026-11-25)
             r"|output\.diet\.pressure\.enabled"
             r"|output\.diet\.stage\.(structure|structure\.sp\{idx\}|threshold\.sp\{idx\})"

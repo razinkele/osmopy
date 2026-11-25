@@ -77,6 +77,13 @@ public enum OutputFamilies : long
     /// each resource's total biomass over the ocean; summed.</summary>
     BiomassDietStage = 524288,
 
+    /// <summary>ADDITIONAL deaths x weight of alive schools by Java size class, window mean
+    /// (Java Indicators/additionalMortality).</summary>
+    AdditionalMortalityBySize = 1048576,
+
+    /// <summary>ADDITIONAL deaths (numbers) of alive schools by Java size class, window mean.</summary>
+    AdditionalNBySize = 2097152,
+
     /// <summary>The three Java-rule distribution families.</summary>
     JavaDistributions = BiomassByTl | MeanSizeByAge | MeanTlBySize,
 
@@ -87,13 +94,13 @@ public enum OutputFamilies : long
     DietStageFamilies = DietStaged | BiomassDietStage,
 
     /// <summary>Every family binned by <see cref="OutputLayout.JavaSizeThresholds"/>.</summary>
-    JavaSize = MeanTlBySize | YieldBySize | MortalityBySize,
+    JavaSize = MeanTlBySize | YieldBySize | MortalityBySize | AdditionalMortalityBySize | AdditionalNBySize,
 
     ByAge = BiomassByAge | AbundanceByAge,
     BySize = BiomassBySize | AbundanceBySize,
 
     /// <summary>Every family this engine can collect.</summary>
-    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet | BiomassByTl | MeanSizeByAge | MeanTlBySize | CatchFamilies | DietStageFamilies,
+    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet | BiomassByTl | MeanSizeByAge | MeanTlBySize | CatchFamilies | DietStageFamilies | AdditionalMortalityBySize | AdditionalNBySize,
 }
 
 /// <summary>How a record window folds a family's per-step rows (<c>_average_step_outputs</c>).</summary>
@@ -165,6 +172,7 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         "yield_by_size", "size_catch_num", "size_catch_den", "tl_catch_num", "tl_catch_den", "mortality_rate_by_cause_size",
         "yield_by_fishery_landed", "yield_by_fishery_discarded",
         "diet_stage_num", "diet_stage_den", "predpressure_stage", "biomass_diet_stage",
+        "additional_mortality_bysize", "additional_n_bysize",
         "diet_by_species",
     ];
 
@@ -264,6 +272,8 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         Add("diet_stage_den", OutputFamilies.DietStaged, WindowFold.Sum, [DietStages.PredRows]);
         Add("predpressure_stage", OutputFamilies.DietStaged, WindowFold.Sum, [DietStages.PredRows, DietStages.Width]);
         Add("biomass_diet_stage", OutputFamilies.BiomassDietStage, WindowFold.Sum, [DietStages.Width]);
+        AddJava("additional_mortality_bysize", OutputFamilies.AdditionalMortalityBySize, JavaSizeThresholds);
+        AddJava("additional_n_bysize", OutputFamilies.AdditionalNBySize, JavaSizeThresholds);
         Add("diet_by_species", OutputFamilies.Diet, WindowFold.Sum, [NTotal, DietColumns]); // last
         return specs;
     }
@@ -385,6 +395,7 @@ public sealed class OutputCollector
     private readonly double[] _sizeAbundanceScratch, _sizeDeathsScratch; // one step, by Java size class
     private readonly double[] _yfLand, _yfDisc;
     private readonly double[] _dsNum, _dsDen, _dsPp, _dsBiomass;
+    private readonly double[] _addBySize, _addNBySize;
     private double[] _snapRows = [], _bkgNum = [], _bkgDen = [], _bkgPp = [];
     private int[] _snapSpecies = [];
     private int _snapCount = -1; // focal rows of this step's staged-diet snapshot; -1: not taken
@@ -447,6 +458,8 @@ public sealed class OutputCollector
         _dsDen = Rows("diet_stage_den");
         _dsPp = Rows("predpressure_stage");
         _dsBiomass = Rows("biomass_diet_stage");
+        _addBySize = Rows("additional_mortality_bysize");
+        _addNBySize = Rows("additional_n_bysize");
         int nJ = layout.JavaSizeThresholds.Length + 1;
         _sizeAbundanceScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * nJ];
         _sizeDeathsScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * RunResults.MortalityCauses * nJ];
@@ -799,6 +812,9 @@ public sealed class OutputCollector
             throw new InvalidOperationException("yield by fishery: call SnapshotFisheries before Collect on the per-fishery path");
         }
 
+        Span<double> addB = Row(_addBySize, _nFocal * nJ), addN = Row(_addNBySize, _nFocal * nJ);
+        addB.Clear();
+        addN.Clear();
         ySize.Clear();
         scNum.Clear();
         scDen.Clear();
@@ -880,6 +896,22 @@ public sealed class OutputCollector
                         yfL[(sp * nFsh) + k] += dw * _shareLand[(i * nFsh) + k];
                         yfD[(sp * nFsh) + k] += dd * _shareDisc[(i * nFsh) + k];
                     }
+                }
+            }
+
+            // Additional mortality by size (DistribOutput's default set: alive schools only).
+            if ((!addB.IsEmpty || !addN.IsEmpty) && Alive(c, _lifespanDt))
+            {
+                int at = (sp * nJ) + JavaClass(jSizeThr, c.Length);
+                double dead = ledger[i].DeadAdditional;
+                if (!addB.IsEmpty)
+                {
+                    addB[at] += dead * c.Weight;
+                }
+
+                if (!addN.IsEmpty)
+                {
+                    addN[at] += dead;
                 }
             }
 

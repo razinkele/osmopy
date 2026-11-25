@@ -449,7 +449,12 @@ class OsmoseResults:
         obj.output_dir = None  # type: ignore[assignment]
         obj.prefix = prefix
         obj.strict = True
-        obj._csv_cache = _build_dataframes_from_outputs(outputs, engine_config, grid)
+        from osmose.engine.output import records_from_start
+
+        outputs = records_from_start(outputs, engine_config)  # output.start.year, as Java
+        obj._csv_cache = (
+            _build_dataframes_from_outputs(outputs, engine_config, grid) if outputs else {}
+        )
         # __init__ initializes _nc_cache = {} for NetCDF caching; since we're
         # bypassing __init__ via __new__, set it explicitly. close_cache()
         # iterates _nc_cache and would raise AttributeError otherwise.

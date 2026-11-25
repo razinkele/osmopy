@@ -279,6 +279,10 @@ class StepOutput:
     meansize_byage_den: dict[int, NDArray[np.float64]] | None = None
     meantl_bysize_num: dict[int, NDArray[np.float64]] | None = None
     meantl_bysize_den: dict[int, NDArray[np.float64]] | None = None
+    # Java Indicators/additionalMortality(N) by size class: ADDITIONAL deaths of alive schools,
+    # biomass and numbers, window means (DistribOutput defaults)
+    additional_mortality_bysize: dict[int, NDArray[np.float64]] | None = None
+    additional_n_bysize: dict[int, NDArray[np.float64]] | None = None
     # Catch-derived families (PR-B; Java SizeIndicators/Trophic, all SUMMED over the window):
     # yield (t) by Java size class, the catch-weighted mean size and TL as numerator/denominator
     # per focal species, and per-step mortality rates by cause and size class.
@@ -1714,6 +1718,27 @@ def _collect_catch_families(
             float
         )
         out["tl_catch_den"] = np.bincount(sp, f_bio, n_sp).astype(float)
+    if config.output_additional_mortality_bysize or config.output_additional_n_bysize:
+        # DistribOutput's default school set: alive schools (abundance > 0, age <= lifespan - 1)
+        sp_all = state.species_id
+        alive = (
+            (sp_all < n_sp)
+            & (state.abundance > 0)
+            & (state.age_dt <= config.lifespan_dt[np.clip(sp_all, 0, n_sp - 1)] - 1)
+        )
+        t = config.output_size_thresholds
+        a_sp = sp_all[alive]
+        a_cls = java_classes(state.length[alive], t)
+        a_dead = state.n_dead[alive, int(MortalityCause.ADDITIONAL)]
+        for flag, name, val in (
+            (config.output_additional_mortality_bysize, "additional_mortality_bysize",
+             a_dead * state.weight[alive]),
+            (config.output_additional_n_bysize, "additional_n_bysize", a_dead),
+        ):  # fmt: skip
+            if flag:
+                grid = np.zeros((n_sp, len(t) + 1), dtype=np.float64)
+                np.add.at(grid, (a_sp, a_cls), val)
+                out[name] = {s: grid[s] for s in range(n_sp)}
     if config.output_mortality_bysize:
         abundance, deaths = (
             size_split if size_split is not None else _collect_by_java_size(state, config)
@@ -1989,6 +2014,8 @@ _JAVA_DISTRIB_FIELDS = (
     "meansize_byage_den",
     "meantl_bysize_num",
     "meantl_bysize_den",
+    "additional_mortality_bysize",
+    "additional_n_bysize",
 )
 
 

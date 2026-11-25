@@ -195,6 +195,8 @@ def write_region_outputs(
         prefix = str(getattr(config, "output_file_prefix", "osm") or "osm")
     from osmose.engine import output as out
 
+    region_outputs = {name: out.records_from_start(o, config) for name, o in region_outputs.items()}
+
     for name, outputs in region_outputs.items():
         if not outputs:
             continue

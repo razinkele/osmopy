@@ -21,6 +21,44 @@ if TYPE_CHECKING:
     from osmose.engine.economics.fleet import FleetState
 
 
+def keep_outputs_when_shortened(cfg: dict[str, str]) -> dict[str, str]:
+    """For library code that shortens a run (sweeps, screens, evaluators): when the new
+    ``simulation.time.nyear`` is at or below ``output.start.year``, the run would record nothing,
+    so the start year is reset to 0; a start year the shortened run still covers is kept.
+    Modifies and returns ``cfg``."""
+    try:
+        start = float(cfg.get("output.start.year", "0") or 0)
+        years = float(cfg.get("simulation.time.nyear", "0") or 0)
+    except ValueError:
+        return cfg
+    if start > 0 and years <= start:
+        cfg["output.start.year"] = "0"
+    return cfg
+
+
+def records_from_start(outputs: list[StepOutput], config: EngineConfig) -> list[StepOutput]:
+    """Java's ``output.start.year`` (OutputManager): outputs are collected and written only from
+    that year on. Keeps the records whose whole window lies at or after the start year (with
+    the usual whole-year record frequencies this is exactly Java's set); the initial record
+    (step -1) belongs to year 0. A run that ends at or before the start year keeps nothing, as
+    in Java, and says so (the UI refuses to start such a run)."""
+    start = int(getattr(config, "output_start_year", 0) or 0)
+    if start <= 0:
+        return outputs
+    first = start * config.n_dt_per_year
+    kept = [o for o in outputs if o.step - max(int(o.window_steps or 1), 1) + 1 >= first]
+    if not kept and outputs:
+        import logging
+
+        logging.getLogger("osmose").warning(
+            "output.start.year is %d but the run has only %d years: as in Java, no output is "
+            "written (set output.start.year lower to keep this run's outputs)",
+            start,
+            config.n_year,
+        )
+    return kept
+
+
 def write_outputs(
     outputs: list[StepOutput],
     output_dir: Path,
@@ -43,6 +81,9 @@ def write_outputs(
     output_dir.mkdir(parents=True, exist_ok=True)
     if prefix is None:
         prefix = config.output_file_prefix
+    outputs = records_from_start(outputs, config)
+    if not outputs:
+        return  # output.start.year beyond the run: nothing to write, as Java (warned above)
 
     _write_biomass_abundance(output_dir, prefix, outputs, config)
     _write_mortality_csvs(output_dir, prefix, outputs, config)
@@ -254,6 +295,19 @@ def _build_java_distribution_dataframes(
         (
             "yieldDistribBySize",
             "yield_by_size",
+            None,
+            getattr(config, "output_size_thresholds", None),
+        ),
+        # Java Indicators/additionalMortality(N)DistribBySize: window means
+        (
+            "additionalMortalityDistribBySize",
+            "additional_mortality_bysize",
+            None,
+            getattr(config, "output_size_thresholds", None),
+        ),
+        (
+            "additionalMortalityNDistribBySize",
+            "additional_n_bysize",
             None,
             getattr(config, "output_size_thresholds", None),
         ),

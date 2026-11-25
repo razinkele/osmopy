@@ -20,6 +20,7 @@ def _bare_config_dict() -> dict[str, str]:
 
     raw = OsmoseConfigReader().read(EXAMPLE_CONFIG)
     raw["simulation.time.nyear"] = "1"
+    raw["output.start.year"] = "0"  # the demo starts later (Java)
     return raw
 
 

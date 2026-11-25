@@ -714,6 +714,9 @@ def make_preflight_eval_fn(
         def _one(self, i: int, X: np.ndarray) -> tuple[int, np.ndarray | None, Exception | None]:
             config = dict(base_config)
             config["simulation.time.nyear"] = str(effective_years)
+            from osmose.engine.output import keep_outputs_when_shortened
+
+            keep_outputs_when_shortened(config)
             for j, fp in enumerate(free_params):
                 val = float(X[i, j])
                 if fp.transform is Transform.LOG:

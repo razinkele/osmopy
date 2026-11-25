@@ -281,6 +281,9 @@ def make_engine_evaluator(
             cfg["output.ssb.enabled"] = "true"
         if nyear is not None:
             cfg["simulation.time.nyear"] = str(nyear)
+            from osmose.engine.output import keep_outputs_when_shortened
+
+            keep_outputs_when_shortened(cfg)  # a shortened run must still record
         cfg.update(point_to_overrides(x, free_params))
         results = PythonEngine().run_in_memory(cfg, seed=int(seed))
         return compute_uq_stats(results, species)

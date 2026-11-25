@@ -1235,7 +1235,9 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "age": _enabled(cfg, "output.meansize.byage.enabled"),
         "size": _enabled(cfg, "output.meantl.bysize.enabled")
         or _enabled(cfg, "output.yield.biomass.bysize.enabled")
-        or _enabled(cfg, "output.mortality.perspecies.bysize.enabled"),
+        or _enabled(cfg, "output.mortality.perspecies.bysize.enabled")
+        or _enabled(cfg, "output.mortality.additional.bysize.enabled")
+        or _enabled(cfg, "output.mortality.additionaln.bysize.enabled"),
     }
     java_bins = {
         kind: java_thresholds(cfg, kind) if on else np.zeros(0, dtype=np.float32)
@@ -1313,8 +1315,16 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_tl_catch": _enabled(cfg, "output.tl.catch.enabled"),
         "output_mortality_bysize": _enabled(cfg, "output.mortality.perspecies.bysize.enabled"),
         "output_fisheries_yield": _enabled(cfg, "output.fisheries.yield.biomass.enabled"),
+        # the by-age variant (which Java also lets switch the by-size one on) is not implemented
+        # and stays listed as Java-only (#123)
+        "output_additional_mortality_bysize": _enabled(
+            cfg, "output.mortality.additional.bysize.enabled"
+        ),
+        "output_additional_n_bysize": _enabled(cfg, "output.mortality.additionaln.bysize.enabled"),
         "output_file_prefix": _output_file_prefix(cfg),
         "output_biomass_diet_stage": _enabled(cfg, "output.diet.pressure.enabled"),
+        # Java OutputManager: outputs are collected and written only from this year on
+        "output_start_year": max(0, int(float(cfg.get("output.start.year", "0") or 0))),
         "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
         "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
         "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
@@ -2542,7 +2552,10 @@ class EngineConfig:
     output_tl_catch: bool = False
     output_mortality_bysize: bool = False
     output_fisheries_yield: bool = False  # also needs fishery_names (fisheries declared)
+    output_additional_mortality_bysize: bool = False
+    output_additional_n_bysize: bool = False
     output_file_prefix: str = "osm"  # output.file.prefix: every output file name starts with it
+    output_start_year: int = 0  # output.start.year: records of earlier years are dropped
     output_tl_thresholds: Any = None
     output_age_thresholds: Any = None
     output_size_thresholds: Any = None
@@ -3577,7 +3590,10 @@ class EngineConfig:
             output_tl_catch=_output["output_tl_catch"],
             output_mortality_bysize=_output["output_mortality_bysize"],
             output_fisheries_yield=_output["output_fisheries_yield"],
+            output_additional_mortality_bysize=_output["output_additional_mortality_bysize"],
+            output_additional_n_bysize=_output["output_additional_n_bysize"],
             output_file_prefix=_output["output_file_prefix"],
+            output_start_year=_output["output_start_year"],
             output_tl_thresholds=_output["output_tl_thresholds"],
             output_age_thresholds=_output["output_age_thresholds"],
             output_size_thresholds=_output["output_size_thresholds"],

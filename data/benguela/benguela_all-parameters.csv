@@ -517,7 +517,7 @@ output.spatialmstarv.enabled ; FALSE
 output.spatialsize.enabled ; FALSE
 output.spatialsizespecies.enabled ; FALSE
 output.spatialtl.enabled ; FALSE
-output.start.year ; 60
+output.start.year ; 0
 output.step0.include ; FALSE
 output.tl.catch.enabled ; FALSE
 output.tl.enabled ; FALSE

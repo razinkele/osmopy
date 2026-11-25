@@ -69,6 +69,7 @@ def test_examples_actually_produces_meantl_output(tmp_path):
 
     cfg = OsmoseConfigReader().read(ROOT / "data/examples/osm_all-parameters.csv")
     cfg["simulation.time.nyear"] = "1"  # keep it fast
+    cfg["output.start.year"] = "0"  # the demo starts later (Java)
     PythonEngine().run(config=cfg, output_dir=tmp_path, seed=0)
     results = OsmoseResults(tmp_path)
     tl = results.mean_trophic_level()

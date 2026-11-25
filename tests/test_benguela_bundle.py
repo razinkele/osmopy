@@ -128,6 +128,7 @@ def test_master_runs_without_nan_integration_smoke():
     # Task 4's own gate, not only at Task 5. Spike-confirmed to be NaN-free with correct maps.
     raw = dict(OsmoseConfigReader().read(str(MASTER)))
     raw["simulation.time.nyear"] = "1"
+    raw["output.start.year"] = "0"  # the demo starts later (Java)
     res = PythonEngine().run_in_memory(raw, seed=42)
     b = res.biomass()
     cols = [c for c in b.columns if c not in ("Time", "time", "species")]
