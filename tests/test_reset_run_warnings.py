@@ -49,7 +49,7 @@ def test_reset_run_warnings_lets_a_warning_re_emit():
     from osmose.engine import reset_run_warnings
     from osmose.engine.config_validation import warn_unread_java_only_keys
 
-    cfg = {"output.start.year": "60"}  # a java-only key that can matter -> #123 warning
+    cfg = {"output.fisheries.byage.enabled": "true"}  # java-only, can matter -> #123 warning
 
     caplog_records = []
     h = logging.Handler()

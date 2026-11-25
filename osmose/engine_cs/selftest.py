@@ -68,6 +68,7 @@ def main() -> int:
             raw = dict(OsmoseConfigReader().read(Path(osmose_demo(DEMO, Path(tmp))["config_file"])))
             raw["simulation.time.nyear"] = str(YEARS)
             raw["output.minimal.enabled"] = "true"
+            raw["output.start.year"] = "0"  # a 1-year check needs its records (BoB sets 20)
             cfg = EngineConfig.from_dict(raw)
             n_steps = int(cfg.n_steps)
             # The engine's own recording rule (trailing partial window, output.step0.include).

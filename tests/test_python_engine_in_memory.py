@@ -21,6 +21,7 @@ EXAMPLE_CONFIG = Path(__file__).parent.parent / "data" / "examples" / "osm_all-p
 def _short_config() -> dict[str, str]:
     raw = OsmoseConfigReader().read(EXAMPLE_CONFIG)
     raw["simulation.time.nyear"] = "1"
+    raw["output.start.year"] = "0"  # the demo starts later (Java)
     return raw
 
 

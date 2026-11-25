@@ -119,6 +119,7 @@ FULL_OUTPUT_KEYS = {
     # staged diet (PR-E)
     "output.diet.pressure.enabled", "output.diet.stage.structure",
     "output.diet.stage.structure.sp{idx}", "output.diet.stage.threshold.sp{idx}",
+    "output.mortality.additional.bysize.enabled", "output.mortality.additionaln.bysize.enabled",
 }  # fmt: skip
 
 

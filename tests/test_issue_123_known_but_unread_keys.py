@@ -413,18 +413,18 @@ def _load_minimal_config() -> dict:
 def test_warn_emits_one_summary_naming_the_keys(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
         keys = cv.warn_unread_java_only_keys(
-            {"output.start.year": "60", "output.fisheries.byage.enabled": "true"}
+            {"simulation.restart.spinup.nyear": "100", "output.fisheries.byage.enabled": "true"}
         )
-    assert keys == ["output.fisheries.byage.enabled", "output.start.year"]
+    assert keys == ["output.fisheries.byage.enabled", "simulation.restart.spinup.nyear"]
     msgs = [r.getMessage() for r in caplog.records if "issue #123" in r.getMessage()]
     assert len(msgs) == 1
-    assert "output.fisheries.byage.enabled" in msgs[0] and "output.start.year" in msgs[0]
+    assert "output.fisheries.byage.enabled" in msgs[0] and "simulation.restart" in msgs[0]
 
 
 def test_warn_dedups_once_per_process(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
-        cv.warn_unread_java_only_keys({"output.start.year": "60"})
-        cv.warn_unread_java_only_keys({"output.start.year": "60"})
+        cv.warn_unread_java_only_keys({"simulation.restart.spinup.nyear": "100"})
+        cv.warn_unread_java_only_keys({"simulation.restart.spinup.nyear": "100"})
     assert sum("issue #123" in r.getMessage() for r in caplog.records) == 1
 
 
@@ -476,6 +476,7 @@ def test_prepare_run_emits_the_warning(caplog):
 
     cfg = dict(_load_minimal_config())
     cfg["simulation.ncpu"] = "8"
+    cfg["output.fisheries.byage.enabled"] = "true"  # a java-only key that is listed
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
         PythonEngine()._prepare_run(cfg, seed=0)
     assert any("issue #123" in r.getMessage() for r in caplog.records)

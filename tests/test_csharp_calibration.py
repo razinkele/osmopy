@@ -14,6 +14,7 @@ this is the behaviour end to end. It needs the built engine: it skips without it
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -46,6 +47,13 @@ def _base_config(tmp_path: Path) -> Path:
     cfg = Path(osmose_demo("bay_of_biscay", tmp_path / "demo")["config_file"])
     with cfg.open("a") as f:
         f.write("\nsimulation.time.nyear;1\noutput.minimal.enabled;true\n")
+    # BoB sets output.start.year in an included file, which wins over a line appended here
+    for inc in cfg.parent.glob("*.csv"):
+        text = inc.read_text()
+        if "output.start.year" in text:
+            inc.write_text(
+                re.sub(r"(?m)^output\.start\.year\s*[;=,]\s*\d+", "output.start.year ; 0", text)
+            )
     return cfg
 
 
@@ -115,7 +123,7 @@ def test_each_csharp_evaluation_asks_for_one_thread(tmp_path, monkeypatch):
 
     monkeypatch.setattr(select, "get_engine", fake_get_engine)
     cfg = tmp_path / "cfg.csv"
-    cfg.write_text("simulation.time.nyear;1\n")
+    cfg.write_text("simulation.time.nyear;1\noutput.start.year;0\n")
     py = _problem(cfg, tmp_path / "w", None, None)
     cs = object.__new__(OsmoseCalibrationProblem)  # bypass the up-front run check
     cs.__dict__.update(py.__dict__, engine="csharp")

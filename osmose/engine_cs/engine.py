@@ -182,6 +182,8 @@ def _step_outputs(buffers: Any, records: int) -> list:
             meantl_bysize_num=by_size("meantl_bysize_num", i),
             meantl_bysize_den=by_size("meantl_bysize_den", i),
             yield_by_size=by_size("yield_by_size", i),
+            additional_mortality_bysize=by_size("additional_mortality_bysize", i),
+            additional_n_bysize=by_size("additional_n_bysize", i),
             size_catch_num=row("size_catch_num", i),
             size_catch_den=row("size_catch_den", i),
             tl_catch_num=row("tl_catch_num", i),

@@ -20,6 +20,7 @@ def _base_config(extra: dict | None = None) -> dict[str, str]:
     base = {
         "simulation.time.ndtperyear": "12",
         "simulation.time.nyear": "1",
+        "output.start.year": "0",
         "simulation.nspecies": "2",
         "simulation.nschool.sp0": "5",
         "simulation.nschool.sp1": "5",
@@ -193,6 +194,7 @@ def test_community_outputs_feed_diagnostics(tmp_path):
 
     raw = OsmoseConfigReader().read(examples_config)
     raw["simulation.time.nyear"] = "2"
+    raw["output.start.year"] = "0"  # the demo starts later (Java)
     # raw keys are already lowercased by OsmoseConfigReader; set the LOWERCASE keys to match
     # (this is what config.py reads -- NOT a case-bypass).
     raw["output.biomass.bysize.enabled"] = "true"

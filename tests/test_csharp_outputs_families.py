@@ -84,11 +84,13 @@ OFF = (
             "tl.catch",
             "mortality.perspecies.bysize",
             "diet.pressure",  # biomassDietStage (staged diet: off with diet composition)
+            "mortality.additional.bysize",
+            "mortality.additionaln.bysize",
         )
     }
 )
 #: Java-rule families: (species x classes) records, the same dict shape as by-size.
-JAVA_DISTRIB = ("biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den", "yield_by_size")  # fmt: skip
+JAVA_DISTRIB = ("biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den", "yield_by_size", "additional_mortality_bysize", "additional_n_bysize")  # fmt: skip
 #: Every family on, with length classes that leave schools below the first and beyond the last.
 ALL = (
     OFF

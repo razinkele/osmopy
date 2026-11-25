@@ -66,9 +66,8 @@ def test_identity_fishing_periods_are_inert_real_seasonality_is_not():
 def test_benguela_lists_only_the_keys_that_can_matter():
     cfg = OsmoseConfigReader().read(ROOT / "data/benguela/benguela_all-parameters.csv")
     listed = cv.warn_unread_java_only_keys(cfg)
-    assert len(cv.java_only_keys_set(cfg)) > 60  # the raw set is still complete
+    assert len(cv.java_only_keys_set(cfg)) >= 55  # the raw set is still complete
     assert listed == [
-        "output.start.year",  # 60 on a 15-yr run: Java would write nothing
         "simulation.restart.recordfrequency.ndt",
         "simulation.restart.spinup.nyear",
     ]
@@ -86,7 +85,8 @@ def test_values_matching_this_engine_are_not_listed():
         "output.dir.path": "output",
     }
     assert cv.warn_unread_java_only_keys(cfg) == []
-    assert cv.warn_unread_java_only_keys({"output.start.year": "5"}) == ["output.start.year"]
+    # output.start.year is honoured since 2026-11-25 (records before it are dropped): never listed
+    assert cv.warn_unread_java_only_keys({"output.start.year": "5"}) == []
     # output.diet.pressure.enabled is read (it switches biomassDietStage on): never listed
     assert cv.warn_unread_java_only_keys({"output.diet.pressure.enabled": "true"}) == []
 

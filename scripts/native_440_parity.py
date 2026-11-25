@@ -48,6 +48,7 @@ def run_outputs(config_dir, years: int = 3, seed: int = 42) -> dict[str, np.ndar
     master = next(iter(Path(config_dir).glob("*all-parameters*.csv")))
     raw = dict(OsmoseConfigReader().read(str(master)))
     raw["simulation.time.nyear"] = str(years)
+    raw["output.start.year"] = "0"  # a short check needs its records (BoB starts at 20)
     raw["simulation.rng.fixed"] = "true"
     res = PythonEngine().run_in_memory(raw, seed=seed)  # seed drives determinism
     out: dict[str, np.ndarray] = {}

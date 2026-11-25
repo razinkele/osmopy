@@ -49,6 +49,9 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
         # Java-rule distribution families (osmose/engine/output_distrib.py, 2026-11-24)
         "output.fisheries.yield.biomass.enabled",
+        "output.start.year",  # records before it are dropped, as Java (2026-11-25)
+        "output.mortality.additional.bysize.enabled",
+        "output.mortality.additionaln.bysize.enabled",
         # staged diet outputs (osmose/engine/diet_stage.py, 2026-11-25)
         "output.diet.pressure.enabled",
         "output.diet.stage.structure",
@@ -252,9 +255,7 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.meantl.byage.enabled",
         "output.meanweight.byage.enabled",
         "output.mortality.additional.byage.enabled",
-        "output.mortality.additional.bysize.enabled",
         "output.mortality.additionaln.byage.enabled",
-        "output.mortality.additionaln.bysize.enabled",
         "output.mortality.enabled",
         "output.mortality.perspecies.byage.enabled",
         "output.nschool.enabled",
@@ -266,7 +267,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.spatial.ltl.enabled",
         "output.spatial.size.enabled",
         "output.spatial.yield.abundance.enabled",
-        "output.start.year",
         "output.weight.enabled",
         "output.yield.abundance.byage.enabled",
         "output.yield.abundance.bysize.enabled",
@@ -336,6 +336,12 @@ _ALWAYS_INERT_PATTERNS = (
     # Java 4.4.x reads no output.fisheries.enabled: Releases renames the 4.3 output.fishery.enabled
     # to it, but OutputManager gates the per-fishery outputs on output.fisheries.yield.* etc.
     re.compile(r"^output\.fisher(y|ies)\.enabled$"),
+    # Deprecated by Java 4.x's version upgrader (Releases) and read by nothing in 4.4.1:
+    # the initialisation method (seeding replaced it), the accessibility stage thresholds (since
+    # 4.3.0 the stages come from the accessibility matrix) and the resources' conversion2tons.
+    re.compile(r"^population\.initialization\.method(\.sp\d+)?$"),
+    re.compile(r"^predation\.accessibility\.stage\.threshold\.sp\d+$"),
+    re.compile(r"^species\.conversion2tons\.sp\d+$"),
 )
 # Outputs this engine ALWAYS writes (osmose/engine/output.py write_outputs): Java's switch set to
 # true asks for exactly what is produced anyway.
@@ -373,7 +379,7 @@ def _inert_java_only_key(key: str, cfg: dict) -> bool:
 
     - a switch that is off (``*.enabled`` = false): ignoring a disabled feature changes nothing;
     - a value that already matches this engine: always-written outputs set true,
-      ``output.start.year`` = 0, ``output.dir.path``;
+      ``output.dir.path``;
     - the regular-grid corner/mask keys when ``grid.netcdf.file`` is set (dead in Java 4.3.1+);
     - labels / Java class names / ``simulation.ncpu``;
     - ``simulation.nsimulation`` = 1 (a single replicate is what this engine runs);
@@ -386,8 +392,6 @@ def _inert_java_only_key(key: str, cfg: dict) -> bool:
     # The value already matches what this engine does.
     if key in _ALWAYS_WRITTEN_OUTPUTS and val == "true":
         return True
-    if key == "output.start.year":
-        return _num(val) == 0  # this engine records from year 0
     if key == "output.dir.path":
         return True  # the run's output directory is the caller's (UI/CLI/API) argument
     if key in _LEGACY_GRID_KEYS:

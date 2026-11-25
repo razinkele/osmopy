@@ -140,6 +140,7 @@ def run_python(output_dir: Path, n_years: int, seed: int) -> float:
     reader = OsmoseConfigReader()
     config = reader.read(EXAMPLES_CONFIG)
     config["simulation.time.nyear"] = str(n_years)
+    config["output.start.year"] = "0"  # as the Java arm's -Poutput.start.year=0
 
     engine = PythonEngine()
     start = time.time()

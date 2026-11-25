@@ -121,6 +121,28 @@ def csharp_block_reason(config: dict[str, str], overrides_text: str) -> str | No
     return cap.block_reason or "The C# engine cannot run this configuration."
 
 
+def start_year_block_reason(config: dict[str, str], overrides_text: str) -> str | None:
+    """Why a run would write no output at all because of ``output.start.year``, or None.
+
+    Every engine (Java too) collects and writes outputs only from that year on, so a run that
+    ends at or before it finishes without a single record. The UI refuses to start it and says
+    so (owner decision, 2026-11-25); the engines themselves only warn."""
+    eff = effective_run_config(config, overrides_text)
+    try:
+        start = int(float(eff.get("output.start.year", "0") or 0))
+        years = int(float(eff.get("simulation.time.nyear", "0") or 0))
+    except ValueError:
+        return None
+    if start > 0 and years <= start:
+        return (
+            f"This run would write no output: output.start.year is {start}, and outputs are "
+            f"recorded only from that year on, but the run lasts {years} years. Run more than "
+            f"{start} years, or lower output.start.year (e.g. add the override "
+            f"'output.start.year=0')."
+        )
+    return None
+
+
 def copy_data_files(config: dict[str, str], source_dir: Path, dest_dir: Path) -> list[str]:
     """Copy ancillary data files referenced in config from source_dir to dest_dir.
 
@@ -864,6 +886,14 @@ def run_server(input, output, session, state: AppState):
 
         # Validate config before run (common to both engines)
         config = state.config.get()
+
+        # A run that ends at or before output.start.year writes nothing, on every engine.
+        block = start_year_block_reason(config, input.py_param_overrides() or "")
+        if block:
+            run_log.set(["--- RUN BLOCKED (no output would be written) ---", block])
+            status.set("Run blocked: output.start.year is beyond the run")
+            ui.notification_show(block, type="error", duration=20)
+            return
 
         # Engine-compatibility guard: configs with background species (e.g. Baltic's
         # GreySeal/Cormorant) are Python-engine-only — the Java reference engine crashes

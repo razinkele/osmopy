@@ -84,3 +84,15 @@ seen on the gradient-map run (seed 7) is seed noise, not a defect.
   bit-identical); kernel does one extra `staged[p, col[q]] += eaten`; outputs are new files
   (dietMatrixByStage, predatorPressureByStage, biomassDietStage); measure Baltic cost in Python
   first; control: every pre-existing output byte-identical with staging on.
+
+## Next: Bay of Biscay / EEC / Benguela keys (checked 2026-11-25 against Java 4.4.1)
+- Inert in Java 4.4.1 (deprecated by Releases, never read): population.initialization.method.sp*
+  (4.x seeding replaced it), predation.accessibility.stage.threshold.sp* (since 4.3.0 stages come
+  from the matrix), species.conversion2tons.sp* (doc comment only; BoB value 1.0).
+- output.start.year: OutputManager.update/write run only when year >= start (BoB 20 of 50,
+  Benguela 60 of 90). Owner decision: honour it in the shared output path AND refuse to start a
+  run whose length is at or below the start year, with a clear message (no silent empty outputs).
+- output.mortality.additional(n).bysize.enabled (EEC): Java DistribOutput of ADDITIONAL deaths
+  (biomass / numbers) by size class -> PR-G, Python + C#, like PR-B.
+- simulation.restart.* (EEC, Benguela): restart files (#120), larger feature, deferred.
+Plan: PR-F (inert rules + output.start.year), PR-G (additional mortality by size), one release.

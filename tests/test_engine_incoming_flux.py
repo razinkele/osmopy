@@ -24,6 +24,7 @@ from osmose.engine.incoming_flux import (
 _BASE_CONFIG: dict[str, str] = {
     "simulation.time.ndtperyear": "24",
     "simulation.time.nyear": "1",
+    "output.start.year": "0",
     "simulation.nspecies": "1",
     "simulation.nschool.sp0": "10",
     "species.name.sp0": "Anchovy",
@@ -396,6 +397,7 @@ class TestOnButUnused:
             OsmoseConfigReader().read(root / "data" / "benguela" / "benguela_all-parameters.csv")
         )
         raw["simulation.time.nyear"] = "1"
+        raw["output.start.year"] = "0"  # the demo starts later (Java)
         assert raw["simulation.incoming.flux.enabled"].lower() == "true"
         on = PythonEngine().run_in_memory(dict(raw), seed=3)
         off = PythonEngine().run_in_memory(

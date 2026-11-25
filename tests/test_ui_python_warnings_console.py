@@ -97,6 +97,7 @@ def test_python_engine_thread_streams_120_and_123_and_detaches(tmp_path):
     cfg["_osmose.config.dir"] = "data/minimal"  # so the engine resolves the bundled data files
     cfg["simulation.ncpu"] = "8"  # java-only -> #123
     cfg["oxygen.factor"] = "1.0"  # java-only -> #123
+    cfg["output.fisheries.byage.enabled"] = "true"  # java-only and switched on -> #123
     cfg["simulation.restart.file"] = "snap.nc"  # -> #120
     cfg["simulation.time.nyear"] = "1"  # keep the run short
 

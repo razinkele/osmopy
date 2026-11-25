@@ -38,6 +38,7 @@ def _run_short_simulation(seed: int = 42):
     """Run a 1-year BoB simulation; return (outputs, config, grid)."""
     raw = OsmoseConfigReader().read(EXAMPLE_CONFIG)
     raw["simulation.time.nyear"] = "1"
+    raw["output.start.year"] = "0"  # the demo starts later (Java)
     config = EngineConfig.from_dict(raw)
 
     grid_file = raw.get("grid.netcdf.file", "")
