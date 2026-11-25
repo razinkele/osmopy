@@ -49,6 +49,7 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
         # Java-rule distribution families (osmose/engine/output_distrib.py, 2026-11-24)
         "output.fisheries.yield.biomass.enabled",
+        "output.file.prefix",
         "output.yield.biomass.bysize.enabled",
         "output.size.catch.enabled",
         "output.tl.catch.enabled",
@@ -242,7 +243,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.diet.stage.threshold.sp{idx}",
         "output.diet.success.enabled",
         "output.dir.path",
-        "output.file.prefix",
         "output.fisheries.byage.enabled",
         "output.fisheries.bysize.enabled",
         "output.fisheries.enabled",

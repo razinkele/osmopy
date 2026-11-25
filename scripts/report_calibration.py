@@ -60,7 +60,9 @@ def load_targets():
 
 
 def load_biomass(output_dir: Path) -> pd.DataFrame:
-    bio_file = output_dir / "osm_biomass_Simu0.csv"
+    from osmose.results import detect_prefix
+
+    bio_file = output_dir / f"{detect_prefix(output_dir)}_biomass_Simu0.csv"  # output.file.prefix
     if not bio_file.exists():
         raise FileNotFoundError(bio_file)
     return pd.read_csv(bio_file, skiprows=1)
@@ -108,7 +110,7 @@ def main() -> None:
     ap.add_argument(
         "--baseline",
         default="/tmp/osmose_baltic_50y",
-        help="Pre-calibration output dir (contains osm_biomass_Simu0.csv)",
+        help="Pre-calibration output dir (contains <prefix>_biomass_Simu0.csv)",
     )
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--years", type=int, default=50)
@@ -160,7 +162,7 @@ def main() -> None:
     # Pre-calibration reference
     baseline = None
     b_path = Path(args.baseline)
-    if b_path.is_dir() and (b_path / "osm_biomass_Simu0.csv").exists():
+    if b_path.is_dir() and any(b_path.glob("*_biomass_Simu0.csv")):
         try:
             baseline = summarise(load_biomass(b_path))
             print(f"\nBaseline biomass loaded from {b_path}")

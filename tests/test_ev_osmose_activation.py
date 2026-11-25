@@ -28,12 +28,14 @@ def test_baltic_ev_runs_15_years_with_genetics_on(tmp_path: Path) -> None:
     cfg["simulation.time.nyear"] = "15"
     PythonEngine().run(cfg, tmp_path, seed=0)
 
-    # The engine uses prefix="osm" (default) regardless of output.file.prefix
+    # Files carry the config's output.file.prefix (Java's naming), read back by detection
     # in the config (write_outputs in engine/__init__.py:108 omits prefix arg).
-    csv_path = tmp_path / "osm_genetic_trait_means_Simu0.csv"
+    from osmose.results import detect_prefix
+
+    csv_path = tmp_path / f"{detect_prefix(tmp_path)}_genetic_trait_means_Simu0.csv"
     assert csv_path.exists(), "genetic_trait_means CSV not produced"
 
-    ds = read_genetic_trait_means(tmp_path, prefix="osm")
+    ds = read_genetic_trait_means(tmp_path)
     assert "trait_name" in ds.coords
     assert "imax" in set(ds["trait_name"].values)
 

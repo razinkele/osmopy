@@ -196,6 +196,9 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
         r"_osmose\.config\.dir|osmose\.(configuration\..+|version)|validation\.strict\.enabled",
         "inert",
     ),
+    # Output file names: the shared Python writer (write_outputs) applies the prefix for both
+    # engines, so nothing about it reaches the C# engine.
+    (r"output\.file\.prefix", "inert"),
     # No effect on the Python engine's results (per-species generators never consumed, 2026-11-17).
     # simulation.fixed.seed.enabled is OSMOSE 4.4.0's one key for the same two flags.
     (

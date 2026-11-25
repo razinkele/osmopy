@@ -111,7 +111,7 @@ def compute_sheldon_spectrum(
     config: dict,
     *,
     metric: str = "biomass",
-    prefix: str = "osm",
+    prefix: str | None = None,
     window_years: int = 10,
 ) -> SheldonSpectrum:
     """Canonical Sheldon NBSS over equal log2 (octave) body-mass bins + derived metrics.
@@ -232,7 +232,7 @@ class TrophicIndicators:
 def compute_trophic_indicators(
     output_dir,
     *,
-    prefix: str = "osm",
+    prefix: str | None = None,
     window_years: int = 10,
     mti_tl_cutoff: float = 3.25,
 ) -> TrophicIndicators:
@@ -292,7 +292,7 @@ class ABCResult:
     note: str
 
 
-def compute_abc(output_dir, *, prefix: str = "osm", window_years: int = 10) -> ABCResult:
+def compute_abc(output_dir, *, prefix: str | None = None, window_years: int = 10) -> ABCResult:
     """Warwick Abundance-Biomass Comparison W-statistic + cumulative dominance curves.
 
     Ranks species separately by biomass and by abundance (descending), builds the two
@@ -348,7 +348,7 @@ def community_report(
     output_dir,
     config: dict | None = None,
     *,
-    prefix: str = "osm",
+    prefix: str | None = None,
     window_years: int = 10,
     metric: str = "biomass",
 ) -> CommunityDiagnostics:

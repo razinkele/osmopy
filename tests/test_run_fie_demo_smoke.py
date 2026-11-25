@@ -24,5 +24,5 @@ def test_run_fie_demo_short_smoke(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     assert (tmp_path / "fie_imax_trajectory.png").exists()
-    assert (tmp_path / "baltic_ev_high_f" / "seed0" / "osm_genetic_trait_means_Simu0.csv").exists()
-    assert (tmp_path / "baltic_ev_low_f" / "seed0" / "osm_genetic_trait_means_Simu0.csv").exists()
+    for arm in ("baltic_ev_high_f", "baltic_ev_low_f"):  # files carry output.file.prefix
+        assert list((tmp_path / arm / "seed0").glob("*_genetic_trait_means_Simu0.csv"))

@@ -25,11 +25,14 @@ def write_outputs(
     outputs: list[StepOutput],
     output_dir: Path,
     config: EngineConfig,
-    prefix: str = "osm",
+    prefix: str | None = None,
     *,
     grid=None,
 ) -> None:
     """Write simulation outputs to CSV files matching Java format.
+
+    File names start with ``prefix``, by default the config's ``output.file.prefix`` (``osm``
+    when unset), as Java names them.
 
     Build-then-write: each family's CSV is built as a DataFrame via
     _build_*_dataframes, then _write_species_csv writes it to disk
@@ -38,6 +41,8 @@ def write_outputs(
     paths.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    if prefix is None:
+        prefix = config.output_file_prefix
 
     _write_biomass_abundance(output_dir, prefix, outputs, config)
     _write_mortality_csvs(output_dir, prefix, outputs, config)

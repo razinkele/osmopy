@@ -100,7 +100,7 @@ def main() -> int:
         per_step.setdefault(r["step"] % ndt, []).append(float(s))
     egg_years = [sum(v for k, v in eggs.items() if k // ndt == y) for y in range(first, args.years)]
 
-    res = OsmoseResults(args.out / "output", prefix="osm", strict=False)
+    res = OsmoseResults(args.out / "output", strict=False)  # prefix: output.file.prefix
     bio, ssb = res.biomass(), res.ssb()
     late_bio, late_ssb = bio[bio["Time"] >= first], ssb[ssb["Time"] >= first]
     species = [c for c in late_ssb.columns if c not in ("Time", "species")]

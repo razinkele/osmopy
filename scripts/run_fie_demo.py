@@ -28,7 +28,7 @@ import pandas as pd
 
 from osmose.config import OsmoseConfigReader
 from osmose.engine import PythonEngine
-from osmose.results import read_genetic_trait_means
+from osmose.results import detect_prefix, read_genetic_trait_means
 
 MASTER = Path("data/baltic_ev/baltic_ev_all-parameters.csv")
 
@@ -97,7 +97,7 @@ def _run_one(scenario: str, seed: int, n_years: int, output_root: Path) -> None:
 def _load(scenario: str, seeds: int, output_root: Path) -> pd.DataFrame:
     frames = []
     for s in range(seeds):
-        ds = read_genetic_trait_means(output_root / scenario / f"seed{s}", prefix="osm")
+        ds = read_genetic_trait_means(output_root / scenario / f"seed{s}", prefix=None)
         df = ds.sel(species_id=0, trait_name="imax")["mean"].to_dataframe().reset_index()
         df["seed"] = s
         frames.append(df)
@@ -176,7 +176,7 @@ def _print_imax_binding_diagnostic(output_dir: Path, scenarios: list[str], seeds
         bind_fracs: list[float] = []
         for s in range(seeds):
             out_dir = output_dir / scenario / f"seed{s}"
-            ingestion_csv = out_dir / "osm_bioen_ingestion_Simu0.csv"
+            ingestion_csv = out_dir / f"{detect_prefix(out_dir)}_bioen_ingestion_Simu0.csv"
             if not ingestion_csv.exists():
                 print(f"{scenario} seed{s}: ingestion CSV missing; skipping")
                 continue
