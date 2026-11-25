@@ -320,6 +320,9 @@ def run_yield_f_sweep(
     """
     base = dict(base_config)
     base["simulation.time.nyear"] = str(n_years)
+    from osmose.engine.output import keep_outputs_when_shortened
+
+    keep_outputs_when_shortened(base)  # a short sweep on BoB (start year 20) must still record
 
     tasks: list[tuple] = []
     meta: list[tuple[str, float]] = []

@@ -21,6 +21,21 @@ if TYPE_CHECKING:
     from osmose.engine.economics.fleet import FleetState
 
 
+def keep_outputs_when_shortened(cfg: dict[str, str]) -> dict[str, str]:
+    """For library code that shortens a run (sweeps, screens, evaluators): when the new
+    ``simulation.time.nyear`` is at or below ``output.start.year``, the run would record nothing,
+    so the start year is reset to 0; a start year the shortened run still covers is kept.
+    Modifies and returns ``cfg``."""
+    try:
+        start = float(cfg.get("output.start.year", "0") or 0)
+        years = float(cfg.get("simulation.time.nyear", "0") or 0)
+    except ValueError:
+        return cfg
+    if start > 0 and years <= start:
+        cfg["output.start.year"] = "0"
+    return cfg
+
+
 def records_from_start(outputs: list[StepOutput], config: EngineConfig) -> list[StepOutput]:
     """Java's ``output.start.year`` (OutputManager): outputs are collected and written only from
     that year on. Keeps the records whose whole window lies at or after the start year (with
