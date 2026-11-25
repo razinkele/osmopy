@@ -26,12 +26,16 @@ from osmose.analysis import size_spectrum_slope
 from osmose.results import _read_output_csv
 
 
-def _read_community_by_size(output_dir: Path, output_type: str, prefix: str) -> pd.DataFrame:
+def _read_community_by_size(output_dir: Path, output_type: str, prefix: str | None) -> pd.DataFrame:
     """Locate + read the {prefix}_{output_type}*.csv community file (wide Time,Size,<species>).
 
     rglob handles the Indicators/ subdir. Raises FileNotFoundError if absent;
     pandas.errors.EmptyDataError propagates for a 0-byte file.
     """
+    if prefix is None:
+        from osmose.results import detect_prefix
+
+        prefix = detect_prefix(output_dir)
     matches = sorted(Path(output_dir).rglob(f"{prefix}_{output_type}*.csv"))
     if not matches:
         raise FileNotFoundError(
@@ -126,7 +130,7 @@ def compute_size_spectrum(
     output_dir,
     *,
     metric: str = "biomass",
-    prefix: str = "osm",
+    prefix: str | None = None,
     window_years: int = 10,
     lfi_threshold_cm: float = 40.0,
     min_size_cm: float | None = None,
@@ -191,7 +195,7 @@ def size_spectrum_timeseries(
     output_dir,
     *,
     metric: str = "biomass",
-    prefix: str = "osm",
+    prefix: str | None = None,
     lfi_threshold_cm: float = 40.0,
     min_size_cm: float | None = None,
 ) -> pd.DataFrame:

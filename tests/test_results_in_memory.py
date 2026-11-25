@@ -163,7 +163,7 @@ def test_from_outputs_populates_all_written_keys():
     supported-output-type set.
     """
     outputs, config, grid = _run_short_simulation(seed=42)
-    prefix = "osm"
+    prefix = config.output_file_prefix  # files carry the config's output.file.prefix
 
     memory_keys = set(_build_dataframes_from_outputs(outputs, config, grid).keys())
 

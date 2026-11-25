@@ -206,6 +206,7 @@ def fisheries_server(input, output, session, state: AppState):
         try:
             from osmose.engine.config import EngineConfig
             from osmose.plotting import make_fm_ratio_bars
+            from osmose.results import detect_prefix
             from osmose.validation.fisheries import compute_mortality_balance
 
             config = EngineConfig.from_dict(raw_config)
@@ -215,7 +216,7 @@ def fisheries_server(input, output, session, state: AppState):
             species = list(config.species_names)
             balances = compute_mortality_balance(
                 Path(out_dir),
-                prefix="osm",
+                prefix=detect_prefix(Path(out_dir)),  # the run's output.file.prefix
                 species_list=species,
                 steps_per_year=steps_per_year,
             )

@@ -1313,6 +1313,7 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_tl_catch": _enabled(cfg, "output.tl.catch.enabled"),
         "output_mortality_bysize": _enabled(cfg, "output.mortality.perspecies.bysize.enabled"),
         "output_fisheries_yield": _enabled(cfg, "output.fisheries.yield.biomass.enabled"),
+        "output_file_prefix": _output_file_prefix(cfg),
         "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
         "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
         "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
@@ -1333,6 +1334,26 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
                 flags[key] = False
     flags["output_minimal"] = minimal
     return flags
+
+
+_PREFIX_RX = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")  # no "..", <= 64
+
+
+def _output_file_prefix(cfg: dict[str, str]) -> str:
+    """``output.file.prefix`` (Java's name for every output file), ``osm`` when unset.
+
+    It becomes part of file names in the run's output directory, and configs can be uploaded,
+    so it must be a plain name: letters, digits, ``.``, ``_``, ``-``, not starting with ``.``
+    or ``-`` (no path separators, no ``..``)."""
+    value = str(cfg.get("output.file.prefix", "") or "").strip()
+    if not value:
+        return "osm"
+    if not _PREFIX_RX.match(value):
+        raise ValueError(
+            f"output.file.prefix {value!r}: use a plain name (letters, digits, '.', '_', '-'), "
+            "it becomes part of every output file name"
+        )
+    return value
 
 
 def _parse_mpa_zones(cfg: dict[str, str]) -> list[MPAZone] | None:
@@ -2487,6 +2508,7 @@ class EngineConfig:
     output_tl_catch: bool = False
     output_mortality_bysize: bool = False
     output_fisheries_yield: bool = False  # also needs fishery_names (fisheries declared)
+    output_file_prefix: str = "osm"  # output.file.prefix: every output file name starts with it
     output_tl_thresholds: Any = None
     output_age_thresholds: Any = None
     output_size_thresholds: Any = None
@@ -3516,6 +3538,7 @@ class EngineConfig:
             output_tl_catch=_output["output_tl_catch"],
             output_mortality_bysize=_output["output_mortality_bysize"],
             output_fisheries_yield=_output["output_fisheries_yield"],
+            output_file_prefix=_output["output_file_prefix"],
             output_tl_thresholds=_output["output_tl_thresholds"],
             output_age_thresholds=_output["output_age_thresholds"],
             output_size_thresholds=_output["output_size_thresholds"],

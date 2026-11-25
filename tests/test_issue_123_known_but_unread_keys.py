@@ -411,11 +411,13 @@ def _load_minimal_config() -> dict:
 
 def test_warn_emits_one_summary_naming_the_keys(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
-        keys = cv.warn_unread_java_only_keys({"output.start.year": "60", "output.file.prefix": "x"})
-    assert keys == ["output.file.prefix", "output.start.year"]
+        keys = cv.warn_unread_java_only_keys(
+            {"output.start.year": "60", "output.diet.stage.structure": "size"}
+        )
+    assert keys == ["output.diet.stage.structure", "output.start.year"]
     msgs = [r.getMessage() for r in caplog.records if "issue #123" in r.getMessage()]
     assert len(msgs) == 1
-    assert "output.file.prefix" in msgs[0] and "output.start.year" in msgs[0]
+    assert "output.diet.stage.structure" in msgs[0] and "output.start.year" in msgs[0]
 
 
 def test_warn_dedups_once_per_process(caplog):

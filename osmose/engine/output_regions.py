@@ -187,9 +187,12 @@ def background_by_region(
 
 
 def write_region_outputs(
-    region_outputs: dict[str, list[Any]], output_dir: Path, config: Any, prefix: str = "osm"
+    region_outputs: dict[str, list[Any]], output_dir: Path, config: Any, prefix: str | None = None
 ) -> None:
-    """Write each region's files as Java names them: ``<prefix>_<output>-<region>_Simu0.csv``."""
+    """Write each region's files as Java names them: ``<prefix>_<output>-<region>_Simu0.csv``
+    (``prefix`` by default the config's ``output.file.prefix``)."""
+    if prefix is None:
+        prefix = str(getattr(config, "output_file_prefix", "osm") or "osm")
     from osmose.engine import output as out
 
     for name, outputs in region_outputs.items():

@@ -380,6 +380,29 @@ def _build_dataframes_from_outputs(
     return {ot: pd.concat(frames, ignore_index=True) for ot, frames in cache_shape.items()}
 
 
+def detect_prefix(output_dir: Path | str | None) -> str:
+    """The prefix of the run in ``output_dir``: what precedes ``_biomass_Simu`` in its biomass
+    file, which every run writes (both engines name files ``<output.file.prefix>_...``).
+
+    ``osm`` when there is no biomass file (nothing to read yet, or an in-memory run). Several
+    different prefixes in one directory are ambiguous and raise: picking one would read another
+    run's files.
+    """
+    if output_dir is None:
+        return "osm"
+    found = sorted(
+        {p.name.split("_biomass_Simu")[0] for p in Path(output_dir).glob("*_biomass_Simu*.csv")}
+    )
+    if not found:
+        return "osm"
+    if len(found) > 1:
+        raise ValueError(
+            f"{output_dir} holds the outputs of several runs (prefixes {found}); "
+            "pass prefix= to choose one"
+        )
+    return found[0]
+
+
 class OsmoseResults:
     """Read and query OSMOSE simulation outputs.
 
@@ -388,9 +411,10 @@ class OsmoseResults:
     mortality data.
     """
 
-    def __init__(self, output_dir: Path, prefix: str = "osm", strict: bool = True):
+    def __init__(self, output_dir: Path, prefix: str | None = None, strict: bool = True):
         self.output_dir = Path(output_dir)
-        self.prefix = prefix
+        # None: the prefix the run used (output.file.prefix), found from its files
+        self.prefix = prefix if prefix is not None else detect_prefix(self.output_dir)
         self.strict = strict
         self._nc_cache: dict[str, xr.Dataset] = {}
         self._csv_cache: dict[str, pd.DataFrame] = {}
@@ -951,12 +975,14 @@ class OsmoseResults:
         self.close_cache()
 
 
-def read_genetic_trait_means(output_dir: Path, prefix: str = "osm") -> xr.Dataset:
+def read_genetic_trait_means(output_dir: Path, prefix: str | None = None) -> xr.Dataset:
     """Read per-step genetic trait statistics into an xarray Dataset.
 
     Indexed by (Time, species_id, trait_name). Returns an empty dataset if the
     CSV does not exist (genetics disabled run).
     """
+    if prefix is None:
+        prefix = detect_prefix(output_dir)
     path = Path(output_dir) / f"{prefix}_genetic_trait_means_Simu0.csv"
     if not path.exists():
         return xr.Dataset()
