@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.19.0] - 2026-11-25
+
+### Features
+
+- **outputs:** staged diet (Java output.diet.stage.*) in Python and C# (aeaec2c)
+
+### Other
+
+- Merge pull request #395 from razinkele/feat/staged-diet (c490dc7)
+- **outputs:** staged diet in the Python engine (C# next) (6e57274)
+
 ## [1.18.0] - 2026-11-25
 
 ### Features
