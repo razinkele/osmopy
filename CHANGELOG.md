@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.17.0] - 2026-11-25
+
+### Features
+
+- **outputs:** yield by fishery in Python and C#; output.fisheries.enabled inert (8a3b5dc)
+
+### Other
+
+- Merge pull request #391 from razinkele/feat/yield-by-fishery (4974c43)
+- Merge remote-tracking branch 'origin/master' into feat/yield-by-fishery (64c56ee)
+
 ## [1.16.0] - 2026-11-25
 
 ### Features
