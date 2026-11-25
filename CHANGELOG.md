@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.20.0] - 2026-11-25
+
+### Features
+
+- output.start.year honoured (UI refuses empty runs), BoB inert keys, additional mortality by size (e640be7)
+
+### Bug Fixes
+
+- library code that shortens a run keeps its outputs (start year reset when beyond the run) (8c3202c)
+
+### Other
+
+- Merge pull request #399 from razinkele/feat/bob-keys (4125ae5)
+
 ## [1.19.1] - 2026-11-25
 
 ### Documentation
