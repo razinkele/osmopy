@@ -1,6 +1,6 @@
 """The README's three-engine performance table is the recorded measurement, not typed numbers.
 
-The table in ``README.md`` (which is also the app's About text) was measured on 2026-11-22 with
+The table in ``README.md`` (which is also the app's About text) was measured on 2026-11-25 with
 ``scripts/benchmark_three_engines.py``; the raw records are in ``docs/perf``. Every cell is
 recomputed here from those records, so a figure edited by hand, or a record replaced without
 the table, fails. The harness's own small parts are checked too.
@@ -19,8 +19,8 @@ from scripts import benchmark_three_engines as bench
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
-RECORD_70 = ROOT / "docs" / "perf" / "2026-11-22-three-engines-eec_full.json"
-RECORD_5 = ROOT / "docs" / "perf" / "2026-11-22-three-engines-eec_full-5yr.json"
+RECORD_70 = ROOT / "docs" / "perf" / "2026-11-25-three-engines-eec_full.json"
+RECORD_5 = ROOT / "docs" / "perf" / "2026-11-25-three-engines-eec_full-5yr.json"
 
 #: README row label -> the arm's name in the records.
 ARMS = {
