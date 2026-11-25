@@ -30,13 +30,20 @@ def _fresh_dedup():
 def test_off_switches_and_labels_are_not_listed_but_on_switches_are():
     cfg = {
         "output.mortality.enabled": "FALSE",  # off: inert
-        "output.fisheries.enabled": "true",  # on: an output this engine won't write (yet)
+        "output.fisheries.byage.enabled": "true",  # on: an output this engine won't write
         "fisheries.name.fsh0": "trawl",  # label
         "grid.java.classname": "fr.ird.osmose.grid.NcGrid",
         "simulation.ncpu": "8",
         "simulation.nsimulation": "1",
     }
-    assert cv.warn_unread_java_only_keys(cfg) == ["output.fisheries.enabled"]
+    assert cv.warn_unread_java_only_keys(cfg) == ["output.fisheries.byage.enabled"]
+
+
+def test_output_fisheries_enabled_is_inert_as_in_java_441():
+    """Java 4.4.1's OutputManager reads no output.fisheries.enabled (Releases renames the 4.3
+    output.fishery.enabled to it; the per-fishery outputs sit behind output.fisheries.yield.*)."""
+    for key in ("output.fisheries.enabled", "output.fishery.enabled"):
+        assert cv.warn_unread_java_only_keys({key: "true"}) == []
 
 
 def test_more_than_one_replicate_is_listed():
@@ -62,7 +69,6 @@ def test_benguela_lists_only_the_keys_that_can_matter():
     assert len(cv.java_only_keys_set(cfg)) > 60  # the raw set is still complete
     assert listed == [
         "output.file.prefix",
-        "output.fisheries.enabled",
         "output.start.year",  # 60 on a 15-yr run: Java would write nothing
         "simulation.restart.recordfrequency.ndt",
         "simulation.restart.spinup.nyear",
@@ -97,7 +103,7 @@ def test_legacy_grid_keys_inert_only_with_a_netcdf_grid():
 def test_baltic_lists_exactly_the_unimplemented_features():
     cfg = OsmoseConfigReader().read(ROOT / "data/baltic/baltic_all-parameters.csv")
     listed = cv.warn_unread_java_only_keys(cfg)
-    assert len(listed) == 12  # minus fishery maps (9), Java distributions (3), catch families (4)
+    assert len(listed) == 11  # minus maps (9), distributions (3), catch (4), fisheries switch (1)
     assert not [k for k in listed if k.startswith("grid.")]
     assert "output.biomass.enabled" not in listed
 

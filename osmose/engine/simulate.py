@@ -284,6 +284,9 @@ class StepOutput:
     tl_catch_num: NDArray[np.float64] | None = None  # sum(F deaths * W * TL)
     tl_catch_den: NDArray[np.float64] | None = None  # sum(F deaths * W)
     mortality_rate_by_cause_size: NDArray[np.float64] | None = None  # (n_sp, n_causes, n_size)
+    # Yield by fishery (Java FisheryOutputYield): landings and discards, tonnes, (n_sp, F), summed
+    yield_by_fishery_landed: NDArray[np.float64] | None = None
+    yield_by_fishery_discarded: NDArray[np.float64] | None = None
 
     # Per-species realized mean trophic level (sp_idx -> biomass-weighted mean TL), or None
     mean_tl: dict[int, float] | None = None
@@ -1712,6 +1715,78 @@ def _collect_catch_families(
     return out
 
 
+def _fishery_catch_shares(state: SchoolState, config: EngineConfig, step: int):
+    """Per-school landed / discarded shares by fishery, ``(species_id, land (n, F), disc (n, F))``,
+    from the per-fishery rate terms of THIS step. Taken right after mortality (lengths, ages and
+    cells as the rates saw them; growth would change selectivity) on the stripped state, whose
+    school order survives to collection (reproduction only appends). None unless the
+    yield-by-fishery output is on and the per-fishery path is in use."""
+    model = config.fishery_model
+    if not (config.output_fisheries_yield and config.fishery_names) or model is None:
+        return None
+    from osmose.engine.fisheries import catch_shares, per_fishery_terms
+    from osmose.engine.processes.mortality import _lookup_spatial_factors, fishing_map
+
+    terms = per_fishery_terms(
+        model, state.species_id, state.age_dt, state.length, state.cell_y, state.cell_x,
+        step, config.n_dt_per_year, config.mortality_subdt,
+        lambda m, cy, cx, mask: _lookup_spatial_factors(
+            cast(NDArray[np.float64], fishing_map(config, m)), cy, cx, mask
+        ),  # never None: per_fishery_terms skips null maps
+    )  # fmt: skip
+    land, disc = catch_shares(model, state.species_id, terms)
+    return state.species_id.copy(), land, disc
+
+
+def _subset_shares(shares, mask):
+    """The catch shares of a region's schools (the mask's first rows are the shares' schools)."""
+    if shares is None:
+        return None
+    sid, land, disc = shares
+    m = np.asarray(mask)[: len(sid)]
+    return sid[m], land[m], disc[m]
+
+
+def _collect_yield_by_fishery(
+    state: SchoolState, config: EngineConfig, shares, step: int = 0
+) -> dict:
+    """Landings and discards (t) by focal species and fishery: each school's FISHING and
+    DISCARDS deaths x weight, all to its species' fishery on the reduced path, split by the
+    step's catch shares on the per-fishery path."""
+    if not (config.output_fisheries_yield and config.fishery_names):
+        return {}
+    n_sp, n_f = config.n_species, len(config.fishery_names)
+    land = np.zeros((n_sp, n_f), dtype=np.float64)
+    disc = np.zeros((n_sp, n_f), dtype=np.float64)
+    if config.fishery_model is None:
+        fos = config.fishery_of_species
+        for i in np.flatnonzero(state.species_id < n_sp):
+            sp = int(state.species_id[i])
+            f = int(fos[sp]) if fos is not None else -1
+            if f >= 0:
+                w = state.weight[i]
+                land[sp, f] += state.n_dead[i, int(MortalityCause.FISHING)] * w
+                disc[sp, f] += state.n_dead[i, int(MortalityCause.DISCARDS)] * w
+    else:
+        # No shares handed in (the initial record, a region subset, a test's state): take them
+        # from this state, which then must be the one the rates saw.
+        if shares is None:
+            shares = _fishery_catch_shares(state, config, max(step, 0))
+        assert shares is not None
+        sid, s_land, s_disc = shares
+        n = len(sid)
+        if len(state) < n or not np.array_equal(state.species_id[:n], sid):
+            raise RuntimeError("yield by fishery: school order changed since the catch shares")
+        for i in range(n):
+            sp = int(sid[i])
+            if sp >= n_sp:
+                continue
+            w = state.weight[i]
+            land[sp] += state.n_dead[i, int(MortalityCause.FISHING)] * w * s_land[i]
+            disc[sp] += state.n_dead[i, int(MortalityCause.DISCARDS)] * w * s_disc[i]
+    return {"yield_by_fishery_landed": land, "yield_by_fishery_discarded": disc}
+
+
 def _collect_outputs(
     state: SchoolState,
     config: EngineConfig,
@@ -1723,6 +1798,7 @@ def _collect_outputs(
     phenotypes: dict[str, NDArray[np.float64]] | None = None,
     stage_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
     size_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
+    fishery_shares=None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
@@ -1781,6 +1857,7 @@ def _collect_outputs(
     trait_stats = _collect_trait_stats(state, phenotypes) if phenotypes else None
     java_distrib = _collect_java_distributions(state, config)
     java_distrib.update(_collect_catch_families(state, config, size_split))
+    java_distrib.update(_collect_yield_by_fishery(state, config, fishery_shares, step))
 
     return StepOutput(
         step=step,
@@ -1875,6 +1952,8 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
 #: Catch-derived fields: all SUMMED over the record window (Java computeAverage=false, the
 #: WeightedSpeciesOutput numerator/denominator, and mortality rates summed per step).
 _CATCH_SUM_FIELDS = (
+    "yield_by_fishery_landed",
+    "yield_by_fishery_discarded",
     "size_catch_num",
     "size_catch_den",
     "tl_catch_num",
@@ -2063,6 +2142,8 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         tl_catch_num=_sum_present("tl_catch_num"),
         tl_catch_den=_sum_present("tl_catch_den"),
         mortality_rate_by_cause_size=_sum_present("mortality_rate_by_cause_size"),
+        yield_by_fishery_landed=_sum_present("yield_by_fishery_landed"),
+        yield_by_fishery_discarded=_sum_present("yield_by_fishery_discarded"),
         mean_tl=_avg_scalar_dict("mean_tl"),
         yield_n=yield_n_sum,
         mean_size=_avg_scalar_dict("mean_size"),
@@ -2432,6 +2513,7 @@ def simulate(
         state = _strip_background(state, n_focal)
         # Schools left with < 1 fish by mortality are dead (Java's instantaneous-abundance floor)
         state = _floor_sub_one_fish(state)
+        fishery_shares = _fishery_catch_shares(state, config, step)
 
         # -- Genetics trait expression (before growth/bioen) --
         trait_overrides: dict[str, NDArray[np.float64]] = {}
@@ -2579,6 +2661,7 @@ def simulate(
             phenotypes=phenotypes,
             stage_split=stage_split,
             size_split=size_split,
+            fishery_shares=fishery_shares,
         )
         accumulated.append(step_out)
         for r in regions:
@@ -2591,6 +2674,7 @@ def simulate(
                     grid=grid,
                     stage_split=split_region.get(r.name),
                     size_split=size_region.get(r.name),
+                    fishery_shares=_subset_shares(fishery_shares, r.mask(state, step)),
                 )
             )
 

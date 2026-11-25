@@ -1312,6 +1312,7 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_size_catch": _enabled(cfg, "output.size.catch.enabled"),
         "output_tl_catch": _enabled(cfg, "output.tl.catch.enabled"),
         "output_mortality_bysize": _enabled(cfg, "output.mortality.perspecies.bysize.enabled"),
+        "output_fisheries_yield": _enabled(cfg, "output.fisheries.yield.biomass.enabled"),
         "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
         "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
         "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
@@ -2315,6 +2316,10 @@ class EngineConfig:
     # the per-species arrays cannot represent exactly; None = the per-species path (all shipped
     # configs). Spec docs/superpowers/specs/2026-11-24-per-fishery-fishing-design.md.
     fishery_model: Any = field(default=None, kw_only=True)
+    # Yield-by-fishery output (output.fisheries.yield.biomass.enabled): the fisheries' names when
+    # it is on, else empty; on the reduced per-species path, the one fishery per species (-1 none).
+    fishery_names: list[str] = field(default_factory=list, kw_only=True)
+    fishery_of_species: Any = field(default=None, kw_only=True)
     # The grid's ocean mask, attached by simulate()/PythonEngine._prepare_run: fishing maps are
     # normalised on it as Java does (osmose.engine.fisheries.fishing_map). None = raw maps.
     fishing_ocean_mask: Any = field(default=None, kw_only=True)
@@ -2481,6 +2486,7 @@ class EngineConfig:
     output_size_catch: bool = False
     output_tl_catch: bool = False
     output_mortality_bysize: bool = False
+    output_fisheries_yield: bool = False  # also needs fishery_names (fisheries declared)
     output_tl_thresholds: Any = None
     output_age_thresholds: Any = None
     output_size_thresholds: Any = None
@@ -2716,6 +2722,8 @@ class EngineConfig:
         # Build species names early for fisheries parsing
         _focal_names = _species_str(cfg, "species.name.sp{i}", n_sp)
 
+        fishery_names: list[str] = []
+        fishery_of_species: NDArray[np.int32] | None = None
         if fisheries_enabled and n_fisheries > 0:
             (
                 fishing,
@@ -2734,6 +2742,26 @@ class EngineConfig:
                 require_file=lambda value, key: _require_file(value, _cfg_dir(cfg), key),
                 load_spatial_csv=_load_spatial_csv,
             )
+            if _enabled(cfg, "output.fisheries.yield.biomass.enabled") and not _enabled(
+                cfg, "output.minimal.enabled"
+            ):
+                # The yield-by-fishery output needs the fisheries' names, and on the reduced
+                # (per-species) path which single fishery catches each species.
+                full = fishery_model or build_fishery_model(
+                    cfg,
+                    _focal_names,
+                    n_dt,
+                    n_yr * n_dt,
+                    require_file=lambda value, key: _require_file(value, _cfg_dir(cfg), key),
+                    load_spatial_csv=_load_spatial_csv,
+                    reduce=False,
+                )
+                if full is not None:
+                    fishery_names = list(full.names)
+                    caught = full.catchability > 0
+                    fishery_of_species = np.where(
+                        caught.any(axis=1), caught.argmax(axis=1), -1
+                    ).astype(np.int32)
         else:
             fishery_model = None
             # Legacy per-species rate
@@ -3318,6 +3346,8 @@ class EngineConfig:
             lmax=lmax,
             fishing_spatial_maps=fishing_spatial_maps,
             fishery_model=fishery_model,
+            fishery_names=fishery_names,
+            fishery_of_species=fishery_of_species,
             seeding_biomass=seeding_biomass,
             seeding_max_step=seeding_max_step,
             seeding_mode=_parse_seeding_mode(cfg),
@@ -3485,6 +3515,7 @@ class EngineConfig:
             output_size_catch=_output["output_size_catch"],
             output_tl_catch=_output["output_tl_catch"],
             output_mortality_bysize=_output["output_mortality_bysize"],
+            output_fisheries_yield=_output["output_fisheries_yield"],
             output_tl_thresholds=_output["output_tl_thresholds"],
             output_age_thresholds=_output["output_age_thresholds"],
             output_size_thresholds=_output["output_size_thresholds"],

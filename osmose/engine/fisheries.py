@@ -258,7 +258,7 @@ def is_species_reducible(model: FisheryModel, cfg: dict[str, str]) -> bool:
     return True
 
 
-def per_fishery_rates(
+def per_fishery_terms(
     model: FisheryModel,
     species_id: NDArray[np.int32],
     age_dt: NDArray[np.int32],
@@ -269,19 +269,15 @@ def per_fishery_rates(
     n_dt_per_year: int,
     n_subdt: int,
     lookup,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """(fishing rate per school per sub-step, discard fraction per school) before MPA/fleet/exempt.
-
-    Each fishery term is the per-species formula with the fishery's parameters times its
-    catchability; the discard fraction is the rate-weighted mean of the fisheries' discard rates
-    (deaths split across fisheries in proportion to their rates).
-    """
+) -> NDArray[np.float64]:
+    """Each fishery's fishing-rate term per school per sub-step, ``(n_schools, F)``: the
+    per-species formula with the fishery's parameters times its catchability (0 where the
+    fishery does not fish the school). ``per_fishery_rates`` sums these columns in order."""
     n = len(species_id)
     n_sp = model.catchability.shape[0]
     focal = species_id < n_sp
     sp = np.where(focal, species_id, 0)
-    total = np.zeros(n, dtype=np.float64)
-    disc = np.zeros(n, dtype=np.float64)
+    terms = np.zeros((n, model.n_fisheries), dtype=np.float64)
     denom = n_dt_per_year * n_subdt
     step_in_year = step % n_dt_per_year
     t = min(step, model.map_index.shape[1] - 1)
@@ -308,14 +304,67 @@ def per_fishery_rates(
             spatial = lookup(model.maps[mi], cell_y, cell_x, every)
         base = q * model.rate[f] * sel * spatial
         if model.season is not None:
-            term = base * model.season[f, step_in_year] / n_subdt
+            terms[:, f] = base * model.season[f, step_in_year] / n_subdt
         else:
-            term = base / denom
-        total += term
-        disc += term * model.discard[sp, f]
+            terms[:, f] = base / denom
+    return terms
+
+
+def per_fishery_rates(
+    model: FisheryModel,
+    species_id: NDArray[np.int32],
+    age_dt: NDArray[np.int32],
+    length: NDArray[np.float64],
+    cell_y: NDArray[np.int32],
+    cell_x: NDArray[np.int32],
+    step: int,
+    n_dt_per_year: int,
+    n_subdt: int,
+    lookup,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """(fishing rate per school per sub-step, discard fraction per school) before MPA/fleet/exempt.
+
+    The sum of ``per_fishery_terms`` in fishery order; the discard fraction is the rate-weighted
+    mean of the fisheries' discard rates (deaths split across fisheries in proportion to their
+    rates).
+    """
+    terms = per_fishery_terms(
+        model, species_id, age_dt, length, cell_y, cell_x, step, n_dt_per_year, n_subdt, lookup
+    )
+    n_sp = model.catchability.shape[0]
+    sp = np.where(species_id < n_sp, species_id, 0)
+    total = np.zeros(len(species_id), dtype=np.float64)
+    disc = np.zeros(len(species_id), dtype=np.float64)
+    for f in range(model.n_fisheries):
+        total += terms[:, f]
+        disc += terms[:, f] * model.discard[sp, f]
     with np.errstate(invalid="ignore", divide="ignore"):
         frac = np.where(total > 0, disc / total, 0.0)
     return total, frac
+
+
+def catch_shares(
+    model: FisheryModel, species_id: NDArray[np.int32], terms: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Each fishery's share of a school's LANDED and of its DISCARDED deaths, ``(n, F)`` each.
+
+    The engines book a school's fishing deaths as ``D * (1 - frac)`` landed and ``D * frac``
+    discarded, ``frac`` the rate-weighted discard rate, with fishery f contributing ``term_f``
+    of the rate. So f's landings are ``term_f * (1 - d_f) / sum_g term_g * (1 - d_g)`` of the
+    landed deaths, and its discards ``term_f * d_f / sum_g term_g * d_g`` of the discarded ones.
+    Rows sum to 1 where the school has such deaths, else 0.
+    """
+    n_sp = model.catchability.shape[0]
+    sp = np.where(species_id < n_sp, species_id, 0)
+    d = model.discard[sp, :]
+    land = terms * (1.0 - d)
+    disc = terms * d
+
+    def norm(m):
+        tot = m.sum(axis=1, keepdims=True)
+        return np.divide(m, tot, out=np.zeros_like(m), where=tot > 0)
+
+    return norm(land), norm(disc)
 
 
 def normalize_fishing_map(

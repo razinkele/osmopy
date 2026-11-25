@@ -163,6 +163,7 @@ public sealed class DietOutputsTests : IDisposable
             TlThresholds = [2.0, 3.0],
             AgeThresholds = [1.0],
             JavaSizeThresholds = [10.0, 20.0],
+            FisheryCount = 2,
         };
         IReadOnlyList<FamilySpec> specs = layout.Specs();
         Assert.Equal(OutputLayout.AllNames, specs.Select(s => s.Name));

@@ -166,8 +166,9 @@ public static class PipelineProbe
 
             collector.SnapshotDiet(store);
             collector.SnapshotStages(p, store); // the state as it is, as _collect_outputs falls back to
-            collector.Collect(p, store);
             int step = t - first;
+            collector.SnapshotFisheries(p, store, step);
+            collector.Collect(p, store);
             if (step < 0)
             {
                 collector.Flush(results, record++, -1);

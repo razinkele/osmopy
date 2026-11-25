@@ -48,6 +48,7 @@ _SUGGESTION_CUTOFF = 0.85
 _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
         # Java-rule distribution families (osmose/engine/output_distrib.py, 2026-11-24)
+        "output.fisheries.yield.biomass.enabled",
         "output.yield.biomass.bysize.enabled",
         "output.size.catch.enabled",
         "output.tl.catch.enabled",
@@ -330,6 +331,9 @@ _ALWAYS_INERT_PATTERNS = (
     re.compile(r"^fisheries\.name\.fsh\d+$"),
     re.compile(r"^(grid|ltl)\.java\.classname$"),
     re.compile(r"^simulation\.ncpu$"),
+    # Java 4.4.x reads no output.fisheries.enabled: Releases renames the 4.3 output.fishery.enabled
+    # to it, but OutputManager gates the per-fishery outputs on output.fisheries.yield.* etc.
+    re.compile(r"^output\.fisher(y|ies)\.enabled$"),
 )
 # Outputs this engine ALWAYS writes (osmose/engine/output.py write_outputs): Java's switch set to
 # true asks for exactly what is produced anyway.
