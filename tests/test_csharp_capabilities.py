@@ -112,6 +112,9 @@ FULL_OUTPUT_KEYS = {
     "output.biomass.bytl.enabled", "output.meansize.byage.enabled", "output.meantl.bysize.enabled",
     "output.distrib.bytl.min", "output.distrib.bytl.max", "output.distrib.bytl.incr",
     "output.distrib.byage.min", "output.distrib.byage.max", "output.distrib.byage.incr",
+    # catch-derived families (PR-B, 2026-11-25)
+    "output.yield.biomass.bysize.enabled", "output.size.catch.enabled", "output.tl.catch.enabled",
+    "output.mortality.perspecies.bysize.enabled",
 }  # fmt: skip
 
 

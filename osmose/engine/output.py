@@ -243,6 +243,13 @@ def _build_java_distribution_dataframes(
             "meantl_bysize_den",
             getattr(config, "output_size_thresholds", None),
         ),
+        # Java SizeIndicators/yieldDistribBySize: catch (t), summed over the window
+        (
+            "yieldDistribBySize",
+            "yield_by_size",
+            None,
+            getattr(config, "output_size_thresholds", None),
+        ),
     ]
     for label, num_attr, den_attr, thresholds in plans:
         if thresholds is None or not any(getattr(o, num_attr) is not None for o in outputs):
@@ -264,6 +271,50 @@ def _build_java_distribution_dataframes(
             df = pd.DataFrame(data, columns=cols)  # type: ignore[arg-type]
             df.insert(0, "Time", times)
             result[f"{label}_{sp_name}"] = df
+    result.update(_build_catch_dataframes(outputs, config, times))
+    return result
+
+
+def _build_catch_dataframes(
+    outputs: list[StepOutput], config: EngineConfig, times: NDArray[np.float64]
+) -> dict[str, pd.DataFrame]:
+    """meanSizeCatch / meanTLCatch (Java WeightedSpeciesOutput: ratio of the window's sums, NaN
+    for a species with no catch) and mortalityRateBySize_<sp> (Java MortalitySpeciesOutput on
+    size classes: one row per record and class, the class lower bound, then a rate per cause)."""
+    from osmose.engine.output_distrib import class_labels
+    from osmose.engine.state import MortalityCause
+
+    result: dict[str, pd.DataFrame] = {}
+    names = list(config.species_names[: config.n_species])
+    for label, num_attr, den_attr in (
+        ("meanSizeCatch", "size_catch_num", "size_catch_den"),
+        ("meanTLCatch", "tl_catch_num", "tl_catch_den"),
+    ):
+        if not any(getattr(o, num_attr) is not None for o in outputs):
+            continue
+        data = np.full((len(outputs), len(names)), np.nan)
+        for t_idx, o in enumerate(outputs):
+            num, den = getattr(o, num_attr), getattr(o, den_attr)
+            if num is not None:
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    data[t_idx] = np.where(den != 0, num / den, np.nan)
+        df = pd.DataFrame(data, columns=names)  # type: ignore[arg-type]
+        df.insert(0, "Time", times)
+        result[label] = df
+    if any(o.mortality_rate_by_cause_size is not None for o in outputs):
+        lows = [float(x) for x in class_labels(config.output_size_thresholds)]
+        causes = [c.name.capitalize() for c in MortalityCause]
+        for sp_idx, sp_name in enumerate(names):
+            rows = []
+            for t, o in zip(times, outputs, strict=True):
+                r = o.mortality_rate_by_cause_size
+                if r is None:
+                    continue
+                for c_idx, low in enumerate(lows):
+                    rows.append([t, low, *r[sp_idx, :, c_idx]])
+            result[f"mortalityRateBySize_{sp_name}"] = pd.DataFrame(
+                rows, columns=["Time", "Size", *causes]
+            )
     return result
 
 

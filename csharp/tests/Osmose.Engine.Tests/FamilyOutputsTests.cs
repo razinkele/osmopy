@@ -22,9 +22,13 @@ public sealed class FamilyOutputsTests : IDisposable
     private static readonly double[] Edges = [2.0, 6.0, 10.0];
 
     // the diet and the Java-rule distributions have their own tests
-    private const OutputFamilies All = OutputFamilies.Known & ~OutputFamilies.Diet & ~OutputFamilies.JavaDistributions;
+    private const OutputFamilies All = OutputFamilies.Known & ~OutputFamilies.Diet & ~OutputFamilies.JavaDistributions & ~OutputFamilies.CatchFamilies;
 
-    private static readonly string[] JavaNames = ["biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den"];
+    private static readonly string[] JavaNames =
+    [
+        "biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den",
+        "yield_by_size", "size_catch_num", "size_catch_den", "tl_catch_num", "tl_catch_den", "mortality_rate_by_cause_size",
+    ];
 
     private readonly List<GCHandle> _pins = [];
 
@@ -408,5 +412,27 @@ public sealed class FamilyOutputsTests : IDisposable
         FamilySpec tl = new OutputLayout(NTotal, NFocal, OutputFamilies.BiomassByTl) { TlThresholds = t }.Specs().Single();
         Assert.Equal(new[] { NFocal, 4 }, tl.Shape); // thresholds + 1 classes per focal species
         Assert.Equal(WindowFold.Mean, tl.Fold);
+    }
+
+    [Fact]
+    public void ClassRatesSplitZByCauseShareAndTheSizeFamiliesShareOneThresholdTable()
+    {
+        // one species, two classes; class 0: 80 survivors, 10 predation + 10 fishing; class 1 untouched
+        int n = RunResults.MortalityCauses;
+        double[] abundance = [80.0, 50.0];
+        double[] deaths = new double[n * 2];
+        deaths[0 * 2] = 10.0;
+        deaths[3 * 2] = 10.0;
+        double[] rates = new double[n * 2];
+        OutputCollector.ClassRates(abundance, deaths, rates, 1, 2);
+        double z = -Math.Log(80.0 / 100.0);
+        Assert.Equal(z / 2, rates[0 * 2], 15);
+        Assert.Equal(z / 2, rates[3 * 2], 15);
+        Assert.All(Enumerable.Range(0, n), c => Assert.Equal(0.0, rates[(c * 2) + 1]));
+        Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.YieldBySize).Specs());
+        Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.MortalityBySize) { JavaSizeThresholds = [10.0] }.Specs());
+        var specs = new OutputLayout(NTotal, NFocal, OutputFamilies.Stage | OutputFamilies.CatchFamilies) { JavaSizeThresholds = [10.0, 20.0] }.Specs();
+        Assert.All(specs.Where(sp => JavaNames.Contains(sp.Name)), sp => Assert.Equal(WindowFold.Sum, sp.Fold));
+        Assert.Equal(new[] { NFocal, n, 3 }, specs.Single(sp => sp.Name == "mortality_rate_by_cause_size").Shape);
     }
 }

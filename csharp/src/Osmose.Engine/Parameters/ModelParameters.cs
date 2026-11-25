@@ -906,7 +906,7 @@ internal static class ModelReader
 
         double[] tlThr = Thresholds("output.tl_thresholds", Step.OutputFamilies.BiomassByTl);
         double[] ageThr = Thresholds("output.age_thresholds", Step.OutputFamilies.MeanSizeByAge);
-        double[] jSizeThr = Thresholds("output.java_size_thresholds", Step.OutputFamilies.MeanTlBySize);
+        double[] jSizeThr = Thresholds("output.java_size_thresholds", Step.OutputFamilies.JavaSize);
 
         return new()
         {
