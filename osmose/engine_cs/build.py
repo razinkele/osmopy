@@ -843,13 +843,20 @@ FAMILY_DIET = 512  # diet_by_species; predator pressure is derived from it
 FAMILY_BIOMASS_BY_TL = 1024
 FAMILY_MEANSIZE_BY_AGE = 2048
 FAMILY_MEANTL_BY_SIZE = 4096
+# Catch-derived families (PR-B, 2026-11-25), all summed over the window
+FAMILY_YIELD_BY_SIZE = 8192
+FAMILY_SIZE_CATCH = 16384
+FAMILY_TL_CATCH = 32768
+FAMILY_MORTALITY_BY_SIZE = 65536
+#: Every family that bins by the Java size thresholds (they share one table).
+FAMILIES_JAVA_SIZE = FAMILY_MEANTL_BY_SIZE | FAMILY_YIELD_BY_SIZE | FAMILY_MORTALITY_BY_SIZE
 
 
 #: Each Java-rule family's threshold table (float32 values as float64), as the C# reader expects.
 _JAVA_DISTRIB_TABLES = (
     (FAMILY_BIOMASS_BY_TL, "output.tl_thresholds", "output_tl_thresholds"),
     (FAMILY_MEANSIZE_BY_AGE, "output.age_thresholds", "output_age_thresholds"),
-    (FAMILY_MEANTL_BY_SIZE, "output.java_size_thresholds", "output_size_thresholds"),
+    (FAMILIES_JAVA_SIZE, "output.java_size_thresholds", "output_size_thresholds"),
 )
 
 
@@ -873,6 +880,10 @@ def output_families(config: Any) -> int:
         (FAMILY_BIOMASS_BY_TL, getattr(config, "output_biomass_bytl", False)),
         (FAMILY_MEANSIZE_BY_AGE, getattr(config, "output_meansize_byage", False)),
         (FAMILY_MEANTL_BY_SIZE, getattr(config, "output_meantl_bysize", False)),
+        (FAMILY_YIELD_BY_SIZE, config.output_yield_biomass_bysize),
+        (FAMILY_SIZE_CATCH, config.output_size_catch),
+        (FAMILY_TL_CATCH, config.output_tl_catch),
+        (FAMILY_MORTALITY_BY_SIZE, config.output_mortality_bysize),
     ]
     return sum(bit for bit, flag in on if flag)
 
@@ -957,6 +968,18 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
         if families & bit:
             for name in names:
                 shapes[name] = (nf, len(getattr(config, attr)) + 1)
+    n_jsize = len(config.output_size_thresholds) + 1 if families & FAMILIES_JAVA_SIZE else 0
+    if families & FAMILY_YIELD_BY_SIZE:
+        shapes["yield_by_size"] = (nf, n_jsize)
+    for bit, pair in (
+        (FAMILY_SIZE_CATCH, ("size_catch_num", "size_catch_den")),
+        (FAMILY_TL_CATCH, ("tl_catch_num", "tl_catch_den")),
+    ):
+        if families & bit:
+            for name in pair:
+                shapes[name] = (nf,)
+    if families & FAMILY_MORTALITY_BY_SIZE:
+        shapes["mortality_rate_by_cause_size"] = (nf, N_MORTALITY_CAUSES, n_jsize)
     if families & FAMILY_DIET:
         # Predator rows: every species, background ones included (they eat).
         shapes["diet_by_species"] = (nf + config.n_background, diet_columns(config))

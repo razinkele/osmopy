@@ -275,6 +275,15 @@ class StepOutput:
     meansize_byage_den: dict[int, NDArray[np.float64]] | None = None
     meantl_bysize_num: dict[int, NDArray[np.float64]] | None = None
     meantl_bysize_den: dict[int, NDArray[np.float64]] | None = None
+    # Catch-derived families (PR-B; Java SizeIndicators/Trophic, all SUMMED over the window):
+    # yield (t) by Java size class, the catch-weighted mean size and TL as numerator/denominator
+    # per focal species, and per-step mortality rates by cause and size class.
+    yield_by_size: dict[int, NDArray[np.float64]] | None = None
+    size_catch_num: NDArray[np.float64] | None = None  # sum(F deaths * L)
+    size_catch_den: NDArray[np.float64] | None = None  # sum(F deaths)
+    tl_catch_num: NDArray[np.float64] | None = None  # sum(F deaths * W * TL)
+    tl_catch_den: NDArray[np.float64] | None = None  # sum(F deaths * W)
+    mortality_rate_by_cause_size: NDArray[np.float64] | None = None  # (n_sp, n_causes, n_size)
 
     # Per-species realized mean trophic level (sp_idx -> biomass-weighted mean TL), or None
     mean_tl: dict[int, float] | None = None
@@ -1640,6 +1649,69 @@ def _collect_java_distributions(state: SchoolState, config: EngineConfig) -> dic
     return out
 
 
+def _collect_by_java_size(
+    state: SchoolState, config: EngineConfig
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """(abundance (n_sp, n_size), deaths (n_sp, n_causes, n_size)) by Java size class, for the
+    mortality-by-size output (Java MortalitySpeciesOutput on sizeDistrib). Taken at the same point
+    as the life-stage split (before reproduction adds this step's eggs), every focal school."""
+    from osmose.engine.output_distrib import java_classes
+
+    t = config.output_size_thresholds
+    n_cls, n_causes, n_sp = len(t) + 1, len(MortalityCause), config.n_species
+    abundance = np.zeros((n_sp, n_cls), dtype=np.float64)
+    deaths = np.zeros((n_sp, n_causes, n_cls), dtype=np.float64)
+    focal = state.species_id < n_sp
+    if not focal.any():
+        return abundance, deaths
+    sp = state.species_id[focal]
+    cls = java_classes(state.length[focal], t)
+    np.add.at(abundance, (sp, cls), state.abundance[focal])
+    for cause in range(n_causes):
+        np.add.at(deaths, (sp, cause, cls), state.n_dead[focal, cause])  # type: ignore[arg-type]
+    return abundance, deaths
+
+
+def _collect_catch_families(
+    state: SchoolState,
+    config: EngineConfig,
+    size_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None,
+) -> dict:
+    """The catch-derived families (PR-B): every focal school, dead ones included, no cutoff
+    (Java includeOnlyAlive=false). Only the switched-on families are filled."""
+    from osmose.engine.output_distrib import java_classes
+
+    out: dict = {}
+    n_sp = config.n_species
+    focal = state.species_id < n_sp
+    sp = state.species_id[focal]
+    f_dead = state.n_dead[focal, int(MortalityCause.FISHING)]
+    if config.output_yield_biomass_bysize:
+        t = config.output_size_thresholds
+        cls = java_classes(state.length[focal], t)
+        grid = np.zeros((n_sp, len(t) + 1), dtype=np.float64)
+        np.add.at(grid, (sp, cls), f_dead * state.weight[focal])
+        out["yield_by_size"] = {s: grid[s] for s in range(n_sp)}
+    if config.output_size_catch:
+        out["size_catch_num"] = np.bincount(sp, f_dead * state.length[focal], n_sp).astype(float)
+        out["size_catch_den"] = np.bincount(sp, f_dead, n_sp).astype(float)
+    if config.output_tl_catch:
+        f_bio = f_dead * state.weight[focal]
+        out["tl_catch_num"] = np.bincount(sp, f_bio * state.trophic_level[focal], n_sp).astype(
+            float
+        )
+        out["tl_catch_den"] = np.bincount(sp, f_bio, n_sp).astype(float)
+    if config.output_mortality_bysize:
+        abundance, deaths = (
+            size_split if size_split is not None else _collect_by_java_size(state, config)
+        )
+        # per-step rates on the stage output's convention (N_start = N_end + deaths), summed later
+        out["mortality_rate_by_cause_size"] = mortality_rates_from_counts(
+            deaths.transpose(0, 2, 1), abundance
+        ).transpose(0, 2, 1)
+    return out
+
+
 def _collect_outputs(
     state: SchoolState,
     config: EngineConfig,
@@ -1650,6 +1722,7 @@ def _collect_outputs(
     grid: Grid | None = None,
     phenotypes: dict[str, NDArray[np.float64]] | None = None,
     stage_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
+    size_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
@@ -1707,6 +1780,7 @@ def _collect_outputs(
 
     trait_stats = _collect_trait_stats(state, phenotypes) if phenotypes else None
     java_distrib = _collect_java_distributions(state, config)
+    java_distrib.update(_collect_catch_families(state, config, size_split))
 
     return StepOutput(
         step=step,
@@ -1798,6 +1872,16 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
     return build_initial_population(config, grid, rng)
 
 
+#: Catch-derived fields: all SUMMED over the record window (Java computeAverage=false, the
+#: WeightedSpeciesOutput numerator/denominator, and mortality rates summed per step).
+_CATCH_SUM_FIELDS = (
+    "size_catch_num",
+    "size_catch_den",
+    "tl_catch_num",
+    "tl_catch_den",
+    "mortality_rate_by_cause_size",
+)
+
 _JAVA_DISTRIB_FIELDS = (
     "biomass_by_tl",
     "meansize_byage_num",
@@ -1854,6 +1938,10 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         keys: set[int] = set().union(*[set(d.keys()) for d in dicts])
         return {k: float(np.mean([d[k] for d in dicts if k in d])) for k in keys}
 
+    def _sum_present(attr: str) -> NDArray[np.float64] | None:
+        arrays = [getattr(o, attr) for o in accumulated if getattr(o, attr) is not None]
+        return np.sum(arrays, axis=0) if arrays else None
+
     if len(accumulated) == 1:
         return StepOutput(
             step=record_step,
@@ -1869,6 +1957,7 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
             biomass_by_size=accumulated[0].biomass_by_size,
             abundance_by_size=accumulated[0].abundance_by_size,
             **{f: getattr(accumulated[0], f) for f in _JAVA_DISTRIB_FIELDS},
+            **{f: getattr(accumulated[0], f) for f in (*_CATCH_SUM_FIELDS, "yield_by_size")},
             mean_tl=accumulated[0].mean_tl,
             yield_n=accumulated[0].yield_n,
             mean_size=accumulated[0].mean_size,
@@ -1968,6 +2057,12 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         biomass_by_size=_avg_spatial("biomass_by_size", "mean"),
         abundance_by_size=_avg_spatial("abundance_by_size", "mean"),
         **{f: _avg_spatial(f, "mean") for f in _JAVA_DISTRIB_FIELDS},
+        yield_by_size=_avg_spatial("yield_by_size", "sum"),
+        size_catch_num=_sum_present("size_catch_num"),
+        size_catch_den=_sum_present("size_catch_den"),
+        tl_catch_num=_sum_present("tl_catch_num"),
+        tl_catch_den=_sum_present("tl_catch_den"),
+        mortality_rate_by_cause_size=_sum_present("mortality_rate_by_cause_size"),
         mean_tl=_avg_scalar_dict("mean_tl"),
         yield_n=yield_n_sum,
         mean_size=_avg_scalar_dict("mean_size"),
@@ -2366,10 +2461,18 @@ def simulate(
         # Snapshot the life-stage split BEFORE reproduction: it increments ages and clears is_egg,
         # after which egg deaths recorded this step would be charged to Juvenil (#142 correction).
         stage_split = None if config.output_minimal else _collect_by_life_stage(state, config)
+        size_split = (
+            _collect_by_java_size(state, config) if config.output_mortality_bysize else None
+        )
         split_region = {
             r.name: _collect_by_life_stage(subset(state, r.mask(state, step)), config)
             for r in regions
             if not config.output_minimal
+        }
+        size_region = {
+            r.name: _collect_by_java_size(subset(state, r.mask(state, step)), config)
+            for r in regions
+            if config.output_mortality_bysize
         }
         n_before_repro = len(state)
         bioen_seeded: dict[str, NDArray] = {}
@@ -2475,6 +2578,7 @@ def simulate(
             grid=grid,
             phenotypes=phenotypes,
             stage_split=stage_split,
+            size_split=size_split,
         )
         accumulated.append(step_out)
         for r in regions:
@@ -2486,6 +2590,7 @@ def simulate(
                     bkg_region[r.name],
                     grid=grid,
                     stage_split=split_region.get(r.name),
+                    size_split=size_region.get(r.name),
                 )
             )
 

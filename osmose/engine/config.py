@@ -1233,7 +1233,9 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
     bin_on = {
         "tl": _enabled(cfg, "output.biomass.bytl.enabled"),
         "age": _enabled(cfg, "output.meansize.byage.enabled"),
-        "size": _enabled(cfg, "output.meantl.bysize.enabled"),
+        "size": _enabled(cfg, "output.meantl.bysize.enabled")
+        or _enabled(cfg, "output.yield.biomass.bysize.enabled")
+        or _enabled(cfg, "output.mortality.perspecies.bysize.enabled"),
     }
     java_bins = {
         kind: java_thresholds(cfg, kind) if on else np.zeros(0, dtype=np.float32)
@@ -1305,6 +1307,11 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_biomass_bytl": _enabled(cfg, "output.biomass.bytl.enabled"),
         "output_meansize_byage": _enabled(cfg, "output.meansize.byage.enabled"),
         "output_meantl_bysize": _enabled(cfg, "output.meantl.bysize.enabled"),
+        # Catch-derived families (PR-B, 2026-11-25)
+        "output_yield_biomass_bysize": _enabled(cfg, "output.yield.biomass.bysize.enabled"),
+        "output_size_catch": _enabled(cfg, "output.size.catch.enabled"),
+        "output_tl_catch": _enabled(cfg, "output.tl.catch.enabled"),
+        "output_mortality_bysize": _enabled(cfg, "output.mortality.perspecies.bysize.enabled"),
         "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
         "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
         "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
@@ -2470,6 +2477,10 @@ class EngineConfig:
     output_biomass_bytl: bool = False
     output_meansize_byage: bool = False
     output_meantl_bysize: bool = False
+    output_yield_biomass_bysize: bool = False
+    output_size_catch: bool = False
+    output_tl_catch: bool = False
+    output_mortality_bysize: bool = False
     output_tl_thresholds: Any = None
     output_age_thresholds: Any = None
     output_size_thresholds: Any = None
@@ -3470,6 +3481,10 @@ class EngineConfig:
             output_biomass_bytl=_output["output_biomass_bytl"],
             output_meansize_byage=_output["output_meansize_byage"],
             output_meantl_bysize=_output["output_meantl_bysize"],
+            output_yield_biomass_bysize=_output["output_yield_biomass_bysize"],
+            output_size_catch=_output["output_size_catch"],
+            output_tl_catch=_output["output_tl_catch"],
+            output_mortality_bysize=_output["output_mortality_bysize"],
             output_tl_thresholds=_output["output_tl_thresholds"],
             output_age_thresholds=_output["output_age_thresholds"],
             output_size_thresholds=_output["output_size_thresholds"],

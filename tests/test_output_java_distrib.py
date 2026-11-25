@@ -114,3 +114,74 @@ def test_bad_or_huge_bins_are_a_config_error(mn, mx, incr):
     }
     with pytest.raises(ValueError, match="output.distrib.bytl"):
         java_thresholds(cfg, "tl")
+
+
+# ------------------------------------------------------------------ catch-derived (PR-B)
+
+CATCH_ON = {
+    "output.yield.biomass.bysize.enabled": "true",
+    "output.size.catch.enabled": "true",
+    "output.tl.catch.enabled": "true",
+    "output.mortality.perspecies.bysize.enabled": "true",
+}
+
+
+def _caught(c, length, weight, abundance, tl, f_dead, age_years=3.0):
+    from osmose.engine.state import MortalityCause
+
+    s = _state(c, length, weight, abundance, tl, [age_years] * len(length))
+    n_dead = np.zeros_like(s.n_dead)
+    n_dead[:, int(MortalityCause.FISHING)] = f_dead
+    return s.replace(n_dead=n_dead)
+
+
+def test_catch_means_are_ratios_of_window_sums():
+    """Java WeightedSpeciesOutput: numerator and denominator summed over the window."""
+    from osmose.engine.output import _build_catch_dataframes
+    from osmose.engine.simulate import _average_step_outputs, _collect_outputs
+
+    c = _out(CATCH_ON)
+    s1 = _caught(c, [20.0], [2.0], [100.0], [3.0], [1.0])  # 1 fish caught, L 20, TL 3
+    s2 = _caught(c, [40.0], [2.0], [100.0], [4.0], [9.0])  # 9 fish caught, L 40, TL 4
+    rec = _average_step_outputs([_collect_outputs(s1, c, 0), _collect_outputs(s2, c, 1)], 2, 1)
+    frames = _build_catch_dataframes([rec], c, np.array([0.0]))
+    sp0 = c.species_names[0]
+    assert frames["meanSizeCatch"][sp0].iloc[0] == pytest.approx((20 * 1 + 40 * 9) / 10)  # 38
+    assert frames["meanTLCatch"][sp0].iloc[0] == pytest.approx((3 * 2 + 4 * 18) / 20)  # 3.9
+    assert np.isnan(frames["meanSizeCatch"][c.species_names[1]].iloc[0])  # no catch -> NaN
+
+
+def test_yield_by_size_is_summed_not_averaged_and_counts_dead_and_young_schools():
+    from osmose.engine.output_distrib import java_classes
+    from osmose.engine.simulate import _average_step_outputs, _collect_outputs
+
+    c = _out(CATCH_ON | {"output.cutoff.age.sp0": "5", "output.cutoff.enabled": "true"})
+    # a school wiped out this step (abundance 0) and one younger than the cutoff still count
+    s = _caught(c, [25.0, 25.0], [2.0, 2.0], [0.0, 50.0], [3.0, 3.0], [4.0, 1.0], age_years=0.5)
+    one = _collect_outputs(s, c, 0)
+    rec = _average_step_outputs([one, _collect_outputs(s, c, 1)], 2, 1)
+    cls = int(java_classes(np.array([25.0]), c.output_size_thresholds)[0])
+    assert one.yield_by_size[0][cls] == pytest.approx((4 + 1) * 2.0)
+    assert rec.yield_by_size[0][cls] == pytest.approx(2 * (4 + 1) * 2.0)  # SUM over the window
+
+
+def test_mortality_by_size_is_the_stage_rule_on_size_classes_summed():
+    from osmose.engine.simulate import (
+        _average_step_outputs,
+        _collect_by_java_size,
+        _collect_outputs,
+        mortality_rates_from_counts,
+    )
+
+    c = _out(CATCH_ON)
+    s = _caught(c, [5.0, 25.0], [1.0, 2.0], [90.0, 80.0], [3.0, 3.0], [10.0, 20.0])
+    a, d = _collect_by_java_size(s, c)
+    want = mortality_rates_from_counts(d.transpose(0, 2, 1), a).transpose(0, 2, 1)
+    one = _collect_outputs(s, c, 0)
+    assert np.array_equal(one.mortality_rate_by_cause_size, want)
+    from osmose.engine.state import MortalityCause
+
+    f = int(MortalityCause.FISHING)
+    assert (want[0, f] > 0).sum() == 2  # both schools' classes carry a fishing rate
+    rec = _average_step_outputs([one, _collect_outputs(s, c, 1)], 2, 1)
+    assert np.array_equal(rec.mortality_rate_by_cause_size, 2 * want)

@@ -50,14 +50,33 @@ public enum OutputFamilies : long
     /// <summary>Mean trophic level by length class: <c>sum(B * TL)</c> over <c>sum(B)</c>.</summary>
     MeanTlBySize = 4096,
 
+    /// <summary>Catch (fishing deaths x weight) by Java size class, summed over the window.</summary>
+    YieldBySize = 8192,
+
+    /// <summary>Catch-weighted mean size: <c>sum(F * L)</c> and <c>sum(F)</c> per species, summed.</summary>
+    SizeCatch = 16384,
+
+    /// <summary>Catch-weighted mean TL: <c>sum(F * W * TL)</c> and <c>sum(F * W)</c>, summed.</summary>
+    TlCatch = 32768,
+
+    /// <summary>Per-step mortality rates by cause and Java size class, taken with the life-stage
+    /// snapshot and summed over the window (Java MortalitySpeciesOutput on sizeDistrib).</summary>
+    MortalityBySize = 65536,
+
     /// <summary>The three Java-rule distribution families.</summary>
     JavaDistributions = BiomassByTl | MeanSizeByAge | MeanTlBySize,
+
+    /// <summary>The catch-derived families.</summary>
+    CatchFamilies = YieldBySize | SizeCatch | TlCatch | MortalityBySize,
+
+    /// <summary>Every family binned by <see cref="OutputLayout.JavaSizeThresholds"/>.</summary>
+    JavaSize = MeanTlBySize | YieldBySize | MortalityBySize,
 
     ByAge = BiomassByAge | AbundanceByAge,
     BySize = BiomassBySize | AbundanceBySize,
 
     /// <summary>Every family this engine can collect.</summary>
-    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet | BiomassByTl | MeanSizeByAge | MeanTlBySize,
+    Known = Stage | ByAge | BySize | MeanTl | YieldN | MeanSize | Ssb | Diet | BiomassByTl | MeanSizeByAge | MeanTlBySize | CatchFamilies,
 }
 
 /// <summary>How a record window folds a family's per-step rows (<c>_average_step_outputs</c>).</summary>
@@ -114,6 +133,7 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         "biomass_by_age", "abundance_by_age", "biomass_by_size", "abundance_by_size",
         "mean_tl", "yield_n", "mean_size", "ssb",
         "biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den",
+        "yield_by_size", "size_catch_num", "size_catch_den", "tl_catch_num", "tl_catch_den", "mortality_rate_by_cause_size",
         "diet_by_species",
     ];
 
@@ -175,9 +195,14 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
             throw new ArgumentException("mean size by age needs AgeThresholds");
         }
 
-        if ((Families & OutputFamilies.MeanTlBySize) != 0 && JavaSizeThresholds.Length == 0)
+        if ((Families & OutputFamilies.JavaSize) != 0 && JavaSizeThresholds.Length == 0)
         {
-            throw new ArgumentException("mean TL by size needs JavaSizeThresholds");
+            throw new ArgumentException("a Java size-class family needs JavaSizeThresholds");
+        }
+
+        if ((Families & OutputFamilies.MortalityBySize) != 0 && (Families & OutputFamilies.Stage) == 0)
+        {
+            throw new ArgumentException("mortality by size is taken with the life-stage snapshot: it needs the stage family");
         }
 
         AddJava("biomass_by_tl", OutputFamilies.BiomassByTl, TlThresholds);
@@ -185,6 +210,13 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         AddJava("meansize_byage_den", OutputFamilies.MeanSizeByAge, AgeThresholds);
         AddJava("meantl_bysize_num", OutputFamilies.MeanTlBySize, JavaSizeThresholds);
         AddJava("meantl_bysize_den", OutputFamilies.MeanTlBySize, JavaSizeThresholds);
+        int nJSize = JavaSizeThresholds.Length + 1;
+        Add("yield_by_size", OutputFamilies.YieldBySize, WindowFold.Sum, [NFocal, nJSize], [.. Enumerable.Range(0, NFocal + 1).Select(sp => sp * nJSize)]);
+        Add("size_catch_num", OutputFamilies.SizeCatch, WindowFold.Sum, [NFocal]);
+        Add("size_catch_den", OutputFamilies.SizeCatch, WindowFold.Sum, [NFocal]);
+        Add("tl_catch_num", OutputFamilies.TlCatch, WindowFold.Sum, [NFocal]);
+        Add("tl_catch_den", OutputFamilies.TlCatch, WindowFold.Sum, [NFocal]);
+        Add("mortality_rate_by_cause_size", OutputFamilies.MortalityBySize, WindowFold.Sum, [NFocal, causes, nJSize]);
         Add("diet_by_species", OutputFamilies.Diet, WindowFold.Sum, [NTotal, DietColumns]); // last
         return specs;
     }
@@ -302,6 +334,8 @@ public sealed class OutputCollector
     private readonly double[] _biomassByAge, _abundanceByAge, _biomassBySize, _abundanceBySize, _meanTl, _yieldN, _meanSize, _ssb;
     private readonly double[] _dietRows;
     private readonly double[] _biomassByTl, _sizeAgeNum, _sizeAgeDen, _tlSizeNum, _tlSizeDen;
+    private readonly double[] _yieldBySize, _sizeCatchNum, _sizeCatchDen, _tlCatchNum, _tlCatchDen, _sizeRates;
+    private readonly double[] _sizeAbundanceScratch, _sizeDeathsScratch; // one step, by Java size class
     private readonly double[] _weighted, _weight; // scratch of the two weighted means, per focal species
     private readonly double[] _present; // scratch of a fold: one value per step of the window
     private int _k;
@@ -341,6 +375,15 @@ public sealed class OutputCollector
         _sizeAgeDen = Rows("meansize_byage_den");
         _tlSizeNum = Rows("meantl_bysize_num");
         _tlSizeDen = Rows("meantl_bysize_den");
+        _yieldBySize = Rows("yield_by_size");
+        _sizeCatchNum = Rows("size_catch_num");
+        _sizeCatchDen = Rows("size_catch_den");
+        _tlCatchNum = Rows("tl_catch_num");
+        _tlCatchDen = Rows("tl_catch_den");
+        _sizeRates = Rows("mortality_rate_by_cause_size");
+        int nJ = layout.JavaSizeThresholds.Length + 1;
+        _sizeAbundanceScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * nJ];
+        _sizeDeathsScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * RunResults.MortalityCauses * nJ];
         _abundanceByAge = Rows("abundance_by_age");
         _biomassBySize = Rows("biomass_by_size");
         _abundanceBySize = Rows("abundance_by_size");
@@ -419,6 +462,11 @@ public sealed class OutputCollector
         }
 
         StageRates(abundance, deaths, _stageRates.AsSpan(_k * _nFocal * DeathCells, _nFocal * DeathCells), _nFocal);
+        if (_sizeRates.Length > 0)
+        {
+            SnapshotSizes(store);
+        }
+
         _stageTaken = true;
     }
 
@@ -658,6 +706,15 @@ public sealed class OutputCollector
         Span<double> bTl = Row(_biomassByTl, _nFocal * nTl);
         Span<double> saNum = Row(_sizeAgeNum, _nFocal * nAgeJ), saDen = Row(_sizeAgeDen, _nFocal * nAgeJ);
         Span<double> tsNum = Row(_tlSizeNum, _nFocal * nSizeJ), tsDen = Row(_tlSizeDen, _nFocal * nSizeJ);
+        int nJ = jSizeThr.Length + 1;
+        Span<double> ySize = Row(_yieldBySize, _nFocal * nJ);
+        Span<double> scNum = Row(_sizeCatchNum, _nFocal), scDen = Row(_sizeCatchDen, _nFocal);
+        Span<double> tcNum = Row(_tlCatchNum, _nFocal), tcDen = Row(_tlCatchDen, _nFocal);
+        ySize.Clear();
+        scNum.Clear();
+        scDen.Clear();
+        tcNum.Clear();
+        tcDen.Clear();
         bTl.Clear();
         saNum.Clear();
         saDen.Clear();
@@ -707,6 +764,26 @@ public sealed class OutputCollector
                 {
                     aSize[at] += c.Abundance;
                 }
+            }
+
+            // Catch-derived families (_collect_catch_families): every focal school, no cutoff.
+            double fDead = ledger[i].DeadFishing;
+            if (!ySize.IsEmpty)
+            {
+                ySize[(sp * nJ) + JavaClass(jSizeThr, c.Length)] += fDead * c.Weight;
+            }
+
+            if (!scNum.IsEmpty)
+            {
+                scNum[sp] += fDead * c.Length;
+                scDen[sp] += fDead;
+            }
+
+            if (!tcNum.IsEmpty)
+            {
+                double fBio = fDead * c.Weight;
+                tcNum[sp] += fBio * c.TrophicLevel;
+                tcDen[sp] += fBio;
             }
 
             // Java-rule families (_collect_java_distributions): every focal school, no cutoff.
@@ -763,6 +840,75 @@ public sealed class OutputCollector
         for (int sp = 0; sp < meanSize.Length; sp++)
         {
             meanSize[sp] = sizeWeight[sp] > 0 ? sizeSum[sp] / sizeWeight[sp] : double.NaN;
+        }
+    }
+
+    /// <summary>The mortality-by-size split (<c>_collect_by_java_size</c>): every focal school by
+    /// its Java size class at the snapshot, then the per-step rates by
+    /// <see cref="ClassRates"/>.</summary>
+    private void SnapshotSizes(SchoolStore store)
+    {
+        double[] thr = _layout.JavaSizeThresholds;
+        int nCls = thr.Length + 1;
+        int cells = RunResults.MortalityCauses * nCls;
+        Span<double> abundance = _sizeAbundanceScratch;
+        Span<double> deaths = _sizeDeathsScratch;
+        abundance.Clear();
+        deaths.Clear();
+        ReadOnlySpan<SchoolCore> core = store.Core;
+        ReadOnlySpan<SchoolLedger> ledger = store.Ledger;
+        for (int i = 0; i < core.Length; i++)
+        {
+            SchoolCore c = core[i];
+            int sp = c.SpeciesId;
+            if (sp >= _nFocal || (c.Flags & SchoolFlags.IsBackground) != 0)
+            {
+                continue;
+            }
+
+            int cls = JavaClass(thr, c.Length);
+            abundance[(sp * nCls) + cls] += c.Abundance;
+            SchoolLedger l = ledger[i];
+            Span<double> d = deaths.Slice((sp * cells) + cls);
+            d[0 * nCls] += c.DeadPredation;
+            d[1 * nCls] += l.DeadStarvation;
+            d[2 * nCls] += l.DeadAdditional;
+            d[3 * nCls] += l.DeadFishing;
+            d[4 * nCls] += l.DeadOut;
+            d[5 * nCls] += l.DeadForaging;
+            d[6 * nCls] += l.DeadDiscards;
+            d[7 * nCls] += l.DeadAging;
+        }
+
+        ClassRates(abundance, deaths, _sizeRates.AsSpan(_k * _nFocal * cells, _nFocal * cells), _nFocal, nCls);
+    }
+
+    /// <summary><see cref="StageRates"/> for any number of classes: per species and class,
+    /// <c>N_start = N_end + deaths</c>, <c>Z = -ln(N_end / N_start)</c>, each cause its share of Z
+    /// (<c>mortality_rates_from_counts</c>).</summary>
+    public static void ClassRates(ReadOnlySpan<double> abundance, ReadOnlySpan<double> deaths, Span<double> rates, int nSpecies, int nCls)
+    {
+        int cells = RunResults.MortalityCauses * nCls;
+        for (int sp = 0; sp < nSpecies; sp++)
+        {
+            for (int cls = 0; cls < nCls; cls++)
+            {
+                int at = (sp * cells) + cls;
+                double total = deaths[at];
+                for (int cause = 1; cause < RunResults.MortalityCauses; cause++)
+                {
+                    total += deaths[at + (cause * nCls)];
+                }
+
+                double end = abundance[(sp * nCls) + cls];
+                double start = end + total;
+                double z = -Math.Log(start > 0 ? end / start : 1.0);
+                for (int cause = 0; cause < RunResults.MortalityCauses; cause++)
+                {
+                    double share = total > 0 ? deaths[at + (cause * nCls)] / total : 0.0;
+                    rates[at + (cause * nCls)] = share > 0 ? share * z : 0.0;
+                }
+            }
         }
     }
 
