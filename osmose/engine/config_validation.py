@@ -49,6 +49,11 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
     [
         # Java-rule distribution families (osmose/engine/output_distrib.py, 2026-11-24)
         "output.fisheries.yield.biomass.enabled",
+        # staged diet outputs (osmose/engine/diet_stage.py, 2026-11-25)
+        "output.diet.pressure.enabled",
+        "output.diet.stage.structure",
+        "output.diet.stage.structure.sp{idx}",
+        "output.diet.stage.threshold.sp{idx}",
         "output.file.prefix",
         "output.yield.biomass.bysize.enabled",
         "output.size.catch.enabled",
@@ -237,10 +242,7 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "output.diet.composition.netcdf.enabled",
         "output.diet.pressure.byage.enabled",
         "output.diet.pressure.bysize.enabled",
-        "output.diet.pressure.enabled",
         "output.diet.pressure.netcdf.enabled",
-        "output.diet.stage.structure",
-        "output.diet.stage.threshold.sp{idx}",
         "output.diet.success.enabled",
         "output.dir.path",
         "output.fisheries.byage.enabled",
@@ -370,8 +372,8 @@ def _inert_java_only_key(key: str, cfg: dict) -> bool:
     """True when ignoring this Java-only key gives the SAME result as Java honouring it.
 
     - a switch that is off (``*.enabled`` = false): ignoring a disabled feature changes nothing;
-    - a value that already matches this engine: always-written outputs set true, predator
-      pressure with diet output on, ``output.start.year`` = 0, ``output.dir.path``;
+    - a value that already matches this engine: always-written outputs set true,
+      ``output.start.year`` = 0, ``output.dir.path``;
     - the regular-grid corner/mask keys when ``grid.netcdf.file`` is set (dead in Java 4.3.1+);
     - labels / Java class names / ``simulation.ncpu``;
     - ``simulation.nsimulation`` = 1 (a single replicate is what this engine runs);
@@ -384,9 +386,6 @@ def _inert_java_only_key(key: str, cfg: dict) -> bool:
     # The value already matches what this engine does.
     if key in _ALWAYS_WRITTEN_OUTPUTS and val == "true":
         return True
-    if key == "output.diet.pressure.enabled" and val == "true":
-        # predatorPressure is written alongside dietMatrix whenever diet output is on
-        return str(cfg.get("output.diet.composition.enabled", "")).strip().lower() == "true"
     if key == "output.start.year":
         return _num(val) == 0  # this engine records from year 0
     if key == "output.dir.path":
