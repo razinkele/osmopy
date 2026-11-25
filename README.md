@@ -59,7 +59,7 @@ Both engines implement the same `Engine` protocol and produce identical output s
 | Implementation | Pure Python (NumPy + Numba JIT) | Java subprocess (OSMOSE 4.4.1 JAR default; 4.3.3 selectable) |
 | Dependencies | Python packages only | Java 17+ and an OSMOSE JAR |
 | Parity | EEC 14/14, Bay of Biscay 7/8 within 1 OoM | Reference implementation |
-| Speed | 2.8× faster than Java on one thread, 6.5× on 14 (EEC, 70 years; below) | Production-ready |
+| Speed | 1.6× faster than Java on one thread, 4.3× on 14 (EEC, 70 years; below) | Production-ready |
 | Use case | Production runs, calibration, development | Legacy compatibility, reference |
 
 ## Performance
@@ -68,15 +68,15 @@ The same model run by each engine: the Eastern English Channel reference config 
 
 | Engine | Threads | 5-year run | 70-year run | Speed vs Java (70 years) | Peak memory (70 years) |
 |---|---|---|---|---|---|
-| Java 4.4.1 | no setting | 8.0 s | 220 s | 1.0× | 584 MB |
-| Python | 1 | 5.0 s | 78 s | 2.8× | 330 MB |
-| Python | 14 | **3.1 s** | 34 s | 6.5× | 330 MB |
-| C# | 1 | 4.6 s | 28 s | 7.9× | 305 MB |
-| C# | 14 | 4.0 s | **9.3 s** | **24×** | 312 MB |
+| Java 4.4.1 | no setting | 7.8 s | 212 s | 1.0× | 575 MB |
+| Python | 1 | 6.9 s | 128 s | 1.6× | 599 MB |
+| Python | 14 | **4.0 s** | 49 s | 4.3× | 586 MB |
+| C# | 1 | 5.9 s | 32 s | 6.5× | 530 MB |
+| C# | 14 | 5.4 s | **14 s** | **15×** | 538 MB |
 
-Median of five runs, measured on 2026-11-22 on an Intel Core i9-10940X (14 cores) with Python 3.12, NumPy 2.4, Numba 0.65, .NET 10.0 and OpenJDK 21. The ranges, the CPU use, the method and its limits are in [`docs/perf/2026-11-22-three-engines-eec_full.md`](https://github.com/razinkele/osmopy/blob/master/docs/perf/2026-11-22-three-engines-eec_full.md) (a full link, so that it also works from the app's About page). Three things to read the table with:
+Median of five runs, measured on 2026-11-25 (v1.19.0) on an Intel Core i9-10940X (14 cores) in the production environment: Python 3.13, NumPy 2.5, Numba 0.68, .NET 10.0 and OpenJDK 21. The ranges, the CPU use, the method and its limits are in [`docs/perf/2026-11-25-three-engines-eec_full.md`](https://github.com/razinkele/osmopy/blob/master/docs/perf/2026-11-25-three-engines-eec_full.md) (a full link, so that it also works from the app's About page). Since the previous measurement (2026-11-22) the Python and C# runs are slower for two separate reasons, both quantified there: the engines now produce outputs EEC asks for that they used to ignore (about +10–13% on one thread, ~+30% on 14), and the production environment is slower and uses about 200 MB more memory than the 2026-11-22 one on identical code. Three things to read the table with:
 
-- **A short run is mostly start-up.** Over 5 years the engines are within a factor of about 2.5 of each other, and on 14 threads the Python engine finishes before the C# engine, which has the .NET runtime to start. The C# engine's advantage is in long runs.
+- **A short run is mostly start-up.** Over 5 years the engines are within a factor of about 2 of each other, and on 14 threads the Python engine finishes before the C# engine, which has the .NET runtime to start. The C# engine's advantage is in long runs.
 - **The Python engine's first run compiles.** With an empty Numba cache the 5-year run took 92 s instead of 5 s. The compiled code is cached on disk afterwards, and the table is with the cache filled.
 - **The outputs are not file-for-file the same.** Python and C# write the identical set of files; the Java engine lays its distributions out differently and writes about twice the bytes. The engines also use different random number generators, so they agree as ensembles, not run by run (next section).
 
