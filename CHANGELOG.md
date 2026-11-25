@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.18.0] - 2026-11-25
+
+### Features
+
+- **outputs:** honour output.file.prefix; readers detect the run's prefix (77e1bb5)
+
+### Other
+
+- Merge pull request #393 from razinkele/feat/output-file-prefix (82e17be)
+
 ## [1.17.0] - 2026-11-25
 
 ### Features
