@@ -336,6 +336,7 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
             # catch-derived families (PR-B, 2026-11-25)
             r"|output\.(yield\.biomass\.bysize|size\.catch|tl\.catch)\.enabled"
             r"|output\.mortality\.perspecies\.bysize\.enabled"
+            r"|output\.fisheries\.yield\.biomass\.enabled"
             r"|output\.distrib\.by(tl|age)\.(min|max|incr)"
         ),
         "full_outputs",

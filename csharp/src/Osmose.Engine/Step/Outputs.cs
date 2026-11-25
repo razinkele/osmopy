@@ -63,11 +63,16 @@ public enum OutputFamilies : long
     /// snapshot and summed over the window (Java MortalitySpeciesOutput on sizeDistrib).</summary>
     MortalityBySize = 65536,
 
+    /// <summary>Landings and discards (t) by focal species and fishery, summed (Java
+    /// FisheryOutputYield): all to the species' fishery on the reduced path, split by the step's
+    /// catch shares (<see cref="OutputCollector.SnapshotFisheries"/>) on the per-fishery path.</summary>
+    YieldByFishery = 131072,
+
     /// <summary>The three Java-rule distribution families.</summary>
     JavaDistributions = BiomassByTl | MeanSizeByAge | MeanTlBySize,
 
     /// <summary>The catch-derived families.</summary>
-    CatchFamilies = YieldBySize | SizeCatch | TlCatch | MortalityBySize,
+    CatchFamilies = YieldBySize | SizeCatch | TlCatch | MortalityBySize | YieldByFishery,
 
     /// <summary>Every family binned by <see cref="OutputLayout.JavaSizeThresholds"/>.</summary>
     JavaSize = MeanTlBySize | YieldBySize | MortalityBySize,
@@ -126,6 +131,13 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
 
     public double[] JavaSizeThresholds { get; init; } = [];
 
+    /// <summary>The number of fisheries of the yield-by-fishery family.</summary>
+    public int FisheryCount { get; init; }
+
+    /// <summary>The one fishery catching each focal species on the reduced (per-species) path,
+    /// -1 for none; empty on the per-fishery path, where the catch is split by shares.</summary>
+    public int[] FisheryOfSpecies { get; init; } = [];
+
     /// <summary>Every family name, on or off, in record order.</summary>
     public static readonly string[] AllNames =
     [
@@ -134,6 +146,7 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         "mean_tl", "yield_n", "mean_size", "ssb",
         "biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den",
         "yield_by_size", "size_catch_num", "size_catch_den", "tl_catch_num", "tl_catch_den", "mortality_rate_by_cause_size",
+        "yield_by_fishery_landed", "yield_by_fishery_discarded",
         "diet_by_species",
     ];
 
@@ -217,6 +230,13 @@ public sealed record OutputLayout(int NTotal, int NFocal, OutputFamilies Familie
         Add("tl_catch_num", OutputFamilies.TlCatch, WindowFold.Sum, [NFocal]);
         Add("tl_catch_den", OutputFamilies.TlCatch, WindowFold.Sum, [NFocal]);
         Add("mortality_rate_by_cause_size", OutputFamilies.MortalityBySize, WindowFold.Sum, [NFocal, causes, nJSize]);
+        if ((Families & OutputFamilies.YieldByFishery) != 0 && FisheryCount <= 0)
+        {
+            throw new ArgumentException("yield by fishery needs FisheryCount");
+        }
+
+        Add("yield_by_fishery_landed", OutputFamilies.YieldByFishery, WindowFold.Sum, [NFocal, FisheryCount]);
+        Add("yield_by_fishery_discarded", OutputFamilies.YieldByFishery, WindowFold.Sum, [NFocal, FisheryCount]);
         Add("diet_by_species", OutputFamilies.Diet, WindowFold.Sum, [NTotal, DietColumns]); // last
         return specs;
     }
@@ -336,6 +356,10 @@ public sealed class OutputCollector
     private readonly double[] _biomassByTl, _sizeAgeNum, _sizeAgeDen, _tlSizeNum, _tlSizeDen;
     private readonly double[] _yieldBySize, _sizeCatchNum, _sizeCatchDen, _tlCatchNum, _tlCatchDen, _sizeRates;
     private readonly double[] _sizeAbundanceScratch, _sizeDeathsScratch; // one step, by Java size class
+    private readonly double[] _yfLand, _yfDisc;
+    private double[] _shareLand = [], _shareDisc = [], _termScratch = [];
+    private int[] _shareSpecies = [];
+    private int _shareCount = -1; // -1: no shares taken this step
     private readonly double[] _weighted, _weight; // scratch of the two weighted means, per focal species
     private readonly double[] _present; // scratch of a fold: one value per step of the window
     private int _k;
@@ -381,6 +405,8 @@ public sealed class OutputCollector
         _tlCatchNum = Rows("tl_catch_num");
         _tlCatchDen = Rows("tl_catch_den");
         _sizeRates = Rows("mortality_rate_by_cause_size");
+        _yfLand = Rows("yield_by_fishery_landed");
+        _yfDisc = Rows("yield_by_fishery_discarded");
         int nJ = layout.JavaSizeThresholds.Length + 1;
         _sizeAbundanceScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * nJ];
         _sizeDeathsScratch = _sizeRates.Length == 0 ? [] : new double[_nFocal * RunResults.MortalityCauses * nJ];
@@ -662,6 +688,7 @@ public sealed class OutputCollector
         _k++;
         _stageTaken = false;
         _dietTaken = false;
+        _shareCount = -1;
     }
 
     /// <summary>
@@ -710,6 +737,16 @@ public sealed class OutputCollector
         Span<double> ySize = Row(_yieldBySize, _nFocal * nJ);
         Span<double> scNum = Row(_sizeCatchNum, _nFocal), scDen = Row(_sizeCatchDen, _nFocal);
         Span<double> tcNum = Row(_tlCatchNum, _nFocal), tcDen = Row(_tlCatchDen, _nFocal);
+        int nFsh = _layout.FisheryCount;
+        int[] fos = _layout.FisheryOfSpecies;
+        Span<double> yfL = Row(_yfLand, _nFocal * nFsh), yfD = Row(_yfDisc, _nFocal * nFsh);
+        yfL.Clear();
+        yfD.Clear();
+        if (!yfL.IsEmpty && fos.Length == 0 && _shareCount < 0)
+        {
+            throw new InvalidOperationException("yield by fishery: call SnapshotFisheries before Collect on the per-fishery path");
+        }
+
         ySize.Clear();
         scNum.Clear();
         scDen.Clear();
@@ -763,6 +800,34 @@ public sealed class OutputCollector
                 if (!aSize.IsEmpty)
                 {
                     aSize[at] += c.Abundance;
+                }
+            }
+
+            // Yield by fishery (_collect_yield_by_fishery).
+            if (!yfL.IsEmpty)
+            {
+                double dw = ledger[i].DeadFishing * c.Weight, dd = ledger[i].DeadDiscards * c.Weight;
+                if (fos.Length > 0)
+                {
+                    int fsh = fos[sp];
+                    if (fsh >= 0)
+                    {
+                        yfL[(sp * nFsh) + fsh] += dw;
+                        yfD[(sp * nFsh) + fsh] += dd;
+                    }
+                }
+                else if (i < _shareCount)
+                {
+                    if (_shareSpecies[i] != sp)
+                    {
+                        throw new InvalidOperationException("yield by fishery: school order changed since the catch shares");
+                    }
+
+                    for (int k = 0; k < nFsh; k++)
+                    {
+                        yfL[(sp * nFsh) + k] += dw * _shareLand[(i * nFsh) + k];
+                        yfD[(sp * nFsh) + k] += dd * _shareDisc[(i * nFsh) + k];
+                    }
                 }
             }
 
@@ -841,6 +906,75 @@ public sealed class OutputCollector
         {
             meanSize[sp] = sizeWeight[sp] > 0 ? sizeSum[sp] / sizeWeight[sp] : double.NaN;
         }
+    }
+
+    /// <summary>
+    /// The step's catch shares by fishery (<c>_fishery_catch_shares</c>): per focal school, each
+    /// fishery's share of its landed deaths, <c>term * (1 - d) / sum</c>, and of its discarded
+    /// ones, <c>term * d / sum</c>. Call it right after mortality and the background removal,
+    /// before growth changes the lengths the rates saw; the store's order must then hold until
+    /// <see cref="Collect(EngineParameters, SchoolStore)"/> (reproduction only appends). Nothing
+    /// to do without the family or on the reduced path.
+    /// </summary>
+    public void SnapshotFisheries(EngineParameters p, SchoolStore store, int t)
+    {
+        if (_yfLand.Length == 0 || _layout.FisheryOfSpecies.Length > 0 || p.Fishing.Fishery is not { } fm)
+        {
+            return;
+        }
+
+        int nF = fm.Count, n = store.Count;
+        if (_shareLand.Length < n * nF)
+        {
+            _shareLand = new double[n * nF * 2];
+            _shareDisc = new double[n * nF * 2];
+        }
+
+        if (_shareSpecies.Length < n)
+        {
+            _shareSpecies = new int[n * 2];
+        }
+
+        if (_termScratch.Length < nF)
+        {
+            _termScratch = new double[nF];
+        }
+
+        ReadOnlySpan<SchoolCore> core = store.Core;
+        ReadOnlySpan<SchoolLife> life = store.Life;
+        Span<double> terms = _termScratch.AsSpan(0, nF);
+        for (int i = 0; i < n; i++)
+        {
+            SchoolCore c = core[i];
+            int sp = c.SpeciesId;
+            _shareSpecies[i] = sp;
+            Span<double> land = _shareLand.AsSpan(i * nF, nF), disc = _shareDisc.AsSpan(i * nF, nF);
+            land.Clear();
+            disc.Clear();
+            if (sp >= _nFocal || (c.Flags & SchoolFlags.IsBackground) != 0)
+            {
+                continue;
+            }
+
+            StepPreparation.FisheryTerms(p, fm, c, life[i].CellId, Math.Max(t, 0), terms);
+            double tl = 0.0, td = 0.0;
+            for (int k = 0; k < nF; k++)
+            {
+                double d = fm.Discard[(sp * nF) + k];
+                land[k] = terms[k] * (1.0 - d);
+                disc[k] = terms[k] * d;
+                tl += land[k];
+                td += disc[k];
+            }
+
+            for (int k = 0; k < nF; k++)
+            {
+                land[k] = tl > 0 ? land[k] / tl : 0.0;
+                disc[k] = td > 0 ? disc[k] / td : 0.0;
+            }
+        }
+
+        _shareCount = n;
     }
 
     /// <summary>The mortality-by-size split (<c>_collect_by_java_size</c>): every focal school by

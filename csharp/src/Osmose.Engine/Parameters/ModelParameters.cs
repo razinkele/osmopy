@@ -362,6 +362,10 @@ public sealed class OutputParameters
 
     public double[] JavaSizeThresholds { get; init; } = [];
 
+    public int FisheryCount { get; init; }
+
+    public int[] FisheryOfSpecies { get; init; } = [];
+
     /// <summary>The collector's layout for a model with these species counts.</summary>
     public Step.OutputLayout Layout(int nTotal, int nFocal) =>
         new(nTotal, nFocal, Families)
@@ -372,6 +376,8 @@ public sealed class OutputParameters
             TlThresholds = TlThresholds,
             AgeThresholds = AgeThresholds,
             JavaSizeThresholds = JavaSizeThresholds,
+            FisheryCount = FisheryCount,
+            FisheryOfSpecies = FisheryOfSpecies,
         };
 
     /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
@@ -908,6 +914,34 @@ internal static class ModelReader
         double[] ageThr = Thresholds("output.age_thresholds", Step.OutputFamilies.MeanSizeByAge);
         double[] jSizeThr = Thresholds("output.java_size_thresholds", Step.OutputFamilies.JavaSize);
 
+        // Yield by fishery: the fishery count, and on the reduced path each species' fishery.
+        int fisheryCount = 0;
+        int[] fisheryOfSpecies = [];
+        if ((on & Step.OutputFamilies.YieldByFishery) != 0)
+        {
+            fisheryCount = (int)Math.Clamp(r.Int("output.fishery_count"), 0, int.MaxValue);
+            if (r.Has("output.fishery_of_species"))
+            {
+                fisheryOfSpecies = I4(r, "output.fishery_of_species", nFocal);
+                if (fisheryOfSpecies.Any(f => f < -1 || f >= fisheryCount))
+                {
+                    r.Problem("output.fishery_of_species: a fishery outside 0..output.fishery_count-1");
+                    fisheryOfSpecies = [];
+                    fisheryCount = 0;
+                }
+            }
+
+            if (fisheryCount == 0)
+            {
+                r.Problem("output.fishery_count: the yield-by-fishery family needs at least one fishery");
+                on &= ~Step.OutputFamilies.YieldByFishery;
+            }
+        }
+        else if (r.Has("output.fishery_count") || r.Has("output.fishery_of_species"))
+        {
+            r.Problem("output.fishery_count/fishery_of_species: present, but output.families has no yield-by-fishery family");
+        }
+
         return new()
         {
             CutoffAge = F8(r, "output.cutoff_age", nTotal),
@@ -920,6 +954,8 @@ internal static class ModelReader
             TlThresholds = tlThr,
             AgeThresholds = ageThr,
             JavaSizeThresholds = jSizeThr,
+            FisheryCount = fisheryCount,
+            FisheryOfSpecies = fisheryOfSpecies,
         };
     }
 

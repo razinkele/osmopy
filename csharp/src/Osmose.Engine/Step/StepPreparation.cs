@@ -129,6 +129,7 @@ public static class StepPreparation
         int nx = p.Nx, ny = p.Ny;
         FishingParameters f = p.Fishing;
         double[] add = p.Mortality.AdditionalRateByStep;
+        double[] termsBuf = f.Fishery is { } fmb ? new double[fmb.Count] : [];
         for (int i = 0; i < core.Length; i++)
         {
             ref SchoolCore c = ref core[i];
@@ -147,35 +148,12 @@ public static class StepPreparation
                 double total = 0.0, disc = 0.0;
                 if (sp < nFocal)
                 {
-                    int cell = life[i].CellId;
-                    int cy = cell >= 0 ? cell / nx : -1, cx = cell >= 0 ? cell % nx : -1;
-                    int ts = Math.Min(t, fm.NSteps - 1);
+                    Span<double> terms = termsBuf.AsSpan(0, fm.Count);
+                    FisheryTerms(p, fm, c, life[i].CellId, t, terms);
                     for (int k = 0; k < fm.Count; k++)
                     {
-                        double q = fm.Catchability[(sp * fm.Count) + k];
-                        if (!(q > 0) || fm.Rate[k] <= 0)
-                        {
-                            continue;
-                        }
-
-                        int mi = fm.MapIndex[(k * fm.NSteps) + ts];
-                        if (mi == FisheryParameters.Off)
-                        {
-                            continue;
-                        }
-
-                        double sel = FisherySelectivity(fm, k, c, ndt);
-                        double spatial = 1.0;
-                        if (mi != FisheryParameters.NoMap)
-                        {
-                            double v = (cy >= 0 && cy < ny && cx >= 0 && cx < nx) ? fm.Maps[(((mi * ny) + cy) * nx) + cx] : 0.0;
-                            spatial = double.IsNaN(v) || v <= 0 ? 0.0 : v;
-                        }
-
-                        double b = q * fm.Rate[k] * sel * spatial;
-                        double term = fm.Season is { } se ? b * se[(k * ndt) + (t % ndt)] / nsub : b / denom;
-                        total += term;
-                        disc += term * fm.Discard[(sp * fm.Count) + k];
+                        total += terms[k];
+                        disc += terms[k] * fm.Discard[(sp * fm.Count) + k];
                     }
                 }
 
@@ -212,6 +190,45 @@ public static class StepPreparation
 
             s.RateFishing = fishing;
             s.DiscardFraction = discard;
+        }
+    }
+
+    /// <summary>Each fishery's rate term for one focal school at step <paramref name="t"/>
+    /// (<c>osmose.engine.fisheries.per_fishery_terms</c>), 0 where the fishery does not fish it.
+    /// <see cref="Rates"/> sums them in fishery order; the yield-by-fishery output splits a
+    /// school's catch by them.</summary>
+    public static void FisheryTerms(EngineParameters p, FisheryParameters fm, in SchoolCore c, int cell, int t, Span<double> terms)
+    {
+        int nsub = p.NSubdt, ndt = p.NDtPerYear, nx = p.Nx, ny = p.Ny;
+        int denom = ndt * nsub;
+        int sp = c.SpeciesId;
+        int cy = cell >= 0 ? cell / nx : -1, cx = cell >= 0 ? cell % nx : -1;
+        int ts = Math.Min(t, fm.NSteps - 1);
+        terms.Clear();
+        for (int k = 0; k < fm.Count; k++)
+        {
+            double q = fm.Catchability[(sp * fm.Count) + k];
+            if (!(q > 0) || fm.Rate[k] <= 0)
+            {
+                continue;
+            }
+
+            int mi = fm.MapIndex[(k * fm.NSteps) + ts];
+            if (mi == FisheryParameters.Off)
+            {
+                continue;
+            }
+
+            double sel = FisherySelectivity(fm, k, c, ndt);
+            double spatial = 1.0;
+            if (mi != FisheryParameters.NoMap)
+            {
+                double v = (cy >= 0 && cy < ny && cx >= 0 && cx < nx) ? fm.Maps[(((mi * ny) + cy) * nx) + cx] : 0.0;
+                spatial = double.IsNaN(v) || v <= 0 ? 0.0 : v;
+            }
+
+            double b = q * fm.Rate[k] * sel * spatial;
+            terms[k] = fm.Season is { } se ? b * se[(k * ndt) + (t % ndt)] / nsub : b / denom;
         }
     }
 

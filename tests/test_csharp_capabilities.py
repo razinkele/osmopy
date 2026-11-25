@@ -115,6 +115,7 @@ FULL_OUTPUT_KEYS = {
     # catch-derived families (PR-B, 2026-11-25)
     "output.yield.biomass.bysize.enabled", "output.size.catch.enabled", "output.tl.catch.enabled",
     "output.mortality.perspecies.bysize.enabled",
+    "output.fisheries.yield.biomass.enabled",  # yield by fishery (PR-C)
 }  # fmt: skip
 
 

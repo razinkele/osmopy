@@ -818,6 +818,12 @@ def _output(b: Bundle, config: Any, n_total: int) -> None:
         b.set_array("output.size_edges", size_edges(config))
     if families & FAMILY_DIET:
         b.set_int("output.diet_columns", diet_columns(config))
+    if families & FAMILY_YIELD_BY_FISHERY:
+        b.set_int("output.fishery_count", len(config.fishery_names))
+        if config.fishery_model is None:  # reduced path: each species' one fishery
+            b.set_array(
+                "output.fishery_of_species", np.asarray(config.fishery_of_species, dtype=np.int32)
+            )
     for bit, name, attr in _JAVA_DISTRIB_TABLES:
         if families & bit:
             b.set_array(
@@ -848,6 +854,7 @@ FAMILY_YIELD_BY_SIZE = 8192
 FAMILY_SIZE_CATCH = 16384
 FAMILY_TL_CATCH = 32768
 FAMILY_MORTALITY_BY_SIZE = 65536
+FAMILY_YIELD_BY_FISHERY = 131072  # landings and discards by species x fishery
 #: Every family that bins by the Java size thresholds (they share one table).
 FAMILIES_JAVA_SIZE = FAMILY_MEANTL_BY_SIZE | FAMILY_YIELD_BY_SIZE | FAMILY_MORTALITY_BY_SIZE
 
@@ -884,6 +891,10 @@ def output_families(config: Any) -> int:
         (FAMILY_SIZE_CATCH, config.output_size_catch),
         (FAMILY_TL_CATCH, config.output_tl_catch),
         (FAMILY_MORTALITY_BY_SIZE, config.output_mortality_bysize),
+        (
+            FAMILY_YIELD_BY_FISHERY,
+            bool(getattr(config, "output_fisheries_yield", False) and config.fishery_names),
+        ),
     ]
     return sum(bit for bit, flag in on if flag)
 
@@ -978,6 +989,9 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
         if families & bit:
             for name in pair:
                 shapes[name] = (nf,)
+    if families & FAMILY_YIELD_BY_FISHERY:
+        for name in ("yield_by_fishery_landed", "yield_by_fishery_discarded"):
+            shapes[name] = (nf, len(config.fishery_names))
     if families & FAMILY_MORTALITY_BY_SIZE:
         shapes["mortality_rate_by_cause_size"] = (nf, N_MORTALITY_CAUSES, n_jsize)
     if families & FAMILY_DIET:

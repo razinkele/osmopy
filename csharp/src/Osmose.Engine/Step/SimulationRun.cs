@@ -160,6 +160,7 @@ public sealed class SimulationRun
             RemoveBackground(firstBackground);
         }
 
+        Collector.SnapshotFisheries(_p, Store, step); // the lengths the rates saw, before growth
         long t3 = Stopwatch.GetTimestamp();
         AfterMortality(step);
         long t4 = Stopwatch.GetTimestamp();

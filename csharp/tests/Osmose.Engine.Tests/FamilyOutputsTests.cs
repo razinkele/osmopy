@@ -28,6 +28,7 @@ public sealed class FamilyOutputsTests : IDisposable
     [
         "biomass_by_tl", "meansize_byage_num", "meansize_byage_den", "meantl_bysize_num", "meantl_bysize_den",
         "yield_by_size", "size_catch_num", "size_catch_den", "tl_catch_num", "tl_catch_den", "mortality_rate_by_cause_size",
+        "yield_by_fishery_landed", "yield_by_fishery_discarded",
     ];
 
     private readonly List<GCHandle> _pins = [];
@@ -431,7 +432,9 @@ public sealed class FamilyOutputsTests : IDisposable
         Assert.All(Enumerable.Range(0, n), c => Assert.Equal(0.0, rates[(c * 2) + 1]));
         Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.YieldBySize).Specs());
         Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.MortalityBySize) { JavaSizeThresholds = [10.0] }.Specs());
-        var specs = new OutputLayout(NTotal, NFocal, OutputFamilies.Stage | OutputFamilies.CatchFamilies) { JavaSizeThresholds = [10.0, 20.0] }.Specs();
+        Assert.Throws<ArgumentException>(() => new OutputLayout(NTotal, NFocal, OutputFamilies.YieldByFishery).Specs());
+        var specs = new OutputLayout(NTotal, NFocal, OutputFamilies.Stage | OutputFamilies.CatchFamilies) { JavaSizeThresholds = [10.0, 20.0], FisheryCount = 3 }.Specs();
+        Assert.Equal(new[] { NFocal, 3 }, specs.Single(sp => sp.Name == "yield_by_fishery_landed").Shape);
         Assert.All(specs.Where(sp => JavaNames.Contains(sp.Name)), sp => Assert.Equal(WindowFold.Sum, sp.Fold));
         Assert.Equal(new[] { NFocal, n, 3 }, specs.Single(sp => sp.Name == "mortality_rate_by_cause_size").Shape);
     }

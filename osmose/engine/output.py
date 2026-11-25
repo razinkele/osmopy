@@ -54,6 +54,7 @@ def write_outputs(
         _write_bioen_csvs(output_dir, prefix, outputs, config)
 
     _write_genetic_trait_means_csv(output_dir, prefix, outputs, config)
+    _write_yield_by_fishery_netcdf(output_dir, prefix, outputs, config)
 
     # Write diet CSV (Java-parity: one file, one row per recording period)
     if config.diet_output_enabled:
@@ -301,6 +302,19 @@ def _build_catch_dataframes(
         df = pd.DataFrame(data, columns=names)  # type: ignore[arg-type]
         df.insert(0, "Time", times)
         result[label] = df
+    if any(o.yield_by_fishery_landed is not None for o in outputs):
+        # long frame: one row per record, species and fishery (the NetCDF file has it as a cube)
+        rows = []
+        for t, o in zip(times, outputs, strict=True):
+            la, di = o.yield_by_fishery_landed, o.yield_by_fishery_discarded
+            if la is None or di is None:
+                continue
+            for s_idx, s_name in enumerate(names):
+                for f_idx, f_name in enumerate(config.fishery_names):
+                    rows.append([t, s_name, f_name, la[s_idx, f_idx], di[s_idx, f_idx]])
+        result["yieldByFishery"] = pd.DataFrame(
+            rows, columns=["Time", "Species", "Fishery", "Landings", "Discards"]
+        )
     if any(o.mortality_rate_by_cause_size is not None for o in outputs):
         lows = [float(x) for x in class_labels(config.output_size_thresholds)]
         causes = [c.name.capitalize() for c in MortalityCause]
@@ -1050,6 +1064,33 @@ def _write_genetic_trait_means_csv(
 # ---------------------------------------------------------------------------
 # NetCDF output
 # ---------------------------------------------------------------------------
+
+
+def _write_yield_by_fishery_netcdf(
+    output_dir: Path, prefix: str, outputs: list[StepOutput], config: EngineConfig
+) -> None:
+    """Java FisheryOutputYield: ``<prefix>_yieldByFishery_Simu0.nc`` with ``landings`` and
+    ``discards`` (tonnes, time x species x fishery). Java's species axis also carries the
+    background species; this engine fishes only focal ones, so the axis is the focal species."""
+    recs = [o for o in outputs if o.yield_by_fishery_landed is not None]
+    if not recs:
+        return
+    import xarray as xr
+
+    names = list(config.species_names[: config.n_species])
+    days = np.array([o.step / config.n_dt_per_year * 360.0 for o in recs])
+    land = np.stack([np.asarray(o.yield_by_fishery_landed) for o in recs])
+    disc = np.stack([np.asarray(o.yield_by_fishery_discarded) for o in recs])
+    dims = ("time", "species", "fishery")
+    ds = xr.Dataset(
+        {
+            "landings": (dims, land, {"units": "ton", "description": "landings, in tons, by species and by fishery"}),
+            "discards": (dims, disc, {"units": "ton", "description": "discards, in tons, by species and by fishery"}),
+        },
+        coords={"time": days, "species": names, "fishery": list(config.fishery_names)},
+    )  # fmt: skip
+    ds["time"].attrs.update(units="days since 0-1-1 0:0:0", calendar="360_day")
+    ds.to_netcdf(output_dir / f"{prefix}_yieldByFishery_Simu0.nc")
 
 
 def write_outputs_netcdf(

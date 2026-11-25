@@ -32,6 +32,7 @@ from osmose.engine.config_validation import (
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
+        "output.fisheries.yield.biomass.enabled",
         "output.distrib.bytl.min",
         "output.distrib.bytl.max",
         "output.distrib.bytl.incr",
