@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.19.1] - 2026-11-25
+
+### Documentation
+
+- **perf:** re-measure Java/Python/C# on EEC (v1.19.0); README table updated (24cc98d)
+
+### Other
+
+- Merge pull request #397 from razinkele/docs/perf-2026-11-25 (82280c2)
+
 ## [1.19.0] - 2026-11-25
 
 ### Features
