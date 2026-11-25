@@ -177,7 +177,7 @@ def build(snap: dict, zero_rates: bool, draw_seed: int) -> Bundle:
                 config.fr_shape, config.fr_halfsat, config.n_dt_per_year, n_subdt,
                 access, has_access, use_stage, prey_idx, pred_idx,
                 rsc_bio, rsc_sm, rsc_sx, rsc_tl, rsc_ar, n_rsc, config.n_species, cell,
-                tl_ws, True, mort._DUMMY_DIET, False, egg_ret,
+                tl_ws, True, mort._DUMMY_DIET, False, mort._DUMMY_DIET, mort._DUMMY_STAGED_COL, egg_ret,
                 False, mort._DUMMY_RSC_1D, mort._DUMMY_RSC_1D, zeros.copy(), zeros.copy(),
                 zeros, state.is_background, zeros,
             )  # fmt: skip

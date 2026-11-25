@@ -56,7 +56,19 @@ public static class MortalityStep
     {
         int n = store.Count, nFocal = p.Species.NFocal, nsub = p.NSubdt;
         store.ClearDiet();
+        store.ClearStagedDiet();
         Span<SchoolCore> core = store.Core;
+        if (store.StagedCols > 0)
+        {
+            // each school's stage now, before larva or any death changes it (lengths and ages
+            // are constant through the mortality step): the column it is booked under as prey
+            DietStageTable ds = p.Output.DietStages;
+            for (int i = 0; i < n; i++)
+            {
+                store.StagedPreyCol[i] = ds.Column(core[i], p.NDtPerYear);
+            }
+        }
+
         Span<SchoolStep> st = store.Step;
         Span<SchoolLedger> led = store.Ledger;
         Span<SchoolLife> life = store.Life;
@@ -109,6 +121,11 @@ public static class MortalityStep
         scratch.Diet = store.DietArray; // the cell's schools are contiguous: so are their rows
         scratch.DietStart = start * store.DietCols;
         scratch.DietCols = store.DietCols;
+        scratch.Staged = store.StagedArray;
+        scratch.StagedStart = start * store.StagedCols;
+        scratch.StagedCols = store.StagedCols;
+        scratch.StagedPreyCol = store.StagedPreyCol;
+        scratch.CellStart = start;
         MortalityKernel.RunCell<ContiguousCell, MaskPrefilter, TDraws>(t, ref schools, rsc, scratch, ref d);
     }
 

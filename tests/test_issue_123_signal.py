@@ -81,16 +81,14 @@ def test_values_matching_this_engine_are_not_listed():
         "output.yield.biomass.enabled": "true",
         "output.mortality.enabled": "true",
         "output.diet.composition.enabled": "true",
-        "output.diet.pressure.enabled": "true",  # written with diet output
+        "output.diet.pressure.enabled": "true",  # honoured (biomassDietStage), not Java-only
         "output.start.year": "0",
         "output.dir.path": "output",
     }
     assert cv.warn_unread_java_only_keys(cfg) == []
     assert cv.warn_unread_java_only_keys({"output.start.year": "5"}) == ["output.start.year"]
-    # predator pressure without diet output on is NOT produced -> listed
-    assert cv.warn_unread_java_only_keys({"output.diet.pressure.enabled": "true"}) == [
-        "output.diet.pressure.enabled"
-    ]
+    # output.diet.pressure.enabled is read (it switches biomassDietStage on): never listed
+    assert cv.warn_unread_java_only_keys({"output.diet.pressure.enabled": "true"}) == []
 
 
 def test_legacy_grid_keys_inert_only_with_a_netcdf_grid():
@@ -102,7 +100,8 @@ def test_legacy_grid_keys_inert_only_with_a_netcdf_grid():
 def test_baltic_lists_exactly_the_unimplemented_features():
     cfg = OsmoseConfigReader().read(ROOT / "data/baltic/baltic_all-parameters.csv")
     listed = cv.warn_unread_java_only_keys(cfg)
-    assert len(listed) == 10  # minus maps 9, distributions 3, catch 4, fisheries 1, prefix 1
+    # every Java-only key Baltic sets is now implemented or provably inert (#123, 2026-11-25)
+    assert listed == []
     assert not [k for k in listed if k.startswith("grid.")]
     assert "output.biomass.enabled" not in listed
 

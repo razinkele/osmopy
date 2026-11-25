@@ -58,6 +58,14 @@ public sealed class CellScratch
     public int DietStart;
     public int DietCols;
 
+    /// <summary>The store's staged diet rows (see <see cref="Diet"/>), each school's staged prey
+    /// column, and the cell's first store position; <see cref="StagedCols"/> 0 when off.</summary>
+    public double[] Staged = [];
+    public int StagedStart;
+    public int StagedCols;
+    public int[] StagedPreyCol = [];
+    public int CellStart;
+
     /// <summary>Makes every buffer big enough for a cell of <paramref name="n"/> schools.</summary>
     public void Ensure(int n, int nResources)
     {
@@ -388,6 +396,8 @@ public static class MortalityKernel
         // column of resource k; ids beyond the columns are dropped.
         int dietCols = s.DietCols;
         Span<double> diet = dietCols > 0 ? s.Diet.AsSpan(s.DietStart + (p * dietCols), dietCols) : default;
+        int stagedCols = s.StagedCols;
+        Span<double> staged = stagedCols > 0 ? s.Staged.AsSpan(s.StagedStart + (p * stagedCols), stagedCols) : default;
         ref SchoolStep ps = ref cell.Step(p);
         for (int k = 0; k < scan.Count; k++)
         {
@@ -417,6 +427,11 @@ public static class MortalityKernel
                 {
                     diet[qc.SpeciesId] += eaten;
                 }
+
+                if (stagedCols > 0)
+                {
+                    staged[s.StagedPreyCol[s.CellStart + s.PreyId[k]]] += eaten;
+                }
             }
             else
             {
@@ -437,6 +452,11 @@ public static class MortalityKernel
                 if (rscCol >= 0 && rscCol < dietCols)
                 {
                     diet[rscCol] += eaten;
+                }
+
+                if (stagedCols > 0)
+                {
+                    staged[stagedCols - t.NResources + r] += eaten;
                 }
             }
         }

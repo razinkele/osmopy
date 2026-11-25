@@ -830,6 +830,8 @@ def _run_single_predation_step_numba(r: float, shape: int, k: float):
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        np.zeros((1, 1)),  # staged diet (off)
+        np.zeros(0, dtype=np.int32),
         prey_type_buf,
         prey_id_buf,
         prey_eligible_buf,

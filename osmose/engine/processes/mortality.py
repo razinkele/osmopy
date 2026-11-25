@@ -660,6 +660,9 @@ def _apply_predation_for_school(
                 prey_sp = state.species_id[q_idx]
                 if p_idx < _d_mat.shape[0] and prey_sp < _d_mat.shape[1]:
                     _d_mat[p_idx, prey_sp] += eaten_from_prey
+            _sd, _sc = (ctx.staged_diet, ctx.staged_col) if ctx else (None, None)
+            if _sd is not None and _sc is not None and p_idx < _sd.shape[0]:
+                _sd[p_idx, _sc[q_idx]] += eaten_from_prey
         else:
             r = prey_id
             if resources is not None:
@@ -681,6 +684,9 @@ def _apply_predation_for_school(
                 rsc_col = _d_mat.shape[1] - resources.biomass.shape[0] + r
                 if p_idx < _d_mat.shape[0] and 0 <= rsc_col < _d_mat.shape[1]:
                     _d_mat[p_idx, rsc_col] += eaten_from_prey
+            _sd, _sc = (ctx.staged_diet, ctx.staged_col) if ctx else (None, None)
+            if _sd is not None and _sc is not None and resources and p_idx < _sd.shape[0]:
+                _sd[p_idx, _sd.shape[1] - resources.biomass.shape[0] + r] += eaten_from_prey
 
     # --- Phase 3: Update predation success rate ONCE (matching Java) ---
     success = min(eaten_total / max_eatable, 1.0)
@@ -701,6 +707,17 @@ def _apply_predation_for_school(
 
 _DUMMY_RSC_2D = np.zeros((0, 0), dtype=np.float64)
 _DUMMY_DIET = np.zeros((1, 1), dtype=np.float64)
+_DUMMY_STAGED_COL = np.zeros(0, dtype=np.int32)
+
+
+def _staged_arrays(ctx):
+    """(staged diet rows, per-school staged prey column), or dummies when staging is off: the
+    kernels book ``staged[p, col[q]]`` only when the column array is non-empty."""
+    sd = getattr(ctx, "staged_diet", None) if ctx else None
+    sc = getattr(ctx, "staged_col", None) if ctx else None
+    if sd is None or sc is None:
+        return _DUMMY_DIET, _DUMMY_STAGED_COL
+    return sd, sc
 
 
 def _pre_generate_cell_rng(
@@ -1173,6 +1190,8 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        staged_diet,
+        staged_col,
         prey_type_buf,
         prey_id_buf,
         prey_eligible_buf,
@@ -1376,6 +1395,9 @@ if _HAS_NUMBA:
                     prey_sp = species_id[q_idx]
                     if p_idx < diet_matrix.shape[0] and prey_sp < diet_matrix.shape[1]:
                         diet_matrix[p_idx, prey_sp] += eaten_from_prey
+                if staged_col.shape[0] > 0 and p_idx < staged_diet.shape[0]:
+                    # staged diet: the prey's stage at predation, precomputed per school
+                    staged_diet[p_idx, staged_col[q_idx]] += eaten_from_prey
             else:  # resource
                 r_idx = prey_id[k]
                 rsc_biomass[r_idx, cell_id] = max(
@@ -1393,6 +1415,10 @@ if _HAS_NUMBA:
                     rsc_col = diet_matrix.shape[1] - rsc_biomass.shape[0] + r_idx
                     if p_idx < diet_matrix.shape[0] and 0 <= rsc_col < diet_matrix.shape[1]:
                         diet_matrix[p_idx, rsc_col] += eaten_from_prey
+                if staged_col.shape[0] > 0 and p_idx < staged_diet.shape[0]:
+                    staged_diet[p_idx, staged_diet.shape[1] - rsc_biomass.shape[0] + r_idx] += (
+                        eaten_from_prey
+                    )
 
         # Phase 3: Update predation success rate
         success = min(eaten_total / max_eatable, 1.0)
@@ -1569,6 +1595,8 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        staged_diet,
+        staged_col,
         egg_retained,
         bioen,
         cap_fish,
@@ -1654,6 +1682,8 @@ if _HAS_NUMBA:
                         tl_tracking,
                         diet_matrix,
                         diet_enabled,
+                        staged_diet,
+                        staged_col,
                         prey_type_buf,
                         prey_id_buf,
                         prey_eligible_buf,
@@ -1909,6 +1939,8 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        staged_diet,
+        staged_col,
         egg_retained,
         bioen,
         cap_fish,
@@ -2014,6 +2046,8 @@ if _HAS_NUMBA:
                             tl_tracking,
                             diet_matrix,
                             diet_enabled,
+                            staged_diet,
+                            staged_col,
                             prey_type_buf,
                             prey_id_buf,
                             prey_eligible_buf,
@@ -2165,6 +2199,8 @@ if _HAS_NUMBA:
         tl_tracking,
         diet_matrix,
         diet_enabled,
+        staged_diet,
+        staged_col,
         egg_retained,
         bioen,
         cap_fish,
@@ -2300,6 +2336,8 @@ if _HAS_NUMBA:
                             tl_tracking,
                             diet_matrix,
                             diet_enabled,
+                            staged_diet,
+                            staged_col,
                             prey_type_buf,
                             prey_id_buf,
                             prey_eligible_buf,
@@ -2488,6 +2526,7 @@ def _mortality_in_cell(
         tl_track = _tl_weighted_sum is not None
         d_mat = _diet_mat if _diet_tracking_enabled and _diet_mat is not None else _DUMMY_DIET
         d_en = _diet_tracking_enabled and _diet_mat is not None
+        sd_mat, sd_col = _staged_arrays(ctx)
 
         # Pre-generate cause orders (must use same RNG sequence as Python path). The list
         # comes from `_get_mortality_causes` rather than a literal so the FORAGING code and
@@ -2576,6 +2615,8 @@ def _mortality_in_cell(
             tl_track,
             d_mat,
             d_en,
+            sd_mat,
+            sd_col,
             egg_retained
             if egg_retained is not None
             else np.zeros(len(state.abundance), dtype=np.float64),
@@ -2920,6 +2961,7 @@ def mortality(
             tl_track = _tl_weighted_sum is not None
             d_mat = _diet_mat if _diet_tracking_enabled and _diet_mat is not None else _DUMMY_DIET
             d_en = _diet_tracking_enabled and _diet_mat is not None
+            sd_mat, sd_col = _staged_arrays(ctx)
 
             # Single Numba call for all cells (RNG generated inside)
             _batch_fn = _mortality_all_cells_parallel if parallel else _mortality_all_cells_numba
@@ -2966,6 +3008,8 @@ def mortality(
                 tl_track,
                 d_mat,
                 d_en,
+                sd_mat,
+                sd_col,
                 work_state.egg_retained,
                 config.bioen_enabled,
                 k_cap,

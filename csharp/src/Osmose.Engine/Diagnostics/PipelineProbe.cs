@@ -63,6 +63,7 @@ public static class PipelineProbe
         }
 
         run.Collector.SnapshotDiet(s);
+        run.Collector.SnapshotStagedDiet(p, s);
 
         // The background schools leave: in the input they are the last block, in injection order
         // (get_schools' order), so the first of them has the id n - the block's length. The
@@ -141,6 +142,12 @@ public static class PipelineProbe
         OutputLayout layout = p.Output.Layout(p.Species.NTotal, p.Species.NFocal);
         var results = new RunResults(nRecords, layout);
         var collector = new OutputCollector(layout, freq);
+        collector.SetLifespans(p.Species.LifespanDt);
+        bool staged = (layout.Families & OutputFamilies.DietStaged) != 0;
+        int stagedW = layout.DietStages.Width;
+        ReadOnlySpan<double> stagedRows = staged && states.TryGet("state.staged_diet", out _)
+            ? r.Array("state.staged_diet", DType.F8, offsets[^1], stagedW)!.AsSpan<double>()
+            : default;
         bool diet = (layout.Families & OutputFamilies.Diet) != 0;
         ReadOnlySpan<double> dietRows = diet && states.TryGet("state.diet", out _)
             ? r.Array("state.diet", DType.F8, offsets[^1], layout.DietColumns)!.AsSpan<double>()
@@ -164,7 +171,20 @@ public static class PipelineProbe
                 }
             }
 
+            if (staged)
+            {
+                // the schools' staged diet rows of this "step" (state.staged_diet), as given
+                store.EnableStagedDiet(stagedW);
+                store.ClearStagedDiet();
+                if (!stagedRows.IsEmpty)
+                {
+                    stagedRows.Slice((int)offsets[t] * stagedW, store.Count * stagedW).CopyTo(store.StagedArray);
+                }
+            }
+
+            collector.SnapshotBiomassDietStage(p, store);
             collector.SnapshotDiet(store);
+            collector.SnapshotStagedDiet(p, store);
             collector.SnapshotStages(p, store); // the state as it is, as _collect_outputs falls back to
             int step = t - first;
             collector.SnapshotFisheries(p, store, step);

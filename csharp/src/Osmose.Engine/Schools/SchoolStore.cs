@@ -123,6 +123,49 @@ public sealed class SchoolStore
         }
     }
 
+    /// <summary>Columns of the staged diet rows (osmose.engine.diet_stage); 0 when not tracked.</summary>
+    public int StagedCols { get; private set; }
+
+    /// <summary>The per-school staged diet rows of the current step,
+    /// <c>[position * StagedCols + staged column]</c>, valid like <see cref="DietArray"/>.</summary>
+    internal double[] StagedArray { get; private set; } = [];
+
+    /// <summary>Each school's staged prey column this step: its species' first column plus its
+    /// stage at predation (Java's Prey snapshot).</summary>
+    internal int[] StagedPreyCol { get; private set; } = [];
+
+    public ReadOnlySpan<double> Staged => StagedArray.AsSpan(0, Count * StagedCols);
+
+    /// <summary>Turns staged diet tracking on.</summary>
+    public void EnableStagedDiet(int columns)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(columns);
+        StagedCols = columns;
+    }
+
+    /// <summary>Zeroes the staged rows and sizes the prey columns for the current schools.</summary>
+    public void ClearStagedDiet()
+    {
+        if (StagedCols == 0)
+        {
+            return;
+        }
+
+        if (StagedArray.Length < Count * StagedCols)
+        {
+            StagedArray = new double[_core.Length * StagedCols];
+        }
+        else
+        {
+            StagedArray.AsSpan(0, Count * StagedCols).Clear();
+        }
+
+        if (StagedPreyCol.Length < Count)
+        {
+            StagedPreyCol = new int[_core.Length];
+        }
+    }
+
     /// <summary>Appends one school, assigning the next id. Reproduction and incoming flux append
     /// serially, so ids are deterministic. Returns the new school's index.</summary>
     public int Append(in SchoolCore core, in SchoolLife life)

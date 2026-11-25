@@ -217,6 +217,10 @@ class SimulationContext:
     diet_tracking_enabled: bool = False
     diet_matrix: NDArray[np.float64] | None = None
     _diet_active_rows: int = 0
+    # Staged diet (Java DietOutput with output.diet.stage.*): per-school rows on the staged prey
+    # axis and each school's staged prey column (its stage at predation); None when off.
+    staged_diet: NDArray[np.float64] | None = None
+    staged_col: NDArray[np.int32] | None = None
     tl_weighted_sum: NDArray[np.float64] | None = None
     config_dir: str = ""
     # Ev-OSMOSE genetics (None when disabled)
@@ -286,6 +290,12 @@ class StepOutput:
     mortality_rate_by_cause_size: NDArray[np.float64] | None = None  # (n_sp, n_causes, n_size)
     # Yield by fishery (Java FisheryOutputYield): landings and discards, tonnes, (n_sp, F), summed
     yield_by_fishery_landed: NDArray[np.float64] | None = None
+    # Staged diet (Java DietOutput / PredatorPressureOutput / BiomassDietStageOutput), summed:
+    # rows = predator (focal, then background) x stage; columns = staged prey axis.
+    diet_stage_num: NDArray[np.float64] | None = None  # sum A * preyBiomass / preyedBiomass
+    diet_stage_den: NDArray[np.float64] | None = None  # sum A of predators that ate
+    predpressure_stage: NDArray[np.float64] | None = None  # sum preyBiomass
+    biomass_diet_stage: NDArray[np.float64] | None = None  # (staged axis,) at step start
     yield_by_fishery_discarded: NDArray[np.float64] | None = None
 
     # Per-species realized mean trophic level (sp_idx -> biomass-weighted mean TL), or None
@@ -1799,6 +1809,8 @@ def _collect_outputs(
     stage_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
     size_split: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
     fishery_shares=None,
+    diet_stage_snap=None,
+    biomass_diet_stage: NDArray[np.float64] | None = None,
 ) -> StepOutput:
     """Aggregate per-species outputs from current state into a StepOutput."""
     biomass, abundance = _collect_biomass_abundance(state, config, bkg_output)
@@ -1858,6 +1870,12 @@ def _collect_outputs(
     java_distrib = _collect_java_distributions(state, config)
     java_distrib.update(_collect_catch_families(state, config, size_split))
     java_distrib.update(_collect_yield_by_fishery(state, config, fishery_shares, step))
+    if diet_stage_snap is not None:
+        from osmose.engine.diet_stage import collect as _collect_diet_stages
+
+        java_distrib.update(_collect_diet_stages(state, config, diet_stage_snap))
+    if biomass_diet_stage is not None:
+        java_distrib["biomass_diet_stage"] = biomass_diet_stage
 
     return StepOutput(
         step=step,
@@ -1952,6 +1970,10 @@ def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> Sc
 #: Catch-derived fields: all SUMMED over the record window (Java computeAverage=false, the
 #: WeightedSpeciesOutput numerator/denominator, and mortality rates summed per step).
 _CATCH_SUM_FIELDS = (
+    "diet_stage_num",
+    "diet_stage_den",
+    "predpressure_stage",
+    "biomass_diet_stage",
     "yield_by_fishery_landed",
     "yield_by_fishery_discarded",
     "size_catch_num",
@@ -2143,6 +2165,10 @@ def _average_step_outputs(accumulated: list[StepOutput], freq: int, record_step:
         tl_catch_den=_sum_present("tl_catch_den"),
         mortality_rate_by_cause_size=_sum_present("mortality_rate_by_cause_size"),
         yield_by_fishery_landed=_sum_present("yield_by_fishery_landed"),
+        diet_stage_num=_sum_present("diet_stage_num"),
+        diet_stage_den=_sum_present("diet_stage_den"),
+        predpressure_stage=_sum_present("predpressure_stage"),
+        biomass_diet_stage=_sum_present("biomass_diet_stage"),
         yield_by_fishery_discarded=_sum_present("yield_by_fishery_discarded"),
         mean_tl=_avg_scalar_dict("mean_tl"),
         yield_n=yield_n_sum,
@@ -2457,6 +2483,20 @@ def simulate(
                 ctx=ctx,
             )
 
+        # Staged diet (output.diet.stage.*): each school's prey column at its stage NOW (Java's
+        # Prey snapshot), and rows to book into; biomassDietStage is taken here (Java initStep).
+        biomass_diet_stage = None
+        if config.output_biomass_diet_stage:
+            from osmose.engine.diet_stage import biomass_at_step_start
+
+            biomass_diet_stage = biomass_at_step_start(state, config, resources, grid.ocean_mask)
+        if config.diet_staged_output:
+            from osmose.engine.diet_stage import _values, stages_for
+
+            _ds = stages_for(config)
+            ctx.staged_col = _ds.prey_columns(state.species_id, _values(_ds, state, config))
+            ctx.staged_diet = np.zeros((len(state), _ds.width), dtype=np.float64)
+
         # imax_school only when a trait evolves it: tests and scripts/csharp/* replace
         # _mortality with spies of the original signature, and genetic configs never reach them
         # (the C# engine refuses genetics).
@@ -2472,6 +2512,13 @@ def simulate(
             ctx=ctx,
             **mortality_kw,
         )
+
+        diet_stage_snap = None
+        if ctx.staged_diet is not None:
+            from osmose.engine.diet_stage import snapshot_after_mortality
+
+            diet_stage_snap = snapshot_after_mortality(state, config, ctx.staged_diet)
+            ctx.staged_diet = ctx.staged_col = None
 
         # -- Aggregate diet immediately after mortality, before state mutations --
         step_diet: NDArray[np.float64] | None = None
@@ -2662,6 +2709,8 @@ def simulate(
             stage_split=stage_split,
             size_split=size_split,
             fishery_shares=fishery_shares,
+            diet_stage_snap=diet_stage_snap,
+            biomass_diet_stage=biomass_diet_stage,
         )
         accumulated.append(step_out)
         for r in regions:

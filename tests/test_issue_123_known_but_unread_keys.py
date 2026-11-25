@@ -32,6 +32,7 @@ from osmose.engine.config_validation import (
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
+        "output.diet.stage.structure.sp{idx}",
         "output.fisheries.yield.biomass.enabled",
         "output.distrib.bytl.min",
         "output.distrib.bytl.max",
@@ -357,10 +358,10 @@ def test_metadata_clearance_all_osmose_keys_py_honored():
 def test_java_only_keys_set_matches_literal_and_pattern():
     cfg = {
         "simulation.ncpu": "8",  # java-only literal
-        "output.diet.stage.threshold.sp3": "12",  # java-only {idx} pattern
+        "mortality.fishing.recruitment.age.sp3": "12",  # java-only {idx} pattern
         "simulation.time.nyear": "15",  # a real read key (not allowlisted) -> ignored
     }
-    assert java_only_keys_set(cfg) == ["output.diet.stage.threshold.sp3", "simulation.ncpu"]
+    assert java_only_keys_set(cfg) == ["mortality.fishing.recruitment.age.sp3", "simulation.ncpu"]
 
 
 def test_java_only_keys_set_excludes_py_honored_and_metadata():
@@ -412,12 +413,12 @@ def _load_minimal_config() -> dict:
 def test_warn_emits_one_summary_naming_the_keys(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
         keys = cv.warn_unread_java_only_keys(
-            {"output.start.year": "60", "output.diet.stage.structure": "size"}
+            {"output.start.year": "60", "output.fisheries.byage.enabled": "true"}
         )
-    assert keys == ["output.diet.stage.structure", "output.start.year"]
+    assert keys == ["output.fisheries.byage.enabled", "output.start.year"]
     msgs = [r.getMessage() for r in caplog.records if "issue #123" in r.getMessage()]
     assert len(msgs) == 1
-    assert "output.diet.stage.structure" in msgs[0] and "output.start.year" in msgs[0]
+    assert "output.fisheries.byage.enabled" in msgs[0] and "output.start.year" in msgs[0]
 
 
 def test_warn_dedups_once_per_process(caplog):
@@ -430,14 +431,14 @@ def test_warn_dedups_once_per_process(caplog):
 def test_warn_truncates_long_lists_but_counts_all(caplog):
     # Bundled demos set ~20-44 java-only keys; the line names at most _MAX_NAMED_JAVA_ONLY_KEYS
     # and counts the rest, while the returned list and the reported count stay complete.
-    cfg = {f"output.diet.stage.threshold.sp{i}": "12" for i in range(15)}  # 15 java-only keys
+    cfg = {f"mortality.fishing.recruitment.age.sp{i}": "12" for i in range(15)}  # 15 java-only
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
         keys = cv.warn_unread_java_only_keys(cfg)
     assert len(keys) == 15
     msg = next(r.getMessage() for r in caplog.records if "issue #123" in r.getMessage())
     assert "15 config key(s)" in msg  # full count reported
     assert "and 5 more" in msg  # 15 - 10 named
-    assert msg.count("output.diet.stage.threshold.sp") == 10  # only 10 named inline
+    assert msg.count("mortality.fishing.recruitment.age.sp") == 10  # only 10 named inline
 
 
 def test_warn_silent_when_no_java_only_keys(caplog):

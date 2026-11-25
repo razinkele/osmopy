@@ -818,6 +818,16 @@ def _output(b: Bundle, config: Any, n_total: int) -> None:
         b.set_array("output.size_edges", size_edges(config))
     if families & FAMILY_DIET:
         b.set_int("output.diet_columns", diet_columns(config))
+    if families & (FAMILY_DIET_STAGED | FAMILY_BIOMASS_DIET_STAGE):
+        thr = config.diet_stage_thresholds
+        b.set_array(
+            "output.diet_stage.n_stages", np.array([len(t) + 1 for t in thr], dtype=np.int32)
+        )
+        b.set_array(
+            "output.diet_stage.structure", np.asarray(config.diet_stage_structure, dtype=np.int32)
+        )
+        flat = np.concatenate([np.asarray(t, dtype=np.float32) for t in thr]) if thr else []
+        b.set_array("output.diet_stage.thresholds", np.asarray(flat, dtype=np.float64))
     if families & FAMILY_YIELD_BY_FISHERY:
         b.set_int("output.fishery_count", len(config.fishery_names))
         if config.fishery_model is None:  # reduced path: each species' one fishery
@@ -855,6 +865,8 @@ FAMILY_SIZE_CATCH = 16384
 FAMILY_TL_CATCH = 32768
 FAMILY_MORTALITY_BY_SIZE = 65536
 FAMILY_YIELD_BY_FISHERY = 131072  # landings and discards by species x fishery
+FAMILY_DIET_STAGED = 262144  # staged diet: num/den and predator pressure by stage
+FAMILY_BIOMASS_DIET_STAGE = 524288  # biomass by diet stage at the step start
 #: Every family that bins by the Java size thresholds (they share one table).
 FAMILIES_JAVA_SIZE = FAMILY_MEANTL_BY_SIZE | FAMILY_YIELD_BY_SIZE | FAMILY_MORTALITY_BY_SIZE
 
@@ -895,6 +907,8 @@ def output_families(config: Any) -> int:
             FAMILY_YIELD_BY_FISHERY,
             bool(getattr(config, "output_fisheries_yield", False) and config.fishery_names),
         ),
+        (FAMILY_DIET_STAGED, bool(getattr(config, "diet_staged_output", False))),
+        (FAMILY_BIOMASS_DIET_STAGE, bool(getattr(config, "output_biomass_diet_stage", False))),
     ]
     return sum(bit for bit, flag in on if flag)
 
@@ -989,6 +1003,15 @@ def family_shapes(config: Any) -> dict[str, tuple[int, ...]]:
         if families & bit:
             for name in pair:
                 shapes[name] = (nf,)
+    if families & (FAMILY_DIET_STAGED | FAMILY_BIOMASS_DIET_STAGE):
+        rows = sum(len(t) + 1 for t in config.diet_stage_thresholds)
+        width = rows + len(config.resource_names)
+        if families & FAMILY_DIET_STAGED:
+            shapes["diet_stage_num"] = (rows, width)
+            shapes["diet_stage_den"] = (rows,)
+            shapes["predpressure_stage"] = (rows, width)
+        if families & FAMILY_BIOMASS_DIET_STAGE:
+            shapes["biomass_diet_stage"] = (width,)
     if families & FAMILY_YIELD_BY_FISHERY:
         for name in ("yield_by_fishery_landed", "yield_by_fishery_discarded"):
             shapes[name] = (nf, len(config.fishery_names))

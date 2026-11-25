@@ -1314,6 +1314,7 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_mortality_bysize": _enabled(cfg, "output.mortality.perspecies.bysize.enabled"),
         "output_fisheries_yield": _enabled(cfg, "output.fisheries.yield.biomass.enabled"),
         "output_file_prefix": _output_file_prefix(cfg),
+        "output_biomass_diet_stage": _enabled(cfg, "output.diet.pressure.enabled"),
         "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
         "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
         "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
@@ -1334,6 +1335,32 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
                 flags[key] = False
     flags["output_minimal"] = minimal
     return flags
+
+
+def _parse_diet_stages(
+    cfg: dict[str, str], n_sp: int, background_list: list
+) -> tuple[list, NDArray[np.int32], bool]:
+    """Java's diet stages (osmose.engine.diet_stage), per runtime species: focal species by
+    their index, background species by their FILE index (Java's predator index).
+
+    Returns (thresholds, structure codes, any_staged). Structures other than age, size, weight
+    and tl raise; so do thresholds that are not strictly increasing."""
+    from osmose.engine.diet_stage import STRUCTURES, parse_thresholds
+
+    file_idx = list(range(n_sp)) + [int(b.file_index) for b in background_list]
+    n_keys = max(file_idx) + 1 if file_idx else 0
+    raw_thr = _species_str_optional(cfg, "output.diet.stage.threshold.sp{i}", n_keys, "")
+    default = str(cfg.get("output.diet.stage.structure", "age") or "age").strip().lower()
+    if default not in STRUCTURES:
+        raise ValueError(f"output.diet.stage.structure {default!r}: one of {STRUCTURES}")
+    raw_struct = _species_str_optional(
+        cfg, "output.diet.stage.structure.sp{i}", n_keys, default, allowed=set(STRUCTURES)
+    )
+    thresholds = [
+        parse_thresholds(raw_thr[i], f"output.diet.stage.threshold.sp{i}") for i in file_idx
+    ]
+    structure = np.array([STRUCTURES.index(raw_struct[i]) for i in file_idx], dtype=np.int32)
+    return thresholds, structure, any(len(t) for t in thresholds)
 
 
 _PREFIX_RX = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")  # no "..", <= 64
@@ -2341,6 +2368,13 @@ class EngineConfig:
     # it is on, else empty; on the reduced per-species path, the one fishery per species (-1 none).
     fishery_names: list[str] = field(default_factory=list, kw_only=True)
     fishery_of_species: Any = field(default=None, kw_only=True)
+    # Java diet stages (osmose.engine.diet_stage): per runtime species thresholds and structure;
+    # the staged diet outputs exist when some species has thresholds and diet output is on.
+    diet_stage_thresholds: list = field(default_factory=list, kw_only=True)
+    diet_stage_structure: Any = field(default=None, kw_only=True)
+    diet_staged_output: bool = field(default=False, kw_only=True)
+    # biomassDietStage (Java BiomassDietStageOutput), gated on output.diet.pressure.enabled
+    output_biomass_diet_stage: bool = field(default=False, kw_only=True)
     # The grid's ocean mask, attached by simulate()/PythonEngine._prepare_run: fishing maps are
     # normalised on it as Java does (osmose.engine.fisheries.fishing_map). None = raw maps.
     fishing_ocean_mask: Any = field(default=None, kw_only=True)
@@ -2802,6 +2836,7 @@ class EngineConfig:
             cfg, n_focal=n_sp, n_dt_per_year=n_dt
         )
         n_bkg = len(background_list)
+        _diet_thr, _diet_struct, _diet_staged = _parse_diet_stages(cfg, n_sp, background_list)
 
         # Build focal-only arrays first
         focal_species_names = _focal_names
@@ -3369,6 +3404,10 @@ class EngineConfig:
             fishing_spatial_maps=fishing_spatial_maps,
             fishery_model=fishery_model,
             fishery_names=fishery_names,
+            diet_stage_thresholds=_diet_thr,
+            diet_stage_structure=_diet_struct,
+            diet_staged_output=_diet_staged and _output["diet_output_enabled"],
+            output_biomass_diet_stage=_output["output_biomass_diet_stage"],
             fishery_of_species=fishery_of_species,
             seeding_biomass=seeding_biomass,
             seeding_max_step=seeding_max_step,

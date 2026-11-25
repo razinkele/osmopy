@@ -58,3 +58,29 @@ E staged diet: predator stage from the per-school matrix; prey stage needs booki
 ## Control (done 2026-11-24)
 Unmodified EEC, 2 yr, Python vs C# total yield: seed 7 1.082, seed 8 1.008, seed 9 0.997 → the 8%
 seen on the gradient-map run (seed 7) is seed noise, not a defect.
+
+## PR-E staged diet — Java 4.4.1 facts (read 2026-11-25; owner chose FULL Java scope)
+- Stage (`SchoolStage("output.diet.stage")`): per predator index i, `threshold.sp{i}` float32
+  list (none -> 1 stage); structure `structure.sp{i}` else `structure`: age (years), size
+  (length), weight (W*1e6), tl. stage = count of thresholds t with value >= t (stops at first
+  value < t), value compared as float32. Resources: 1 stage.
+- Prey stage: Prey is a float32 SNAPSHOT (age, length, TL) taken at predation -> constant over
+  the mortality step -> precompute one staged column per school before the kernels.
+- Java output update runs after mortality, growth, aging, spawning, reproduction (SimulationStep):
+  predator stage and abundance are end-of-step values; background schools included.
+- DietOutput (staged dietMatrix): present schools (alive && !out) + bkg schools with
+  preyedBiomass > 0: abundanceStage[sp][st] += A; diet[sp][st][prey][prey_st] +=
+  A * preyBiomass / preyedBiomass; summed over the window; written 100*diet/abundanceStage, NaN
+  where 0. Rows: prey species (focal+bkg) x prey stage, then resources; columns: predators
+  (focal+bkg) x stage. Labels "name in [a, b[" (0 / inf at the ends).
+- PredatorPressureOutput (staged): alive schools + bkg; pp[sp][st][prey][prey_st] += preyBiomass;
+  written / recordfrequency; columns FOCAL predators x stage only; row labels "name < t" /
+  "name >=t".
+- BiomassDietStageOutput (gated on output.diet.pressure.enabled): initStep (after movement,
+  before mortality): present + bkg schools' biomass by (species, stage) + resource total biomass
+  (stage 0); written / recordfrequency.
+- alive = abundance > 0 && ageDt <= lifespanDt - 1; present = alive && !out.
+- Design (advisor 2026-11-25): a SEPARATE staged per-school array (existing diet matrix untouched,
+  bit-identical); kernel does one extra `staged[p, col[q]] += eaten`; outputs are new files
+  (dietMatrixByStage, predatorPressureByStage, biomassDietStage); measure Baltic cost in Python
+  first; control: every pre-existing output byte-identical with staging on.
