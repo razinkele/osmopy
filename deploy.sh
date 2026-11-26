@@ -421,6 +421,17 @@ else
     warn "HTTP check returned ${HTTP_CODE} after ~40s. Check: journalctl -u ${SERVICE_NAME} --no-pager -n 30"
 fi
 
+# --- Step 5b: Warm the Numba cache ---
+# Numba 0.65 (pinned) compiles the kernels in ~90 s on a cold cache, and a deploy that changed
+# engine code invalidates the changed files' entries. Pay it here, as the service user (the
+# cache is written next to the shiny-owned sources), instead of on a user's first run.
+info "Warming the Numba cache (up to ~1.5 min after an engine change)..."
+if as_shiny env PYTHONPATH="$PROD_SRC" "$SHINY_PYTHON" -m osmose.engine.warm_cache; then
+    info "Numba cache warm."
+else
+    warn "Numba cache warm-up failed: the first run will compile (~1.5 min). Not fatal."
+fi
+
 # --- Step 6 (opt-in): the C# engine ---
 # Runs AFTER the restart on purpose. Nothing loads the CLR at startup, so the service is already
 # serving the new ref without the engine; a failure here only means "no C# engine", reported
