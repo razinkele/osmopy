@@ -75,6 +75,10 @@ jobs:
               sys.exit(f"playwright {installed} != image-pinned {expected}; bump the [viztest] pin, the digest, and this expected together")
           print("playwright", installed, "matches image")
           PY
+      - name: Warm the Numba cache
+        # Numba 0.65 (pinned) compiles the kernels in ~90 s on a cold cache: without this the
+        # first Baltic run in the UI misses its 120 s budget (test_e2e_baltic / live_movement).
+        run: python -m osmose.engine.warm_cache
       - name: Run every browser test (retry transient timeouts only)
         # The glob is the scope, so a new tests/test_e2e_*.py file runs here without being
         # listed, and there is no `-m e2e`: a file that forgot its marker would be silently
