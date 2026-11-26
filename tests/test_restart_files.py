@@ -123,3 +123,44 @@ def test_a_missing_file_fails_loudly(tmp_path):
         PythonEngine().run_in_memory(
             _baltic(2, **{"simulation.restart.file": str(tmp_path / "nope.nc")}), seed=1
         )
+
+
+@pytest.mark.parametrize(
+    ("var", "value", "message"),
+    [
+        ("x", 10_000.0, "outside the grid"),
+        ("y", -5.0, "outside the grid"),
+        ("x", 1.5, "not whole numbers"),
+        ("abundance", -1.0, "abundance negative"),
+        ("weight", np.nan, "weight negative or not finite"),
+        ("age", 999.0, "beyond the lifespan"),
+    ],
+)
+def test_a_corrupt_file_is_refused(two_year_run, tmp_path, var, value, message):
+    """The cells index the kernels' arrays and the numbers feed them: refuse, never trust."""
+    f = next((two_year_run / "restart").glob("*"))
+    ds = xr.open_dataset(f).load()
+    vals = ds[var].values.copy()
+    vals[0] = value
+    ds[var] = (ds[var].dims, vals, ds[var].attrs)
+    bad = tmp_path / "bad.nc.0"
+    ds.to_netcdf(bad)
+    with pytest.raises(ValueError, match=message):
+        PythonEngine().run_in_memory(_baltic(3, **{"simulation.restart.file": str(bad)}), seed=1)
+
+
+def test_an_unlocated_school_is_accepted_and_marked_out(two_year_run, tmp_path):
+    f = next((two_year_run / "restart").glob("*"))
+    ds = xr.open_dataset(f).load()
+    x, y = ds["x"].values.copy(), ds["y"].values.copy()
+    x[0] = y[0] = -1.0
+    ds["x"], ds["y"] = (("nschool",), x, ds["x"].attrs), (("nschool",), y, ds["y"].attrs)
+    g = tmp_path / "out.nc.0"
+    ds.to_netcdf(g)
+    st, _ = read_snapshot(g, EngineConfig.from_dict(_baltic(3)))
+    assert st.is_out[0] and not st.is_out[1:].any()
+
+
+def test_a_traversing_path_is_refused():
+    with pytest.raises(ValueError, match="contains '..'"):
+        EngineConfig.from_dict(_baltic(3, **{"simulation.restart.file": "../../etc/x.nc"}))

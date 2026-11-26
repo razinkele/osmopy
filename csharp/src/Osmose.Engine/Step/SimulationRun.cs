@@ -112,7 +112,8 @@ public sealed class SimulationRun
                     Weight = r.Weight[i],
                     Abundance = r.Abundance[i],
                     TrophicLevel = r.TrophicLevel[i],
-                    Flags = r.IsEgg[i] != 0 ? SchoolFlags.IsEgg : SchoolFlags.None,
+                    Flags = (r.IsEgg[i] != 0 ? SchoolFlags.IsEgg : SchoolFlags.None)
+                        | (cell < 0 ? SchoolFlags.IsOut : SchoolFlags.None), // unlocated (-1, -1)
                     FirstFeedingAgeDt = checked((short)r.FirstFeedingAgeDt[i]),
                 },
                 new SchoolLife { CellId = cell });

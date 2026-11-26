@@ -59,7 +59,34 @@ def resolve_restart_file(name: str) -> Path:
     raise FileNotFoundError(f"restart file not found: neither {plain} nor {ranked} exists")
 
 
-def read_snapshot(path: Path, config) -> tuple[SchoolState, int]:
+def _validate(path, n, sp, x, y, abundance, length, weight, tl, age_dt, config, grid) -> None:
+    """Reject a file whose values the engines cannot take safely: the cells index the kernels'
+    arrays, so they must be inside the grid (or -1 for an unlocated school); the numbers must
+    be finite and non-negative; ages no older than the species' lifespan."""
+    problems = []
+
+    def bad(name, mask):
+        if mask.any():
+            problems.append(f"{name}: {int(mask.sum())} of {n} rows")
+
+    unlocated = (x == -1) & (y == -1)
+    bad(
+        "x/y not whole numbers",
+        ~np.isfinite(x) | ~np.isfinite(y) | (x != np.floor(x)) | (y != np.floor(y)),
+    )
+    if grid is not None:
+        inside = (x >= 0) & (x < grid.nx) & (y >= 0) & (y < grid.ny)
+        bad("x/y outside the grid (and not -1, -1)", ~(inside | unlocated))
+    for name, v in (("abundance", abundance), ("length", length), ("weight", weight)):
+        bad(f"{name} negative or not finite", ~np.isfinite(v) | (v < 0))
+    bad("trophiclevel not finite", ~np.isfinite(tl))
+    lifespan = np.asarray(config.lifespan_dt)[sp] if n else np.zeros(0)
+    bad("age negative or beyond the lifespan", (age_dt < 0) | (age_dt > lifespan))
+    if problems:
+        raise ValueError(f"{path}: invalid restart file: " + "; ".join(problems))
+
+
+def read_snapshot(path: Path, config, grid=None) -> tuple[SchoolState, int]:
     """The school table of a snapshot as a ``SchoolState``, and the step it was taken after.
 
     Java ``NetcdfPopulator``: each row becomes a new school of that species at cell (x, y), with
@@ -79,6 +106,11 @@ def read_snapshot(path: Path, config) -> tuple[SchoolState, int]:
     length = ds["length"].values.astype(np.float32).astype(np.float64)
     weight = ds["weight"].values.astype(np.float32).astype(np.float64) * 1e-6  # g -> t
     abundance = ds["abundance"].values.astype(np.float64)
+    x = ds["x"].values.astype(np.float64)
+    y = ds["y"].values.astype(np.float64)
+    tl = ds["trophiclevel"].values.astype(np.float32).astype(np.float64)
+    _validate(path, n, sp, x, y, abundance, length, weight, tl, age_dt, config, grid)
+    unlocated = (x == -1) & (y == -1)
     first_feeding = np.ones(n, dtype=np.int32)
     state = SchoolState.create(n_schools=n, species_id=sp).replace(
         abundance=abundance,
@@ -87,9 +119,10 @@ def read_snapshot(path: Path, config) -> tuple[SchoolState, int]:
         length_start=length.copy(),
         weight=weight,
         age_dt=age_dt,
-        trophic_level=ds["trophiclevel"].values.astype(np.float32).astype(np.float64),
-        cell_x=ds["x"].values.astype(np.float32).astype(np.int32),
-        cell_y=ds["y"].values.astype(np.float32).astype(np.int32),
+        trophic_level=tl,
+        cell_x=x.astype(np.int32),
+        cell_y=y.astype(np.int32),
+        is_out=unlocated,
         first_feeding_age_dt=first_feeding,
         is_egg=age_dt < first_feeding,
     )

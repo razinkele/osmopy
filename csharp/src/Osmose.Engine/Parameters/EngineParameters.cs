@@ -268,7 +268,7 @@ public sealed class EngineParameters
             species.NBackground,
             (int)(ny * nx),
             feature: features.Contains(FeatureCatalog.Named("background_species")));
-        RestartParameters restart = RestartParameters.Read(config, r, (int)nSteps);
+        RestartParameters restart = RestartParameters.Read(config, r, (int)nSteps, (int)ny, (int)nx);
         model.ThrowIfProblems();
         r.ThrowIfProblems();
 
@@ -343,7 +343,7 @@ public sealed class RestartParameters
     /// added by the caller).</summary>
     public bool Due(int step) => Frequency > 0 && step >= Spinup - 1 && (step - Spinup + 1) % Frequency == 0;
 
-    public static RestartParameters Read(SimulationConfig config, BundleReader r, int nSteps)
+    public static RestartParameters Read(SimulationConfig config, BundleReader r, int nSteps, int ny, int nx)
     {
         int start = config.TryGet("restart.start_step", out _) ? (int)r.Int("restart.start_step") : 0;
         if (start < 0 || start >= Math.Max(1, nSteps))
@@ -372,7 +372,7 @@ public sealed class RestartParameters
         }
 
         long n = r.Array("init.species_id", DType.I4, BundleReader.Any)!.Length;
-        return new RestartParameters
+        var result = new RestartParameters
         {
             StartStep = p.StartStep,
             Write = p.Write,
@@ -390,5 +390,26 @@ public sealed class RestartParameters
             Weight = r.Array("init.weight", DType.F8, n)!.ToArray<double>(),
             TrophicLevel = r.Array("init.trophic_level", DType.F8, n)!.ToArray<double>(),
         };
+
+        // The cells index the store's grid arrays: inside the grid, or -1/-1 (unlocated);
+        // the numbers finite and non-negative. Python checks the file the same way first.
+        for (int i = 0; i < n; i++)
+        {
+            int x = result.CellX[i], y = result.CellY[i];
+            bool unlocated = x == -1 && y == -1;
+            if (!unlocated && (x < 0 || x >= nx || y < 0 || y >= ny))
+            {
+                throw new ArgumentException($"init: school {i} has cell ({x}, {y}) outside the {nx} x {ny} grid");
+            }
+
+            if (!(result.Abundance[i] >= 0) || !(result.Length[i] >= 0) || !(result.Weight[i] >= 0)
+                || !double.IsFinite(result.Abundance[i]) || !double.IsFinite(result.Length[i]) || !double.IsFinite(result.Weight[i])
+                || !double.IsFinite(result.TrophicLevel[i]) || result.AgeDt[i] < 0)
+            {
+                throw new ArgumentException($"init: school {i} has a negative or non-finite value");
+            }
+        }
+
+        return result;
     }
 }

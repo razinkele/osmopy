@@ -1993,7 +1993,7 @@ def _initial_state(config: EngineConfig, grid: Grid, rng: np.random.Generator):
         )
     from osmose.engine.restart import read_snapshot, resolve_restart_file
 
-    state, step = read_snapshot(resolve_restart_file(source), config)
+    state, step = read_snapshot(resolve_restart_file(source), config, grid)
     return state, (step + 1 if config.restart_file else 0)
 
 

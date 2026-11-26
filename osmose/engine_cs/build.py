@@ -116,7 +116,7 @@ def build_bundle(
     _movement(b, config, grid, n_total, seed)
     _background(b, config, grid)
     _output(b, config, n_total)
-    _restart(b, config, restart_dir)
+    _restart(b, config, restart_dir, grid)
     return b
 
 
@@ -129,12 +129,12 @@ def start_step(config: Any) -> int:
     return read_snapshot(resolve_restart_file(config.restart_file), config)[1] + 1
 
 
-def _restart(b: Bundle, config: Any, restart_dir: str | None) -> None:
+def _restart(b: Bundle, config: Any, restart_dir: str | None, grid: Any) -> None:
     source = getattr(config, "restart_file", "") or getattr(config, "population_init_file", "")
     if source:
         from osmose.engine.restart import read_snapshot, resolve_restart_file
 
-        st, step = read_snapshot(resolve_restart_file(source), config)
+        st, step = read_snapshot(resolve_restart_file(source), config, grid)
         b.set_int("restart.start_step", step + 1 if config.restart_file else 0)
         b.set_array("init.species_id", np.asarray(st.species_id, dtype=np.int32))
         b.set_array("init.age_dt", np.asarray(st.age_dt, dtype=np.int32))
