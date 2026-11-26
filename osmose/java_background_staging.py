@@ -24,7 +24,8 @@ import warnings
 from pathlib import Path
 
 import numpy as np
-import xarray as xr
+
+from osmose.netcdf_io import open_dataset as _nc_open
 
 # Authored accessibility (prey -> value) for each background PREDATOR, from baltic_param-background.csv
 # diet intent + size-ratio windows (validated in sub-project A).
@@ -109,7 +110,7 @@ def _rescale_background_weights(master_text: str, bg_indices: list[str]) -> str:
 
 def inline_biomass_series(nc_path: str | Path, varname: str) -> list[float]:
     """Per-step domain-total biomass (length = n time steps) for a background species' NetCDF var."""
-    ds = xr.open_dataset(nc_path)
+    ds = _nc_open(nc_path)
     a = ds[varname]
     spatial = [d for d in a.dims if d != a.dims[0]]  # sum all but the leading (time) dim
     return [float(v) for v in np.nan_to_num(a.sum(dim=spatial).values)]

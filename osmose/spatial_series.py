@@ -20,7 +20,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import xarray as xr
+
+from osmose.netcdf_io import open_dataset as _nc_open
 
 # Canonical dim names the engine emits, plus common aliases for robustness.
 _TIME_DIM_NAMES = frozenset({"time", "t"})
@@ -152,7 +153,7 @@ def cell_timeseries(
     same file (which can raise an HDF5 locking error).
     """
     # open_dataset is lazy; the selection/materialisation happens in the delegate.
-    with xr.open_dataset(Path(nc_path)) as ds:
+    with _nc_open(Path(nc_path)) as ds:
         return cell_timeseries_from_dataset(
             ds,
             variable,

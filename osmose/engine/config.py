@@ -26,6 +26,7 @@ from osmose.engine.background import (
 from osmose.engine.path_resolution import resolve_data_path
 from osmose.engine.physical_data import PhysicalData
 from osmose.logging import setup_logging
+from osmose.netcdf_io import open_dataset as _nc_open
 
 _log = setup_logging("osmose.engine.config")
 
@@ -1623,9 +1624,8 @@ def _load_rv_spatial(
     spawn = _load_spatial_csv(spawn_path) > 0  # north-first, (nlat, nlon)
 
     ref_cfg = float(cfg.get("reproduction.rv.spatial.ref", "-1"))
-    import xarray as xr
 
-    with xr.open_dataset(path) as ds:
+    with _nc_open(path) as ds:
         if varname not in ds:
             raise ValueError(f"RV field {path} has no variable {varname!r}.")
         grid_shape = ds[varname].shape[-2:]

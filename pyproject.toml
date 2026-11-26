@@ -44,7 +44,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-numba = ["numba>=0.60"]
+# <0.66: Numba 0.66+ runs the mortality kernels ~50% slower (docs/perf/2026-11-26-*.md)
+numba = ["numba>=0.60,<0.66"]
 docs = ["sphinx>=8", "myst-parser>=4", "furo>=2024.1"]
 # GeoTIFF I/O for the EMODnet fine-grid bathymetry fetch (scripts/build_baltic_fine_grid.py).
 # Kept out of [dev]: the pure shallow-fraction core (osmose/forcing/bathymetry.py) that IS
@@ -127,7 +128,7 @@ dev = [
     # several engine tests) runs full simulations that are 5-10x slower
     # without the JIT path. CI without numba pushes the full suite past
     # 30 min; with numba it completes in a few minutes.
-    "numba>=0.60",
+    "numba>=0.60,<0.66",  # 0.66+ ~50% slower kernels: docs/perf/2026-11-26-*.md
     # dynesty backs the nested-sampling path in osmose/calibration/uq/. Like numba
     # above it is an end-user opt-in (via [uq]), but dev/CI must have it: the 33
     # tests in test_uq_sampler.py / test_uq_run.py / test_uq_growth.py exercise it

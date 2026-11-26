@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from osmose.netcdf_io import open_dataset as _nc_open
+
 
 @dataclass
 class RecalResult:
@@ -299,9 +301,8 @@ def e_clip_first_guess(
     a grid seed (the empirical solve finds the true equilibrium root, which — because the
     biomass effect is buffered by density dependence — is usually much closer to d0).
     """
-    import xarray as xr
 
-    da = xr.open_dataset(field_path)["reproductive_volume"]
+    da = _nc_open(field_path)["reproductive_volume"]
     rv = da.values.mean(axis=0)  # time-mean (nlat, nlon), north-first
     ref = float(da.attrs["RV_ref"])
     spawn = np.flipud(np.genfromtxt(spawn_path, delimiter=";")) > 0

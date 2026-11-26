@@ -18,6 +18,7 @@ import xarray as xr
 
 from osmose.logging import setup_logging
 from osmose.maps.builder import GridSpec
+from osmose.netcdf_io import open_dataset as _nc_open
 
 _log = setup_logging("osmose.forcing")
 
@@ -167,7 +168,7 @@ def load_ocean_mask(grid_file: Path | None) -> np.ndarray | None:
     if grid_file is None or not Path(grid_file).exists():
         return None
     try:
-        with xr.open_dataset(grid_file) as gds:
+        with _nc_open(grid_file) as gds:
             return gds["mask"].values.astype(bool)
     except (OSError, KeyError):
         return None
