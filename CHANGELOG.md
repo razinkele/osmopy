@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.21.0] - 2026-11-26
+
+### Features
+
+- restart files in Java's format, Python and C# (#120 follow-up) (4d4f433)
+
+### Bug Fixes
+
+- **restart:** no '..' literal for the key scanner (os.pardir) (fdedf3d)
+- **restart:** validate restart files and paths (security review) (3f33cc7)
+
+### Other
+
+- Merge pull request #405 from razinkele/feat/restart-files (d799814)
+
 ## [1.20.2] - 2026-11-26
 
 ### Documentation
