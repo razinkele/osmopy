@@ -62,6 +62,19 @@ Both engines implement the same `Engine` protocol and produce identical output s
 | Speed | 2.2× faster than Java on one thread, 4.3× on 14 (EEC, 70 years; below) | Production-ready |
 | Use case | Production runs, calibration, development | Legacy compatibility, reference |
 
+### Restart files
+
+Since v1.21.0 the Python and C# engines read and write restart files in Java 4.4.1's format, so a file written by any of the three engines (or by R's `initialize_osmose()`) loads in the others.
+
+| Key | Effect |
+|---|---|
+| `simulation.restart.enabled` | Write snapshots to `restart/<prefix>_snapshot_step<i>.nc.0`. **Absent means true**, as in Java: every run writes one after its last step. Set `false` to turn it off (the Baltic config does). |
+| `simulation.restart.recordfrequency.ndt`, `simulation.restart.spinup.nstep` (or `.spinup.nyear`) | Also write a snapshot every N steps once the spin-up is over. |
+| `simulation.restart.file` | Start from a snapshot and continue at the step after the one it was taken at. |
+| `population.initialization.file` | Start from a given population at step 0. |
+
+A restart re-initialises the run from the school table, as Java does; it is not a bit-exact continuation (the random stream, lagged starvation rates and resource biomass are not saved). Files are validated on loading: paths may not contain `..`, cells must lie inside the grid, and abundances, sizes and ages must be finite and plausible. Genetic configs cannot restart yet.
+
 ## Performance
 
 The same model run by each engine: the Eastern English Channel reference config (`data/eec_full`, 14 species, 24 steps per year). Every run is one fresh process that reads the config, simulates and writes the outputs. The third engine in the table is the **C# engine** (`csharp/`, .NET 10): the Python engine's model reimplemented, optional, and offered in the UI wherever it is built.
