@@ -47,7 +47,13 @@ class CSharpEngine:
         self.deadline_seconds = float(deadline_seconds)
         self.checks = bool(checks)
 
-    def _execute(self, config: dict[str, str], seed: int, cancel_token: threading.Event | None):
+    def _execute(
+        self,
+        config: dict[str, str],
+        seed: int,
+        cancel_token: threading.Event | None,
+        restart_dir: str | None = None,
+    ):
         from osmose.engine import PythonEngine, SimulationCancelled
         from osmose.engine.config import EngineConfig
         from osmose.engine.config_validation import warn_unread_java_only_keys
@@ -63,7 +69,7 @@ class CSharpEngine:
             raise CSharpEngineError(f"the C# engine cannot run this config: {reason}")
         bundle = build_bundle(
             engine_config, config, grid, seed=seed, threads=self.threads,
-            deadline_seconds=self.deadline_seconds, checks=self.checks,
+            deadline_seconds=self.deadline_seconds, checks=self.checks, restart_dir=restart_dir,
         )  # fmt: skip
         buffers = allocate_results(bundle, engine_config)
         try:
@@ -105,10 +111,14 @@ class CSharpEngine:
                 "step_observer receives the Python engine's school state, which the C# engine "
                 "does not have: the live map is a Python-engine feature"
             )
+        import tempfile
+
         from osmose.engine.output import write_outputs
 
-        engine_config, grid, outputs = self._execute(config, seed, cancel_token)
-        write_outputs(outputs, output_dir, engine_config, grid=grid)
+        with tempfile.TemporaryDirectory(prefix="osmose_cs_restart_") as snap_dir:
+            engine_config, grid, outputs = self._execute(config, seed, cancel_token, snap_dir)
+            write_outputs(outputs, output_dir, engine_config, grid=grid)
+            _write_restart_snapshots(Path(snap_dir), Path(output_dir), engine_config, grid)
         return RunResult(returncode=0, output_dir=output_dir, stdout="", stderr="")
 
     def run_in_memory(
@@ -204,3 +214,27 @@ def _step_outputs(buffers: Any, records: int) -> list:
         )
         for i in range(records)
     ]
+
+
+def _write_restart_snapshots(snap_dir: Path, output_dir: Path, config: Any, grid: Any) -> None:
+    """The engine's restart snapshot bundles (``snap_<step>.bin``) as Java's NetCDF files
+    (osmose.engine.restart): the same writer the Python engine uses."""
+    from osmose.engine.restart import snapshot_path, write_snapshot
+    from osmose.engine.state import SchoolState
+    from osmose.engine_cs.bundle import Bundle
+
+    for f in sorted(snap_dir.glob("snap_*.bin")):
+        b = Bundle.load(f)
+        step = int(np.asarray(b.get("snap.step")).ravel()[0])
+        sp = np.asarray(b.get("snap.species_id"), dtype=np.int32)
+        cell = np.asarray(b.get("snap.cell_id"), dtype=np.int64)
+        st = SchoolState.create(n_schools=len(sp), species_id=sp).replace(
+            age_dt=np.asarray(b.get("snap.age_dt"), dtype=np.int32),
+            abundance=np.asarray(b.get("snap.abundance"), dtype=np.float64),
+            length=np.asarray(b.get("snap.length"), dtype=np.float64),
+            weight=np.asarray(b.get("snap.weight"), dtype=np.float64),
+            trophic_level=np.asarray(b.get("snap.trophic_level"), dtype=np.float64),
+            cell_x=np.where(cell >= 0, cell % grid.nx, -1).astype(np.int32),
+            cell_y=np.where(cell >= 0, cell // grid.nx, -1).astype(np.int32),
+        )
+        write_snapshot(st, step, snapshot_path(output_dir, config.output_file_prefix, step), config)

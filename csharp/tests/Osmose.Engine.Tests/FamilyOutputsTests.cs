@@ -440,4 +440,18 @@ public sealed class FamilyOutputsTests : IDisposable
         Assert.All(specs.Where(sp => JavaNames.Contains(sp.Name)), sp => Assert.Equal(WindowFold.Sum, sp.Fold));
         Assert.Equal(new[] { NFocal, n, 3 }, specs.Single(sp => sp.Name == "mortality_rate_by_cause_size").Shape);
     }
+
+    [Fact]
+    public void RestartScheduleAndRecordCountsFollowJava()
+    {
+        var r = new RestartParameters { Frequency = 24, Spinup = 48 };
+        Assert.Equal(new[] { 47, 71, 95, 119 }, Enumerable.Range(0, 120).Where(r.Due).ToArray());
+        Assert.False(new RestartParameters().Due(10)); // no frequency: only the end-of-run one
+
+        var o = new OutputParameters { RecordFrequency = 24, Step0Include = true };
+        Assert.Equal(1 + 3, o.Records(72)); // initial record + 3 windows
+        Assert.Equal(2, o.Records(72, 24)); // resumed after step 23: no initial record
+        Assert.Equal(2, o.Records(72, 30)); // resumed mid-window: steps 30-47 (partial) and 48-71
+        Assert.Equal(1 + 4, o.Records(80)); // trailing partial window
+    }
 }

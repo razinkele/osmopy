@@ -49,6 +49,11 @@ public sealed class EngineParameters
     /// <summary><c>run.deadline_seconds</c>; 0 means no deadline.</summary>
     public double DeadlineSeconds { get; private init; }
 
+    /// <summary>Restart (osmose.engine.restart): the first step (after a restart file's step),
+    /// the starting school table (<c>init.*</c>, empty without one), and where and when to
+    /// write snapshots (<c>restart.dir</c> absent: none).</summary>
+    public RestartParameters Restart { get; private init; } = new();
+
     /// <summary><c>run.checks</c>: debug invariants on.</summary>
     public bool Checks { get; private init; }
 
@@ -263,10 +268,13 @@ public sealed class EngineParameters
             species.NBackground,
             (int)(ny * nx),
             feature: features.Contains(FeatureCatalog.Named("background_species")));
+        RestartParameters restart = RestartParameters.Read(config, r, (int)nSteps, (int)ny, (int)nx);
         model.ThrowIfProblems();
+        r.ThrowIfProblems();
 
         return new EngineParameters
         {
+            Restart = restart,
             Background = background,
             Species = species,
             Growth = growth,
@@ -292,5 +300,116 @@ public sealed class EngineParameters
             Nx = (int)nx,
             OceanMask = mask,
         };
+    }
+}
+
+/// <summary>Restart settings and the starting school table (bundle groups <c>restart</c> and
+/// <c>init</c>, all optional).</summary>
+public sealed class RestartParameters
+{
+    public int StartStep { get; init; }
+
+    public bool Write { get; init; }
+
+    public int Frequency { get; init; }
+
+    public int Spinup { get; init; }
+
+    /// <summary>Directory for the snapshot bundles (Python turns them into Java's NetCDF);
+    /// null when nothing is written.</summary>
+    public string? Directory { get; init; }
+
+    public int[] Species { get; init; } = [];
+
+    public int[] AgeDt { get; init; } = [];
+
+    public int[] CellX { get; init; } = [];
+
+    public int[] CellY { get; init; } = [];
+
+    public int[] FirstFeedingAgeDt { get; init; } = [];
+
+    public byte[] IsEgg { get; init; } = [];
+
+    public double[] Abundance { get; init; } = [];
+
+    public double[] Length { get; init; } = [];
+
+    public double[] Weight { get; init; } = [];
+
+    public double[] TrophicLevel { get; init; } = [];
+
+    /// <summary>Java's schedule: a snapshot after <paramref name="step"/> (the final one is
+    /// added by the caller).</summary>
+    public bool Due(int step) => Frequency > 0 && step >= Spinup - 1 && (step - Spinup + 1) % Frequency == 0;
+
+    public static RestartParameters Read(SimulationConfig config, BundleReader r, int nSteps, int ny, int nx)
+    {
+        int start = config.TryGet("restart.start_step", out _) ? (int)r.Int("restart.start_step") : 0;
+        if (start < 0 || start >= Math.Max(1, nSteps))
+        {
+            throw new ArgumentException($"restart.start_step: {start} is outside [0, {nSteps})");
+        }
+
+        string? dir = null;
+        if (config.TryGet("restart.dir", out _))
+        {
+            byte[] bytes = r.Array("restart.dir", DType.U1, BundleReader.Any)?.ToArray<byte>() ?? [];
+            dir = System.Text.Encoding.UTF8.GetString(bytes);
+        }
+
+        var p = new RestartParameters
+        {
+            StartStep = start,
+            Write = config.TryGet("restart.write", out _) && r.Int("restart.write") != 0,
+            Frequency = config.TryGet("restart.frequency", out _) ? (int)r.Int("restart.frequency") : 0,
+            Spinup = config.TryGet("restart.spinup", out _) ? (int)r.Int("restart.spinup") : 0,
+            Directory = dir,
+        };
+        if (!config.TryGet("init.species_id", out _))
+        {
+            return p;
+        }
+
+        long n = r.Array("init.species_id", DType.I4, BundleReader.Any)!.Length;
+        var result = new RestartParameters
+        {
+            StartStep = p.StartStep,
+            Write = p.Write,
+            Frequency = p.Frequency,
+            Spinup = p.Spinup,
+            Directory = p.Directory,
+            Species = r.Array("init.species_id", DType.I4, n)!.ToArray<int>(),
+            AgeDt = r.Array("init.age_dt", DType.I4, n)!.ToArray<int>(),
+            CellX = r.Array("init.cell_x", DType.I4, n)!.ToArray<int>(),
+            CellY = r.Array("init.cell_y", DType.I4, n)!.ToArray<int>(),
+            FirstFeedingAgeDt = r.Array("init.first_feeding_age_dt", DType.I4, n)!.ToArray<int>(),
+            IsEgg = r.Array("init.is_egg", DType.U1, n)!.ToArray<byte>(),
+            Abundance = r.Array("init.abundance", DType.F8, n)!.ToArray<double>(),
+            Length = r.Array("init.length", DType.F8, n)!.ToArray<double>(),
+            Weight = r.Array("init.weight", DType.F8, n)!.ToArray<double>(),
+            TrophicLevel = r.Array("init.trophic_level", DType.F8, n)!.ToArray<double>(),
+        };
+
+        // The cells index the store's grid arrays: inside the grid, or -1/-1 (unlocated);
+        // the numbers finite and non-negative. Python checks the file the same way first.
+        for (int i = 0; i < n; i++)
+        {
+            int x = result.CellX[i], y = result.CellY[i];
+            bool unlocated = x == -1 && y == -1;
+            if (!unlocated && (x < 0 || x >= nx || y < 0 || y >= ny))
+            {
+                throw new ArgumentException($"init: school {i} has cell ({x}, {y}) outside the {nx} x {ny} grid");
+            }
+
+            if (!(result.Abundance[i] >= 0) || !(result.Length[i] >= 0) || !(result.Weight[i] >= 0)
+                || !double.IsFinite(result.Abundance[i]) || !double.IsFinite(result.Length[i]) || !double.IsFinite(result.Weight[i])
+                || !double.IsFinite(result.TrophicLevel[i]) || result.AgeDt[i] < 0)
+            {
+                throw new ArgumentException($"init: school {i} has a negative or non-finite value");
+            }
+        }
+
+        return result;
     }
 }

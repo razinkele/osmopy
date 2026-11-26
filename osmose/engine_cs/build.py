@@ -86,8 +86,13 @@ def build_bundle(
     threads: int = 1,
     deadline_seconds: float = 0.0,
     checks: bool = False,
+    restart_dir: str | None = None,
 ) -> Bundle:
     """The bundle for one run of ``config`` (an ``EngineConfig``) on ``grid``.
+
+    ``restart_dir``: where the engine writes its restart snapshot bundles (disk runs; the
+    caller turns them into Java's NetCDF, osmose.engine.restart). A restart or initialisation
+    file in the config is read here and handed over as the starting school table.
 
     ``raw`` is the reader's dict the config was parsed from; the capability detectors read the
     few switches the engine takes outside ``EngineConfig``.
@@ -111,7 +116,43 @@ def build_bundle(
     _movement(b, config, grid, n_total, seed)
     _background(b, config, grid)
     _output(b, config, n_total)
+    _restart(b, config, restart_dir, grid)
     return b
+
+
+def start_step(config: Any) -> int:
+    """The run's first step: after a restart file's step, else 0."""
+    if not getattr(config, "restart_file", ""):
+        return 0
+    from osmose.engine.restart import read_snapshot, resolve_restart_file
+
+    return read_snapshot(resolve_restart_file(config.restart_file), config)[1] + 1
+
+
+def _restart(b: Bundle, config: Any, restart_dir: str | None, grid: Any) -> None:
+    source = getattr(config, "restart_file", "") or getattr(config, "population_init_file", "")
+    if source:
+        from osmose.engine.restart import read_snapshot, resolve_restart_file
+
+        st, step = read_snapshot(resolve_restart_file(source), config, grid)
+        b.set_int("restart.start_step", step + 1 if config.restart_file else 0)
+        b.set_array("init.species_id", np.asarray(st.species_id, dtype=np.int32))
+        b.set_array("init.age_dt", np.asarray(st.age_dt, dtype=np.int32))
+        b.set_array("init.cell_x", np.asarray(st.cell_x, dtype=np.int32))
+        b.set_array("init.cell_y", np.asarray(st.cell_y, dtype=np.int32))
+        b.set_array(
+            "init.first_feeding_age_dt", np.asarray(st.first_feeding_age_dt, dtype=np.int32)
+        )
+        b.set_array("init.is_egg", np.asarray(st.is_egg, dtype=np.uint8))
+        b.set_array("init.abundance", np.asarray(st.abundance, dtype=np.float64))
+        b.set_array("init.length", np.asarray(st.length, dtype=np.float64))
+        b.set_array("init.weight", np.asarray(st.weight, dtype=np.float64))
+        b.set_array("init.trophic_level", np.asarray(st.trophic_level, dtype=np.float64))
+    if restart_dir is not None and getattr(config, "restart_write", False):
+        b.set_int("restart.write", 1)
+        b.set_int("restart.frequency", int(config.restart_frequency))
+        b.set_int("restart.spinup", int(config.restart_spinup))
+        b.set_array("restart.dir", np.frombuffer(str(restart_dir).encode("utf-8"), dtype=np.uint8))
 
 
 def _contract(b: Bundle, config: Any, raw: Mapping[str, str]) -> None:
@@ -1065,16 +1106,23 @@ class RunBuffers:
     age_bin_offsets: np.ndarray | None = None
 
 
-def n_records(n_steps: int, record_frequency: int, step0_include: bool) -> int:
-    """How many records a run writes: one per full window plus a trailing partial one (as
-    ``simulate`` flushes it), plus the initial record when ``output.step0.include`` is set."""
-    return int(bool(step0_include)) + -(-int(n_steps) // int(record_frequency))
+def n_records(n_steps: int, record_frequency: int, step0_include: bool, start: int = 0) -> int:
+    """How many records a run over steps ``start``..n_steps-1 writes: one at each step closing
+    a window (``(step + 1) % frequency == 0``), a trailing partial one (as ``simulate`` flushes
+    it), plus the initial record when ``output.step0.include`` is set and the run starts at 0."""
+    f = int(record_frequency)
+    closes = int(n_steps) // f - int(start) // f
+    trailing = int(n_steps) % f != 0
+    return int(bool(step0_include) and start == 0) + closes + int(trailing)
 
 
 def allocate_results(b: Bundle, config: Any) -> RunBuffers:
     """Allocate the result buffers and the control block and register them in ``b``."""
     n_total, n_focal = config.n_species + config.n_background, config.n_species
-    n = n_records(config.n_steps, config.output_record_frequency, config.output_step0_include)
+    n = n_records(
+        config.n_steps, config.output_record_frequency, config.output_step0_include,
+        start_step(config),
+    )  # fmt: skip
     buffers = RunBuffers(
         record_step=np.full(n, -2, dtype=np.int32),
         window_steps=np.zeros(n, dtype=np.int32),

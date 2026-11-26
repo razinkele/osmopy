@@ -32,6 +32,8 @@ from osmose.engine.config_validation import (
 # NOT derived from the source frozensets — that would be circular.
 FROZEN_ALLOWLIST_SNAPSHOT = frozenset(
     [
+        "simulation.restart.spinup.nstep",
+        "population.initialization.file",
         "output.diet.stage.structure.sp{idx}",
         "output.fisheries.yield.biomass.enabled",
         "output.distrib.bytl.min",
@@ -376,12 +378,12 @@ def test_java_only_keys_set_excludes_py_honored_and_metadata():
     assert java_only_keys_set(cfg) == []
 
 
-def test_java_only_keys_set_excludes_120_restart_carveouts():
+def test_restart_keys_are_honoured_not_java_only():
+    """Restart has been implemented since 2026-11-26: its keys are read, so they are not listed,
+    and #120's carve-out list is empty."""
     cfg = {"simulation.restart.file": "snap.nc", "simulation.restart.enabled": "true"}
     assert java_only_keys_set(cfg) == []
-    assert _RESTART_HANDLED_BY_120 == frozenset(
-        {"simulation.restart.file", "simulation.restart.enabled"}
-    )
+    assert _RESTART_HANDLED_BY_120 == frozenset()
 
 
 def test_java_only_keys_set_canonicalizes_before_matching():
@@ -413,18 +415,18 @@ def _load_minimal_config() -> dict:
 def test_warn_emits_one_summary_naming_the_keys(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
         keys = cv.warn_unread_java_only_keys(
-            {"simulation.restart.spinup.nyear": "100", "output.fisheries.byage.enabled": "true"}
+            {"fisheries.check.enabled": "true", "output.fisheries.byage.enabled": "true"}
         )
-    assert keys == ["output.fisheries.byage.enabled", "simulation.restart.spinup.nyear"]
+    assert keys == ["fisheries.check.enabled", "output.fisheries.byage.enabled"]
     msgs = [r.getMessage() for r in caplog.records if "issue #123" in r.getMessage()]
     assert len(msgs) == 1
-    assert "output.fisheries.byage.enabled" in msgs[0] and "simulation.restart" in msgs[0]
+    assert "output.fisheries.byage.enabled" in msgs[0] and "fisheries.check.enabled" in msgs[0]
 
 
 def test_warn_dedups_once_per_process(caplog):
     with caplog.at_level(logging.WARNING, logger="osmose.config"):
-        cv.warn_unread_java_only_keys({"simulation.restart.spinup.nyear": "100"})
-        cv.warn_unread_java_only_keys({"simulation.restart.spinup.nyear": "100"})
+        cv.warn_unread_java_only_keys({"fisheries.check.enabled": "true"})
+        cv.warn_unread_java_only_keys({"fisheries.check.enabled": "true"})
     assert sum("issue #123" in r.getMessage() for r in caplog.records) == 1
 
 

@@ -72,7 +72,7 @@ def test_the_implemented_features_are_exactly_these():
     assert implemented == {
         "core", "oxygen_benthos", "stock_recruitment", "rv_gate", "seeding_linear",
         "salinity_gate", "background_species", "full_outputs", "lmax_cap", "movement_none",
-        "depensation_gate", "depletable_ltl", "per_fishery_fishing",
+        "depensation_gate", "depletable_ltl", "per_fishery_fishing", "restart",
     }  # fmt: skip
 
 
@@ -387,6 +387,7 @@ def _recipes(c: EngineConfig) -> dict:
         "genetics": (R(c, genetics_enabled=True), {}),
         # any non-None FisheryModel takes the per-fishery path (osmose/engine/fisheries.py)
         "per_fishery_fishing": (R(c, fishery_model=object()), {}),
+        "restart": (R(c, restart_file="x.nc"), {}),
         "economics": (R(c, economics_enabled=True), {}),
         "java_compat_rng": (R(c, java_compat_rng=True), {}),
         "kill_if_no_school": (R(c, kill_if_no_school=True), {}),

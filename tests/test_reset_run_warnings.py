@@ -16,7 +16,6 @@ def _isolate_engine_warning_state():
 
     def _clear() -> None:
         cv._WARNED_JAVA_ONLY_KEYS.clear()
-        cfg_mod._WARNED_UNSUPPORTED_RESTART.clear()
         cfg_mod._WARNED_UNSUPPORTED_MORTALITY.clear()
 
     _levels = {
@@ -29,19 +28,17 @@ def _isolate_engine_warning_state():
         logging.getLogger(name).setLevel(lvl)
 
 
-def test_reset_run_warnings_clears_all_three_dedup_sets():
+def test_reset_run_warnings_clears_the_dedup_sets():
     from osmose.engine import config as cfg_mod
     from osmose.engine import config_validation as cv
     from osmose.engine import reset_run_warnings
 
     cv._WARNED_JAVA_ONLY_KEYS.add("fingerprint-a")
-    cfg_mod._WARNED_UNSUPPORTED_RESTART.add("restart-msg")
     cfg_mod._WARNED_UNSUPPORTED_MORTALITY.add("mortality-msg")
 
     reset_run_warnings()
 
     assert cv._WARNED_JAVA_ONLY_KEYS == set()
-    assert cfg_mod._WARNED_UNSUPPORTED_RESTART == set()
     assert cfg_mod._WARNED_UNSUPPORTED_MORTALITY == set()
 
 

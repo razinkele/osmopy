@@ -6,6 +6,7 @@ into typed NumPy arrays indexed by species, ready for vectorized computation.
 
 from __future__ import annotations
 
+import os
 import re
 import warnings
 from dataclasses import dataclass, field
@@ -34,18 +35,6 @@ _log = setup_logging("osmose.engine.config")
 # candidate during calibration, so an un-throttled warning would flood the logs.
 # Warn once per distinct message for the process lifetime.
 _WARNED_UNSUPPORTED_MORTALITY: set[str] = set()
-
-# #120: the Python engine does not implement restart. Warn (don't silently ignore) when a
-# config requests it. Deduped per-message for the process lifetime (from_dict reruns per
-# calibration candidate). Cleared by autouse fixtures in the restart tests.
-_WARNED_UNSUPPORTED_RESTART: set[str] = set()
-
-
-def _warn_once_restart(msg: str) -> None:
-    if msg not in _WARNED_UNSUPPORTED_RESTART:
-        _WARNED_UNSUPPORTED_RESTART.add(msg)
-        _log.warning("%s", msg)
-
 
 _GROWTH_MAP: dict[str, str] = {
     # Current canonical classnames
@@ -1326,6 +1315,7 @@ def _parse_output_flags(cfg: dict[str, str], n_sp: int, n_bkg: int) -> dict[str,
         "output_biomass_diet_stage": _enabled(cfg, "output.diet.pressure.enabled"),
         # Java OutputManager: outputs are collected and written only from this year on
         "output_start_year": max(0, int(float(cfg.get("output.start.year", "0") or 0))),
+        **_parse_restart(cfg),
         "output_bioen_ingest": cfg.get("output.bioen.ingest.enabled", "false").lower() == "true",
         "output_bioen_maint": cfg.get("output.bioen.maint.enabled", "false").lower() == "true",
         "output_bioen_rho": cfg.get("output.bioen.rho.enabled", "false").lower() == "true",
@@ -1372,6 +1362,41 @@ def _parse_diet_stages(
     ]
     structure = np.array([STRUCTURES.index(raw_struct[i]) for i in file_idx], dtype=np.int32)
     return thresholds, structure, any(len(t) for t in thresholds)
+
+
+def _parse_restart(cfg: dict[str, str]) -> dict:
+    """Java's restart settings (Configuration.init; osmose.engine.restart).
+
+    ``simulation.restart.enabled`` absent means TRUE (Java writes an end-of-run snapshot then);
+    ``recordfrequency.ndt`` absent means no intermediate snapshot; the spinup is
+    ``spinup.nstep``, else ``spinup.nyear`` x steps per year, else 0. ``simulation.restart.file``
+    (resume after its step) takes precedence over ``population.initialization.file`` (start at
+    step 0 from that population). File names are relative to the config directory; the file
+    itself is resolved at run start (``<name>.0`` preferred, as Java)."""
+    raw_enabled = str(cfg.get("simulation.restart.enabled", "") or "").strip()
+    write = True if not raw_enabled else _enabled(cfg, "simulation.restart.enabled")
+    freq = str(cfg.get("simulation.restart.recordfrequency.ndt", "") or "").strip()
+    nstep = str(cfg.get("simulation.restart.spinup.nstep", "") or "").strip()
+    nyear = str(cfg.get("simulation.restart.spinup.nyear", "") or "").strip()
+    ndt = int(float(cfg.get("simulation.time.ndtperyear", "1") or 1))
+    spinup = int(float(nstep)) if nstep else (int(float(nyear)) * ndt if nyear else 0)
+
+    def path(key: str) -> str:
+        value = str(cfg.get(key, "") or "").strip()
+        if not value or value.lower() in ("null", "none"):
+            return ""
+        p = Path(value)
+        if os.pardir in p.parts:  # the same rule as every other data file (resolve_data_path)
+            raise ValueError(f"{key}: {value!r} contains '..'; give a path without traversal")
+        return str(p if p.is_absolute() else Path(_cfg_dir(cfg)) / p)
+
+    return {
+        "restart_write": write,
+        "restart_frequency": int(float(freq)) if freq else 0,
+        "restart_spinup": spinup,
+        "restart_file": path("simulation.restart.file"),
+        "population_init_file": path("population.initialization.file"),
+    }
 
 
 _PREFIX_RX = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")  # no "..", <= 64
@@ -2556,6 +2581,12 @@ class EngineConfig:
     output_additional_n_bysize: bool = False
     output_file_prefix: str = "osm"  # output.file.prefix: every output file name starts with it
     output_start_year: int = 0  # output.start.year: records of earlier years are dropped
+    # Restart files (osmose.engine.restart): write schedule and the file to start from
+    restart_write: bool = True
+    restart_frequency: int = 0
+    restart_spinup: int = 0
+    restart_file: str = ""
+    population_init_file: str = ""
     output_tl_thresholds: Any = None
     output_age_thresholds: Any = None
     output_size_thresholds: Any = None
@@ -2759,22 +2790,6 @@ class EngineConfig:
         # species.is.enabled (4.4.1): renumber before anything reads a species key, so the
         # stored raw config and everything built from it agree.
         cfg = drop_disabled_species(cfg)
-
-        # #120: warn on requested-but-unsupported restart (post-canonicalize catches the old
-        # output.restart.enabled spelling too). Two distinct requests, two distinct messages.
-        _restart_file = cfg.get("simulation.restart.file", "").strip()
-        if _restart_file and _restart_file.lower() not in ("null", "none"):
-            _warn_once_restart(
-                f"simulation.restart.file={_restart_file!r} is set, but the Python engine does "
-                "not implement restart — the run will COLD-START from scratch instead of "
-                "resuming from that snapshot. Use the Java engine to resume (see issue #120)."
-            )
-        if _enabled(cfg, "simulation.restart.enabled"):
-            _warn_once_restart(
-                "simulation.restart.enabled is set, but the Python engine does not write "
-                "restart/checkpoint output — none will be produced. Use the Java engine for "
-                "restart output (see issue #120)."
-            )
 
         # config_dir is extracted from cfg by _cfg_dir() at each _resolve_file call
         n_sp = int(_get(cfg, "simulation.nspecies"))
@@ -3594,6 +3609,11 @@ class EngineConfig:
             output_additional_n_bysize=_output["output_additional_n_bysize"],
             output_file_prefix=_output["output_file_prefix"],
             output_start_year=_output["output_start_year"],
+            restart_write=_output["restart_write"],
+            restart_frequency=_output["restart_frequency"],
+            restart_spinup=_output["restart_spinup"],
+            restart_file=_output["restart_file"],
+            population_init_file=_output["population_init_file"],
             output_tl_thresholds=_output["output_tl_thresholds"],
             output_age_thresholds=_output["output_age_thresholds"],
             output_size_thresholds=_output["output_size_thresholds"],

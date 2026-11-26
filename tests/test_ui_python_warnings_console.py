@@ -19,7 +19,6 @@ def _isolate_engine_warning_state():
 
     def _clear() -> None:
         cv._WARNED_JAVA_ONLY_KEYS.clear()
-        cfg_mod._WARNED_UNSUPPORTED_RESTART.clear()
         cfg_mod._WARNED_UNSUPPORTED_MORTALITY.clear()
 
     _levels = {
@@ -89,7 +88,7 @@ def test_queue_log_handler_never_raises_on_broken_queue():
     h.emit(rec)  # must NOT raise (a log line can't break a run)
 
 
-def test_python_engine_thread_streams_120_and_123_and_detaches(tmp_path):
+def test_python_engine_thread_streams_123_and_detaches(tmp_path):
     from osmose.config.reader import OsmoseConfigReader
     from ui.pages.run import _python_engine_thread, _QueueLogHandler
 
@@ -98,7 +97,6 @@ def test_python_engine_thread_streams_120_and_123_and_detaches(tmp_path):
     cfg["simulation.ncpu"] = "8"  # java-only -> #123
     cfg["oxygen.factor"] = "1.0"  # java-only -> #123
     cfg["output.fisheries.byage.enabled"] = "true"  # java-only and switched on -> #123
-    cfg["simulation.restart.file"] = "snap.nc"  # -> #120
     cfg["simulation.time.nyear"] = "1"  # keep the run short
 
     out = tmp_path / "output"
@@ -114,7 +112,6 @@ def test_python_engine_thread_streams_120_and_123_and_detaches(tmp_path):
     while not log_q.empty():
         lines.append(log_q.get_nowait())
     assert any("see issue #123" in ln for ln in lines), f"no #123 warning streamed; got {lines}"
-    assert any("see issue #120" in ln for ln in lines), f"no #120 warning streamed; got {lines}"
 
     # handler was detached in the finally -> no leak on the global osmose logger
     assert not any(isinstance(h, _QueueLogHandler) for h in logging.getLogger("osmose").handlers), (

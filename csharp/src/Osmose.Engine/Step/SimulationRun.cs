@@ -64,7 +64,7 @@ public sealed class SimulationRun
         _eggs = new double[nFocal];
         _seeded = new bool[nFocal];
         _key = PhiloxKey.ForRun(p.Seed, p.RngScheme);
-        int nRecords = p.Output.Records(p.NSteps);
+        int nRecords = p.Output.Records(p.NSteps, p.Restart.StartStep);
         OutputLayout layout = p.Output.Layout(nTotal, nFocal);
         if ((layout.Families & OutputFamilies.Diet) != 0)
         {
@@ -76,6 +76,7 @@ public sealed class SimulationRun
             Store.EnableStagedDiet(layout.DietStages.Width);
         }
 
+        LoadInitialSchools(p);
         Results = new RunResults(nRecords, layout);
         Collector = new OutputCollector(layout, p.Output.RecordFrequency);
         Collector.SetLifespans(p.Species.LifespanDt);
@@ -94,12 +95,37 @@ public sealed class SimulationRun
 
     public OutputCollector Collector { get; }
 
+    /// <summary>The starting school table of a restart or initialisation file (Java
+    /// NetcdfPopulator): each row a new school, as the probes load states.</summary>
+    private void LoadInitialSchools(EngineParameters p)
+    {
+        RestartParameters r = p.Restart;
+        for (int i = 0; i < r.Species.Length; i++)
+        {
+            int cell = r.CellX[i] >= 0 && r.CellY[i] >= 0 ? (r.CellY[i] * p.Nx) + r.CellX[i] : -1;
+            Store.Append(
+                new SchoolCore
+                {
+                    SpeciesId = r.Species[i],
+                    AgeDt = r.AgeDt[i],
+                    Length = r.Length[i],
+                    Weight = r.Weight[i],
+                    Abundance = r.Abundance[i],
+                    TrophicLevel = r.TrophicLevel[i],
+                    Flags = (r.IsEgg[i] != 0 ? SchoolFlags.IsEgg : SchoolFlags.None)
+                        | (cell < 0 ? SchoolFlags.IsOut : SchoolFlags.None), // unlocated (-1, -1)
+                    FirstFeedingAgeDt = checked((short)r.FirstFeedingAgeDt[i]),
+                },
+                new SchoolLife { CellId = cell });
+        }
+    }
+
     /// <summary>Runs every step, or until cancelled or past the deadline.</summary>
     public RunSummary Run()
     {
         var clock = Stopwatch.StartNew();
         int records = 0, steps = 0, peak = 0;
-        if (_p.Output.Step0Include)
+        if (_p.Output.Step0Include && _p.Restart.StartStep == 0) // a resumed run has none (Java)
         {
             Collector.SnapshotStages(_p, Store); // no step produced this state: split it as it is
             Store.ClearDiet(); // the rows must exist, zeroed, before the snapshot reads them...
@@ -110,7 +136,8 @@ public sealed class SimulationRun
 
         RunStatus status = RunStatus.Completed;
         int freq = _p.Output.RecordFrequency;
-        for (int step = 0; step < _p.NSteps; step++)
+        RestartParameters rs = _p.Restart;
+        for (int step = rs.StartStep; step < _p.NSteps; step++)
         {
             if (_control.CancelRequested)
             {
@@ -125,6 +152,11 @@ public sealed class SimulationRun
             }
 
             RunStep(step);
+            if (rs.Directory is { } dir && rs.Write && (rs.Due(step) || step == _p.NSteps - 1))
+            {
+                SnapshotWriter.Write(Store, _p.Species.NFocal, step, System.IO.Path.Combine(dir, $"snap_{step}.bin"));
+            }
+
             if ((step + 1) % freq == 0)
             {
                 Flush(records++, step);

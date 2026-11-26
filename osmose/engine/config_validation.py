@@ -50,6 +50,13 @@ _ALLOWLIST_PY_HONORED: frozenset[str] = frozenset(
         # Java-rule distribution families (osmose/engine/output_distrib.py, 2026-11-24)
         "output.fisheries.yield.biomass.enabled",
         "output.start.year",  # records before it are dropped, as Java (2026-11-25)
+        # restart / initialisation files (osmose/engine/restart.py, 2026-11-26)
+        "simulation.restart.enabled",
+        "simulation.restart.file",
+        "simulation.restart.recordfrequency.ndt",
+        "simulation.restart.spinup.nyear",
+        "simulation.restart.spinup.nstep",
+        "population.initialization.file",
         "output.mortality.additional.bysize.enabled",
         "output.mortality.additionaln.bysize.enabled",
         # staged diet outputs (osmose/engine/diet_stage.py, 2026-11-25)
@@ -276,10 +283,6 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
         "predation.accessibility.stage.threshold.sp{idx}",
         "simulation.ncpu",
         "simulation.nsimulation",
-        "simulation.restart.enabled",
-        "simulation.restart.file",
-        "simulation.restart.recordfrequency.ndt",
-        "simulation.restart.spinup.nyear",
         # 4.4.1 resource/background forcing keys the Python engine does not read (#137): the
         # forcing mode, a constant uniform biomass, and the inline background series Java needs
         # instead of a NetCDF file.
@@ -293,12 +296,9 @@ _ALLOWLIST_JAVA_ONLY: frozenset[str] = frozenset(
 
 _SUPPLEMENTARY_ALLOWLIST: frozenset[str] = _ALLOWLIST_PY_HONORED | _ALLOWLIST_JAVA_ONLY
 
-# #120 already warns on these two restart keys with a targeted message (config.py) — exclude them
-# from #123's summary to avoid double-warning. They remain in _ALLOWLIST_JAVA_ONLY for partition
-# completeness (they ARE java-only). Re-verify #120's warn-set at rebase (spec §"#120 overlap").
-_RESTART_HANDLED_BY_120: frozenset[str] = frozenset(
-    {"simulation.restart.file", "simulation.restart.enabled"}
-)
+# Restart has been implemented since 2026-11-26 (osmose/engine/restart.py): its keys are honoured
+# and #120's dedicated warning is gone, so nothing is excluded from #123's summary any more.
+_RESTART_HANDLED_BY_120: frozenset[str] = frozenset()
 
 
 def java_only_keys_set(cfg: dict) -> list[str]:

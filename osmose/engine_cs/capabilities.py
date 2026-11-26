@@ -125,6 +125,10 @@ DETECTORS: dict[str, Any] = {
     # catchability other than 1, per-fishery or scheduled maps): the bundle's fishing.fishery
     # tables (contract 3) and StepPreparation.Rates' per-fishery sum (spec 2026-11-24).
     "per_fishery_fishing": lambda c, raw: getattr(c, "fishery_model", None) is not None,
+    # starting from a restart or initialisation file (writing snapshots needs no feature)
+    "restart": lambda c, raw: bool(
+        getattr(c, "restart_file", "") or getattr(c, "population_init_file", "")
+    ),
     "fishing_rate_by_year": lambda c, raw: _any_set(c.fishing_rate_by_year),
     "additional_rate_by_step": lambda c, raw: _any_set(c.additional_mortality_by_dt),
     "larva_rate_by_step": lambda c, raw: _any_set(c.larva_mortality_by_dt),
@@ -201,6 +205,14 @@ KEY_RULES: tuple[tuple[str, str], ...] = (
     (r"output\.file\.prefix", "inert"),
     # Records before output.start.year are dropped by the shared Python path (records_from_start)
     (r"output\.start\.year", "inert"),
+    # Restart / initialisation files (osmose.engine.restart; C# feature 47)
+    (
+        (
+            r"simulation\.restart\.(enabled|file|recordfrequency\.ndt|spinup\.(nyear|nstep))"
+            r"|population\.initialization\.file"
+        ),
+        "restart",
+    ),
     # No effect on the Python engine's results (per-species generators never consumed, 2026-11-17).
     # simulation.fixed.seed.enabled is OSMOSE 4.4.0's one key for the same two flags.
     (
