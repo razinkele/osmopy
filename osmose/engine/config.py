@@ -6,6 +6,7 @@ into typed NumPy arrays indexed by species, ready for vectorized computation.
 
 from __future__ import annotations
 
+import os
 import re
 import warnings
 from dataclasses import dataclass, field
@@ -1385,7 +1386,7 @@ def _parse_restart(cfg: dict[str, str]) -> dict:
         if not value or value.lower() in ("null", "none"):
             return ""
         p = Path(value)
-        if ".." in p.parts:  # the same rule as every other data file (resolve_data_path)
+        if os.pardir in p.parts:  # the same rule as every other data file (resolve_data_path)
             raise ValueError(f"{key}: {value!r} contains '..'; give a path without traversal")
         return str(p if p.is_absolute() else Path(_cfg_dir(cfg)) / p)
 
