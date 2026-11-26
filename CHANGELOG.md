@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.21.1] - 2026-11-27
+
+### Documentation
+
+- **readme:** restart files section (v1.21.0) (1286283)
+
+### Other
+
+- Merge pull request #407 from razinkele/docs/readme-restart (280f52f)
+
 ## [1.21.0] - 2026-11-26
 
 ### Features
