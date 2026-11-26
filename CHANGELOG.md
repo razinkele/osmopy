@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.20.2] - 2026-11-26
+
+### Documentation
+
+- **perf:** three-engine benchmark on v1.20.1 (Numba pin + NetCDF fix); README table (b2e4290)
+
+### Other
+
+- Merge pull request #403 from razinkele/docs/perf-2026-11-26 (2023c8c)
+- ci/deploy: warm the Numba cache (Numba 0.65 compiles ~90 s cold) (62f076f)
+
 ## [1.20.1] - 2026-11-26
 
 ### Performance
