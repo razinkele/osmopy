@@ -124,8 +124,13 @@ class PythonEngine:
             cancel_token=cancel_token,
             step_observer=step_observer,
             region_outputs=(region_outputs := {}),
+            restart_snapshots=(snapshots := []),
         )
         write_outputs(outputs, output_dir, engine_config, grid=grid)
+        if snapshots:
+            from osmose.engine.restart import write_snapshots
+
+            write_snapshots(snapshots, output_dir, engine_config)
         if region_outputs:
             from osmose.engine.output_regions import write_region_outputs
 
@@ -193,5 +198,4 @@ def reset_run_warnings() -> None:
     from osmose.engine import config_validation as _cv
 
     _cv._WARNED_JAVA_ONLY_KEYS.clear()
-    _config._WARNED_UNSUPPORTED_RESTART.clear()
     _config._WARNED_UNSUPPORTED_MORTALITY.clear()

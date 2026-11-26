@@ -384,7 +384,18 @@ public sealed class OutputParameters
         };
 
     /// <summary><c>step0 + ceil(n_steps / record_frequency)</c> (spec 8.4).</summary>
-    public int Records(int nSteps) => (Step0Include ? 1 : 0) + ((nSteps + RecordFrequency - 1) / RecordFrequency);
+    public int Records(int nSteps) => Records(nSteps, 0);
+
+    /// <summary>Records of a run over steps <paramref name="startStep"/>..nSteps-1: a record at
+    /// each step closing a window (<c>(step + 1) % frequency == 0</c>), a trailing partial one,
+    /// and the initial record only for a run that starts at step 0 (as <c>simulate</c>).</summary>
+    public int Records(int nSteps, int startStep)
+    {
+        int f = RecordFrequency;
+        int closes = (nSteps / f) - (startStep / f); // window ends k with startStep <= k < nSteps
+        bool trailing = nSteps % f != 0;
+        return (Step0Include && startStep == 0 ? 1 : 0) + closes + (trailing ? 1 : 0);
+    }
 }
 
 /// <summary>Movement (bundle group <c>movement</c>, spec 6.11).</summary>

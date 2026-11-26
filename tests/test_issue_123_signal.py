@@ -66,11 +66,8 @@ def test_identity_fishing_periods_are_inert_real_seasonality_is_not():
 def test_benguela_lists_only_the_keys_that_can_matter():
     cfg = OsmoseConfigReader().read(ROOT / "data/benguela/benguela_all-parameters.csv")
     listed = cv.warn_unread_java_only_keys(cfg)
-    assert len(cv.java_only_keys_set(cfg)) >= 55  # the raw set is still complete
-    assert listed == [
-        "simulation.restart.recordfrequency.ndt",
-        "simulation.restart.spinup.nyear",
-    ]
+    assert len(cv.java_only_keys_set(cfg)) >= 50  # the raw set is still complete
+    assert listed == []  # restart keys honoured since 2026-11-26
 
 
 def test_values_matching_this_engine_are_not_listed():

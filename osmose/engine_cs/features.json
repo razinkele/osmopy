@@ -48,6 +48,7 @@
     {"id": 43, "name": "movement_gradient", "phase": 3, "status": "planned", "implemented": false, "description": "movement.distribution.method = gradient (OSMOSE 4.4.x): moves drawn from a probability map near the school"},
     {"id": 44, "name": "semelparous", "phase": 3, "status": "planned", "implemented": false, "description": "species.reproduction.strategy = semelparous (OSMOSE 4.4.x): death after spawning, cause SPAWNING"},
     {"id": 45, "name": "output_regions", "phase": 3, "status": "planned", "implemented": false, "description": "output.regions (OSMOSE 4.4.x): every output also written over the schools of each region"},
-    {"id": 46, "name": "per_fishery_fishing", "phase": 3, "status": "planned", "implemented": true, "description": "per-fishery fishing (several fisheries per species, catchability other than 1, per-fishery or scheduled fishing maps): bundle group fishing.fishery (contract 3), per-fishery sum in StepPreparation.Rates (spec 2026-11-24)"}
+    {"id": 46, "name": "per_fishery_fishing", "phase": 3, "status": "planned", "implemented": true, "description": "per-fishery fishing (several fisheries per species, catchability other than 1, per-fishery or scheduled fishing maps): bundle group fishing.fishery (contract 3), per-fishery sum in StepPreparation.Rates (spec 2026-11-24)"},
+    {"id": 47, "name": "restart", "phase": 3, "status": "planned", "implemented": true, "description": "restart / initialisation files in Java 4.4.1's format: the starting school table and step (bundle groups restart, init), snapshot bundles converted to NetCDF by Python (plan 2026-11-26)"}
   ]
 }

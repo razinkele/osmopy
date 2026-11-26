@@ -8,6 +8,8 @@ Follows Java's SimulationStep.step() ordering:
 
 from __future__ import annotations
 
+import copy
+import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -1977,6 +1979,24 @@ def _collect_trait_stats(
 # ---------------------------------------------------------------------------
 
 
+def _initial_state(config: EngineConfig, grid: Grid, rng: np.random.Generator):
+    """(initial population, first step): a restart file resumes after its step, an
+    initialisation file starts at step 0 from its population (Java PopulatingProcess); else
+    ``initialize``."""
+    source = config.restart_file or config.population_init_file
+    if not source:
+        return initialize(config, grid, rng), 0
+    if config.genetics_enabled:
+        raise NotImplementedError(
+            "restart / initialisation files with genetics are not supported yet: the genotypes "
+            "are not restored (osmose.engine.restart)"
+        )
+    from osmose.engine.restart import read_snapshot, resolve_restart_file
+
+    state, step = read_snapshot(resolve_restart_file(source), config)
+    return state, (step + 1 if config.restart_file else 0)
+
+
 def initialize(config: EngineConfig, grid: Grid, rng: np.random.Generator) -> SchoolState:
     """Create the initial population.
 
@@ -2229,8 +2249,14 @@ def simulate(
     cancel_token: threading.Event | None = None,
     step_observer: Callable[[int, object, object, object, object], None] | None = None,
     region_outputs: dict[str, list[StepOutput]] | None = None,
+    restart_snapshots: list[tuple[int, SchoolState]] | None = None,
 ) -> list[StepOutput]:
     """Run the OSMOSE simulation loop.
+
+    ``restart_snapshots``: when a list is passed (disk runs), the school table is captured after
+    each step Java would snapshot (osmose.engine.restart) for the caller to write. A config with
+    ``simulation.restart.file`` resumes after that file's step; ``population.initialization.file``
+    starts at step 0 from its population.
 
     Process ordering matches Java's SimulationStep.step().
 
@@ -2265,7 +2291,7 @@ def simulate(
         config.raw_config, Path(_config_dir_str) if _config_dir_str else None
     )
 
-    state = initialize(config, grid, rng)
+    state, start_step = _initial_state(config, grid, rng)
     resources = ResourceState(config=config.raw_config, grid=grid, oxygen=o2_data)
     # ResourceState performs the discovery (legacy ltl.*.rsc{i} keys or the EEC-style
     # species.type=resource fallback), so it is the single source of truth for resource
@@ -2385,14 +2411,22 @@ def simulate(
         region_outputs[r.name] = []
 
     # Phase 5: Initial state output (step -1)
-    if config.output_step0_include:
+    if config.output_step0_include and start_step == 0:  # Java: only a run that starts at 0
         outputs.append(_collect_outputs(state, config, step=-1, grid=grid))
 
     # simulation.kill.if.no.school.enabled: Java's yearMaxSeeding, one number for the run
     # (the longest seeding period; SimulationStep.init).
     seeding_ends = int(np.max(config.seeding_max_step[: config.n_species], initial=0))
 
-    for step in range(config.n_steps):
+    from osmose.engine.restart import snapshot_due
+
+    snap_on = restart_snapshots is not None and config.restart_write
+    if snap_on and config.genetics_enabled:
+        logging.getLogger("osmose").warning(
+            "restart snapshots are not written for a genetic run (genotypes are not saved yet)"
+        )
+        snap_on = False
+    for step in range(start_step, config.n_steps):
         # C4 Phase B: cooperative cancellation. The check is once per step
         # (not per process inside a step) — interactive UI cancel latency
         # is bounded by step duration, which is fine for typical configs
@@ -2775,6 +2809,12 @@ def simulate(
 
             ctx.genetic_state = compact_genetic_state(ctx.genetic_state, alive)
         state = state.compact()
+        if snap_on and (
+            snapshot_due(step, config.restart_spinup, config.restart_frequency)
+            or step == config.n_steps - 1
+        ):
+            assert restart_snapshots is not None
+            restart_snapshots.append((step, copy.deepcopy(state)))
 
     # Flush any remaining accumulated steps (if n_steps not divisible by freq)
     if accumulated:

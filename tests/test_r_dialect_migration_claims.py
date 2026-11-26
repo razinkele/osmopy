@@ -36,15 +36,6 @@ from osmose.config.reader import OsmoseConfigReader
 from osmose.engine.config import EngineConfig
 from osmose.engine.config_validation import validate
 
-
-@pytest.fixture(autouse=True)
-def _clear_restart_warning_cache():
-    from osmose.engine.config import _WARNED_UNSUPPORTED_RESTART
-
-    _WARNED_UNSUPPORTED_RESTART.clear()
-    yield
-
-
 FIXTURES = Path(__file__).parent / "fixtures"
 RDIALECT = FIXTURES / "rdialect_config.R"
 REPO_ROOT = Path(__file__).parent.parent
@@ -138,7 +129,8 @@ def test_strict_mode_is_SILENT_on_unimplemented_restart():
     simulation.restart.enabled is a KNOWN key, so strict mode never reports it — while the
     Python engine never implements it (engine/initialization.py exposes only
     build_initial_population / age_structured_population). It loads clean, validates clean,
-    and silently does nothing. Tracked as issue #120.
+    and was silently ignored (#120). Restart is implemented since 2026-11-26; the key stays
+    known, so this still holds.
 
     Knownness is SYMMETRICALLY REDUNDANT: it comes from BOTH osmose/schema/output.py:52 AND
     config_validation.py's allowlist, unioned in build_known_keys(). Removing either alone
@@ -156,24 +148,22 @@ def test_strict_mode_is_SILENT_on_unimplemented_restart():
     assert "simulation.restart.enabled" not in unknown
 
 
-def test_engine_warns_on_ignored_restart_after_120(caplog):
-    """FORMERLY a tripwire asserting the engine was SILENT on restart; FIXED in #120.
-
-    The Python engine now WARNS (does not implement restart, but no longer silently ignores it).
-    Dual-channel capture retained. Restart is still Java-only — this asserts the SILENCE is fixed,
-    not that restart is implemented.
-    """
+def test_restart_is_implemented_and_does_not_warn(caplog):
+    """FORMERLY: the engine warned that restart was ignored (#120). Since 2026-11-26 restart is
+    implemented (osmose/engine/restart.py, Java's file format), so the key is honoured and
+    nothing warns about it."""
     cfg = OsmoseConfigReader().read(MINIMAL_CONFIG)
     cfg["simulation.restart.enabled"] = "true"
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         with caplog.at_level(logging.WARNING):
-            EngineConfig.from_dict(cfg)
+            config = EngineConfig.from_dict(cfg)
 
+    assert config.restart_write
     log_hits = [r.getMessage() for r in caplog.records if "restart" in r.getMessage().lower()]
     warn_hits = [str(w.message) for w in caught if "restart" in str(w.message).lower()]
-    assert log_hits + warn_hits, "engine no longer warns on ignored restart — #120 regressed"
+    assert not log_hits + warn_hits
 
 
 @pytest.fixture
