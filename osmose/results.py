@@ -14,6 +14,7 @@ import pandas as pd
 import xarray as xr
 
 from osmose.logging import setup_logging
+from osmose.netcdf_io import open_dataset as _nc_open
 
 if TYPE_CHECKING:
     from osmose.engine.config import EngineConfig
@@ -520,7 +521,7 @@ class OsmoseResults:
             )
         if filename not in self._nc_cache:
             path = self.output_dir / filename
-            self._nc_cache[filename] = xr.open_dataset(path)
+            self._nc_cache[filename] = _nc_open(path)
         return self._nc_cache[filename]
 
     def biomass(self, species: str | None = None) -> pd.DataFrame:

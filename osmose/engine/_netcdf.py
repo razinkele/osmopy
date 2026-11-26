@@ -21,6 +21,9 @@ import xarray as xr
 _OPEN_LOCK = threading.Lock()
 
 
+from osmose.netcdf_io import open_dataset
+
+
 def open_dataset_safe(path: str | Path) -> xr.Dataset:
     """Open a NetCDF file thread-safely and return an in-memory Dataset.
 
@@ -29,5 +32,5 @@ def open_dataset_safe(path: str | Path) -> xr.Dataset:
     small forcing files (grid, biomass forcing, physical fields). For
     multi-GiB forcing a chunked+locked strategy would be needed instead.
     """
-    with _OPEN_LOCK, xr.open_dataset(path) as src:
+    with _OPEN_LOCK, open_dataset(path) as src:
         return src.load()
