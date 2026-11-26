@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.20.1] - 2026-11-26
+
+### Performance
+
+- open NetCDF by backend class (no xarray plugin scan); follow-up findings (59cd5bb)
+
+### Other
+
+- Merge pull request #401 from razinkele/perf/env-and-collection (1b5fef6)
+- pin numba <0.66 (0.66+ runs the mortality kernels ~50% slower) (6930cd6)
+
 ## [1.20.0] - 2026-11-25
 
 ### Features
