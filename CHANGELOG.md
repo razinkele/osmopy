@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.21.2] - 2026-11-27
+
+### Bug Fixes
+
+- **ui:** server-driven modal dismiss survives the fade-in (927a41a)
+
+### Documentation
+
+- **readme:** bring the Status section up to date (v1.21) (f35f165)
+
+### Other
+
+- Merge pull request #409 from razinkele/test/e2e-modal-waits (42478e5)
+- Merge pull request #410 from razinkele/docs/readme-status (0d39e93)
+
 ## [1.21.1] - 2026-11-27
 
 ### Documentation
