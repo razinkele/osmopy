@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.22.0] - 2026-11-27
+
+### Features
+
+- **ui:** start a run from a restart file (Run page) (8b82277)
+
+### Other
+
+- Merge pull request #412 from razinkele/feat/run-restart-input (a9d8be8)
+
 ## [1.21.2] - 2026-11-27
 
 ### Bug Fixes
