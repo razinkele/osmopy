@@ -110,6 +110,31 @@ def effective_run_config(config: dict[str, str], overrides_text: str) -> dict[st
     return effective
 
 
+RESTART_MODES = {
+    "off": "Don't use it",
+    "resume": "Resume: continue after the file's step",
+    "init": "Initial population: start at step 0",
+}
+
+
+def restart_run_keys(mode: str, upload: list[dict] | None, work_dir: Path) -> dict[str, str]:
+    """The config keys that make an in-process run start from an uploaded restart file.
+
+    ``resume`` is Java's ``simulation.restart.file`` (the run continues after the file's
+    ``step``), ``init`` its ``population.initialization.file`` (the same file read as the
+    population at step 0). The other key is blanked: Java and both engines give the restart
+    file precedence, so a ``simulation.restart.file`` left in the loaded config would silently
+    win over an upload meant as the initial population. The upload is copied into the run's
+    own directory, so the path the engine reads is absolute and outside the config tree."""
+    if mode not in ("resume", "init") or not upload:
+        return {}
+    dst = Path(work_dir) / "restart_input.nc"
+    shutil.copyfile(upload[0]["datapath"], dst)
+    resume, init = "simulation.restart.file", "population.initialization.file"
+    chosen, other = (resume, init) if mode == "resume" else (init, resume)
+    return {chosen: str(dst), other: ""}
+
+
 def csharp_block_reason(config: dict[str, str], overrides_text: str) -> str | None:
     """Why the C# engine cannot run ``config`` WITH the run panel's overrides applied, or None.
 
@@ -221,6 +246,15 @@ def run_ui():
                         "py_param_overrides",
                         "Parameter overrides (key=value, one per line)",
                         rows=4,
+                    ),
+                    ui.input_file(
+                        "restart_upload",
+                        "Start from a restart file (optional, Java/OSMOSE format)",
+                        multiple=False,
+                        button_label="Choose file…",
+                    ),
+                    ui.input_radio_buttons(
+                        "restart_mode", "Use the restart file as", RESTART_MODES, selected="off"
                     ),
                 ),
                 ui.output_ui("engine_capability"),
@@ -879,6 +913,13 @@ def run_server(input, output, session, state: AppState):
         return ui.tags.pre(text, style=STYLE_CONSOLE)
 
     @reactive.effect
+    @reactive.event(input.restart_upload)
+    def _restart_uploaded():
+        # Choosing a file means using it; "resume" is what Java's restart file is for.
+        if input.restart_upload():
+            ui.update_radio_buttons("restart_mode", selected="resume", session=session)
+
+    @reactive.effect
     @reactive.event(input.btn_run, input.btn_run_live)
     async def handle_run():
         _progress.set(None)
@@ -975,6 +1016,9 @@ def run_server(input, output, session, state: AppState):
             # final result on the main thread. Awaiting the run here would suspend handle_run
             # and Shiny would defer every flush until the run finished (no live updates).
             run_config = effective_run_config(config, input.py_param_overrides() or "")
+            run_config.update(
+                restart_run_keys(input.restart_mode(), input.restart_upload(), work_dir)
+            )
             if source_dir:
                 run_config["_osmose.config.dir"] = str(source_dir)
             output_dir = work_dir / "output"
