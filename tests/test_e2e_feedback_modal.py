@@ -124,3 +124,33 @@ def test_honeypot_hit_looks_like_success_but_stores_nothing(
         "so the honeypot assertion below would be vacuous"
     )
     assert "e2e honeypot bait" not in stored, "honeypot submission was stored anyway"
+
+
+def test_a_dismiss_arriving_during_the_fade_in_still_closes_the_modal(
+    page: Page, app: ShinyAppProc
+):
+    """The race behind the 2026-11-25/26 flakes, forced: Bootstrap drops ``hide()`` while the
+    show transition runs, so a server reply landing in the fade-in left the modal open. Calls
+    the hide-modal handler in the same tick as ``show()`` — no submission (rate-limit budget
+    untouched)."""
+    page.goto(app.url)
+    page.wait_for_selector(".nav-pills", timeout=_LOAD_TIMEOUT)
+    expect(page.locator("#changelogModal")).to_be_visible(timeout=_LOAD_TIMEOUT)
+    _dismiss_modal(page, "#changelogModal")
+    transitioning = page.evaluate(
+        """() => {
+            const el = document.getElementById('feedbackModal');
+            const m = bootstrap.Modal.getOrCreateInstance(el);
+            m.show();
+            const t = m._isTransitioning;
+            window.osmHideModal({id: 'feedbackModal'});
+            return t;
+        }"""
+    )
+    assert transitioning, "the handler was not called during the fade-in: the test proves nothing"
+    expect(page.locator("#feedbackModal")).not_to_be_visible(timeout=_LOAD_TIMEOUT)
+    # and the deferred hide must not linger to close the NEXT open
+    page.get_by_role("link", name="Feedback").click()
+    expect(page.locator("#feedbackModal")).to_be_visible(timeout=_LOAD_TIMEOUT)
+    page.wait_for_timeout(800)
+    expect(page.locator("#feedbackModal")).to_be_visible()
