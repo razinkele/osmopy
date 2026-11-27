@@ -608,11 +608,8 @@ app_ui = ui.page_fillable(
         // For modals rendered as static markup and opened client-side by data-bs-toggle,
         // ui.remove_modal() is a no-op (it only removes ui.modal_show() modals). The
         // feedback modal's success path sends 'hide-modal' instead.
-        var _hideModalRegistered = false;
-        document.addEventListener('shiny:connected', function() {
-            if (_hideModalRegistered) return;
-            _hideModalRegistered = true;
-            Shiny.addCustomMessageHandler('hide-modal', function(msg) {
+        // Named on window so tests/test_e2e_feedback_modal.py can call it mid-fade-in.
+        window.osmHideModal = function(msg) {
                 // Registration is safe without bootstrap, the body is not: the bundle can
                 // load AFTER shiny:connected (see the changelog modal's poll below).
                 if (typeof bootstrap === 'undefined') return;
@@ -620,8 +617,23 @@ app_ui = ui.page_fillable(
                 if (!el) return;
                 // getOrCreateInstance, not getInstance: this modal may never have been
                 // instantiated from JS, and getInstance returns null in that case.
-                bootstrap.Modal.getOrCreateInstance(el).hide();
-            });
+                var modal = bootstrap.Modal.getOrCreateInstance(el);
+                // Bootstrap drops hide() while the show transition (fade-in) is still running,
+                // so a reply that arrives within it would leave the modal open (an e2e flake,
+                // 2026-11-25/26). Hide once the modal is fully shown instead. Only while SHOWING
+                // (_isShown is set when show starts): during a hide, 'shown' would not fire
+                // until the next open, which this listener would then close.
+                if (modal._isTransitioning && modal._isShown) {
+                    el.addEventListener('shown.bs.modal', function() { modal.hide(); }, {once: true});
+                } else {
+                    modal.hide();
+                }
+        };
+        var _hideModalRegistered = false;
+        document.addEventListener('shiny:connected', function() {
+            if (_hideModalRegistered) return;
+            _hideModalRegistered = true;
+            Shiny.addCustomMessageHandler('hide-modal', window.osmHideModal);
         });
 
         // ── Lock the config tabs while a run is busy (server-driven) ───
