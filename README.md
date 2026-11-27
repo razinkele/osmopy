@@ -8,15 +8,20 @@ Python orchestration layer, simulation engine, and Shiny web interface for the [
 
 ## Status
 
+As of v1.21 (November 2026). Production runs the app with all three engines.
+
 | Surface | State |
 |---|---|
-| Python engine | Within 1 order of magnitude of Java on Eastern English Channel (14/14) and Bay of Biscay (7/8). The exception is Bay of Biscay Hake, whose biomass runs ~129× Java's, a pre-existing gap. The other seven Bay of Biscay species are equivalent to Java on every metric. Faster than Java on every benchmarked config. |
-| Java engine | Async subprocess runner. OSMOSE **4.4.1 JAR by default** (4.3.3 still selectable). Bundled configs are native 4.4.0; background-species configs (e.g. Baltic) stage + run on the 4.4.1 jar from the UI. |
-| Shiny UI | End-to-end UI: Setup · Grid · Forcing · Fishing · Movement · Run · Results (with Scenario Diff & Config Diff) · Spatial Results · Diagnostics · Calibration · **Sensitivity** · Scenarios · Advanced · Map Viewer. Live-during-run movement map; in-app About (README/Changelog) + a per-version startup "what's new" modal. |
-| Calibration | pymoo NSGA-II, GP surrogate, SALib Morris/Sobol sensitivity; preflight stage + Pareto `find_optimum`. |
-| Examples | **Eastern English Channel (14 sp), the reference example**: a published calibrated model in which 12 of 14 species hold steady over its 70-year run. **Baltic Sea (8 sp + 6 LTL)** with ICES SAG cross-validation. Bay of Biscay (8 sp) for short runs only: it isn't self-sustaining. |
-| Tests | 3250+ passed. Pyright clean on `osmose/` and `ui/`. |
-| Config validation | Opt-in typo catcher at `EngineConfig.from_dict` load time. Silent by default; `validation.strict.enabled=warn` logs `difflib` suggestions, `=error` raises with the full unknown-key list. |
+| Engines | Three, one click apart in the UI: **Python** (NumPy + Numba), **C#** (.NET 10 via pythonnet, optional) and **Java** (OSMOSE 4.4.1 JAR by default, 4.3.3 selectable). Same config files, same output files. |
+| Python engine | Within 1 order of magnitude of Java 4.4.1 on Eastern English Channel (14/14 species) and Bay of Biscay (7/8; Hake is a pre-existing gap). Covers bioenergetics, genetics, per-fishery fishing, depletable resources, bottom-oxygen coupling and restart files. 2.2× Java's speed on one thread, 4.3× on 14 (EEC, 70 years). |
+| C# engine | Runs every shipped config except the bioenergetic and genetic ones (the UI says why when it refuses). Equivalent to the Python engine on Baltic ensembles, including the full output families; 6.4× Java's speed on one thread, 16× on 14. Usable for calibration (`calibrate_baltic.py --engine csharp`). |
+| Java engine | Async subprocess runner, the reference implementation. Background-species configs (e.g. Baltic) are staged for the 4.4.1 jar automatically; configs using features Java lacks (Baltic's oxygen coupling) are refused with the reason. |
+| Outputs | Java's file layout and names: biomass, abundance, yield and catch (by species, fishery, age, size), mortality by cause, diet (also by stage), trophic level, size and age distributions, spatial maps, restart snapshots; `output.file.prefix` and `output.start.year` honoured. |
+| Shiny UI | Domain · Species · Forcing · Fishing · Movement · Genetics · Economic · Run · Results · Fisheries · Spatial Results · Diagnostics · Calibration · Sensitivity · Scenarios · Advanced · Map Viewer · Map Builder. Live movement map during Python runs, edit lock while a run is busy, in-app README and changelog, per-version "what's new", feedback form. |
+| Calibration | Differential evolution, CMA-ES and surrogate-DE drivers; pymoo NSGA-II; GP surrogate; SALib Morris/Sobol sensitivity; uncertainty quantification layer. |
+| Examples | **Eastern English Channel (14 species), the reference example**: a published calibrated model in which 12 of 14 species hold steady over 70 years. **Baltic Sea** (9 focal species incl. western and eastern cod, 2 background predators, 6 plankton/benthos groups) with ICES cross-validation. Benguela, a bioenergetic variant, and Bay of Biscay for short runs only (it isn't self-sustaining). |
+| Tests | About 6,500 (`pytest`), plus 168 C# unit tests and 22 browser-test files in CI. Pyright clean. |
+| Config validation | Every key checked at load; unknown keys get `difflib` suggestions under `validation.strict.enabled=warn` and raise under `=error`. Keys the engines know but don't use are reported per run. |
 
 ## Contents
 
@@ -52,7 +57,7 @@ Requirements: **Python 3.12+**. Java 17+ only if you want to use the Java engine
 
 ## Simulation engines
 
-Both engines implement the same `Engine` protocol and produce identical output shapes (biomass, abundance, mortality-by-cause, diet, trophic level, size/age distributions). The UI flips between them with one click.
+All three engines implement the same `Engine` protocol and produce identical output shapes (biomass, abundance, mortality-by-cause, diet, trophic level, size/age distributions). The UI flips between them with one click.
 
 |  | Python engine | Java engine |
 |---|---|---|
