@@ -11,8 +11,16 @@ from scripts.derive_ices_targets import WINDOW, derive_catch_targets
 SNAP = Path(__file__).resolve().parents[1] / "data" / "baltic" / "reference" / "ices_snapshots"
 
 
-def test_window_is_2018_2022():
-    assert WINDOW == (2018, 2022)
+def test_window_is_2020_2024():
+    assert WINDOW == (2020, 2024)
+
+
+def test_cod_west_window_is_three_years():
+    # cod.27.22-24's snapshot is pinned to the 2022 assessment (the only absolute one), so a
+    # 2020-2024 window holds only 2020-2022: three years, not five.
+    rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
+    assert "(3 yr)" in rows["cod_west"]["notes"]
+    assert float(rows["cod_west"]["target_tonnes"]) == pytest.approx(1428, rel=1e-3)
 
 
 def test_catch_targets_for_all_assessed_species():
@@ -28,7 +36,7 @@ def test_catch_targets_for_all_assessed_species():
 def test_sprat_catch_matches_snapshot_mean(tmp_path):
     # Sprat is a single-stock species (spr.27.22-32); its catch target mean must equal the
     # mean of that stock's catches (falling back to landings where catches are empty) over
-    # 2018-2022 — the same catches-preferred field the derivation code reads.
+    # the window — the same catches-preferred field the derivation code reads.
     import json
 
     import numpy as np
@@ -38,14 +46,14 @@ def test_sprat_catch_matches_snapshot_mean(tmp_path):
     catches = [
         float(r["catches"] or r["landings"])
         for r in recs
-        if (r["catches"] or r["landings"]) and 2018 <= int(r["year"]) <= 2022
+        if (r["catches"] or r["landings"]) and WINDOW[0] <= int(r["year"]) <= WINDOW[1]
     ]
     rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
     assert float(rows["sprat"]["target_tonnes"]) == pytest.approx(np.mean(catches), rel=1e-9)
 
 
 def test_herring_catch_target_includes_central_stock():
-    # her.27.25-2932 (central Baltic, dominant stock) has EMPTY `landings` for 2018-2022 —
+    # her.27.25-2932 (central Baltic, dominant stock) has EMPTY `landings` in the window —
     # only `catches` is populated. Regression guard: if the derivation regresses to reading
     # landings only, this stock's ~84-241 kt/yr drops out and the target collapses to ~20 kt.
     rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
@@ -57,7 +65,7 @@ _FLOUNDER_STOCKS = ("fle.27.2223", "bzq.27.2425", "bzq.27.2628", "bwp.27.2729-32
 
 def _flounder_catch_mean() -> float:
     """Independent of the code under test: per-year catches (landings where catches are empty)
-    summed over all four Baltic flounder stocks, then averaged over 2018-2022."""
+    summed over all four Baltic flounder stocks, then averaged over the window."""
     import json
 
     per_year: dict[int, float] = {}
@@ -69,9 +77,9 @@ def _flounder_catch_mean() -> float:
                     v = r["landings"] or r["catches"]
                 else:
                     v = r["catches"] or r["landings"]
-                if v and 2018 <= int(r["year"]) <= 2022:
+                if v and WINDOW[0] <= int(r["year"]) <= WINDOW[1]:
                     per_year[int(r["year"])] = per_year.get(int(r["year"]), 0.0) + float(v)
-    assert sorted(per_year) == [2018, 2019, 2020, 2021, 2022]
+    assert sorted(per_year) == [2020, 2021, 2022, 2023, 2024]
     return sum(per_year.values()) / len(per_year)
 
 
@@ -82,7 +90,9 @@ def test_flounder_catch_covers_all_four_baltic_stocks():
     assert float(rows["flounder"]["target_tonnes"]) == pytest.approx(
         _flounder_catch_mean(), rel=1e-9
     )
-    assert float(rows["flounder"]["target_tonnes"]) > 10_000
+    assert (
+        float(rows["flounder"]["target_tonnes"]) > 5_000
+    )  # the old fle.27.2223-only mapping gave 834 t; 2020-24 truth is ~9.5 kt
 
 
 def test_committed_flounder_catch_row_matches_derivation():
@@ -172,12 +182,12 @@ def test_cod_west_catch_includes_discards_and_the_supplemented_2022():
     per_year = {
         int(r["year"]): float(r["landings"]) + float(r["discards"] or 0)
         for r in _snapshot_rows("cod.27.22-24")
-        if r["landings"] and 2018 <= int(r["year"]) <= 2022
+        if r["landings"] and WINDOW[0] <= int(r["year"]) <= WINDOW[1]
     }
     assert 2022 not in per_year
     per_year[2022] = 88 + 27
     rows = {r["species"]: r for r in derive_catch_targets(SNAP)}
-    expected = sum(per_year.values()) / 5
+    expected = sum(per_year.values()) / len(per_year)
     assert float(rows["cod_west"]["target_tonnes"]) == pytest.approx(expected, rel=1e-9)
 
 
