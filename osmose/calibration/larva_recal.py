@@ -383,23 +383,24 @@ JOINT_TOL: float = 0.05
 # documented +-3.8% coupling jitter (two evaluations at the same printed rates differed by 5%)
 # and inside JOINT_TOL (5%), the band the drift guard holds it to. Rates are the solver's
 # bisection floats as printed in docs/diagnostics/sp1b_solve.log, means from one evaluation of
-# the pair.
+# the pair. 2026-11-28: re-solved after the fleet-rate recal (fsh0/fsh1/fsh8); the rates came out
+# identical, only the SP1-off baselines moved (cod_east 119836 -> 109722 t, cod_west 11253 -> 8795 t).
 RECAL_RATES: dict[str, StockRecal] = {
     "cod_east": StockRecal(
         rate=9.029238447974219,
         d0=10.15686139,
-        baseline=119835.61951493118,
-        mean_on=119734.43323583742,
-        rel_err=0.0008443756497720767,
-        note="solved 2026-11-13 (sprat maturity age 1 yr) sweep 1: converged; joint -0.08%",
+        baseline=109721.77767964108,
+        mean_on=107827.19127186888,
+        rel_err=0.017267186586275424,
+        note="solved 2026-11-28 (fleet-rate recal to ICES 2020-24 catch) sweep 1: converged; joint -1.73%",
     ),
     "cod_west": StockRecal(
         rate=8.940153384902565,
         d0=10.44415425,
-        baseline=11252.6188232591,
-        mean_on=11167.851651812392,
-        rel_err=0.007533106095400091,
-        note="solved 2026-11-13 (sprat maturity age 1 yr) sweep 1: converged; joint -0.75%",
+        baseline=8795.078533829841,
+        mean_on=8694.774187340341,
+        rel_err=0.011404599299902118,
+        note="solved 2026-11-28 (fleet-rate recal to ICES 2020-24 catch) sweep 1: converged; joint -1.14%",
     ),
 }
 

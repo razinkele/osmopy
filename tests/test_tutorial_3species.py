@@ -161,10 +161,17 @@ _CASCADE_SPRAT_MAX_RATIO: float = 1.60  # ...without running away
 # total_cod (1.032x) and sprat (1.029x) stay inside their bands and are left unchanged. The new
 # band is +-20% around 1.0365e5. The sub-one-fish floor (review T3) in the same change moved
 # stickleback only about 2% (50-yr A/B).
+#
+# 2026-11-28 — stickleback re-derived for the fleet-rate recalibration to ICES 2020-24 catch
+# (herring fsh1 0.380 -> 0.121, cod fsh0/fsh8 raised; docs/baltic_fleet_rate_recal_2026-11-28.md).
+# Isolated A/B on this fixture: the same test with the pre-recal fishing CSV (83bc54e2) passes;
+# with the new rates stickleback reads 6.881e4 (larger herring stock eating its eggs/YOY, the
+# mechanism in docs on herring->stickleback predation). New band = +-20% around 6.881e4.
+# total_cod and sprat stayed inside their bands and are unchanged.
 _PYRAMID_BOUNDS: dict[str, tuple[float, float]] = {
     "total_cod": (9.785e04, 1.468e05),  # re-derived 2026-08-09 — see comment above
     "sprat": (7.313e05, 1.097e06),  # unchanged since 2026-08-02 — still valid post-adoption
-    "stickleback": (8.292e04, 1.244e05),  # re-derived 2026-11-08 for T1 — see comment above
+    "stickleback": (5.505e04, 8.257e04),  # re-derived 2026-11-28 fleet-rate recal — see above
 }
 
 
