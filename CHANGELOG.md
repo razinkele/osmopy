@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/), generated from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [1.23.0] - 2026-11-28
+
+### Features
+
+- Baltic writes map outputs; Spatial Results shows only maps (04c9659)
+
+### Documentation
+
+- Baltic model vs ICES assessments and advice (2026-11-28) (006c4f9)
+
+### Other
+
+- Merge pull request #414 from razinkele/feat/spatial-results-baltic (02ceaee)
+- Merge pull request #415 from razinkele/docs/baltic-ices-check-2026-11-28 (c9c049f)
+
+### Styling
+
+- ruff format test_java_background_staging (a90bc57)
+
 ## [1.22.0] - 2026-11-27
 
 ### Features
