@@ -68,3 +68,10 @@ def test_evaluation_budget():
 
     solve_rate(counted, current=0.1, target=300.0, sweep_n=5, max_bisect=8)
     assert len(calls) <= 5 + 1 + 8
+
+
+def test_all_zero_catch_keeps_current_rate():
+    # A fleet whose species is extinct must not have its rate changed under a misleading note
+    s = solve_rate(lambda r: 0.0, current=0.1, target=300.0)
+    assert s.rate == 0.1
+    assert "zero" in s.note

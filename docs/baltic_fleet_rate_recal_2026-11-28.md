@@ -14,7 +14,11 @@ Before: `docs/baltic_ices_check_2026-11-28.md`
 - **Flounder is unsolved.** Its ICES catch (9.5 kt) needs F ≈ 0.025, which grows the stock 8×
   past its 20–100 kt envelope (388 kt) and pushes cod_east out of its envelope. Certification wins
   (owner decision), so flounder keeps 1.368 and its catch stays ~4× ICES.
-- Certification: **assessed 4/5, the same as before**; all 9 species persist.
+- Certification: **assessed 4/5**, the same as the old rates scored against the new targets; all
+  9 species persist. The one miss is cod_west, and the **narrower 2020–22 cod_west band
+  (5.3–9.1 kt, was 4–25 kt), not the new rates, costs that pass**: against the old band the old
+  config read 5/5 and cod_west at 16–17 kt would still pass. cod_west's SSB actually moved toward
+  ICES (19.2k → 16.3–16.8k).
 - SP1b re-solved: rates unchanged (9.029 / 8.940), baselines moved.
 
 ## Targets (2020–2024, from `scripts/derive_ices_targets.py --write`)
@@ -37,9 +41,10 @@ Before: `docs/baltic_ices_check_2026-11-28.md`
 | fsh3 flounder | 1.368 (kept) | 40.0 kt | 38.6 kt | 4.05× — unsolved |
 | fsh2 sprat | 0.369 (anchor) | 289 kt | 290 kt | 1.06× |
 
-The search (C#, 2 seeds) converged in 2 passes with all four fleets within ±10%
-(`docs/diagnostics/fleet_recal_search.json`); Python confirmed it (5 seeds: 1.00 / 1.00 / 0.90 /
-1.01, `fleet_recal_confirm.json`). Reverting flounder enlarged both cod stocks, which raised their
+The search (C#, 2 seeds) converged in 2 passes with all four fleets within ±10% on C#
+(`docs/diagnostics/fleet_recal_search.json`). Python confirmed three within ±10% and herring at
+0.899, just outside ±10% but inside the ±15% confirm rule and its ICES band (5 seeds: 1.00 /
+1.00 / 0.899 / 1.01, `fleet_recal_confirm.json`). Reverting flounder enlarged both cod stocks, which raised their
 catches to 1.19× and 1.36×. Both stay inside their ICES bands. They were **not** re-solved to the
 exact target: that needs higher cod rates, which lower cod biomass, and cod_east already sits at its
 60 kt envelope floor.
@@ -62,6 +67,10 @@ Matching it is a biomass-calibration question, not a rate question.
 | assessed | **4/5** | 2/5 | **4/5** | |
 | indicative | 2/4 | 1/4 | 2/4 | |
 | persists | 9/9 | 9/9 | 9/9 | |
+
+"Before" scores the old rates against the NEW targets (spec), so the target change alone cannot
+fail the gate. That is also why both read 4/5: under the old 4–25 kt cod_west band the old config
+would have read 5/5 (cod_west 19.2k inside), and so would the shipped one (16.3–16.8k).
 
 cod_east's lowest seed sits 2% above its envelope floor: a borderline pass. A later change that
 lowers cod_east by a few percent will flip it.

@@ -83,6 +83,8 @@ def solve_rate(
             break
 
     p = pts()
+    if all(c <= 0 for _, c in p):  # nothing to catch anywhere (extinct stock): leave the rate
+        return Solve(current, 0.0, target, False, p, "zero catch at every rate: rate unchanged")
     peak = int(np.argmax([c for _, c in p]))
 
     bracket = None
