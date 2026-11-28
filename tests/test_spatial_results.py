@@ -63,3 +63,23 @@ def test_nc_label_ltl_before_biomass():
     from ui.pages.spatial_results import _nc_label
 
     assert _nc_label("osm_ltlBiomass.nc") == "LTL"
+
+
+def test_spatial_nc_files_keeps_only_maps(tmp_path):
+    """Only NetCDF files with a (time, lat, lon) variable are offered as maps:
+    yieldByFishery and the combined per-species file are .nc but not spatial."""
+    import numpy as np
+    import xarray as xr
+
+    from ui.pages.spatial_results import _spatial_nc_files_in
+
+    xr.Dataset(
+        {"spatial_biomass": (("time", "species", "lat", "lon"), np.zeros((2, 1, 3, 4)))}
+    ).to_netcdf(tmp_path / "baltic_spatial_biomass_Simu0.nc")
+    xr.Dataset({"yield": (("time", "fishery"), np.zeros((2, 3)))}).to_netcdf(
+        tmp_path / "baltic_yieldByFishery_Simu0.nc"
+    )
+    (tmp_path / "broken.nc").write_bytes(b"not a netcdf file")
+
+    names = ["baltic_spatial_biomass_Simu0.nc", "baltic_yieldByFishery_Simu0.nc", "broken.nc"]
+    assert _spatial_nc_files_in(tmp_path, names) == ["baltic_spatial_biomass_Simu0.nc"]

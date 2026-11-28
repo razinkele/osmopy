@@ -59,7 +59,10 @@ class CSharpEngine:
         from osmose.engine.config_validation import warn_unread_java_only_keys
         from osmose.engine_cs import bridge
         from osmose.engine_cs.build import allocate_results, build_bundle
-        from osmose.engine_cs.capabilities import csharp_engine_block_reason
+        from osmose.engine_cs.capabilities import (
+            csharp_engine_block_reason,
+            csharp_skipped_outputs,
+        )
 
         warn_unread_java_only_keys(config)
         engine_config = EngineConfig.from_dict(config)
@@ -67,6 +70,12 @@ class CSharpEngine:
         reason = csharp_engine_block_reason(config)
         if reason is not None:
             raise CSharpEngineError(f"the C# engine cannot run this config: {reason}")
+        skipped = csharp_skipped_outputs(config)
+        if skipped:
+            logger.warning(
+                "C# engine: not writing %s (not implemented); run with the Python engine for them",
+                ", ".join(skipped),
+            )
         bundle = build_bundle(
             engine_config, config, grid, seed=seed, threads=self.threads,
             deadline_seconds=self.deadline_seconds, checks=self.checks, restart_dir=restart_dir,

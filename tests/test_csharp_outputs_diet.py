@@ -146,6 +146,8 @@ def test_records_of_a_stock_python_run_survive_the_buffers_and_both_consumers(de
         "output.minimal.enabled": "false",
         "output.recordfrequency.ndt": "6",
         "output.step0.include": "true",
+        # The buffers carry no map outputs: the C# engine skips them (SKIPPED_OUTPUT_FEATURES)
+        "output.spatial.enabled": "false",
     }
     raw = _raw(demo, tmp_path, 1, extra)
     config, grid, rng, mv, mo = PythonEngine()._prepare_run(raw, 11)

@@ -233,7 +233,10 @@ EXPECTED = {
 @pytest.mark.parametrize("minimal", [True, False])
 def test_demo_needs_exactly_these_features(demos, demo, minimal):
     config, raw = demos[(demo, minimal)]
-    want = EXPECTED[demo] | (set() if minimal else {"full_outputs"})
+    full = {"full_outputs"}
+    if demo.startswith("baltic"):  # map outputs on for the Spatial Results page; skipped by C#
+        full.add("spatial_outputs")
+    want = EXPECTED[demo] | (set() if minimal else full)
     assert set(cap.required_features(config, raw)) == want
     assert cap.unclassified_keys(raw) == []
 
@@ -248,19 +251,28 @@ def test_every_demo_runs_as_shipped_and_with_minimal_outputs(demos, demo, minima
     assert cap.csharp_engine_block_reason(demos[(demo, minimal)][1]) is None
 
 
-@pytest.mark.parametrize(
-    ("key", "feature"),
-    [
-        ("output.spatial.enabled", "spatial_outputs (phase 3)"),
-        ("output.carbon.enabled", "carbon_output (phase 3)"),
-    ],
-)
-def test_the_output_families_the_engine_does_not_collect_are_still_refused(demos, key, feature):
+def test_the_carbon_output_the_engine_does_not_collect_is_still_refused(demos):
     """full_outputs covers the life-stage split, the distributions, SSB, the two means, yield
-    in numbers and the diet. The spatial and the carbon-flux outputs are features of their own
-    and stay refused, by name."""
-    reason = cap.csharp_engine_block_reason(demos[("eec_full", False)][1] | {key: "true"})
-    assert reason is not None and feature in reason and "full_outputs" not in reason
+    in numbers and the diet. The carbon-flux output is a feature of its own and stays refused,
+    by name."""
+    raw = demos[("eec_full", False)][1] | {"output.carbon.enabled": "true"}
+    reason = cap.csharp_engine_block_reason(raw)
+    assert reason is not None and "carbon_output (phase 3)" in reason
+    assert "full_outputs" not in reason
+
+
+def test_spatial_outputs_are_skipped_not_refused(demos):
+    """Map outputs change nothing simulated, so a config that asks for them (the Baltic demo
+    does, for the Spatial Results page) still runs on C#; the maps are named as skipped."""
+    base = demos[("eec_full", False)][1]
+    assert cap.csharp_skipped_outputs(base) == []
+    on = base | {"output.spatial.enabled": "true", "output.spatial.biomass.enabled": "true"}
+    assert cap.csharp_engine_block_reason(on) is None
+    assert cap.csharp_skipped_outputs(on) == ["spatial_outputs"]
+    # still refused alongside something else: the skip does not hide another obstacle
+    both = on | {"output.carbon.enabled": "true"}
+    reason = cap.csharp_engine_block_reason(both)
+    assert reason is not None and "carbon_output" in reason and "spatial" not in reason
 
 
 def test_incoming_flux_is_refused_when_used_not_when_merely_switched_on(demos):
