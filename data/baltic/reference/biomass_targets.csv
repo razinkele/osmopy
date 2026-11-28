@@ -1,8 +1,8 @@
-#! version: 1.7
-#! last_updated: 2026-11-06
-#! ices_advice_year: 2022-2023
+#! version: 1.8
+#! last_updated: 2026-11-28
+#! ices_advice_year: 2026 (window 2020-2024)
 # Baltic Sea equilibrium biomass targets for calibration
-# Sources: ICES stock assessments (2018-2022 averages), FishBase, published literature
+# Sources: ICES stock assessments (2020-2024 averages; cod_west 2020-2022, cod_east SSB 2018-2022), FishBase, published literature
 # Biomass type: total stock biomass (not SSB), whole Baltic model domain (10-30E, 54-66N)
 # These are order-of-magnitude targets with acceptable ranges for calibration
 # Weight: 1.0=high (well-assessed pelagics), 0.5=medium, 0.2=low (poorly resolved at grid scale)
@@ -25,8 +25,8 @@
 # Stickleback: Olsson et al. 2019 (doi:10.1093/icesjms/fsz078) confirmed — first
 #   large-scale biomass assessment. Wide range appropriate given boom-bust dynamics.
 species,target_tonnes,lower_tonnes,upper_tonnes,weight,reference_point_type,source,notes
-cod_east,70000,60000,85000,1.0,ssb,ICES cod.27.24-32 SAG 2018-2022 mean SSB ~70kt (65-77kt); below Blim 98kt,Post-2015 eastern collapse; total biomass ~1.5-2x SSB
-cod_west,10000,4000,25000,1.0,ssb,ICES cod.27.22-24 2018-2022 SSB ~5-15kt (normalised-unit assessment scaled by Blim); also below Blim,Smaller western stock; SD24 shared with eastern; unit-scaling approximate
+cod_east,70000,60000,85000,1.0,ssb,ICES cod.27.24-32 SAG 2018-2022 mean SSB ~70kt (65-77kt); below Blim 98kt,THE ONE 2018-2022 EXCEPTION (2026-11-28): ICES now publishes cod.27.24-32 SSB only as a relative index with no reference points so this absolute target cannot be re-derived for 2020-2024; total biomass ~1.5-2x SSB
+cod_west,6699,5303,9133,1.0,ssb,ICES cod.27.22-24 SAG 2020-2022 SSB (tonnes; snapshot pinned to the 2022 assessment) mean 6699 t; band = window min-max; below Blim 15067 t,Smaller western stock; SD24 shared with eastern
 herring,1500000,800000,3000000,1.0,biomass,ICES aggregate Baltic herring complex (SD22-32 incl. Gulf of Bothnia),Central Baltic SSB ~450kt; total across all stocks ~1-2Mt
 sprat,1500000,800000,2500000,1.0,biomass,ICES Baltic sprat SD22-32; SSB ~1.0Mt in 2022 (doi:10.17895/ices.advice.19453856),Total biomass > SSB; raised from 800kt to match ICES
 flounder,50000,20000,100000,0.5,biomass,ICES Baltic flounder combined,Multiple management units; rough estimate
@@ -34,8 +34,8 @@ perch,20000,8000,50000,0.2,biomass,NOT ICES-assessed; literature estimate for co
 pikeperch,10000,4000,25000,0.2,biomass,NOT ICES-assessed; literature estimate for coastal Baltic (re-derived 2026-08-06),Whole-domain aggregate. ICES assesses no Baltic pikeperch stock. Retained: must sit below perch (restricted patchy distribution vs ubiquitous perch) and both assessed Baltic stocks are depleted below Bmsy (Jakubaviciute 2022). Concentrated in estuaries/lagoons; coarse grid under-resolves. See docs/baltic_percid_target_rederivation_2026-08-06.md
 smelt,60000,20000,120000,0.3,biomass,NOT ICES-assessed; literature estimate (re-derived 2026-08-06),Whole-domain aggregate. Second-most abundant fish in the eastern Gulf of Finland after herring (Sendek 2019); target an order of magnitude above pikeperch is directionally right. No basin-wide quantitative anchor found. See docs/baltic_percid_target_rederivation_2026-08-06.md
 stickleback,200000,50000,500000,0.2,biomass,Olsson et al. 2019 (doi:10.1093/icesjms/fsz078); highly uncertain,Boom-bust dynamics; wide range acceptable
-cod_west,2950.6811507716197,115.0,6403.576224062455,0.5,catch,ICES catches (fallback landings + discards) 2018-2022 summed over cod.27.22-24; cod.27.22-24 2022 from ICES SAG assessmentKey 17840 (2023 advice),mean+/-1.5sigma; floored at window min (5 yr)
-cod_east,7877.6,1181.0,19725.57758438123,0.5,catch,ICES catches (fallback landings + discards) 2018-2022 summed over cod.27.24-32,mean+/-1.5sigma; floored at window min (5 yr)
-herring,302459.0788852576,209714.0687580458,404941.1140908527,0.5,catch,ICES catches (fallback landings + discards) 2018-2022 summed over her.27.25-2932; her.27.28; her.27.3031; her.27.20-24,mean+/-1.5sigma; floored at window min (5 yr)
-sprat,298061.8,274100.0,322655.87414724124,0.5,catch,ICES catches (fallback landings + discards) 2018-2022 summed over spr.27.22-32,mean+/-1.5sigma; floored at window min (5 yr)
-flounder,15683.36360048423,9950.786928527092,24264.51445056908,0.5,catch,ICES catches (fallback landings + discards) 2018-2022 summed over fle.27.2223; bzq.27.2425; bzq.27.2628; bwp.27.2729-32,mean+/-1.5sigma; floored at window min (5 yr)
+cod_west,1427.6478566393841,115.0,3256.275486775644,0.5,catch,ICES catches (fallback landings + discards) 2020-2024 summed over cod.27.22-24; cod.27.22-24 2022 from ICES SAG assessmentKey 17840 (2023 advice),mean+/-1.5sigma; floored at window min (3 yr)
+cod_east,1566.2,922.0,2654.099195697837,0.5,catch,ICES catches (fallback landings + discards) 2020-2024 summed over cod.27.24-32,mean+/-1.5sigma; floored at window min (5 yr)
+herring,228569.98295188035,166998.04707835522,297546.0726448783,0.5,catch,ICES catches (fallback landings + discards) 2020-2024 summed over her.27.25-2932; her.27.28; her.27.3031; her.27.20-24,mean+/-1.5sigma; floored at window min (5 yr)
+sprat,273249.4,242559.19381887442,303939.6061811256,0.5,catch,ICES catches (fallback landings + discards) 2020-2024 summed over spr.27.22-32,mean+/-1.5sigma; floored at window min (5 yr)
+flounder,9519.661037157799,5626.413857286049,13412.908217029548,0.5,catch,ICES catches (fallback landings + discards) 2020-2024 summed over fle.27.2223; bzq.27.2425; bzq.27.2628; bwp.27.2729-32,mean+/-1.5sigma; floored at window min (5 yr)

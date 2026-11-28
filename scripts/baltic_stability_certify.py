@@ -43,7 +43,7 @@ _JAR = Path(
 # Kept literal so every historical certification stays byte-comparable; _load_target_weights()
 # below re-reads the source file and RAISES if the two ever diverge.
 ENVELOPE = {
-    "cod_west": (4000, 25000),
+    "cod_west": (5303, 9133),  # 2020-2022 ICES SSB min-max (was 4000-25000, 2018-22; 2026-11-28)
     "cod_east": (60000, 85000),
     "herring": (800000, 3000000),
     "sprat": (800000, 2500000),

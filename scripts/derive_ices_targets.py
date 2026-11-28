@@ -2,7 +2,7 @@
 """Derive ICES catch-based CATCH calibration targets from the in-repo snapshot.
 
 One-shot: reads data/baltic/reference/ices_snapshots/, sums each model species' stock
-catches (falling back to landings + discards where catches are unreported) over 2018-2022, and
+catches (falling back to landings + discards where catches are unreported) over 2020-2024, and
 emits `catch` target rows (band = mean +/- 1.5*std, floored at the window min). Writes
 biomass_targets.csv in place, preserving comment/provenance lines. index.json's
 `catch_landings_swapped_stocks` and `catch_supplements` correct SAG quirks on read. Since
@@ -34,7 +34,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 SNAPSHOT_DIR = REPO / "data" / "baltic" / "reference" / "ices_snapshots"
 TARGETS_CSV = REPO / "data" / "baltic" / "reference" / "biomass_targets.csv"
-WINDOW = (2018, 2022)
+WINDOW = (2020, 2024)
 K_STD = 1.5
 CATCH_WEIGHT = 0.5
 ASSESSED = ("cod_west", "cod_east", "herring", "sprat", "flounder")  # per stock since the split

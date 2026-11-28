@@ -104,7 +104,7 @@ F_KNOWN_EXCEPTIONS = {
     # no verdict and the fence skips them. Flounder's real check is catch: model ~24 kt/yr
     # vs ICES 15.3 kt (2018-2022, all Baltic flounder stocks), ~1.6x.
 }
-# Empty since the cod split: cod_west's target [4000, 25000] t overlaps the western SSB
+# Empty since the cod split: cod_west's target [5303, 9133] t (2020-22) is the western SSB
 # envelope and cod_east is index-unit (no envelope). The pre-split aggregate 'cod' exception
 # guarded a row that no longer existed (#182). (A bare `{}` would be a dict — keep `set()`.)
 B_KNOWN_EXCEPTIONS: set[str] = set()

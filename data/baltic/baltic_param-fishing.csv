@@ -35,10 +35,12 @@ fisheries.selectivity.a50.fsh6;3.0
 fisheries.selectivity.a50.fsh7;1.0
 
 # Base fishing mortality rate (year^-1) — calibrated R18
-fisheries.rate.base.fsh0;0.03901337537354545
-fisheries.rate.base.fsh1;0.3799687566571175
+# 2026-11-28: fsh0, fsh1, fsh8 re-solved to ICES 2020-2024 catch (docs/baltic_fleet_rate_recal_2026-11-28.md);
+# fsh3 flounder kept (its catch target grows the stock 8x past its envelope); fsh2 sprat keeps its ICES-F anchor
+fisheries.rate.base.fsh0;0.182139
+fisheries.rate.base.fsh1;0.120955
 # fsh2 (sprat): ICES spr.27.22-32 SSB-weighted F 2018-2022, replacing the phase-13 fitted 0.1637
-# (2026-10-29; docs/baltic_herring_sprat_f_2026-10-29.md). Herring fsh1 deliberately unchanged.
+# (2026-10-29; docs/baltic_herring_sprat_f_2026-10-29.md). Herring fsh1 was left unchanged then (catch matched 2018-22); re-solved 2026-11-28 (line 38).
 fisheries.rate.base.fsh2;0.369
 fisheries.rate.base.fsh3;1.367806662643799
 fisheries.rate.base.fsh4;0.40
@@ -111,7 +113,7 @@ fisheries.movement.file.map8;fishing/fishing-distrib.csv
 fisheries.name.fsh8;trawlcodeast
 fisheries.selectivity.type.fsh8;0
 fisheries.selectivity.a50.fsh8;2.0
-fisheries.rate.base.fsh8;0.01
+fisheries.rate.base.fsh8;0.0441316
 fisheries.period.number.fsh8;1
 fisheries.rate.byperiod.fsh8;1
 fisheries.period.start.fsh8;0
