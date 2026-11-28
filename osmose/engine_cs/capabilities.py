@@ -403,6 +403,28 @@ def unclassified_keys(raw: Mapping[str, str]) -> list[str]:
 # --------------------------------------------------------------------------- the decision
 
 
+#: Output-only features the C# engine does not implement but does not refuse: it runs the
+#: config and those files are simply not written (a warning names them). They change nothing
+#: the engine simulates, so the run's dynamics are what they would be with the switch off.
+SKIPPED_OUTPUT_FEATURES: frozenset[str] = frozenset({"spatial_outputs"})
+
+
+def csharp_skipped_outputs(raw: Mapping[str, str]) -> list[str]:
+    """Output features this config asks for that a C# run will not write."""
+    from osmose.engine.config import EngineConfig
+
+    try:
+        config = EngineConfig.from_dict(dict(raw))
+    except Exception:
+        return []
+    catalog = load_catalog()
+    return [
+        n
+        for n in required_features(config, raw)
+        if n in SKIPPED_OUTPUT_FEATURES and not catalog[n].implemented
+    ]
+
+
 def csharp_engine_block_reason(raw: Mapping[str, str]) -> str | None:
     """Why the C# engine cannot run this (raw, reader-produced) config, or None if it can.
 
@@ -423,7 +445,11 @@ def csharp_engine_block_reason(raw: Mapping[str, str]) -> str | None:
             "config keys the C# engine has not classified (it refuses rather than ignore them): "
             + ", ".join(unclassified)
         )
-    missing = [catalog[n] for n in required_features(config, raw) if not catalog[n].implemented]
+    missing = [
+        catalog[n]
+        for n in required_features(config, raw)
+        if not catalog[n].implemented and n not in SKIPPED_OUTPUT_FEATURES
+    ]
     for status, label in (
         ("refused", "refused (spec Q4)"),
         ("not_planned", "not planned for the C# engine; use the Python engine"),

@@ -84,8 +84,16 @@ def test_stage_background_for_java_emits_keys_and_returns_cutoff_override(tmp_pa
 
     from osmose.java_background_staging import stage_background_for_java
 
-    overrides = stage_background_for_java(stage, raw)
-    assert overrides == {"output.cutoff.enabled": "false"}
+    # Baltic asks for map outputs, which Java 4.4.1 cannot write with background species
+    assert raw["output.spatial.enabled"] == "true"
+    with pytest.warns(UserWarning, match="map outputs"):
+        overrides = stage_background_for_java(stage, raw)
+    assert overrides == {"output.cutoff.enabled": "false", "output.spatial.enabled": "false"}
+    off = dict(raw, **{"output.spatial.enabled": "false"})
+    write_temp_config(off, tmp_path / "stage2", source_dir=src, target_version="4.4.1")
+    assert stage_background_for_java(tmp_path / "stage2", off) == {
+        "output.cutoff.enabled": "false"
+    }
     master = (stage / "osm_all-parameters.csv").read_text()
     # Disaggregation shifted the background block +1: GreySeal is sp15 (Cormorant sp16).
     assert "species.biomass.sp15 ;" in master  # GreySeal inline biomass

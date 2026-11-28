@@ -342,7 +342,12 @@ def test_a_stock_run_writes_the_files_the_python_engine_writes(demo, tmp_path):
     def tree(root: Path) -> list[str]:
         return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
 
+    # The C# engine skips map outputs (capabilities.SKIPPED_OUTPUT_FEATURES): with them on
+    # (the Baltic demo), the Python run has exactly the map files more, and nothing else.
     files = tree(tmp_path / "py")
+    maps = [f for f in files if "_spatial_" in f]
+    assert bool(maps) == (raw.get("output.spatial.enabled", "false").lower() == "true")
+    files = [f for f in files if f not in maps]
     assert tree(tmp_path / "cs") == files and len(files) > (10 if demo in SPARSE else 20)
     assert any("mortality" in f.lower() for f in files)
     assert any("diet" in f.lower() for f in files) != (demo in SPARSE)

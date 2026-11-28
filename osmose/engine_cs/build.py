@@ -23,7 +23,11 @@ from typing import Any
 import numpy as np
 
 from osmose.engine_cs.bundle import Bundle
-from osmose.engine_cs.capabilities import load_catalog, required_features
+from osmose.engine_cs.capabilities import (
+    SKIPPED_OUTPUT_FEATURES,
+    load_catalog,
+    required_features,
+)
 from osmose.engine_cs.philox import SCHEME as RNG_SCHEME
 
 # 2: nine mortality causes in every result buffer (OSMOSE 4.4.x SPAWNING); a binary built for
@@ -157,7 +161,13 @@ def _restart(b: Bundle, config: Any, restart_dir: str | None, grid: Any) -> None
 
 def _contract(b: Bundle, config: Any, raw: Mapping[str, str]) -> None:
     catalog = load_catalog()
-    ids = [catalog[name].id for name in required_features(config, raw)]
+    # Skipped outputs are not asked of the engine: the run goes ahead without writing them
+    # (capabilities.SKIPPED_OUTPUT_FEATURES; the engine warns which).
+    ids = [
+        catalog[name].id
+        for name in required_features(config, raw)
+        if name not in SKIPPED_OUTPUT_FEATURES
+    ]
     b.set_array("contract.features", np.asarray(ids, dtype=np.int32))
     b.set_int("contract.rng.scheme", RNG_SCHEME)
 

@@ -79,6 +79,26 @@ def _spatial_data_var(ds) -> str | None:
     return candidates[0]
 
 
+def _spatial_nc_files_in(out_dir: Path, nc_files: list[str]) -> list[str]:
+    """The NetCDF files in ``out_dir`` that hold a map (a time+lat+lon variable).
+
+    A run also writes non-spatial NetCDF (e.g. ``yieldByFishery``), which this page
+    cannot draw. Checked by content, not name: engines name their map files differently.
+    An unreadable file is skipped, not raised.
+    """
+    import xarray as xr
+
+    keep = []
+    for name in nc_files:
+        try:
+            with xr.open_dataset(Path(out_dir) / name) as ds:
+                if _spatial_data_var(ds) is not None:
+                    keep.append(name)
+        except (OSError, ValueError, KeyError):
+            _log.warning("Skipping unreadable NetCDF output %s", name, exc_info=True)
+    return keep
+
+
 def _empty_cell_fig(message: str, tmpl: str) -> go.Figure:
     """A blank chart carrying a centered guidance/empty-state message."""
     fig = go.Figure()
@@ -245,7 +265,9 @@ def spatial_results_server(input, output, session, state: AppState):
         # Stage A: discover outputs
         try:
             res = OsmoseResults(out_dir, strict=False)
-            nc_files = [f for f in res.list_outputs() if f.endswith(".nc")]
+            nc_files = _spatial_nc_files_in(
+                out_dir, [f for f in res.list_outputs() if f.endswith(".nc")]
+            )
         except (OSError, ValueError, KeyError) as exc:
             _log.error("Failed to discover spatial outputs: %s", exc, exc_info=True)
             _spatial_ds.set(None)
@@ -277,8 +299,18 @@ def spatial_results_server(input, output, session, state: AppState):
     def spatial_nc_selector():
         nc_files = _spatial_nc_files.get()
         if not nc_files:
+            out_dir = state.output_dir.get()
+            if out_dir is None or not out_dir.exists():
+                msg = "No spatial outputs available. Run a simulation first."
+            else:
+                msg = (
+                    "This run wrote no map outputs. Set output.spatial.enabled and "
+                    "output.spatial.biomass.enabled (or .abundance / .yield.biomass) "
+                    "to true in the Advanced tab and run again. The C# engine does "
+                    "not write map outputs yet."
+                )
             return ui.p(
-                "No spatial outputs available. Run a simulation first.",
+                msg,
                 style="color: var(--osm-text-muted); font-size: 12px; margin-top: 8px;",
             )
         choices = {f: _nc_label(f) for f in nc_files}

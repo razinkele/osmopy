@@ -305,4 +305,15 @@ def stage_background_for_java(stage_dir: Path, raw_config: dict) -> dict[str, st
     master.write_text(master_text + "\n".join(extra) + "\n")
     augment_accessibility(stage_dir / "predation-accessibility.csv", predators)
     _augment_catchability_discards(stage_dir, predators)
-    return {"output.cutoff.enabled": "false"}
+    overrides = {"output.cutoff.enabled": "false"}
+    # Java 4.4.1's SpatialOutput indexes the resource forcing by every non-focal group,
+    # background species included, and dies on the first step (ArrayIndexOutOfBoundsException
+    # in Simulation.getResourceForcing, measured 2026-11-28 on Baltic). So a config with
+    # background species runs on Java without map outputs; the Python engine writes them.
+    if str(raw_config.get("output.spatial.enabled", "false")).strip().lower() == "true":
+        warnings.warn(
+            "Java 4.4.1 cannot write map outputs with background species: switched off",
+            stacklevel=2,
+        )
+        overrides["output.spatial.enabled"] = "false"
+    return overrides
